@@ -186,7 +186,7 @@ const aggregateMemoryStorage: multer.StorageEngine = {
 };
 
 // Retain at most 100 MB across the whole request, even when each individual
-// file is below its own 50 MB limit.
+// file is below its own 10 MiB limit.
 const upload = multer({
     storage: aggregateMemoryStorage,
     limits: {
@@ -195,7 +195,7 @@ const upload = multer({
         parts: BULK_UPLOAD_LIMITS.maxFiles + 2,
     },
     fileFilter: (_req, file, callback) => {
-        if (file.mimetype === 'application/pdf') {
+        if (file.mimetype === 'application/pdf' && /\.pdf$/i.test(file.originalname)) {
             callback(null, true);
         } else {
             callback(new multer.MulterError('LIMIT_UNEXPECTED_FILE', file.fieldname));
@@ -213,7 +213,7 @@ function receiveBulkUpload(req: AuthRequest, res: Response, next: NextFunction) 
         const message = errorCode === 'LIMIT_BATCH_SIZE'
             ? 'Ukuran total satu batch tidak boleh melebihi 100 MB'
             : errorCode === 'LIMIT_FILE_SIZE'
-                ? 'Ukuran satu file tidak boleh melebihi 50 MB'
+                ? 'Ukuran satu file tidak boleh melebihi 10 MiB'
                 : errorCode === 'LIMIT_FILE_COUNT'
                     ? 'Maksimum 50 file per batch'
                     : 'Multipart unggahan tidak valid';
@@ -232,7 +232,7 @@ function receiveBulkUpload(req: AuthRequest, res: Response, next: NextFunction) 
  *       - bearerAuth: []
  *     requestBody:
  *       required: true
- *       description: Maksimum 50 PDF, 50 MB per file, dan 100 MB total per batch.
+ *       description: Maksimum 50 PDF, 10 MiB per file, dan 100 MiB total per batch.
  *       content:
  *         multipart/form-data:
  *           schema:

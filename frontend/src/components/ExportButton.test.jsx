@@ -14,6 +14,22 @@ describe('ExportButton authenticated download', () => {
         vi.unstubAllGlobals()
     })
 
+    it('shows an actionable limit error and does not download a partial file', async () => {
+        const message = 'Hasil filter berisi 10.001 rekod, melebihi batas ekspor 10.000. Persempit filter tahun, unit kerja, atau pencarian lalu ekspor kembali.'
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: false, status: 422, headers: new Headers(),
+            json: vi.fn().mockResolvedValue({ error: 'EXPORT_LIMIT_EXCEEDED', message, total: 10001, limit: 10000 }),
+        }))
+        vi.spyOn(window, 'alert').mockImplementation(() => {})
+        const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+        render(<ExportButton type="surat-masuk" />)
+        fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Export Excel (.xlsx)' }))
+        expect(await screen.findByRole('alert')).toHaveTextContent(message)
+        expect(download).not.toHaveBeenCalled()
+        expect(screen.getByRole('button', { name: 'Export' })).toBeEnabled()
+    })
+
     it('sends App Check, keeps filters, and preserves the server-provided filename', async () => {
         const blob = new Blob(['pdf'], { type: 'application/pdf' })
         const fetchMock = vi.fn().mockResolvedValue({

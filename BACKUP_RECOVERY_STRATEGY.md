@@ -58,13 +58,19 @@ Run manual wajib memilih profil migrasi yang tepat:
 - `pre_migration` harus persis berisi 21 timestamp Drizzle dari `0000` sampai
   `0020_permanent_transfer_lifecycle`; inilah profil backup wajib sebelum
   migrasi `0021`–`0031`;
-- `post_migration` harus persis berisi 32 timestamp Drizzle dari `0000` sampai
-  `0031_gcs_upload_intents`.
+- `post_migration` harus persis berisi seluruh timestamp dan hash migrasi
+  dalam journal checkout yang direview; jumlahnya tidak disalin ke dokumen.
 
-Run terjadwal memakai mode `auto` yang hanya menerima tepat salah satu dari dua
-profil tersebut, lalu mencatat profil hasil resolusinya; karena itu backup harian
-tetap berjalan sebelum dan sesudah maintenance window tanpa menerima keadaan
-transisi. Riwayat parsial (22–31 migrasi), duplikat, timestamp tak dikenal, atau
+Collector Cloud SQL juga mendukung `pre_upgrade_0038`, tepat sampai
+`0038_arsip_direct_upload`, untuk cadangan sebelum upgrade 0039. Profil ini
+menjalankan pemeriksaan grant/ACL matang dan restore grant sesuai manifest
+0038; profil tersebut tidak diiklankan oleh workflow Neon legacy. Untuk
+database Neon 39 migrasi, gunakan CLI dan checkout rilis 0038 yang cocok,
+sesuai [panduan backup Neon](docs/BACKUP_NEON.md).
+
+Mode `auto` collector hanya menerima salah satu chain yang telah direview
+dan mencatat profil hasil resolusinya. Riwayat parsial di antara baseline,
+duplikat, timestamp tak dikenal, atau
 migrasi di luar profil ditolak. Evidence mencakup profil terpilih, identitas
 lengkap riwayat migrasi, fingerprint SHA-256 schema semantik, jumlah persis
 setiap tabel, dan fingerprint konten setiap regular/leaf table pada schema

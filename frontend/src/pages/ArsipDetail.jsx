@@ -408,7 +408,7 @@ export default function ArsipDetail() {
     const suratUrl = arsip.sourceSuratId ? `/surat/${suratType}/${arsip.sourceSuratId}` : null
     const itemCount = arsip.items?.length || (arsip.nomorItem ? 1 : 0)
     const jenisLabel = arsip.jenisArsip === 'masuk' ? 'Surat Masuk' : 'Surat Keluar'
-    const isEditor = canWrite()
+    const isEditor = canWrite(arsip.unitKerjaId)
     const reconciliationBlocked = Boolean(
         arsip.legalHold || arsip.disposalStatus !== 'active' || arsip.disposalBatchId
     )
@@ -570,6 +570,7 @@ export default function ArsipDetail() {
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                                         <EnhancedInfoField icon={Hash} label="Nomor Berkas" value={arsip.nomorBerkas} />
                                         <EnhancedInfoField icon={Tag} label="Kode Klasifikasi" value={arsip.kodeKlasifikasi} />
+                                        <EnhancedInfoField icon={FileText} label="Uraian Klasifikasi" value={arsip.klasifikasiArsip} className="sm:col-span-2" />
                                         <EnhancedInfoField icon={Layers} label="Jenis Arsip" value={jenisLabel} badge variant="secondary" />
                                         <EnhancedInfoField icon={Calendar} label="Tahun" value={arsip.tahun?.toString()} />
                                         <EnhancedInfoField icon={FileText} label="Uraian Berkas" value={arsip.uraianBerkas} className="sm:col-span-2" />
@@ -1066,6 +1067,9 @@ export default function ArsipDetail() {
                             <Label>Klasifikasi dan JRA aktif</Label>
                             <KlasifikasiPicker
                                 value={ruleSelection.kode}
+                                selectedClassification={ruleSelection.classification}
+                                selectedRetention={ruleSelection.retention}
+                                disabled={reconcileSaving}
                                 onChange={handleRuleSelection}
                                 label="Pilih klasifikasi dan JRA aktif"
                             />
@@ -1092,7 +1096,7 @@ export default function ArsipDetail() {
                                                 {ruleSelection.retention.uraian}
                                             </p>
                                             <p className="mt-1 text-xs text-muted-foreground">
-                                                Aktif {ruleSelection.retention.retensiAktif || '—'} · Inaktif {ruleSelection.retention.retensiInaktif || '—'} · {ruleSelection.retention.keterangan || '—'}
+                                                Aktif {ruleSelection.retention.retensiAktif ?? '—'} · Inaktif {ruleSelection.retention.retensiInaktif ?? '—'} · {ruleSelection.retention.keterangan || '—'}
                                             </p>
                                         </>
                                     ) : (

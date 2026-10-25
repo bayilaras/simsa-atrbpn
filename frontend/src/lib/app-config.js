@@ -1,3 +1,5 @@
+import { resolveCloudProviderConfig } from './cloud-provider-config'
+
 const PROFILE_BRANDING = Object.freeze({
     internal: Object.freeze({
         name: 'SIMSA Internal Ditjen PTPP',
@@ -18,13 +20,21 @@ export const APP_MODES = Object.freeze(['full', 'metadata-demo'])
 const FULL_CAPABILITIES = Object.freeze({
     metadata: true,
     files: true,
+    fileUploads: true,
+    letterFileUploads: true,
     externalIntegrations: true,
+    bulkOcr: true,
+    advancedArchiveWorkflows: true,
 })
 
 export const RESTRICTED_CAPABILITIES = Object.freeze({
     metadata: false,
     files: false,
+    fileUploads: false,
+    letterFileUploads: false,
     externalIntegrations: false,
+    bulkOcr: false,
+    advancedArchiveWorkflows: false,
 })
 
 export function parseBooleanFlag(value, fallback = false) {
@@ -55,12 +65,17 @@ export function createAppConfig(env = {}) {
     // rejecting an unknown value; only the exact metadata-demo value enables
     // the restrictive UI and its mandatory backend capability handshake.
     const mode = requestedMode === 'metadata-demo' ? 'metadata-demo' : 'full'
+    const providers = resolveCloudProviderConfig(env)
     const capabilities = mode === 'metadata-demo'
         ? Object.freeze({ ...RESTRICTED_CAPABILITIES })
-        : FULL_CAPABILITIES
+        : providers.storageProvider === 'disabled'
+            ? Object.freeze({ ...FULL_CAPABILITIES, files: false, fileUploads: false, letterFileUploads: false })
+            : FULL_CAPABILITIES
 
     return Object.freeze({
         mode,
+        authProvider: providers.authProvider,
+        storageProvider: providers.storageProvider,
         profile,
         name: branding.name,
         shortName: branding.shortName,
@@ -78,12 +93,47 @@ export function createAppConfig(env = {}) {
 
 export function resolveRuntimeCapabilities(buildConfig, payload) {
     const backendCapabilities = payload?.capabilities
+    const providerMatches = !payload?.authentication?.provider
+        || payload.authentication.provider === buildConfig?.authProvider
+    if (buildConfig?.mode !== 'metadata-demo') {
+        const compatible = payload?.mode === 'full' && payload?.syntheticDataOnly === false
+            && providerMatches
+            && backendCapabilities?.metadata === true
+            && typeof backendCapabilities?.files === 'boolean'
+            && typeof backendCapabilities?.fileUploads === 'boolean'
+            && (backendCapabilities?.letterFileUploads === undefined || typeof backendCapabilities.letterFileUploads === 'boolean')
+            && typeof backendCapabilities?.externalIntegrations === 'boolean'
+            && !(backendCapabilities.fileUploads && !backendCapabilities.files)
+            && !(backendCapabilities.letterFileUploads && !backendCapabilities.files)
+            && !(buildConfig.storageProvider === 'disabled' && backendCapabilities.files)
+        return Object.freeze({
+            compatible: Boolean(compatible), mode: 'full', syntheticDataOnly: false,
+            capabilities: Object.freeze(compatible ? { ...backendCapabilities,
+                // Letter attachments can be available while inspection services
+                // required by archival preservation are unavailable.
+                letterFileUploads: backendCapabilities.letterFileUploads ?? backendCapabilities.fileUploads,
+                // Older full backends predate these switches. Explicit values
+                // are authoritative; malformed values never enable a module.
+                bulkOcr: backendCapabilities.bulkOcr === undefined || backendCapabilities.bulkOcr === true,
+                advancedArchiveWorkflows: backendCapabilities.advancedArchiveWorkflows === undefined || backendCapabilities.advancedArchiveWorkflows === true,
+            }
+                : { ...RESTRICTED_CAPABILITIES, metadata: payload == null }),
+            authentication: Object.freeze(compatible ? {
+                provider: payload?.authentication?.provider,
+                googleSignIn: payload?.authentication?.googleSignIn === true,
+                pendingGoogleSignup: payload?.authentication?.googleSignIn === true && payload?.authentication?.pendingGoogleSignup === true,
+            } : { googleSignIn: false }),
+        })
+    }
     const compatible = Boolean(
         buildConfig?.mode === 'metadata-demo'
         && payload?.mode === 'metadata-demo'
         && payload?.syntheticDataOnly === true
+        && providerMatches
         && backendCapabilities?.metadata === true
         && backendCapabilities?.files === false
+        && backendCapabilities?.fileUploads !== true
+        && (backendCapabilities?.letterFileUploads === undefined || backendCapabilities.letterFileUploads === false)
         && backendCapabilities?.externalIntegrations === false
     )
 
@@ -93,6 +143,7 @@ export function resolveRuntimeCapabilities(buildConfig, payload) {
             mode: 'metadata-demo',
             syntheticDataOnly: true,
             capabilities: RESTRICTED_CAPABILITIES,
+            authentication: Object.freeze({ googleSignIn: false }),
         })
     }
 
@@ -101,9 +152,16 @@ export function resolveRuntimeCapabilities(buildConfig, payload) {
         mode: 'metadata-demo',
         syntheticDataOnly: true,
         capabilities: Object.freeze({
+            ...RESTRICTED_CAPABILITIES,
             metadata: true,
             files: false,
+            fileUploads: false,
             externalIntegrations: false,
+        }),
+        authentication: Object.freeze({
+            provider: payload?.authentication?.provider,
+            googleSignIn: payload?.authentication?.provider === 'firebase' && payload?.authentication?.googleSignIn === true,
+            pendingGoogleSignup: payload?.authentication?.provider === 'firebase' && payload?.authentication?.googleSignIn === true && payload?.authentication?.pendingGoogleSignup === true,
         }),
     })
 }

@@ -1,9 +1,11 @@
+import { AppError, ValidationError, ConflictError } from '../utils/errors';
 import { db } from '../config/database';
 import { storageLocations, NewStorageLocation, StorageLocation, arsip, archiveLending } from '../db/schema';
 import { eq, and, sql, isNull, ilike, or } from 'drizzle-orm';
 import QRCode from 'qrcode';
 import type { RecordUnitScope } from '../utils/record-unit-scope.js';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
+import { hasPostgresErrorCode } from '../utils/postgres-errors.js';
 
 export interface StorageLocationFilters {
     unitKerjaId: RecordUnitScope;
@@ -15,6 +17,25 @@ export interface StorageLocationFilters {
 }
 
 export class StorageLocationService {
+    private normalizeCode(code: string): string {
+        const normalized = code.trim();
+        if (!normalized || normalized.length > 50) {
+            throw new ValidationError('Kode lokasi harus berisi 1 sampai 50 karakter.');
+        }
+        return normalized;
+    }
+
+    private async withCodeConflict<T>(operation: () => Promise<T>): Promise<T> {
+        try {
+            return await operation();
+        } catch (error) {
+            if (hasPostgresErrorCode(error, '23505', 'storage_locations_unit_code_unique_idx')) {
+                throw new ConflictError('Kode lokasi sudah digunakan dalam unit kerja ini.');
+            }
+            throw error;
+        }
+    }
+
     private scopedWhere(unitKerjaId: RecordUnitScope, ...conditions: any[]) {
         const allConditions = unitKerjaId === null
             ? conditions
@@ -125,7 +146,11 @@ export class StorageLocationService {
         unitKerjaId: string,
         auditContext?: CriticalAuditContext,
     ) {
-        return await db.transaction(async (tx: any) => {
+        return this.withCodeConflict(() => db.transaction(async (tx: any) => {
+            // Serialize code allocation and explicit code changes in this unit.
+            // Always lock the unit before a location. NO KEY UPDATE allows
+            // unrelated foreign-key checks on the unit to continue.
+            await tx.execute(sql`SELECT id FROM unit_kerja WHERE id = ${unitKerjaId} FOR NO KEY UPDATE`);
             let parent: StorageLocation | null = null;
             if (data.parentId) {
                 [parent] = await tx
@@ -139,18 +164,18 @@ export class StorageLocationService {
                     .for('update');
 
                 if (!parent) {
-                    throw new Error('Parent storage location not found in the selected unit');
+                    throw new AppError('Parent storage location not found in the selected unit', 404);
                 }
 
                 const expectedLevel = this.expectedChildLevel(parent.level);
                 if (!expectedLevel || data.level !== expectedLevel) {
-                    throw new Error(`Child of ${parent.level} must use level ${expectedLevel || 'none'}`);
+                    throw new ValidationError(`Child of ${parent.level} must use level ${expectedLevel || 'none'}`);
                 }
             } else if (data.level !== 'gedung') {
-                throw new Error('Only gedung may be created without a parent location');
+                throw new ValidationError('Only gedung may be created without a parent location');
             }
 
-            const code = data.code || await this.generateCode(
+            const code = data.code !== undefined ? this.normalizeCode(data.code) : await this.generateCode(
                 unitKerjaId,
                 data.level,
                 data.parentId || undefined,
@@ -178,7 +203,7 @@ export class StorageLocationService {
             }
 
             return result;
-        });
+        }));
     }
 
     async update(
@@ -187,7 +212,8 @@ export class StorageLocationService {
         unitKerjaId: string,
         auditContext?: CriticalAuditContext,
     ) {
-        return await db.transaction(async (tx: any) => {
+        return this.withCodeConflict(() => db.transaction(async (tx: any) => {
+            await tx.execute(sql`SELECT id FROM unit_kerja WHERE id = ${unitKerjaId} FOR NO KEY UPDATE`);
             const [existing] = await tx
                 .select()
                 .from(storageLocations)
@@ -197,13 +223,13 @@ export class StorageLocationService {
 
             if (!existing) return null;
             if (data.level && data.level !== existing.level) {
-                throw new Error('Storage location level cannot be changed after creation');
+                throw new ConflictError('Storage location level cannot be changed after creation');
             }
 
             const parentId = data.parentId === undefined ? existing.parentId : data.parentId;
             if (parentId) {
                 if (parentId === id) {
-                    throw new Error('Storage location cannot be its own parent');
+                    throw new ValidationError('Storage location cannot be its own parent');
                 }
 
                 const [parent] = await tx
@@ -217,18 +243,19 @@ export class StorageLocationService {
                     .for('update');
 
                 if (!parent) {
-                    throw new Error('Parent storage location not found in the selected unit');
+                    throw new AppError('Parent storage location not found in the selected unit', 404);
                 }
 
                 const expectedLevel = this.expectedChildLevel(parent.level);
                 if (!expectedLevel || existing.level !== expectedLevel) {
-                    throw new Error(`Child of ${parent.level} must use level ${expectedLevel || 'none'}`);
+                    throw new ValidationError(`Child of ${parent.level} must use level ${expectedLevel || 'none'}`);
                 }
             } else if (existing.level !== 'gedung') {
-                throw new Error('Only gedung may exist without a parent location');
+                throw new ValidationError('Only gedung may exist without a parent location');
             }
 
             const { unitKerjaId: _ignoredUnit, ...safeData } = data;
+            if (safeData.code !== undefined) safeData.code = this.normalizeCode(safeData.code);
             const [result] = await tx
                 .update(storageLocations)
                 .set({ ...safeData, updatedAt: new Date() })
@@ -246,7 +273,7 @@ export class StorageLocationService {
             }
 
             return result || null;
-        });
+        }));
     }
 
     async delete(id: string, unitKerjaId: string, auditContext?: CriticalAuditContext) {
@@ -269,7 +296,7 @@ export class StorageLocationService {
                 ));
 
             if (hasChildren.count > 0) {
-                throw new Error('Cannot delete location with children. Delete children first.');
+                throw new ConflictError('Cannot delete location with children. Delete children first.');
             }
 
             const [hasArsip] = await tx
@@ -281,7 +308,7 @@ export class StorageLocationService {
                 ));
 
             if (hasArsip.count > 0) {
-                throw new Error('Cannot delete location with archived items. Move items first.');
+                throw new ConflictError('Cannot delete location with archived items. Move items first.');
             }
 
             const [hasLendingHistory] = await tx
@@ -290,7 +317,7 @@ export class StorageLocationService {
                 .where(eq(archiveLending.storageLocationId, id));
 
             if (hasLendingHistory.count > 0) {
-                throw new Error('Cannot delete location with lending history. Preserve the audit trail.');
+                throw new ConflictError('Cannot delete location with lending history. Preserve the audit trail.');
             }
 
             const [result] = await tx
@@ -315,7 +342,7 @@ export class StorageLocationService {
     async generateQRCode(locationId: string, baseUrl: string, unitKerjaId: RecordUnitScope) {
         const location = await this.findById(locationId, unitKerjaId);
         if (!location) {
-            throw new Error('Storage location not found');
+            throw new AppError('Storage location not found', 404);
         }
 
         const qrUrl = `${baseUrl}/storage-locations/${locationId}`;
@@ -345,10 +372,10 @@ export class StorageLocationService {
             .limit(1);
 
         if (!arsipItem) {
-            throw new Error('Arsip not found');
+            throw new AppError('Arsip not found', 404);
         }
 
-        const qrUrl = `${baseUrl}/arsip/${arsipId}`;
+        const qrUrl = `${baseUrl}/arsip/detail/${arsipId}`;
         const qrDataUrl = await QRCode.toDataURL(qrUrl, {
             width: 300,
             margin: 2,
@@ -414,28 +441,29 @@ export class StorageLocationService {
                 ))
                 .limit(1);
             if (parent) {
-                parentCode = parent.code + '-';
+                parentCode = parent.code.trim() + '-';
             }
         }
 
-        // Count existing at this level
-        const conditions = [
-            eq(storageLocations.unitKerjaId, unitKerjaId),
-            eq(storageLocations.level, level),
-        ];
-        if (parentId) {
-            conditions.push(eq(storageLocations.parentId, parentId));
-        } else {
-            conditions.push(isNull(storageLocations.parentId));
-        }
-
-        const [{ count }] = await executor
-            .select({ count: sql<number>`count(*)::int` })
+        // Count-based allocation repeats a code after deletions or manual gaps.
+        // Check all unit codes because explicit codes may use another level's prefix.
+        const existing = await executor
+            .select({ code: storageLocations.code })
             .from(storageLocations)
-            .where(and(...conditions));
-
-        const nextNum = count + 1;
-        return `${parentCode}${prefixes[level] || level.toUpperCase()}${nextNum}`;
+            .where(eq(storageLocations.unitKerjaId, unitKerjaId));
+        const prefix = `${parentCode}${prefixes[level] || level.toUpperCase()}`;
+        const normalizedPrefix = prefix.toLowerCase();
+        const codes = new Set<string>(existing.map((row: { code: string }) => row.code.trim().toLowerCase()));
+        let nextNum = 1n;
+        for (const code of codes) {
+            if (!code.startsWith(normalizedPrefix)) continue;
+            const suffix = code.slice(normalizedPrefix.length);
+            if (/^[0-9]+$/.test(suffix)) {
+                const candidate = BigInt(suffix) + 1n;
+                if (candidate > nextNum) nextNum = candidate;
+            }
+        }
+        return this.normalizeCode(`${prefix}${nextNum}`);
     }
 }
 

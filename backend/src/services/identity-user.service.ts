@@ -15,6 +15,7 @@ export interface ProvisionedIdentityUser {
 
 const ARCHIVE_ACCESS_ROLES = new Set([
     'super_admin',
+    'admin_unit',
     'admin_dirjen',
     'admin_sesditjen',
     'staff',
@@ -25,7 +26,7 @@ export function archiveAccessProvisioningIssue(
     user: Pick<ProvisionedIdentityUser, 'role' | 'unitKerjaId'>,
 ): 'role' | 'unit' | null {
     if (!ARCHIVE_ACCESS_ROLES.has(user.role)) return 'role';
-    if (['staff', 'auditor'].includes(user.role) && !user.unitKerjaId) return 'unit';
+    if (['admin_unit', 'staff', 'auditor'].includes(user.role) && !user.unitKerjaId?.trim()) return 'unit';
     return null;
 }
 

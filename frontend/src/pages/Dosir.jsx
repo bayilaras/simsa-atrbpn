@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -42,6 +42,8 @@ const KATEGORI_OPTIONS = [
     'Lainnya',
 ]
 
+const EMPTY_STATS = { total: 0, open: 0, closed: 0, archived: 0 }
+
 function DosirSkeleton() {
     return (
         <Card className="overflow-hidden">
@@ -68,14 +70,14 @@ export default function Dosir() {
     const { user } = useAuth()
     const navigate = useNavigate()
     const isSuperAdmin = user?.role === 'super_admin'
-    const [dosirList, setDosirList] = useState([])
-    const [stats, setStats] = useState({ total: 0, open: 0, closed: 0, archived: 0 })
-    const [loading, setLoading] = useState(true)
+    const [request, setRequest] = useState(null)
+    const [revision, setRevision] = useState(0)
     const [search, setSearch] = useState('')
     const [statusFilter, setStatusFilter] = useState('all')
     const [kategoriFilter, setKategoriFilter] = useState('all')
     const [isCreateOpen, setIsCreateOpen] = useState(false)
     const [createLoading, setCreateLoading] = useState(false)
+    const [createError, setCreateError] = useState('')
     const [formData, setFormData] = useState({
         judul: '',
         deskripsi: '',
@@ -101,35 +103,48 @@ export default function Dosir() {
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
         : (resolveEffectiveUnitKerjaId(user) || undefined)
 
-    const fetchData = useCallback(async () => {
-        try {
-            setLoading(true)
-            const [dosirRes, statsRes] = await Promise.all([
-                dosirService.getAll({
-                    search,
-                    status: statusFilter === 'all' ? '' : statusFilter,
-                    kategori: kategoriFilter === 'all' ? '' : kategoriFilter,
-                    unitKerjaId: resolvedUnitKerjaId,
-                }),
-                dosirService.getStats(resolvedUnitKerjaId),
-            ])
-            setDosirList(dosirRes || [])
-            setStats(statsRes || { total: 0, open: 0, closed: 0, archived: 0 })
-        } catch (error) {
-            console.error('Error fetching dosir:', error)
-        } finally {
-            setLoading(false)
-        }
-    }, [search, statusFilter, kategoriFilter, resolvedUnitKerjaId])
+    const query = useMemo(() => ({
+        actor: user?.id || user?.email,
+        role: user?.role,
+        unitKerjaId: resolvedUnitKerjaId,
+        search,
+        status: statusFilter === 'all' ? '' : statusFilter,
+        kategori: kategoriFilter === 'all' ? '' : kategoriFilter,
+        revision,
+    }), [user?.id, user?.email, user?.role, resolvedUnitKerjaId, search, statusFilter, kategoriFilter, revision])
+    const fetchData = useCallback(() => setRevision(value => value + 1), [])
 
     useEffect(() => {
-        fetchData()
-    }, [fetchData])
+        let active = true
+        Promise.all([
+            dosirService.getAll({
+                search: query.search,
+                status: query.status,
+                kategori: query.kategori,
+                unitKerjaId: query.unitKerjaId,
+            }),
+            dosirService.getStats(query.unitKerjaId),
+        ]).then(([dosirRes, statsRes]) => {
+            if (active) setRequest({ query, rows: dosirRes || [], stats: statsRes || EMPTY_STATS })
+        }).catch(() => {
+            if (active) setRequest({ query, error: 'Dosir belum dapat dimuat. Periksa koneksi dan coba lagi.' })
+        })
+        return () => { active = false }
+    }, [query])
+
+    // Results belong to this exact actor, unit, filter and reload. Hide the old
+    // snapshot immediately, including before the replacement effect starts.
+    const current = request?.query === query ? request : null
+    const dosirList = current?.rows || []
+    const stats = current?.stats || EMPTY_STATS
+    const loading = !current
+    const loadError = current?.error
 
     const handleCreate = async () => {
-        if (!formData.judul.trim() || !resolvedUnitKerjaId) return
+        if (!formData.judul.trim() || !resolvedUnitKerjaId || createLoading) return
 
         try {
+            setCreateError('')
             setCreateLoading(true)
             await dosirService.create(formData, resolvedUnitKerjaId)
             setIsCreateOpen(false)
@@ -137,6 +152,7 @@ export default function Dosir() {
             fetchData()
         } catch (error) {
             console.error('Error creating dosir:', error)
+            setCreateError(error.message || 'Dosir belum tersimpan. Silakan coba lagi.')
         } finally {
             setCreateLoading(false)
         }
@@ -195,7 +211,7 @@ export default function Dosir() {
                             </Select>
                         </div>
                     )}
-                    <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+                    <Dialog open={isCreateOpen} onOpenChange={open => { setIsCreateOpen(open); setCreateError('') }}>
                         <DialogTrigger asChild>
                             <Button disabled={!resolvedUnitKerjaId} className="h-9 shadow-sm bg-indigo-600 hover:bg-indigo-700">
                                 <Plus className="h-4 w-4 mr-2" />
@@ -261,11 +277,12 @@ export default function Dosir() {
                                     />
                                 </div>
                             </div>
+                            {createError && <p role="alert" className="text-sm text-destructive">{createError}</p>}
                             <DialogFooter>
                                 <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
                                     Batal
                                 </Button>
-                                <Button onClick={handleCreate} disabled={createLoading || !formData.judul.trim()} className="bg-indigo-600 hover:bg-indigo-700">
+                                <Button onClick={handleCreate} disabled={createLoading || !formData.judul.trim() || !resolvedUnitKerjaId} className="bg-indigo-600 hover:bg-indigo-700">
                                     {createLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                                     Buat Dosir
                                 </Button>
@@ -275,8 +292,9 @@ export default function Dosir() {
                 </div>
             </div>
 
+            {!resolvedUnitKerjaId && <p role="status" className="text-sm text-muted-foreground">Pilih unit kerja terlebih dahulu untuk membuat dosir.</p>}
             {/* Stats Cards */}
-            <div className="grid gap-4 lg:grid-cols-4">
+            <div className="grid gap-4 lg:grid-cols-4" aria-busy={loading}>
                 <Card className="shadow-sm border-l-4 border-l-slate-500 card-hover">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Total Dosir</CardTitle>
@@ -285,7 +303,7 @@ export default function Dosir() {
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-foreground">{stats.total}</div>
+                        <div className="text-2xl font-bold text-foreground">{loading || loadError ? '—' : stats.total}</div>
                         <p className="text-xs text-muted-foreground mt-1">Total seluruh dosir</p>
                     </CardContent>
                 </Card>
@@ -297,7 +315,7 @@ export default function Dosir() {
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-blue-600">{stats.open}</div>
+                        <div className="text-2xl font-bold text-blue-600">{loading || loadError ? '—' : stats.open}</div>
                         <p className="text-xs text-muted-foreground mt-1">Dosir sedang berjalan</p>
                     </CardContent>
                 </Card>
@@ -309,7 +327,7 @@ export default function Dosir() {
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-emerald-600">{stats.closed}</div>
+                        <div className="text-2xl font-bold text-emerald-600">{loading || loadError ? '—' : stats.closed}</div>
                         <p className="text-xs text-muted-foreground mt-1">Dosir telah selesai</p>
                     </CardContent>
                 </Card>
@@ -321,7 +339,7 @@ export default function Dosir() {
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{stats.archived}</div>
+                        <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{loading || loadError ? '—' : stats.archived}</div>
                         <p className="text-xs text-muted-foreground mt-1">Dosir diarsipkan</p>
                     </CardContent>
                 </Card>
@@ -371,7 +389,14 @@ export default function Dosir() {
             </Card>
 
             {/* Dosir List */}
-            {loading ? (
+            {loadError ? (
+                <Card>
+                    <CardContent className="space-y-3 pt-6">
+                        <p role="alert">{loadError}</p>
+                        <Button variant="outline" onClick={fetchData}>Coba lagi</Button>
+                    </CardContent>
+                </Card>
+            ) : loading ? (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {[1, 2, 3, 4, 5, 6].map(i => <DosirSkeleton key={i} />)}
                 </div>
@@ -385,7 +410,7 @@ export default function Dosir() {
                         <p className="text-muted-foreground mb-6 max-w-sm">
                             Mulai dengan membuat dosir baru untuk mengelompokkan surat-menyurat berdasarkan perkara atau topik.
                         </p>
-                        <Button onClick={() => setIsCreateOpen(true)} className="bg-indigo-600 hover:bg-indigo-700">
+                        <Button disabled={!resolvedUnitKerjaId} onClick={() => { setCreateError(''); setIsCreateOpen(true) }} className="bg-indigo-600 hover:bg-indigo-700">
                             <Plus className="h-4 w-4 mr-2" />
                             Buat Dosir Pertama
                         </Button>

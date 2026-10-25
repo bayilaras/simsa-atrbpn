@@ -45,7 +45,7 @@ export default function LayananArsipIndex() {
     const navigate = useNavigate();
     const { toast } = useToast();
     const { user } = useAuth();
-    const canCreate = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff'].includes(user?.role);
+    const canCreate = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'].includes(user?.role);
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState([]);
     const [statusFilter, setStatusFilter] = useState('all');

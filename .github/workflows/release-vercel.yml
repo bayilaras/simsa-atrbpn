@@ -1,0 +1,561 @@
+name: Release SIMSA to Vercel (manual, approved)
+
+# Automates the manual release recorded in docs/HASIL_RILIS_C55_C52 and C56_C53:
+# frozen `git archive` source + manifest, backend then frontend candidates with
+# `--prod --skip-domain` and the build-time source gate, smoke checks, and
+# promotion only after a reviewer approves the protected `production`
+# environment. Database migrations stay a separate operator step
+# (scripts/ops/rilis-neon.ps1); this workflow never receives database
+# credentials. Setup and rollback: docs/RUNBOOK_KREDENSIAL_DATABASE.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Full 40-character SHA of the current main HEAD (a merged PR)
+        required: true
+        type: string
+      release_label:
+        description: Release label, e.g. "C57 backend + C54 frontend"
+        required: true
+        type: string
+      components:
+        description: Projects to release
+        required: true
+        type: choice
+        default: both
+        options:
+          - both
+          - backend
+          - frontend
+      database_migrations:
+        description: Migrations already applied in production (must equal the release journal)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: simsa-vercel-production-release
+  cancel-in-progress: false
+
+env:
+  # Same CLI version as the manual C55/C56 releases. Change deliberately.
+  VERCEL_CLI_PACKAGE: vercel@50.22.1
+
+jobs:
+  source:
+    name: Validate request and freeze release source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+      checks: read
+      statuses: read
+      pull-requests: read
+    outputs:
+      commit_sha: ${{ steps.request.outputs.commit_sha }}
+      backend: ${{ steps.request.outputs.backend }}
+      frontend: ${{ steps.request.outputs.frontend }}
+      manifest_sha256: ${{ steps.freeze.outputs.manifest_sha256 }}
+      artifact: ${{ steps.freeze.outputs.artifact }}
+    steps:
+      # Fail visibly instead of skipping, so a disabled or misdirected run never looks green.
+      - name: Require an enabled release from the default branch
+        env:
+          ENABLED: ${{ vars.RELEASE_VERCEL_ENABLED }}
+          DEFAULT_REF: refs/heads/${{ github.event.repository.default_branch }}
+        run: |
+          set -Eeuo pipefail
+          [ "$GITHUB_REF" = "$DEFAULT_REF" ] || { echo '::error::Dispatch this workflow from the default branch only.'; exit 1; }
+          [ "$ENABLED" = true ] || { echo '::error::Release workflow is disabled (repository variable RELEASE_VERCEL_ENABLED is not true). See docs/RUNBOOK_KREDENSIAL_DATABASE.md.'; exit 1; }
+
+      - name: Bind the workflow ref to the requested commit
+        id: request
+        env:
+          REQUESTED_SHA: ${{ inputs.commit_sha }}
+          COMPONENTS: ${{ inputs.components }}
+          MIGRATIONS: ${{ inputs.database_migrations }}
+        run: |
+          set -Eeuo pipefail
+          requested="${REQUESTED_SHA,,}"
+          [[ "$requested" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::commit_sha must be exactly 40 hexadecimal characters.'; exit 1; }
+          [ "${GITHUB_SHA,,}" = "$requested" ] || { echo '::error::Dispatch from main at exactly the commit being released (main HEAD).'; exit 1; }
+          [[ "$COMPONENTS" =~ ^(both|backend|frontend)$ ]] || { echo '::error::Unknown components value.'; exit 1; }
+          [[ "$MIGRATIONS" =~ ^[1-9][0-9]{0,3}$ ]] || { echo '::error::database_migrations must be a positive number.'; exit 1; }
+          {
+            echo "commit_sha=$requested"
+            echo "backend=$([ "$COMPONENTS" != frontend ] && echo true || echo false)"
+            echo "frontend=$([ "$COMPONENTS" != backend ] && echo true || echo false)"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ steps.request.outputs.commit_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+
+      - name: Verify main HEAD, merged PR, approvals and required checks
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_SHA: ${{ steps.request.outputs.commit_sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/check-gcp-backend-production-gate.py \
+            --repository "$GITHUB_REPOSITORY" --default-branch "$DEFAULT_BRANCH" \
+            --commit-sha "$RELEASE_SHA" --evidence "$RUNNER_TEMP/release-evidence/production-gate.json"
+
+      - name: Test release tooling contracts
+        run: >-
+          node --test
+          scripts/ops/release-source.test.mjs
+          scripts/ops/vercel-release.test.mjs
+          scripts/ops/release-smoke.test.mjs
+          scripts/check-operations.test.mjs
+
+      - name: Freeze source with git archive and write the manifest
+        id: freeze
+        env:
+          RELEASE_SHA: ${{ steps.request.outputs.commit_sha }}
+          LABEL: ${{ inputs.release_label }}
+          MIGRATIONS: ${{ inputs.database_migrations }}
+        run: |
+          set -Eeuo pipefail
+          summary="$RUNNER_TEMP/release-evidence/source.json"
+          node scripts/ops/release-source.mjs prepare --commit "$RELEASE_SHA" --label "$LABEL" --output "$RUNNER_TEMP/release" > "$summary"
+          count="$(jq -r '.migrations.count' "$summary")"
+          if [ "$count" != "$MIGRATIONS" ]; then
+            echo "::error::The release journal has $count migrations but production was declared at $MIGRATIONS. Migrate first (scripts/ops/rilis-neon.ps1), then dispatch again."
+            exit 1
+          fi
+          {
+            echo "manifest_sha256=$(jq -r '.manifestSha256' "$summary")"
+            echo "artifact=simsa-release-source-${RELEASE_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          } >> "$GITHUB_OUTPUT"
+          jq -r '"### Release source\n\n| | |\n|---|---|\n| Commit | `\(.commit)` |\n| Label | \(.label) |\n| Files | \(.files) |\n| Manifest | `\(.manifestSha256)` |\n| Migrations | \(.migrations.count) (last `\(.migrations.last)`) |"' "$summary" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload frozen source, manifest and gate evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ steps.freeze.outputs.artifact }}
+          path: |
+            ${{ runner.temp }}/release/release-source.tar
+            ${{ runner.temp }}/release/release-source.json
+            ${{ runner.temp }}/release-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+  backend-candidate:
+    name: Deploy backend candidate (no domain)
+    needs: source
+    if: needs.source.outputs.backend == 'true'
+    runs-on: ubuntu-24.04
+    environment: production-candidate
+    timeout-minutes: 45
+    outputs:
+      deployment_id: ${{ steps.check.outputs.deployment_id }}
+      serving: ${{ steps.check.outputs.serving }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.source.outputs.commit_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.source.outputs.artifact }}
+          path: ${{ runner.temp }}/artifact
+
+      - name: Re-verify the frozen source and install the pinned CLI before loading credentials
+        env:
+          MANIFEST_SHA256: ${{ needs.source.outputs.manifest_sha256 }}
+        run: |
+          set -Eeuo pipefail
+          verified="$(node scripts/ops/release-source.mjs extract --dir "$RUNNER_TEMP/artifact/release" | jq -r '.manifestSha256')"
+          [ "$verified" = "$MANIFEST_SHA256" ] || { echo '::error::Frozen source manifest changed between jobs.'; exit 1; }
+          npm install --global --no-audit --no-fund "$VERCEL_CLI_PACKAGE"
+          mkdir -p "$RUNNER_TEMP/release-evidence"
+
+      - name: Deploy candidate with the build-time source gate
+        id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_BACKEND_PROJECT_ID }}
+        run: |
+          set -Eeuo pipefail
+          cd "$RUNNER_TEMP/artifact/release/source"
+          if ! url="$(vercel deploy --prod --skip-domain --yes --build-env SIMSA_VERIFY_CANDIDATE_SOURCE=1 2>"$RUNNER_TEMP/deploy.log")"; then
+            tail -n 80 "$RUNNER_TEMP/deploy.log"
+            echo '::error::Backend candidate deployment failed.'
+            exit 1
+          fi
+          url="$(printf '%s\n' "$url" | tail -n 1)"
+          [[ "$url" =~ ^https://[a-z0-9-]+\.vercel\.app$ ]] || { echo '::error::Unrecognized candidate URL.'; exit 1; }
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Require the candidate source gate in the build log
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_BACKEND_PROJECT_ID }}
+          CANDIDATE_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -Eeuo pipefail
+          vercel inspect "$CANDIDATE_URL" --logs > "$RUNNER_TEMP/build.log" 2>&1 || true
+          grep -F 'SIMSA candidate backend: source checks passed' "$RUNNER_TEMP/build.log" | tee "$RUNNER_TEMP/release-evidence/backend-source-gate.txt"
+
+      - name: Check candidate state through the Vercel API
+        id: check
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_BACKEND_PROJECT_ID }}
+          CANDIDATE_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -Eeuo pipefail
+          result="$RUNNER_TEMP/release-evidence/candidate-backend.json"
+          node scripts/ops/vercel-release.mjs candidate --component backend --deployment "$CANDIDATE_URL" > "$result"
+          jq -r '"deployment_id=\(.id)", "serving=\(.current)"' "$result" >> "$GITHUB_OUTPUT"
+          jq -r '"### Backend candidate\n\n`\(.id)` at \(.url) (replaces `\(.current)`)"' "$result" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke the protected candidate URL when a bypass secret is configured
+        env:
+          SMOKE_PROTECTION_BYPASS: ${{ secrets.VERCEL_BACKEND_BYPASS_SECRET }}
+          CANDIDATE_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "$SMOKE_PROTECTION_BYPASS" ]; then
+            echo '::warning::VERCEL_BACKEND_BYPASS_SECRET is not set: backend candidate HTTP smoke skipped. The first HTTP check runs after promotion and rolls back automatically on failure.'
+            printf '\n> **Warning:** backend candidate smoke skipped (no `VERCEL_BACKEND_BYPASS_SECRET`). The first HTTP check runs after promotion; a failure there rolls back automatically.\n' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          node scripts/ops/release-smoke.mjs backend "$CANDIDATE_URL"
+
+      - name: Upload candidate evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: simsa-release-backend-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-evidence
+          if-no-files-found: warn
+          retention-days: 30
+
+  frontend-candidate:
+    name: Deploy frontend candidate (no domain)
+    needs: [source, backend-candidate]
+    if: >-
+      needs.source.result == 'success' && !cancelled() && needs.source.outputs.frontend == 'true'
+      && contains(fromJSON('["success","skipped"]'), needs.backend-candidate.result)
+    runs-on: ubuntu-24.04
+    environment: production-candidate
+    timeout-minutes: 30
+    outputs:
+      deployment_id: ${{ steps.check.outputs.deployment_id }}
+      serving: ${{ steps.check.outputs.serving }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.source.outputs.commit_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.source.outputs.artifact }}
+          path: ${{ runner.temp }}/artifact
+
+      - name: Re-verify the frozen source, install frontend dependencies and the pinned CLI before loading credentials
+        env:
+          MANIFEST_SHA256: ${{ needs.source.outputs.manifest_sha256 }}
+        run: |
+          set -Eeuo pipefail
+          verified="$(node scripts/ops/release-source.mjs extract --dir "$RUNNER_TEMP/artifact/release" | jq -r '.manifestSha256')"
+          [ "$verified" = "$MANIFEST_SHA256" ] || { echo '::error::Frozen source manifest changed between jobs.'; exit 1; }
+          # The CLI evaluates frontend/vercel.mjs locally, which imports @vercel/config.
+          npm ci --prefix "$RUNNER_TEMP/artifact/release/source/frontend" --ignore-scripts --no-audit --no-fund
+          npm install --global --no-audit --no-fund "$VERCEL_CLI_PACKAGE"
+          mkdir -p "$RUNNER_TEMP/release-evidence"
+
+      - name: Deploy candidate with the build-time source gate
+        id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_FRONTEND_PROJECT_ID }}
+        run: |
+          set -Eeuo pipefail
+          cd "$RUNNER_TEMP/artifact/release/source"
+          if ! url="$(vercel deploy --prod --skip-domain --yes --build-env SIMSA_VERIFY_CANDIDATE_SOURCE=1 2>"$RUNNER_TEMP/deploy.log")"; then
+            tail -n 80 "$RUNNER_TEMP/deploy.log"
+            echo '::error::Frontend candidate deployment failed.'
+            exit 1
+          fi
+          url="$(printf '%s\n' "$url" | tail -n 1)"
+          [[ "$url" =~ ^https://[a-z0-9-]+\.vercel\.app$ ]] || { echo '::error::Unrecognized candidate URL.'; exit 1; }
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Require the candidate source gate in the build log
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_FRONTEND_PROJECT_ID }}
+          CANDIDATE_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -Eeuo pipefail
+          vercel inspect "$CANDIDATE_URL" --logs > "$RUNNER_TEMP/build.log" 2>&1 || true
+          grep -F 'SIMSA candidate frontend: source checks passed' "$RUNNER_TEMP/build.log" | tee "$RUNNER_TEMP/release-evidence/frontend-source-gate.txt"
+
+      - name: Check candidate state through the Vercel API
+        id: check
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_FRONTEND_PROJECT_ID }}
+          CANDIDATE_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -Eeuo pipefail
+          result="$RUNNER_TEMP/release-evidence/candidate-frontend.json"
+          node scripts/ops/vercel-release.mjs candidate --component frontend --deployment "$CANDIDATE_URL" > "$result"
+          jq -r '"deployment_id=\(.id)", "serving=\(.current)"' "$result" >> "$GITHUB_OUTPUT"
+          jq -r '"### Frontend candidate\n\n`\(.id)` at \(.url) (replaces `\(.current)`)"' "$result" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke the protected candidate URL when a bypass secret is configured
+        env:
+          SMOKE_PROTECTION_BYPASS: ${{ secrets.VERCEL_FRONTEND_BYPASS_SECRET }}
+          CANDIDATE_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "$SMOKE_PROTECTION_BYPASS" ]; then
+            echo '::warning::VERCEL_FRONTEND_BYPASS_SECRET is not set: frontend candidate HTTP smoke skipped. The first HTTP check runs after promotion and rolls back automatically on failure.'
+            printf '\n> **Warning:** frontend candidate smoke skipped (no `VERCEL_FRONTEND_BYPASS_SECRET`). The first HTTP check runs after promotion; a failure there rolls back automatically.\n' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # The candidate proxies /api to the production backend alias.
+          node scripts/ops/release-smoke.mjs frontend "$CANDIDATE_URL"
+
+      - name: Upload candidate evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: simsa-release-frontend-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-evidence
+          if-no-files-found: warn
+          retention-days: 30
+
+  promote:
+    name: Promote after approval (backend, then frontend)
+    needs: [source, backend-candidate, frontend-candidate]
+    if: >-
+      needs.source.result == 'success' && !cancelled()
+      && contains(fromJSON('["success","skipped"]'), needs.backend-candidate.result)
+      && contains(fromJSON('["success","skipped"]'), needs.frontend-candidate.result)
+      && (needs.backend-candidate.result == 'success' || needs.frontend-candidate.result == 'success')
+    runs-on: ubuntu-24.04
+    # Required reviewers on this environment are the release approval.
+    environment: production
+    timeout-minutes: 30
+    env:
+      BACKEND_RELEASED: ${{ needs.backend-candidate.result == 'success' }}
+      FRONTEND_RELEASED: ${{ needs.frontend-candidate.result == 'success' }}
+      BACKEND_CANDIDATE: ${{ needs.backend-candidate.outputs.deployment_id }}
+      FRONTEND_CANDIDATE: ${{ needs.frontend-candidate.outputs.deployment_id }}
+      BACKEND_REPLACES: ${{ needs.backend-candidate.outputs.serving }}
+      FRONTEND_REPLACES: ${{ needs.frontend-candidate.outputs.serving }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.source.outputs.commit_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - name: Install the pinned CLI before loading credentials
+        run: |
+          npm install --global --no-audit --no-fund "$VERCEL_CLI_PACKAGE"
+          mkdir -p "$RUNNER_TEMP/release-evidence"
+
+      - name: Require promotion credentials before changing any alias
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          OPERATIONS_MONITOR_TOKEN: ${{ secrets.OPERATIONS_MONITOR_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          [ "${#VERCEL_TOKEN}" -ge 20 ] || { echo '::error::Secret VERCEL_TOKEN is missing in environment production.'; exit 1; }
+          [ "${#OPERATIONS_MONITOR_TOKEN}" -ge 32 ] || { echo '::error::Secret OPERATIONS_MONITOR_TOKEN is missing in environment production.'; exit 1; }
+          [ -n "$VERCEL_ORG_ID" ] || { echo '::error::Variable VERCEL_ORG_ID is missing.'; exit 1; }
+
+      - name: Record the deployments being replaced (rollback targets)
+        id: previous
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+        run: |
+          set -Eeuo pipefail
+          evidence="$RUNNER_TEMP/release-evidence"
+          for component in backend frontend; do
+            node scripts/ops/vercel-release.mjs current --component "$component" > "$evidence/previous-$component.json"
+          done
+          backend_now="$(jq -r .id "$evidence/previous-backend.json")"
+          frontend_now="$(jq -r .id "$evidence/previous-frontend.json")"
+          # Production must still be what the reviewer saw when approving. A re-run
+          # after a partial promotion finds the candidate already serving.
+          state() { if [ "$1" != true ]; then echo skip; elif [ "$2" = "$3" ]; then echo promote; elif [ "$2" = "$4" ]; then echo done; else echo changed; fi; }
+          backend_state="$(state "$BACKEND_RELEASED" "$backend_now" "$BACKEND_REPLACES" "$BACKEND_CANDIDATE")"
+          frontend_state="$(state "$FRONTEND_RELEASED" "$frontend_now" "$FRONTEND_REPLACES" "$FRONTEND_CANDIDATE")"
+          for value in "backend:$backend_state:$backend_now" "frontend:$frontend_state:$frontend_now"; do
+            if [ "$(cut -d: -f2 <<< "$value")" = changed ]; then
+              echo "::error::$(cut -d: -f1 <<< "$value") production changed since the candidate was built ($(cut -d: -f3 <<< "$value")). Dispatch a new release."
+              exit 1
+            fi
+          done
+          {
+            echo "backend=$backend_state"
+            echo "frontend=$frontend_state"
+            echo "backend_target=${BACKEND_REPLACES:-$backend_now}"
+            echo "frontend_target=${FRONTEND_REPLACES:-$frontend_now}"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo '### Rollback targets'
+            echo
+            echo 'If this release must be undone, promote the previous deployments (frontend first, then backend) and repeat the smoke checks:'
+            echo
+            echo '```'
+            echo "vercel promote ${FRONTEND_REPLACES:-$frontend_now} --yes   # simsa-frontend"
+            echo "vercel promote ${BACKEND_REPLACES:-$backend_now} --yes   # simsa-backend"
+            echo '```'
+          } | tee "$evidence/rollback.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Promote backend candidate
+        id: promote_backend
+        if: env.BACKEND_RELEASED == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_BACKEND_PROJECT_ID }}
+          STATE: ${{ steps.previous.outputs.backend }}
+        run: |
+          set -Eeuo pipefail
+          if [ "$STATE" = promote ]; then vercel promote "$BACKEND_CANDIDATE" --yes --timeout 5m; else echo 'Backend candidate already serving (re-run); not promoted again.'; fi
+          node scripts/ops/vercel-release.mjs serving --component backend --deployment "$BACKEND_CANDIDATE" | tee "$RUNNER_TEMP/release-evidence/promoted-backend.json"
+
+      # Mainly wakes the on-demand scanner before /ready is checked (C55 needed
+      # this). Its probe also covers backup/fixity, which a release does not
+      # change, so it warns; the backend smoke below is the rollback gate.
+      - name: Wake the scanner and probe operations through the frontend proxy
+        if: env.BACKEND_RELEASED == 'true'
+        continue-on-error: true
+        env:
+          OPERATIONS_MONITOR_TOKEN: ${{ secrets.OPERATIONS_MONITOR_TOKEN }}
+        run: node scripts/check-operations.mjs || { echo '::warning::Operations probe is not healthy after the backend promotion; continuing to the backend smoke.'; exit 1; }
+
+      - name: Smoke production backend
+        id: smoke_backend
+        if: env.BACKEND_RELEASED == 'true'
+        run: node scripts/ops/release-smoke.mjs backend https://simsa-backend.vercel.app
+
+      - name: Promote frontend candidate
+        id: promote_frontend
+        if: env.FRONTEND_RELEASED == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_FRONTEND_PROJECT_ID }}
+          STATE: ${{ steps.previous.outputs.frontend }}
+        run: |
+          set -Eeuo pipefail
+          if [ "$STATE" = promote ]; then vercel promote "$FRONTEND_CANDIDATE" --yes --timeout 5m; else echo 'Frontend candidate already serving (re-run); not promoted again.'; fi
+          node scripts/ops/vercel-release.mjs serving --component frontend --deployment "$FRONTEND_CANDIDATE" | tee "$RUNNER_TEMP/release-evidence/promoted-frontend.json"
+
+      - name: Smoke production frontend
+        id: smoke_frontend
+        if: env.FRONTEND_RELEASED == 'true'
+        run: node scripts/ops/release-smoke.mjs frontend https://simsa-frontend.vercel.app
+
+      # Restores the exact pre-release pair whenever a promotion, alias check or
+      # production smoke fails: every component still serving its candidate goes
+      # back to the recorded deployment, frontend before backend. Always fails.
+      - name: Roll back automatically after a failed promotion or smoke check
+        if: >-
+          failure() && (steps.promote_backend.outcome == 'failure' || steps.smoke_backend.outcome == 'failure'
+          || steps.promote_frontend.outcome == 'failure' || steps.smoke_frontend.outcome == 'failure')
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          BACKEND_PROJECT: ${{ vars.VERCEL_BACKEND_PROJECT_ID }}
+          FRONTEND_PROJECT: ${{ vars.VERCEL_FRONTEND_PROJECT_ID }}
+          BACKEND_TARGET: ${{ steps.previous.outputs.backend_target }}
+          FRONTEND_TARGET: ${{ steps.previous.outputs.frontend_target }}
+        run: |
+          set -Euo pipefail
+          evidence="$RUNNER_TEMP/release-evidence"
+          failed=0
+          rolled=()
+          rollback() {
+            local component=$1 candidate=$2 target=$3 project=$4 serving
+            [ -n "$candidate" ] || return 0
+            if ! serving="$(node scripts/ops/vercel-release.mjs current --component "$component" | jq -r .id)"; then
+              echo "::error::Cannot read the $component alias; check it manually and run: vercel promote $target --yes"
+              failed=1
+              return 0
+            fi
+            [ "$serving" = "$candidate" ] || return 0 # Candidate is not serving: nothing to undo.
+            if [[ "$target" =~ ^dpl_ ]] && VERCEL_PROJECT_ID="$project" vercel promote "$target" --yes --timeout 5m \
+              && node scripts/ops/vercel-release.mjs serving --component "$component" --deployment "$target" > "$evidence/rolled-back-$component.json"; then
+              rolled+=("$component -> $target")
+            else
+              echo "::error::AUTOMATIC ROLLBACK OF $component FAILED. Run now: vercel promote $target --yes"
+              failed=1
+            fi
+          }
+          rollback frontend "$FRONTEND_CANDIDATE" "$FRONTEND_TARGET" "$FRONTEND_PROJECT"
+          rollback backend "$BACKEND_CANDIDATE" "$BACKEND_TARGET" "$BACKEND_PROJECT"
+          if [ "${#rolled[@]}" -gt 0 ]; then
+            node scripts/ops/release-smoke.mjs backend https://simsa-backend.vercel.app || { echo '::error::Backend smoke still fails after rollback.'; failed=1; }
+            node scripts/ops/release-smoke.mjs frontend https://simsa-frontend.vercel.app || { echo '::error::Frontend smoke still fails after rollback.'; failed=1; }
+          fi
+          {
+            echo
+            echo '## Release FAILED and was rolled back automatically'
+            echo
+            echo "Rolled back: ${rolled[*]:-nothing}. Rollback result: $([ "$failed" = 0 ] && echo verified || echo 'INCOMPLETE - act manually using rollback.md')."
+            echo 'If a `vercel promote` timed out, re-check both aliases: Vercel may finish a timed-out promotion in the background.'
+          } | tee "$evidence/rollback-result.md" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$failed" = 0 ]; then
+            echo "::error::Post-promotion check failed; production was rolled back (${rolled[*]:-no candidate was serving}). See the job summary."
+          else
+            echo '::error::Post-promotion check failed and the AUTOMATIC ROLLBACK DID NOT COMPLETE. Act now using rollback.md in the job summary.'
+          fi
+          exit 1
+
+      - name: Final operations probe
+        env:
+          OPERATIONS_MONITOR_TOKEN: ${{ secrets.OPERATIONS_MONITOR_TOKEN }}
+        run: |
+          node scripts/check-operations.mjs || {
+            echo '::error::Operations probe is unhealthy after the release. Smoke checks passed, so the new deployments were kept; check the Super Admin panel and use rollback.md if the release caused it.'
+            exit 1
+          }
+
+      - name: Upload promotion evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: simsa-release-promotion-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-evidence
+          if-no-files-found: warn
+          retention-days: 90

@@ -1,0 +1,16 @@
+# Pencatatan preservasi dan pemeriksaan bitstream
+
+SIMSA membedakan pemeriksaan integritas yang dijalankan oleh sistem dari pencatatan tindakan yang dilakukan dengan perangkat lain. Pilihan migrasi, konversi, enkapsulasi, emulasi, replikasi, refreshing, dan backup tidak menjalankan perangkat konversi atau membuktikan sebuah format memenuhi standar preservasi.
+
+Catatan sebelum migrasi `0037_preservation_activity_evidence` tetap berstatus `legacy_unverified`. Isi historis dipertahankan dan tidak dijadikan bukti pelaksanaan terverifikasi secara otomatis.
+
+- `integrity_check` menghasilkan `system_integrity_check`: bitstream dibaca ulang; hash baseline dan hasil, kecocokan, waktu, identitas sumber, dan audit disimpan. Ketidakcocokan tampil sebagai kegagalan integritas.
+- Tindakan lainnya menghasilkan `external_activity_recorded`: wajib memilih berkas hasil dan dokumen bukti/kendali mutu yang berbeda dari sumber, memasukkan nama/versi perangkat serta waktu tindakan. Ketiga lampiran harus milik arsip yang sama, privat dan bersih malware; ketiganya dibaca ulang sebelum pencatatan. Status ini menyatakan bukti tercatat, bukan SIMSA melakukan konversi atau ANRI menyetujui hasilnya.
+
+Di tab **Preservasi Digital**, petugas dapat mengunggah hasil/bukti melalui jalur lampiran biasa. File masuk karantina dan hanya dapat dipilih setelah pemeriksaan malware serta integritas. Grant kelola, legal hold, dan penguncian arsip yang sedang disusutkan tetap berlaku. Sistem membaca ulang akun aktif, peran dan unit di dalam transaksi, mengunci akun dan grant yang digunakan, lalu memeriksa kembali masa berlaku akses setelah membaca berkas. Cek format, mutu, keterbacaan, kelengkapan, SOP dan kewenangan tetap ditetapkan dan ditinjau petugas yang berwenang.
+
+API `POST /api/arsip-elektronik/:id/preservasi` menerima `action`, `details`, dan `notes`; tindakan eksternal juga memerlukan `outputAttachmentId`, `evidenceAttachmentId`, `toolName`, `toolVersion`, `activityAt` (ISO timestamp). Pilihan lampiran bernama tersedia melalui `GET /api/arsip-elektronik/:id/preservasi/options`. Klien tidak dapat memasok status verifikasi/mode sendiri. Metadata sumber/hasil/bukti, hash snapshot dan audit ditulis bersama. Hash memakai normalisasi JSON dengan kunci objek terurut sehingga dapat dihitung ulang dari JSONB yang tersimpan; urutan array tetap bermakna. Mismatch menolak pencatatan eksternal tetapi mempertahankan status kerusakan dan audit pemeriksaan apabila aktor masih berwenang. Izin yang kedaluwarsa membatalkan seluruh transaksi.
+
+Riwayat bersifat append-only; koreksi dicatat sebagai tindakan baru. Referensi lampiran memakai FK, dan baseline berkas yang telah dijadikan bukti tidak dapat diganti. Pemutakhiran status pemeriksaan integritas tetap diperbolehkan agar kerusakan tidak tersembunyi. Role aplikasi tidak memiliki `UPDATE`/`DELETE` atas `preservasi_track`.
+
+Penghapusan lampiran sekarang menguji FK/trigger database sebelum memanggil storage; jika storage tidak memastikan penghapusan, transaksi metadata dibatalkan. PostgreSQL dan object storage tidak berbagi transaksi terdistribusi: kegagalan commit database setelah storage berhasil tetap membutuhkan rekonsiliasi operasional. Perubahan ini tidak menjalankan penghapusan maupun mengaktifkan konversi otomatis.

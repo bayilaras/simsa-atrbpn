@@ -38,10 +38,11 @@ const regulatoryRuleSetService = {
     },
 
     verifySourceDocumentFromBlob(id, blobUrl, originalFileName) {
+        // Retrieval and PDF inspection may use the full 300s server runtime.
         return api.post(`${API_BASE}/${id}/source-document/verify-blob`, {
             blobUrl,
             originalFileName,
-        });
+        }, { timeoutMs: 300_000 });
     },
 
     async fetchSourceDocument(id, { download = false } = {}) {

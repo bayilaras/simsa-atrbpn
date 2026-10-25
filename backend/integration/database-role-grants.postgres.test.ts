@@ -48,7 +48,16 @@ afterAll(async () => {
 
 describe('least-privilege PostgreSQL runtime grants', () => {
     const quoteIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`;
-    it('preinstalls the exact pgcrypto extension outside migrator ownership', async () => {
+    // pgcrypto dari bootstrap 0001; pg_trgm (0049 Lacak) dari langkah privileged terpisah
+    // grants/0003 yang CI jalankan sebagai administrator grant sebelum db:migrate.
+    it('preinstalls exactly pgcrypto (0001) and pg_trgm (0003, before 0049) besides plpgsql', async () => {
+        const rows = await sql<{ extname: string }[]>`
+            SELECT extname FROM pg_catalog.pg_extension WHERE extname <> 'plpgsql' ORDER BY extname
+        `;
+        expect(rows.map(({ extname }) => extname)).toEqual(['pg_trgm', 'pgcrypto']);
+    });
+
+    it.each(['pgcrypto', 'pg_trgm'])('preinstalls the exact %s extension owned by the grant administrator, never the migrator', async (extensionName) => {
         const [extension] = await sql<{
             extversion: string;
             default_version: string;
@@ -62,7 +71,7 @@ describe('least-privilege PostgreSQL runtime grants', () => {
             FROM pg_catalog.pg_extension e
             JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace
             JOIN pg_catalog.pg_available_extensions available ON available.name = e.extname
-            WHERE e.extname = 'pgcrypto'
+            WHERE e.extname = ${extensionName}
         `;
         expect(extension).toEqual({
             extversion: extension.default_version,
@@ -267,6 +276,17 @@ describe('least-privilege PostgreSQL runtime grants', () => {
             SELECT pg_catalog.has_schema_privilege(${principals.api}, 'public', 'CREATE') AS can_create
         `;
         expect(schema.can_create).toBe(false);
+        for (const table of [
+            'rangkaian_surat',
+            'rangkaian_anggota',
+            'rangkaian_relasi',
+            'rangkaian_peserta',
+            'rangkaian_koreksi_berkas',
+        ]) {
+            await expect(tablePrivilege(principals.api, table, 'INSERT')).resolves.toBe(true);
+            await expect(tablePrivilege(principals.api, table, 'UPDATE')).resolves.toBe(true);
+            await expect(tablePrivilege(principals.api, table, 'DELETE')).resolves.toBe(false);
+        }
     });
 
     it('limits event and malware workers to their operational queues', async () => {

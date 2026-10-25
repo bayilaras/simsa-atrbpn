@@ -1,6 +1,6 @@
-import { pgTable, uuid, varchar, text, integer, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, integer, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { unitKerja } from './unit-kerja';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 
 /**
  * Storage Locations - Hierarchical storage structure
@@ -18,7 +18,10 @@ export const storageLocations = pgTable('storage_locations', {
     currentCount: integer('current_count').default(0), // Current arsip items in this location
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => [
+    uniqueIndex('storage_locations_unit_code_unique_idx')
+        .on(table.unitKerjaId, sql`lower(btrim(${table.code}))`),
+]);
 
 export const storageLocationsRelations = relations(storageLocations, ({ one, many }) => ({
     unitKerja: one(unitKerja, {

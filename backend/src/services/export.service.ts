@@ -1,8 +1,11 @@
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
+import { EXPORT_ROW_LIMIT, requireCompleteExport } from './export-completeness.js';
 import { suratMasukService, SuratMasukFilters } from './surat-masuk.service';
 import { suratKeluarService, SuratKeluarFilters } from './surat-keluar.service';
 import { arsipService, ArsipFilters } from './arsip.service';
+import { ASAL_NASKAH_LABEL, resolveBalasanLabels } from './export-balasan';
+import { sifatSuratLabel } from './sifat-surat.js';
 
 export interface ExportOptions {
     format: 'excel' | 'pdf';
@@ -40,11 +43,12 @@ export class ExportService {
      *          Perihal, Dari, Kepada, Status, Disposisi, Timestamp, Status Arsip
      */
     async generateExcelSuratMasuk(filters: SuratMasukFilters): Promise<Buffer> {
-        const { data } = await suratMasukService.findAll({
+        const result = await suratMasukService.findAll({
             ...filters,
             page: 1,
-            limit: 10000,
+            limit: EXPORT_ROW_LIMIT,
         });
+        const data = requireCompleteExport(result);
 
         const workbook = new ExcelJS.Workbook();
         workbook.creator = 'SIMSA ATR/BPN';
@@ -125,15 +129,17 @@ export class ExportService {
     /**
      * Export Surat Keluar to Excel — format matches Google Spreadsheet structure
      * Columns: ID, No Urut, Jenis Surat, Nomor Surat, Tanggal Surat,
-     *          Perihal, Tujuan, Link Dokumen, Tanggal Input, Balasan Untuk,
+     *          Perihal, Tujuan, Link Dokumen, Tanggal Input, Balasan Untuk (nomor), Asal Naskah,
      *          Klasifikasi Arsip, Klasifikasi Kode, Klasifikasi Jenis
      */
     async generateExcelSuratKeluar(filters: SuratKeluarFilters): Promise<Buffer> {
-        const { data } = await suratKeluarService.findAll({
+        const result = await suratKeluarService.findAll({
             ...filters,
             page: 1,
-            limit: 10000,
+            limit: EXPORT_ROW_LIMIT,
         });
+        const data = requireCompleteExport(result);
+        const balasanLabels = await resolveBalasanLabels(data, filters.securityClassifications);
 
         const workbook = new ExcelJS.Workbook();
         workbook.creator = 'SIMSA ATR/BPN';
@@ -142,13 +148,13 @@ export class ExportService {
         const worksheet = workbook.addWorksheet('Surat Keluar');
 
         // Title section
-        worksheet.mergeCells('A1:M1');
+        worksheet.mergeCells('A1:O1');
         const titleCell = worksheet.getCell('A1');
         titleCell.value = 'DAFTAR SURAT KELUAR';
         titleCell.font = TITLE_FONT;
         titleCell.alignment = CENTER_ALIGN;
 
-        worksheet.mergeCells('A2:M2');
+        worksheet.mergeCells('A2:O2');
         const subtitleCell = worksheet.getCell('A2');
         subtitleCell.value = `Direktorat Jenderal Pengadaan Tanah dan Pengembangan Pertanahan — Tahun ${filters.tahun || 'Semua'}`;
         subtitleCell.font = { ...SUBTITLE_FONT, bold: false };
@@ -158,10 +164,10 @@ export class ExportService {
         const headerRow = 4;
         const headers = [
             'ID', 'No Urut', 'Jenis Surat', 'Nomor Surat', 'Tanggal Surat',
-            'Perihal', 'Tujuan', 'Link Dokumen', 'Tanggal Input', 'Balasan Untuk',
-            'Klasifikasi Arsip', 'Klasifikasi Kode', 'Klasifikasi Jenis'
+            'Perihal', 'Tujuan', 'Link Dokumen', 'Tanggal Input', 'Balasan Untuk', 'Asal Naskah',
+            'Klasifikasi Arsip', 'Klasifikasi Kode', 'Klasifikasi Jenis', 'Sifat Surat'
         ];
-        const colWidths = [20, 10, 18, 28, 15, 40, 25, 30, 18, 20, 28, 15, 15];
+        const colWidths = [20, 10, 18, 28, 15, 40, 25, 30, 18, 24, 16, 28, 15, 15, 15];
 
         headers.forEach((header, i) => {
             const cell = worksheet.getCell(headerRow, i + 1);
@@ -195,10 +201,12 @@ export class ExportService {
                 item.kepada || '',
                 item.linkDokumen || '',
                 item.createdAt ? new Date(item.createdAt).toLocaleString('id-ID') : '',
-                item.balasanUntuk || '',
+                balasanLabels.get(item.id) || '',
+                ASAL_NASKAH_LABEL[item.asalNaskah ?? ''] || '',
                 item.klasifikasiFasilitatif || item.klasifikasiSubstantif || '',
                 item.klasifikasiFasilitatifKode || item.klasifikasiSubstantifKode || '',
                 klasifikasiJenis,
+                sifatSuratLabel(item.sifatSurat),
             ];
 
             rowData.forEach((val, i) => {
@@ -206,7 +214,7 @@ export class ExportService {
                 cell.value = val;
                 cell.font = DATA_FONT;
                 cell.border = THIN_BORDER;
-                cell.alignment = i === 5 || i === 6 || i === 7 || i === 10 ? LEFT_ALIGN : CENTER_ALIGN;
+                cell.alignment = i === 5 || i === 6 || i === 7 || i === 11 ? LEFT_ALIGN : CENTER_ALIGN;
             });
         });
 
@@ -221,11 +229,12 @@ export class ExportService {
      * Tingkat Perkembangan, Lokasi Simpan, Tingkat Klasifikasi Keamanan & Akses, Ket.
      */
     async generateExcelArsip(filters: ArsipFilters, formulirType: string = 'formulir4'): Promise<Buffer> {
-        const { data } = await arsipService.findAll({
+        const result = await arsipService.findAll({
             ...filters,
             page: 1,
-            limit: 10000,
+            limit: EXPORT_ROW_LIMIT,
         });
+        const data = requireCompleteExport(result);
 
         const workbook = new ExcelJS.Workbook();
         workbook.creator = 'SIMSA ATR/BPN';
@@ -559,11 +568,12 @@ export class ExportService {
     // ============== PDF EXPORTS ==============
 
     async generatePdfSuratMasuk(filters: SuratMasukFilters): Promise<Buffer> {
-        const { data } = await suratMasukService.findAll({
+        const result = await suratMasukService.findAll({
             ...filters,
             page: 1,
-            limit: 10000,
+            limit: EXPORT_ROW_LIMIT,
         });
+        const data = requireCompleteExport(result);
 
         return new Promise((resolve, reject) => {
             const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 30 });
@@ -630,11 +640,12 @@ export class ExportService {
     }
 
     async generatePdfSuratKeluar(filters: SuratKeluarFilters): Promise<Buffer> {
-        const { data } = await suratKeluarService.findAll({
+        const result = await suratKeluarService.findAll({
             ...filters,
             page: 1,
-            limit: 10000,
+            limit: EXPORT_ROW_LIMIT,
         });
+        const data = requireCompleteExport(result);
 
         return new Promise((resolve, reject) => {
             const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 30 });
@@ -702,11 +713,12 @@ export class ExportService {
      * Export Arsip to PDF — Formulir 4 or 6 format
      */
     async generatePdfArsip(filters: ArsipFilters, formulirType: string = 'formulir4'): Promise<Buffer> {
-        const { data } = await arsipService.findAll({
+        const result = await arsipService.findAll({
             ...filters,
             page: 1,
-            limit: 10000,
+            limit: EXPORT_ROW_LIMIT,
         });
+        const data = requireCompleteExport(result);
 
         return new Promise((resolve, reject) => {
             const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 30 });

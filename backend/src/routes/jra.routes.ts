@@ -91,7 +91,7 @@ router.use(authMiddleware);
  *       200:
  *         description: List of JRA
  */
-router.get('/', async (req: AuthRequest, res: Response) => {
+router.get('/', async (req: AuthRequest, res: Response, next) => {
     try {
         const { tipe, search, format, ruleSetId } = req.query;
 
@@ -109,7 +109,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         res.json({ success: true, data });
     } catch (error) {
         log.error({ err: error }, 'Error fetching JRA:');
-        res.status(500).json({ error: 'Internal server error' });
+        next(error);
     }
 });
 
@@ -133,7 +133,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
  *       404:
  *         description: Not found
  */
-router.get('/:kode', async (req: AuthRequest, res: Response) => {
+router.get('/:kode', async (req: AuthRequest, res: Response, next) => {
     try {
         const kode = req.params.kode as string;
         const item = await jraService.getByKode(kode, req.query.ruleSetId as string);
@@ -145,7 +145,7 @@ router.get('/:kode', async (req: AuthRequest, res: Response) => {
         res.json({ success: true, data: item });
     } catch (error) {
         log.error({ err: error }, 'Error fetching JRA:');
-        res.status(500).json({ error: 'Internal server error' });
+        next(error);
     }
 });
 

@@ -1,7 +1,12 @@
+import { buildSuratFormPayload } from '@/lib/surat-form-payload'
+import { buildSuratArchiveSelection, readSuratArchiveSelection, selectedSuratArchiveRules, validateSuratArchiveSelection } from '@/lib/surat-archive-selection'
+import { archiveUploadError } from '@/lib/archive-upload';
 import { createElement, useCallback, useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useAppConfig } from '@/context/app-config-context';
+import { useToast } from '@/hooks/use-toast';
+import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { suratMasukService } from '@/services/surat-masuk.service';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { useAutoSave } from '@/hooks/useAutoSave';
@@ -28,8 +33,12 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { SearchableSelect } from '@/components/ui/searchable-select';
-import { MultiSelect } from '@/components/ui/multi-select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useLacakSearch } from '@/hooks/use-lacak-search';
+import { useDisposisiOpsi } from '@/hooks/use-disposisi-opsi';
+import { ReferensiSection } from '@/components/surat-keluar/ReferensiSection';
+import { DisposisiRegistrasiSection } from '@/components/surat-masuk/DisposisiRegistrasiSection';
+import { PESAN_TERKENDALI, isSifatTerkendali } from '@/lib/tindak-lanjut';
 import {
     MailOpen,
     ChevronLeft,
@@ -40,6 +49,7 @@ import {
     AlertCircle,
     X,
     Link as LinkIcon,
+    Lock,
     User,
     Users,
     Calendar,
@@ -47,7 +57,6 @@ import {
     FileType,
     Zap,
     FolderOpen,
-    ArrowRight,
     Info,
     CheckCircle2,
     Clock
@@ -119,44 +128,63 @@ const KETERANGAN_OPTIONS = [
     { value: 'disposisi_menteri', label: 'Disposisi Menteri', icon: '📜' },
 ];
 
-// Disposisi options
-const DISPOSISI_OPTIONS = [
-    'Ditjen',
-    'SekDitjen',
-    'Dit. BPPT',
-    'Dit. PTEP',
-    'Dit. KTPP',
-    'Kabag Program dan Hukum',
-    'Kabag Kepegawaian Keuangan dan Umum',
-];
+// Identitas surat yang perubahannya wajib beralasan bila surat anggota rangkaian (T24-3, F-I1).
+const KOLOM_IDENTITAS = ['nomorSurat', 'perihal', 'sifatSurat'];
 
 export default function TambahSuratMasuk() {
     const { id } = useParams(); // Get ID from URL for edit mode
     const isEditMode = Boolean(id);
     const { user } = useAuth();
     const { capabilities } = useAppConfig();
-    const filesEnabled = capabilities.files;
+    const { toast } = useToast();
+    const reducedMotion = useReducedMotion();
+    const filesEnabled = capabilities.letterFileUploads ?? capabilities.fileUploads;
     const navigate = useNavigate();
     const fileInputRef = useRef(null);
     const errorRef = useRef(null);
+    const saveLockedRef = useRef(false);
+    const navigationTimerRef = useRef(null);
+    const mountedRef = useRef(true);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [fieldErrors, setFieldErrors] = useState({});
     const [success, setSuccess] = useState(false);
+    const saveLocked = isSubmitting || success;
     const [selectedFile, setSelectedFile] = useState(null);
     const [existingFile, setExistingFile] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
     const [recordUnitKerjaId, setRecordUnitKerjaId] = useState('');
     const [numberPreview, setNumberPreview] = useState(null);
+    const [rangkaian, setRangkaian] = useState(null);
+    const [alasanKoreksi, setAlasanKoreksi] = useState('');
+    const [referensi, setReferensi] = useState(null);
+    const originalRef = useRef({ nomorSurat: '', perihal: '', sifatSurat: 'biasa' });
     const unitScope = useRequiredUnitKerjaScope(user, {
         fixedUnitKerjaId: isEditMode ? recordUnitKerjaId : '',
     });
     const resolvedUnitKerjaId = isEditMode ? recordUnitKerjaId : unitScope.unitKerjaId;
 
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            clearTimeout(navigationTimerRef.current);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!error || isLoading) return;
+        errorRef.current?.focus();
+        errorRef.current?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' });
+    }, [error, fieldErrors, isLoading, reducedMotion]);
+
     // Unsaved changes warning & auto-save draft
     const { setDirty, resetDirty } = useUnsavedChanges();
-    const { saveDraft, clearDraft, restoreDraft, saveStatus } = useAutoSave('tambah-surat-masuk');
+    const { saveDraft, clearDraft, restoreDraft, saveStatus } = useAutoSave(
+        isEditMode ? `edit-surat-masuk-${id}` : 'tambah-surat-masuk'
+    );
 
     // Form state
     const [formData, setFormData] = useState({
@@ -169,15 +197,15 @@ export default function TambahSuratMasuk() {
         kepada: '',
         klasifikasiKode: '',
         klasifikasiUraian: '',
-        jraKode: '',
-        jraUraian: '',
-        jraRetensiAktif: '',
-        jraRetensiInaktif: '',
-        jraKeterangan: '',
+        ...readSuratArchiveSelection(),
         keterangan: '',
         disposisi: [],
+        disposisiPj: '',
+        disposisiBatasWaktu: '',
+        disposisiInstruksi: '',
         linkDokumen: '',
     });
+    const archiveRules = selectedSuratArchiveRules(formData);
 
     // Restore draft on mount (only for new entries, not edit mode)
     useEffect(() => {
@@ -187,18 +215,49 @@ export default function TambahSuratMasuk() {
                 const shouldRestore = window.confirm('Ditemukan draft yang belum disimpan. Muat draft tersebut?');
                 if (shouldRestore) {
                     setFormData(draft);
+                    setDirty();
                 } else {
                     clearDraft();
                 }
             }
         }
-    }, [clearDraft, isEditMode, restoreDraft]);
+    }, [clearDraft, isEditMode, restoreDraft, setDirty]);
 
     const fetchSuratData = useCallback(async () => {
         setIsLoading(true);
         try {
             const data = await suratMasukService.getById(id);
+            // getById now succeeds cross-unit and reports how: 'owner' for the
+            // owning unit, anything else (e.g. via a rangkaian as pengawas or
+            // peserta) is read-only. Never populate the form or write a draft
+            // for a record we cannot mutate -- send the reader to the detail
+            // page instead.
+            if (data.aksesMelalui && data.aksesMelalui !== 'owner') {
+                toast({
+                    title: 'Tidak dapat diubah',
+                    description: 'Surat ini hanya dapat dilihat, tidak dapat diubah.',
+                    variant: 'destructive',
+                });
+                navigate(`/surat/masuk/${id}`);
+                return;
+            }
+            // F5/T24-4: server adalah otoritas atas aksi yang diizinkan.
+            if (Array.isArray(data.aksiDiizinkan) && !data.aksiDiizinkan.includes('edit')) {
+                toast({
+                    title: 'Tidak dapat diubah',
+                    description: 'Surat ini tidak dapat diubah dari unit Anda',
+                    variant: 'destructive',
+                });
+                navigate(`/surat/masuk/${id}`, { replace: true });
+                return;
+            }
             setRecordUnitKerjaId(data.unitKerjaId || '');
+            setRangkaian(data.rangkaian || null);
+            originalRef.current = {
+                nomorSurat: data.nomorSurat || '',
+                perihal: data.perihal || '',
+                sifatSurat: data.sifatSurat || 'biasa',
+            };
             // Map fetched data to form fields
             setFormData({
                 jenisSurat: data.jenisSurat || '',
@@ -210,17 +269,13 @@ export default function TambahSuratMasuk() {
                 kepada: data.kepada || '',
                 klasifikasiKode: data.klasifikasiKode || '',
                 klasifikasiUraian: data.klasifikasiUraian || '',
-                jraKode: data.jraKode || '',
-                jraUraian: data.jraUraian || '',
-                jraRetensiAktif: data.jraRetensiAktif || '',
-                jraRetensiInaktif: data.jraRetensiInaktif || '',
-                jraKeterangan: data.jraKeterangan || '',
+                ...readSuratArchiveSelection(data),
                 keterangan: data.keterangan || '',
                 disposisi: Array.isArray(data.disposisi) ? data.disposisi : (data.disposisi ? [data.disposisi] : []),
-                linkDokumen: filesEnabled ? (data.linkDokumen || '') : '',
+                linkDokumen: data.linkDokumen || '',
             });
             // Track existing file info
-            if (filesEnabled && data.filePath) {
+            if (data.filePath) {
                 setExistingFile({
                     path: data.filePath,
                     name: data.fileOriginalName || (data.filePath.startsWith('blob:') || data.filePath.startsWith('gdrive:') ? 'Dokumen Lampiran' : data.filePath.split('/').pop()),
@@ -232,7 +287,7 @@ export default function TambahSuratMasuk() {
         } finally {
             setIsLoading(false);
         }
-    }, [filesEnabled, id]);
+    }, [id, navigate, toast]);
 
     // Fetch existing data for edit mode.
     useEffect(() => {
@@ -260,38 +315,60 @@ export default function TambahSuratMasuk() {
         return () => { active = false; };
     }, [formData.tanggalSurat, isEditMode, resolvedUnitKerjaId]);
 
+    // Unit tujuan disposisi (D6) & chip instruksi + status jalur akses (§7); tidak dimuat pada edit.
+    const { units, instruksi: opsiInstruksi, jalurAksesTerkendali, loading: loadingUnits } = useDisposisiOpsi(isEditMode ? '' : resolvedUnitKerjaId);
+    const pisahkanDisposisi = (pilihan = []) => ({
+        targets: pilihan.filter((value) => units.some((unit) => unit.id === value)),
+        labels: pilihan.filter((value) => !units.some((unit) => unit.id === value)),
+    });
+
+    // Peringatan duplikat nomor (§6 Lacak mode cek); tidak aktif pada edit.
+    const cekNomor = useLacakSearch(isEditMode ? '' : formData.nomorSurat, { mode: 'cek' });
+    const duplikat = cekNomor.data?.kelompok ?? [];
+
+    // T24-3: surat bagian rangkaian yang identitasnya berubah wajib disertai alasan koreksi.
+    const rangkaianTerkunci = isEditMode && rangkaian?.status === 'diberkaskan';
+    const perluAlasanKoreksi = isEditMode && rangkaian != null && (
+        formData.nomorSurat !== originalRef.current.nomorSurat
+        || formData.perihal !== originalRef.current.perihal
+        || formData.sifatSurat !== originalRef.current.sifatSurat
+    );
+
     // Handle input changes
     const handleChange = (field, value) => {
+        if (saveLockedRef.current) return;
         setFormData(prev => {
             const updated = { ...prev, [field]: value };
             saveDraft(updated);
             return updated;
         });
         setError(null);
+        setFieldErrors(prev => ({ ...prev, [field]: undefined }));
         setDirty();
     };
 
     // Handle file selection
     const handleFileSelect = (e) => {
+        if (saveLockedRef.current) return;
         const file = e.target.files?.[0];
         if (file) {
-            const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'];
-            if (!allowedTypes.includes(file.type)) {
-                setError('Tipe file tidak didukung. Gunakan PDF, DOC, DOCX, JPG, atau PNG.');
-                return;
-            }
-            if (file.size > 10 * 1024 * 1024) {
-                setError('Ukuran file maksimal 10MB');
+            const validationError = archiveUploadError(file);
+            if (validationError) {
+                setError(validationError);
                 return;
             }
             setSelectedFile(file);
             setError(null);
+            setFieldErrors(prev => ({ ...prev, linkDokumen: undefined }));
+            setDirty();
         }
     };
 
     // Remove selected file
     const removeFile = () => {
+        if (saveLockedRef.current) return;
         setSelectedFile(null);
+        setDirty();
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
@@ -299,16 +376,31 @@ export default function TambahSuratMasuk() {
 
     // Validate form
     const validateForm = () => {
-        if (!resolvedUnitKerjaId) return 'Pilih unit kerja terlebih dahulu';
-        if (!formData.jenisSurat) return 'Jenis Surat wajib diisi';
-        if (!formData.tanggalSurat) return 'Tanggal Surat wajib diisi';
-        if (!formData.perihal) return 'Perihal wajib diisi';
-        if (!formData.dari) return 'Pengirim (Dari) wajib diisi';
-        if (!formData.kepada) return 'Penerima (Kepada) wajib diisi';
-        if (!formData.disposisi || formData.disposisi.length === 0) return 'Disposisi wajib diisi';
+        if (!resolvedUnitKerjaId) return { message: 'Pilih unit kerja terlebih dahulu' };
+        const archiveSelectionError = validateSuratArchiveSelection(formData);
+        if (archiveSelectionError) return { message: archiveSelectionError };
+        if (!formData.jenisSurat) return { field: 'jenisSurat', message: 'Jenis Surat wajib diisi' };
+        if (!formData.tanggalSurat) return { message: 'Tanggal Surat wajib diisi' };
+        if (!formData.perihal) return { message: 'Perihal wajib diisi' };
+        if (!formData.dari) return { message: 'Pengirim (Dari) wajib diisi' };
+        if (!formData.kepada) return { message: 'Penerima (Kepada) wajib diisi' };
+        if (perluAlasanKoreksi && alasanKoreksi.trim().length < 10) {
+            return { field: 'alasanKoreksi', message: 'Alasan koreksi wajib diisi, minimal 10 karakter' };
+        }
+        if (!isEditMode) {
+            const { targets } = pisahkanDisposisi(formData.disposisi);
+            if (targets.length > 0 && isSifatTerkendali(formData.sifatSurat) && !jalurAksesTerkendali) {
+                return { field: 'disposisi', message: PESAN_TERKENDALI };
+            }
+        }
+        if (!formData.disposisi || formData.disposisi.length === 0) {
+            if (!window.confirm('Surat belum didisposisikan. Simpan tanpa disposisi?')) {
+                return { field: 'disposisi', message: 'Disposisi wajib diisi' };
+            }
+        }
         // For edit mode, allow existing file or link
         if (filesEnabled && !formData.linkDokumen && !selectedFile && !existingFile) {
-            return 'Link dokumen atau upload berkas wajib diisi (salah satu)';
+            return { field: 'linkDokumen', message: 'Link dokumen atau upload berkas wajib diisi (salah satu)' };
         }
         return null;
     };
@@ -316,50 +408,72 @@ export default function TambahSuratMasuk() {
     // Handle form submission
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (saveLockedRef.current) return;
 
         const validationError = validateForm();
         if (validationError) {
-            setError(validationError);
-            // Auto-scroll ke error agar user tahu field mana yang belum diisi
-            setTimeout(() => {
-                errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }, 100);
+            setError(validationError.message);
+            setFieldErrors(validationError.field ? { [validationError.field]: validationError.message } : {});
             return;
         }
 
+        // Lock synchronously: consecutive submit events can precede React's next render.
+        saveLockedRef.current = true;
         setIsSubmitting(true);
         setError(null);
+        setFieldErrors({});
 
         try {
-            const dataToSubmit = {
-                ...formData,
-                linkDokumen: filesEnabled ? formData.linkDokumen : '',
-                unitKerjaId: resolvedUnitKerjaId,
-            };
+            const dataToSubmit = buildSuratFormPayload(formData, resolvedUnitKerjaId, filesEnabled);
+            const { disposisiPj, disposisiBatasWaktu, disposisiInstruksi, disposisi: pilihan, ...dasar } = dataToSubmit;
 
             if (isEditMode) {
+                // F-I1: nomor/perihal/sifat hanya dikirim bila pengguna mengubahnya.
+                // Nilai lama yang tidak ternormalisasi (sifat NULL, spasi ganda dari
+                // impor) jangan sampai terbaca server sebagai koreksi identitas.
+                const identitasBerubah = Object.fromEntries(Object.entries(dasar)
+                    .filter(([kolom]) => !KOLOM_IDENTITAS.includes(kolom) || formData[kolom] !== originalRef.current[kolom]))
                 // Tahun tidak dikirim saat edit agar tahun asli surat tidak tertimpa
-                await suratMasukService.update(id, dataToSubmit, filesEnabled ? selectedFile : null);
+                await suratMasukService.update(id, {
+                    ...identitasBerubah,
+                    disposisi: pilihan,
+                    ...(perluAlasanKoreksi ? { alasan: alasanKoreksi.trim() } : {}),
+                }, filesEnabled ? selectedFile : null);
             } else {
                 // Create new surat
+                const { targets, labels } = pisahkanDisposisi(pilihan);
+                const disposisi = targets.length > 0 ? {
+                    targets: targets.map((unitKerjaId) => ({
+                        unitKerjaId,
+                        penanggungJawab: unitKerjaId === disposisiPj,
+                        ...(disposisiBatasWaktu ? { batasWaktu: disposisiBatasWaktu } : {}),
+                    })),
+                    instruksi: disposisiInstruksi?.trim() || null,
+                    labelTambahan: labels,
+                } : labels;
                 await suratMasukService.create({
-                    ...dataToSubmit,
+                    ...dasar,
+                    disposisi,
+                    ...(referensi ? { referensi: { jenis: 'surat_keluar', id: referensi.suratId } } : {}),
                     tahun: Number(formData.tanggalSurat.slice(0, 4)) || new Date().getFullYear(),
                 }, filesEnabled ? selectedFile : null);
             }
+            if (!mountedRef.current) return;
             resetDirty();
             clearDraft();
             setSuccess(true);
 
-            setTimeout(() => {
+            navigationTimerRef.current = setTimeout(() => {
                 navigate('/surat/masuk', {
                     state: { message: isEditMode ? 'Surat masuk berhasil diperbarui' : 'Surat masuk berhasil ditambahkan' }
                 });
             }, 1500);
         } catch (err) {
+            if (!mountedRef.current) return;
+            saveLockedRef.current = false;
             setError(err.message || 'Gagal menyimpan surat masuk');
         } finally {
-            setIsSubmitting(false);
+            if (mountedRef.current) setIsSubmitting(false);
         }
     };
 
@@ -459,12 +573,12 @@ export default function TambahSuratMasuk() {
 
             <RequiredUnitKerjaScope
                 scope={unitScope}
-                disabled={isEditMode || isSubmitting}
+                disabled={isEditMode || saveLocked}
             />
 
             {/* Error/Success Alerts */}
             {error && (
-                <Alert ref={errorRef} variant="destructive" className="animate-in slide-in-from-top-2">
+                <Alert ref={errorRef} tabIndex={-1} variant="destructive" className="animate-in slide-in-from-top-2">
                     <AlertCircle className="h-4 w-4" />
                     <AlertDescription>{error}</AlertDescription>
                 </Alert>
@@ -481,6 +595,7 @@ export default function TambahSuratMasuk() {
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-6">
+                <fieldset disabled={saveLocked} className="min-w-0 space-y-6">
                 {/* Section 1: Jenis & Klasifikasi Surat */}
                 <Card className="overflow-hidden border-border/50 shadow-sm transition-all hover:shadow-md">
                     <CardContent className="p-6 space-y-5">
@@ -500,12 +615,16 @@ export default function TambahSuratMasuk() {
                                 <SearchableSelect
                                     id="jenis-surat"
                                     ariaLabel="Jenis surat"
+                                    aria-invalid={Boolean(fieldErrors.jenisSurat)}
+                                    aria-describedby={fieldErrors.jenisSurat ? 'jenis-surat-error' : undefined}
+                                    disabled={saveLocked}
                                     options={JENIS_SURAT_OPTIONS}
                                     value={formData.jenisSurat}
                                     onValueChange={(v) => handleChange('jenisSurat', v)}
                                     placeholder="Pilih jenis naskah dinas..."
                                     searchPlaceholder="Cari jenis surat..."
                                 />
+                                {fieldErrors.jenisSurat && <p id="jenis-surat-error" className="text-sm text-destructive">{fieldErrors.jenisSurat}</p>}
                             </div>
 
                             <div className="space-y-2">
@@ -516,6 +635,7 @@ export default function TambahSuratMasuk() {
                                 <SearchableSelect
                                     id="sifat-surat"
                                     ariaLabel="Sifat surat"
+                                    disabled={saveLocked || rangkaianTerkunci}
                                     options={SIFAT_SURAT_OPTIONS.map(opt => ({ value: opt.value, label: opt.label }))}
                                     value={formData.sifatSurat}
                                     onValueChange={(v) => handleChange('sifatSurat', v)}
@@ -537,6 +657,13 @@ export default function TambahSuratMasuk() {
                             step={2}
                         />
 
+                        {rangkaianTerkunci && (
+                            <p className="text-xs font-medium text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                                <Lock className="h-3 w-3" aria-hidden="true" />
+                                Dikunci karena rangkaian sudah diberkaskan
+                            </p>
+                        )}
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div className="space-y-2">
                                 <Label htmlFor="nomor-surat" className="text-sm font-medium flex items-center gap-2">
@@ -548,6 +675,7 @@ export default function TambahSuratMasuk() {
                                     value={formData.nomorSurat}
                                     onChange={(e) => handleChange('nomorSurat', e.target.value)}
                                     placeholder="Kosongkan untuk nomor otomatis"
+                                    disabled={rangkaianTerkunci}
                                     className="h-11 focus-visible:ring-primary"
                                 />
                                 <p className="text-xs text-muted-foreground flex items-center gap-1">
@@ -558,6 +686,11 @@ export default function TambahSuratMasuk() {
                                     && numberPreview?.tanggalSurat === formData.tanggalSurat
                                     && numberPreview?.nomorSurat && (
                                     <p className="text-xs text-primary">Preview nomor otomatis: <code>{numberPreview.nomorSurat}</code></p>
+                                )}
+                                {duplikat.length > 0 && (
+                                    <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                                        {duplikat[0].rangkaian ? `Nomor sudah terdaftar / terkait ${duplikat[0].rangkaian.kode}` : 'Nomor sudah terdaftar'}
+                                    </p>
                                 )}
                             </div>
 
@@ -588,11 +721,62 @@ export default function TambahSuratMasuk() {
                                 onChange={(e) => handleChange('perihal', e.target.value)}
                                 placeholder="Tuliskan perihal/hal surat..."
                                 rows={3}
+                                disabled={rangkaianTerkunci}
                                 className="resize-none focus-visible:ring-primary"
                             />
                         </div>
+
+                        {perluAlasanKoreksi && (
+                            <div className="space-y-2">
+                                <Label htmlFor="alasan-koreksi" className="text-sm font-medium">
+                                    Alasan koreksi <span className="text-destructive">*</span>
+                                </Label>
+                                <Textarea
+                                    id="alasan-koreksi"
+                                    required
+                                    value={alasanKoreksi}
+                                    onChange={(e) => {
+                                        setAlasanKoreksi(e.target.value);
+                                        setError(null);
+                                        setFieldErrors(prev => ({ ...prev, alasanKoreksi: undefined }));
+                                        setDirty();
+                                    }}
+                                    placeholder="Jelaskan perubahan nomor/perihal/sifat surat ini..."
+                                    rows={3}
+                                    aria-invalid={Boolean(fieldErrors.alasanKoreksi)}
+                                    aria-describedby={fieldErrors.alasanKoreksi ? 'alasan-koreksi-error' : undefined}
+                                    className="resize-none focus-visible:ring-primary"
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    Surat ini bagian dari rangkaian; perubahan nomor/perihal/sifat dicatat.
+                                </p>
+                                {fieldErrors.alasanKoreksi && <p id="alasan-koreksi-error" className="text-sm text-destructive">{fieldErrors.alasanKoreksi}</p>}
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
+
+                {!isEditMode && (
+                    <Card className="overflow-hidden border-border/50 shadow-sm transition-all hover:shadow-md">
+                        <CardContent className="p-6 space-y-5">
+                            <SectionHeader
+                                icon={LinkIcon}
+                                title="Nomor Referensi (surat kita)"
+                                description="Isi bila surat ini membalas surat keluar kita (opsional)"
+                            />
+                            <ReferensiSection
+                                referensi={referensi}
+                                jenisFilter="surat_keluar"
+                                label="Nomor Referensi (surat kita)"
+                                relasiTetap
+                                onPilih={(pilihan) => { setReferensi({ ...pilihan, jenisRelasi: 'merujuk' }); setDirty(); }}
+                                onHapus={() => { setReferensi(null); setDirty(); }}
+                                onUbahRelasi={() => undefined}
+                                disabled={saveLocked || !resolvedUnitKerjaId}
+                            />
+                        </CardContent>
+                    </Card>
+                )}
 
                 {/* Section 3: Pengirim & Penerima */}
                 <Card className="overflow-hidden border-border/50 shadow-sm transition-all hover:shadow-md">
@@ -662,20 +846,32 @@ export default function TambahSuratMasuk() {
                                 </Select>
                             </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="disposisi-surat" className="text-sm font-medium flex items-center gap-2">
-                                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                                    Disposisi ke <span className="text-destructive">*</span>
-                                </Label>
-                                <MultiSelect
-                                    id="disposisi-surat"
-                                    ariaLabel="Penerima disposisi"
-                                    options={DISPOSISI_OPTIONS.map(opt => ({ label: opt, value: opt }))}
-                                    selected={formData.disposisi}
-                                    onChange={(val) => handleChange('disposisi', val)}
-                                    placeholder="Pilih penerima disposisi..."
-                                    className="w-full focus-visible:ring-primary"
+                            <div className="space-y-2 md:col-span-2">
+                                <DisposisiRegistrasiSection
+                                    isEditMode={isEditMode}
+                                    units={units}
+                                    value={formData.disposisi}
+                                    onChange={(val) => {
+                                        handleChange('disposisi', val);
+                                        if (!val.includes(formData.disposisiPj)) handleChange('disposisiPj', '');
+                                    }}
+                                    penanggungJawab={formData.disposisiPj}
+                                    onPenanggungJawab={(unitId) => handleChange('disposisiPj', unitId)}
+                                    batasWaktu={formData.disposisiBatasWaktu}
+                                    onBatasWaktu={(value) => handleChange('disposisiBatasWaktu', value)}
+                                    instruksi={formData.disposisiInstruksi}
+                                    onInstruksi={(value) => handleChange('disposisiInstruksi', value)}
+                                    opsiInstruksi={opsiInstruksi}
+                                    disabled={saveLocked || (!isEditMode && loadingUnits)}
+                                    error={fieldErrors.disposisi}
                                 />
+                                {!isEditMode && referensi?.unitKerjaId && units.some((unit) => unit.id === referensi.unitKerjaId)
+                                    && !formData.disposisi.includes(referensi.unitKerjaId) && (
+                                    <Button type="button" variant="outline" size="sm"
+                                        onClick={() => handleChange('disposisi', [...formData.disposisi, referensi.unitKerjaId])}>
+                                        {`Disposisikan ke ${referensi.unitNama}`}
+                                    </Button>
+                                )}
                             </div>
                         </div>
                     </CardContent>
@@ -699,17 +895,15 @@ export default function TambahSuratMasuk() {
                             <KlasifikasiPicker
                                 id="klasifikasi-arsip"
                                 value={formData.klasifikasiKode}
+                                selectedClassification={archiveRules.classification}
+                                selectedRetention={archiveRules.retention}
+                                disabled={saveLocked}
                                 onChange={(kode, klasifikasi, jra) => {
+                                    if (saveLockedRef.current) return;
                                     setFormData(prev => {
                                         const updated = {
                                             ...prev,
-                                            klasifikasiKode: kode,
-                                            klasifikasiUraian: klasifikasi?.jenis || '',
-                                            jraKode: jra?.kode || '',
-                                            jraUraian: jra?.uraian || '',
-                                            jraRetensiAktif: jra?.retensiAktif || '',
-                                            jraRetensiInaktif: jra?.retensiInaktif || '',
-                                            jraKeterangan: jra?.keterangan || '',
+                                            ...buildSuratArchiveSelection(kode, klasifikasi, jra),
                                         };
                                         saveDraft(updated);
                                         return updated;
@@ -720,7 +914,7 @@ export default function TambahSuratMasuk() {
                                 label="Klik untuk memilih klasifikasi arsip..."
                             />
                             <p className="text-xs text-muted-foreground">
-                                Pilih klasifikasi arsip Fasilitatif atau Substantif sesuai peraturan kearsipan
+                                Pilih pasangan klasifikasi dan JRA. Pilihan ini diteruskan saat surat diberkaskan menjadi arsip; perhitungan retensi mengikuti pemicu yang dicatat pada siklus hidup arsip.
                             </p>
                         </div>
                     </CardContent>
@@ -745,6 +939,8 @@ export default function TambahSuratMasuk() {
                                 </Label>
                                 <Input
                                     id="link-dokumen"
+                                    aria-invalid={Boolean(fieldErrors.linkDokumen)}
+                                    aria-describedby={fieldErrors.linkDokumen ? 'link-dokumen-error' : undefined}
                                     value={formData.linkDokumen}
                                     onChange={(e) => handleChange('linkDokumen', e.target.value)}
                                     placeholder="https://drive.google.com/..."
@@ -752,6 +948,7 @@ export default function TambahSuratMasuk() {
                                 />
                             </div>
 
+                            {fieldErrors.linkDokumen && <p id="link-dokumen-error" className="text-sm text-destructive">{fieldErrors.linkDokumen}</p>}
                             <div className="relative">
                                 <div className="absolute inset-0 flex items-center">
                                     <span className="w-full border-t border-border/50" />
@@ -775,8 +972,11 @@ export default function TambahSuratMasuk() {
                                         }`}
                                     onClick={() => !selectedFile && fileInputRef.current?.click()}
                                     role={selectedFile ? undefined : 'button'}
-                                    tabIndex={selectedFile ? undefined : 0}
+                                    tabIndex={selectedFile || saveLocked ? undefined : 0}
                                     aria-label={selectedFile ? undefined : 'Pilih berkas untuk diunggah'}
+                                    aria-disabled={saveLocked}
+                                    aria-invalid={Boolean(fieldErrors.linkDokumen)}
+                                    aria-describedby={fieldErrors.linkDokumen ? 'link-dokumen-error' : undefined}
                                     onKeyDown={selectedFile ? undefined : (e) => {
                                         if (e.key === 'Enter' || e.key === ' ') {
                                             e.preventDefault();
@@ -801,27 +1001,14 @@ export default function TambahSuratMasuk() {
                                         e.preventDefault();
                                         e.stopPropagation();
                                         setIsDragging(false);
-                                        const file = e.dataTransfer.files?.[0];
-                                        if (file) {
-                                            const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'];
-                                            if (!allowedTypes.includes(file.type)) {
-                                                setError('Tipe file tidak didukung. Gunakan PDF, DOC, DOCX, JPG, atau PNG.');
-                                                return;
-                                            }
-                                            if (file.size > 10 * 1024 * 1024) {
-                                                setError('Ukuran file maksimal 10MB');
-                                                return;
-                                            }
-                                            setSelectedFile(file);
-                                            setError(null);
-                                        }
+                                        handleFileSelect({ target: { files: e.dataTransfer.files } });
                                     }}
                                 >
                                     <input
                                         id="berkas-surat-masuk"
                                         ref={fileInputRef}
                                         type="file"
-                                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                                        accept=".pdf,application/pdf"
                                         onChange={handleFileSelect}
                                         className="hidden"
                                     />
@@ -877,7 +1064,7 @@ export default function TambahSuratMasuk() {
                                                     Seret file ke sini atau klik untuk memilih berkas
                                                 </p>
                                                 <p className="text-xs text-muted-foreground mt-1">
-                                                    PDF, DOC, DOCX, JPG, PNG (maks. 10MB)
+                                                    PDF (maks. 10 MiB)
                                                 </p>
                                             </div>
                                         </div>
@@ -910,13 +1097,13 @@ export default function TambahSuratMasuk() {
                         )}
                     </div>
 
-                    <Button type="button" variant="outline" size="lg" disabled={isSubmitting} onClick={() => navigate('/surat/masuk')} className="rounded-full px-6">
+                    <Button type="button" variant="outline" size="lg" disabled={saveLocked} onClick={() => navigate('/surat/masuk')} className="rounded-full px-6">
                         Batal
                     </Button>
                     <Button
                         type="submit"
                         size="lg"
-                        disabled={isSubmitting || !resolvedUnitKerjaId || unitScope.loading}
+                        disabled={saveLocked || !resolvedUnitKerjaId || unitScope.loading}
                         className="min-w-[140px] bg-primary hover:bg-primary/90 rounded-full px-8 shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all"
                     >
                         {isSubmitting ? (
@@ -927,11 +1114,12 @@ export default function TambahSuratMasuk() {
                         ) : (
                             <>
                                 <Save className="h-4 w-4 mr-2" />
-                                {isEditMode ? 'Perbarui' : 'Simpan'}
+                                {success ? 'Tersimpan' : isEditMode ? 'Perbarui' : 'Simpan'}
                             </>
                         )}
                     </Button>
                 </div>
+                </fieldset>
             </form>
         </div>
     );

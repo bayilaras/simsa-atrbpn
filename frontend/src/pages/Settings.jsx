@@ -25,6 +25,7 @@ export default function Settings() {
     const { toast } = useToast();
     const { setTheme } = useTheme();
     const isAdmin = canWrite();
+    const isSuperAdmin = user?.role === 'super_admin';
     const templateUnitScope = useRequiredUnitKerjaScope(user);
     const templateUnitKerjaId = templateUnitScope.unitKerjaId;
 
@@ -45,6 +46,8 @@ export default function Settings() {
     const [unitKerjaForm, setUnitKerjaForm] = useState({
         name: '',
         description: '',
+        isUnitPengawas: false,
+        canReceiveDistribution: true,
     });
 
     // Surat Templates state
@@ -65,6 +68,7 @@ export default function Settings() {
         try {
             switch (activeTab) {
                 case 'unit-kerja': {
+                    if (!isSuperAdmin) break;
                     // The general unit directory is intentionally shared by
                     // distribution and notification pickers. Settings asks the
                     // API for the narrower set this admin may actually edit.
@@ -90,7 +94,7 @@ export default function Settings() {
         } finally {
             setLoading(false);
         }
-    }, [activeTab, setTheme, templateUnitKerjaId]);
+    }, [activeTab, isSuperAdmin, setTheme, templateUnitKerjaId]);
 
     // Load data based on tab
     useEffect(() => {
@@ -136,14 +140,22 @@ export default function Settings() {
         setUnitKerjaForm({
             name: unit.name || '',
             description: unit.description || '',
+            isUnitPengawas: unit.isUnitPengawas === true,
+            canReceiveDistribution: unit.canReceiveDistribution !== false,
         });
     };
 
     const handleSaveUnitKerja = async () => {
-        if (!selectedUnitKerja) return;
+        if (!isSuperAdmin || !selectedUnitKerja) return;
         setSaving(true);
         try {
-            await settingsService.updateUnitKerja(selectedUnitKerja.id, unitKerjaForm);
+            // Penanda pengawas dan distribusi hanya dikirim bila berubah, agar
+            // penggantian nama tidak mengotori jejak audit keduanya (D5).
+            const { isUnitPengawas, canReceiveDistribution, ...payload } = unitKerjaForm;
+            if (isUnitPengawas !== (selectedUnitKerja.isUnitPengawas === true)) payload.isUnitPengawas = isUnitPengawas;
+            if (canReceiveDistribution !== (selectedUnitKerja.canReceiveDistribution !== false)) payload.canReceiveDistribution = canReceiveDistribution;
+            await settingsService.updateUnitKerja(selectedUnitKerja.id, payload);
+            setSelectedUnitKerja((current) => (current ? { ...current, ...payload } : current));
             toast({
                 title: 'Berhasil',
                 description: 'Unit kerja berhasil diperbarui',
@@ -218,7 +230,7 @@ export default function Settings() {
             />
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                <TabsList className={`bg-card/50 backdrop-blur-sm border border-border/60 p-1 h-auto rounded-xl shadow-sm grid w-full gap-1 ${isAdmin ? 'grid-cols-4' : 'grid-cols-2'}`}>
+                <TabsList className={`bg-card/50 backdrop-blur-sm border border-border/60 p-1 h-auto rounded-xl shadow-sm grid w-full gap-1 ${isSuperAdmin ? 'grid-cols-4' : isAdmin ? 'grid-cols-3' : 'grid-cols-2'}`}>
                     <TabsTrigger
                         value="profile"
                         className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200"
@@ -235,13 +247,13 @@ export default function Settings() {
                     </TabsTrigger>
                     {isAdmin && (
                         <>
-                            <TabsTrigger
+                            {isSuperAdmin && <TabsTrigger
                                 value="unit-kerja"
                                 className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200"
                             >
                                 <Building2 className="h-4 w-4 mr-2" />
                                 <span>Unit Kerja</span>
-                            </TabsTrigger>
+                            </TabsTrigger>}
                             <TabsTrigger
                                 value="templates"
                                 className="data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm rounded-lg py-2.5 transition-all duration-200"
@@ -399,8 +411,8 @@ export default function Settings() {
                     </Card>
                 </TabsContent>
 
-                {/* Unit Kerja Tab (Admin Only) */}
-                {isAdmin && (
+                {/* Unit Kerja Tab (Super Admin Only) */}
+                {isSuperAdmin && (
                     <TabsContent value="unit-kerja" className="mt-0">
                         <div className="grid gap-6 lg:grid-cols-3">
                             {/* Unit List */}
@@ -427,6 +439,12 @@ export default function Settings() {
                                                         }`}
                                                 >
                                                     <span className="truncate">{unit.name}</span>
+                                                    {unit.isUnitPengawas && (
+                                                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 h-auto">Pengawas</Badge>
+                                                    )}
+                                                    {unit.canReceiveDistribution === false && (
+                                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 h-auto">Tanpa distribusi</Badge>
+                                                    )}
                                                     {unit.unitType && (
                                                         <Badge
                                                             variant="outline"
@@ -486,6 +504,34 @@ export default function Settings() {
                                                     }
                                                     rows={3}
                                                     className="border-border focus:border-blue-400 focus:ring-ring/20 resize-none"
+                                                />
+                                            </div>
+                                            <div className="flex items-center justify-between gap-4 rounded-xl border p-4">
+                                                <div>
+                                                    <p className="font-medium text-foreground">Unit Pengawas (pencatat terpusat)</p>
+                                                    <p className="text-sm text-muted-foreground">
+                                                        Admin unit ini dapat membaca rangkaian surat Ditjen, Sesditjen, dan seluruh direktorat
+                                                        (node terkendali tetap disamarkan tanpa izin akses). Perubahan dicatat di audit log.
+                                                    </p>
+                                                </div>
+                                                <Switch
+                                                    checked={unitKerjaForm.isUnitPengawas}
+                                                    onCheckedChange={(checked) => setUnitKerjaForm(current => ({ ...current, isUnitPengawas: checked }))}
+                                                    aria-label="Unit Pengawas (pencatat terpusat)"
+                                                />
+                                            </div>
+                                            <div className="flex items-center justify-between gap-4 rounded-xl border p-4">
+                                                <div>
+                                                    <p className="font-medium text-foreground">Dapat menerima distribusi</p>
+                                                    <p className="text-sm text-muted-foreground">
+                                                        Unit muncul sebagai tujuan disposisi dan distribusi. Matikan bila unit belum memiliki
+                                                        admin unit aktif. Perubahan dicatat di audit log.
+                                                    </p>
+                                                </div>
+                                                <Switch
+                                                    checked={unitKerjaForm.canReceiveDistribution}
+                                                    onCheckedChange={(checked) => setUnitKerjaForm(current => ({ ...current, canReceiveDistribution: checked }))}
+                                                    aria-label="Dapat menerima distribusi"
                                                 />
                                             </div>
 

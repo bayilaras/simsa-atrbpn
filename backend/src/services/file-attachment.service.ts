@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { fileAttachments, NewFileAttachment, FileAttachment } from '../db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, isNull } from 'drizzle-orm';
 import { blobStorageService } from './blob-storage.service';
 import crypto from 'crypto';
 import type { Readable } from 'node:stream';
@@ -20,8 +20,11 @@ import {
     type ClientBlobPurpose,
 } from './client-blob-upload.service.js';
 import { requireImmutableObjectGeneration } from '../storage/locator.js';
+import { inspectBitstream } from './bitstream-integrity.js';
+import { ARCHIVE_UPLOAD_MAX_BYTES, assertPdfUpload } from '../config/archive-upload.js';
+import { isLetterAttachmentType } from './file-release-policy.js';
 
-export const ATTACHMENT_PREFLIGHT_MAX_BYTES = 10 * 1024 * 1024;
+export const ATTACHMENT_PREFLIGHT_MAX_BYTES = ARCHIVE_UPLOAD_MAX_BYTES;
 export const ATTACHMENT_PREFLIGHT_TIMEOUT_MS = 30_000;
 export const ATTACHMENT_FINALIZATION_MARGIN_MS = 5_000;
 
@@ -96,10 +99,11 @@ export class FileAttachmentService {
         options: PrepareExistingAttachmentOptions = {},
     ): Promise<PreparedExistingAttachmentData> {
         const locator = normalizeBlobLocator(data.locator);
-        const maxBytes = options.maxBytes ?? ATTACHMENT_PREFLIGHT_MAX_BYTES;
+        const configuredMaxBytes = options.maxBytes ?? ATTACHMENT_PREFLIGHT_MAX_BYTES;
+        const maxBytes = Math.min(configuredMaxBytes, ARCHIVE_UPLOAD_MAX_BYTES);
         const timeoutMs = options.timeoutMs ?? ATTACHMENT_PREFLIGHT_TIMEOUT_MS;
 
-        if (!Number.isFinite(maxBytes) || maxBytes <= 0) {
+        if (!Number.isFinite(configuredMaxBytes) || maxBytes <= 0) {
             throw new Error('Attachment preflight byte limit must be positive.');
         }
         if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
@@ -110,6 +114,7 @@ export class FileAttachmentService {
         let sizeBytes = data.buffer?.length || 0;
         let objectGeneration: string | null;
         const digest = crypto.createHash('sha256');
+        let prefix = Buffer.alloc(0);
 
         if (data.buffer) {
             if (options.clientBlobClaim) {
@@ -119,6 +124,7 @@ export class FileAttachmentService {
                 throw new PayloadTooLargeError('Lampiran melebihi batas 10 MiB.');
             }
             objectGeneration = requireImmutableObjectGeneration(locator, data.objectGeneration);
+            prefix = Buffer.from(data.buffer.subarray(0, 5));
             digest.update(data.buffer);
         } else {
             const claim = options.clientBlobClaim;
@@ -184,6 +190,7 @@ export class FileAttachmentService {
                                 download.stream.destroy();
                                 throw new PayloadTooLargeError('Lampiran melebihi batas 10 MiB.');
                             }
+                            if (prefix.length < 5) prefix = Buffer.concat([prefix, bytes.subarray(0, 5 - prefix.length)]);
                             digest.update(bytes);
                         }
                     })(),
@@ -200,6 +207,7 @@ export class FileAttachmentService {
             }
         }
 
+        assertPdfUpload(data.fileName, mimeType, sizeBytes, prefix);
         return {
             fileName: data.fileName,
             locator,
@@ -244,7 +252,9 @@ export class FileAttachmentService {
         executor: Pick<typeof db, 'insert'> = db,
     ): Promise<FileAttachment> {
         const { entityId, entityType, ...source } = data;
-        const prepared = await this.prepareExisting(source);
+        const prepared = await this.prepareExisting(source, {
+            expectedPurpose: isLetterAttachmentType(entityType) ? entityType : undefined,
+        });
         return this.insertPrepared({ ...prepared, entityId, entityType }, executor);
     }
 
@@ -252,9 +262,9 @@ export class FileAttachmentService {
     async create(
         data: CreateAttachmentData,
         auditContext: CriticalAuditContext,
-    ): Promise<FileAttachment & { hash: string }> {
-        // Calculate hash
-        const hash = crypto.createHash('sha256').update(data.buffer).digest('hex');
+        executor?: Pick<typeof db, 'insert'>,
+    ): Promise<FileAttachment & { hash: string | null }> {
+        assertPdfUpload(data.fileName, data.mimeType, data.buffer.length, data.buffer);
 
         // All server-received bytes enter quarantine on GCS. The Vercel Blob
         // compatibility provider remains immutable and unchanged.
@@ -269,7 +279,8 @@ export class FileAttachmentService {
         );
 
         try {
-            return await db.transaction(async (tx) => {
+            const hash = crypto.createHash('sha256').update(data.buffer).digest('hex');
+            const persist = async (tx: Pick<typeof db, 'insert'>) => {
                 const [attachment] = await tx
                     .insert(fileAttachments)
                     .values({
@@ -308,7 +319,8 @@ export class FileAttachmentService {
                 }, tx);
 
                 return { ...attachment, hash };
-            });
+            };
+            return executor ? await persist(executor) : await db.transaction(persist);
         } catch (error) {
             await deleteRequestCreatedBlob(blobFile.url, {
                 operation: 'file_attachment_create',
@@ -358,28 +370,14 @@ export class FileAttachmentService {
             .from(fileAttachments)
             .where(eq(fileAttachments.id, id))
             .limit(1);
-        if (!attachment?.sha256 || !/^[a-f0-9]{64}$/i.test(attachment.sha256)) return null;
+        if (!attachment || !attachment.sha256 || !/^[a-f0-9]{64}$/i.test(attachment.sha256)) return null;
 
         const locator = attachment.fileUrl || attachment.driveFileId;
         if (!locator) return null;
 
-        const objectGeneration = requireImmutableObjectGeneration(
-            locator,
-            attachment.objectGeneration,
-        );
-        const download = await blobStorageService.downloadFile(locator, {
-            generation: objectGeneration || undefined,
-        });
-        if (!download) return null;
-
-        const digest = crypto.createHash('sha256');
-        for await (const chunk of download.stream) {
-            digest.update(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        }
-        const actualHash = digest.digest('hex');
-        const matches = crypto.timingSafeEqual(
-            Buffer.from(attachment.sha256, 'hex'),
-            Buffer.from(actualHash, 'hex'),
+        const { actualHash, matches } = await inspectBitstream(
+            attachment,
+            (url, options) => blobStorageService.downloadFile(url, options),
         );
 
         const [updated] = await executor
@@ -388,11 +386,23 @@ export class FileAttachmentService {
                 integrityStatus: matches ? 'verified' : 'mismatch',
                 lastFixityCheckAt: new Date(),
             })
-            .where(eq(fileAttachments.id, id))
+            .where(and(
+                eq(fileAttachments.id, id),
+                eq(fileAttachments.sha256, attachment.sha256),
+                eq(fileAttachments.sizeBytes, attachment.sizeBytes!),
+                eq(fileAttachments.storageAccess, attachment.storageAccess),
+                eq(fileAttachments.integrityStatus, attachment.integrityStatus),
+                eq(fileAttachments.malwareScanStatus, attachment.malwareScanStatus),
+                attachment.fileUrl ? eq(fileAttachments.fileUrl, attachment.fileUrl) : isNull(fileAttachments.fileUrl),
+                attachment.driveFileId ? eq(fileAttachments.driveFileId, attachment.driveFileId) : isNull(fileAttachments.driveFileId),
+                attachment.objectGeneration ? eq(fileAttachments.objectGeneration, attachment.objectGeneration) : isNull(fileAttachments.objectGeneration),
+            ))
             .returning();
 
+        if (!updated) throw new ConflictError('Baseline berkas berubah selama pemeriksaan integritas; ulangi pemeriksaan.');
+
         return {
-            attachment: updated || attachment,
+            attachment: updated,
             expectedHash: attachment.sha256,
             actualHash,
             matches,
@@ -402,27 +412,32 @@ export class FileAttachmentService {
     // Delete attachment and its private Blob object. driveFileId is retained
     // only as a read-compatible locator for legacy rows.
     async delete(id: string): Promise<boolean> {
-        const attachment = await this.findById(id);
-        if (!attachment) return false;
-
-        // Delete from Vercel Blob
-        const locator = attachment.fileUrl || attachment.driveFileId;
-        if (locator) {
-            const objectGeneration = requireImmutableObjectGeneration(
-                locator,
-                attachment.objectGeneration,
-            );
-            const deleted = objectGeneration
-                ? await blobStorageService.deleteFileGeneration(locator, objectGeneration)
-                : await blobStorageService.deleteFile(locator);
-            // Retain the database provenance when storage cannot prove the
-            // exact object was removed; a later retry remains possible.
-            if (!deleted) return false;
+        const unconfirmed = new Error('Object deletion was not confirmed');
+        try {
+            return await db.transaction(async tx => {
+                const [attachment] = await tx.select().from(fileAttachments)
+                    .where(eq(fileAttachments.id, id)).limit(1).for('update');
+                if (!attachment) return false;
+                // FK and evidence triggers must reject deletion BEFORE any
+                // irreversible storage call. A failed storage operation rolls
+                // back this uncommitted row deletion.
+                await tx.delete(fileAttachments).where(eq(fileAttachments.id, id));
+                const locator = attachment.fileUrl || attachment.driveFileId;
+                if (locator) {
+                    const generation = requireImmutableObjectGeneration(locator, attachment.objectGeneration);
+                    const deleted = generation
+                        ? await blobStorageService.deleteFileGeneration(locator, generation)
+                        : await blobStorageService.deleteFile(locator);
+                    if (!deleted) throw unconfirmed;
+                }
+                // Storage and PostgreSQL do not share a distributed transaction:
+                // a later DB commit failure still requires reconciliation.
+                return true;
+            });
+        } catch (error) {
+            if (error === unconfirmed) return false;
+            throw error;
         }
-
-        // Delete database record
-        await db.delete(fileAttachments).where(eq(fileAttachments.id, id));
-        return true;
     }
 }
 

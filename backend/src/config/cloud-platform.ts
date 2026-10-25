@@ -176,8 +176,9 @@ export function buildCloudPlatformConfig(
     if (platform === 'gcp' && authProvider !== 'firebase') {
         errors.push('The GCP platform requires AUTH_PROVIDER=firebase');
     }
-    if (storageProvider === 'disabled' && !metadataDemo) {
-        errors.push('Disabled storage is only permitted in metadata-demo mode');
+    const internalFullMetadata = !metadataDemo && (source.APP_PROFILE || 'internal').trim().toLowerCase() === 'internal';
+    if (storageProvider === 'disabled' && !metadataDemo && !internalFullMetadata) {
+        errors.push('Disabled storage is only permitted in metadata-demo or full internal mode');
     }
     if (metadataDemo && storageProvider !== 'disabled') {
         errors.push('Metadata demo requires disabled storage');

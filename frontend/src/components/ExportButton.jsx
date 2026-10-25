@@ -9,10 +9,12 @@ import api from '@/services/api';
 const ExportButton = ({ type, filters = {} }) => {
     const [isExporting, setIsExporting] = useState(false);
     const [showDropdown, setShowDropdown] = useState(false);
+    const [exportError, setExportError] = useState('');
 
     const handleExport = async (format, formulirType = null) => {
         setIsExporting(true);
         setShowDropdown(false);
+        setExportError('');
 
         try {
             const queryParams = new URLSearchParams();
@@ -49,8 +51,7 @@ const ExportButton = ({ type, filters = {} }) => {
             document.body.removeChild(link);
             window.URL.revokeObjectURL(downloadUrl);
         } catch (error) {
-            console.error('Export error:', error);
-            alert(`Gagal mengekspor: ${error.message}`);
+            setExportError(error.message || 'Gagal mengekspor. Silakan coba kembali.');
         } finally {
             setIsExporting(false);
         }
@@ -73,6 +74,12 @@ const ExportButton = ({ type, filters = {} }) => {
                 Export
                 <ChevronDown className="w-3 h-3" />
             </button>
+
+            {exportError && (
+                <p role="alert" className="mt-2 max-w-sm rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                    {exportError}
+                </p>
+            )}
 
             {showDropdown && (
                 <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-xl z-50 overflow-hidden">

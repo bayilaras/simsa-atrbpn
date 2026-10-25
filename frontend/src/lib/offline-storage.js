@@ -10,6 +10,8 @@
  * design with classification-aware policy and remote revocation.
  */
 
+import { clearMemoryDrafts } from './memory-drafts';
+
 const LEGACY_DB_NAME = 'simsa-offline-db';
 const LEGACY_CACHE_NAMES = ['api-cache'];
 
@@ -33,6 +35,7 @@ function deleteLegacyDatabase() {
  * Safe to call repeatedly from logout, session-expiry, and application startup.
  */
 export async function clearOfflineStorage() {
+    clearMemoryDrafts();
     let indexedDbDeleted = false;
     let cacheDeleted = false;
 

@@ -69,10 +69,12 @@ export function createAuthService({
                     return await exchangeFirebaseUser(user);
                 }
 
-                return await legacyClient.signIn.social({
+                const result = await legacyClient.signIn.social({
                     provider: 'google',
                     callbackURL: window.location.origin,
                 });
+                if (result?.error) throw new Error(result.error.message || 'Login Google gagal. Silakan coba lagi.');
+                return result;
             } catch (error) {
                 console.error('Google sign in failed:', error);
                 throw error;
@@ -111,10 +113,15 @@ export function createAuthService({
         },
 
         async signOut() {
+            // Drop local drafts immediately, even while remote logout is pending.
+            const storageCleanup = clearStorage();
             let signOutError = null;
             try {
                 if (firebaseMode) await apiClient.post('/api/auth/sign-out');
-                else await legacyClient.signOut();
+                else {
+                    const result = await legacyClient.signOut();
+                    if (result?.error) throw new Error(result.error.message || 'Penutupan sesi server belum terkonfirmasi.');
+                }
             } catch (error) {
                 signOutError = error;
                 console.error('Sign out failed:', error);
@@ -123,9 +130,9 @@ export function createAuthService({
                     await firebase.signOut().catch(() => undefined);
                     clearCsrfToken();
                 }
-                await clearStorage();
+                await storageCleanup;
             }
-            if (signOutError && firebaseMode) throw signOutError;
+            if (signOutError) throw signOutError;
         },
 
         async revokeSessions() {

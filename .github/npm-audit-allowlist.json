@@ -1,0 +1,4 @@
+{
+  "description": "Pengecualian sementara gerbang npm audit (high/critical). Setiap entri wajib punya alasan dan tanggal kedaluwarsa; entri kedaluwarsa membuat CI gagal. Dibaca oleh .github/scripts/npm-audit-gate.mjs.",
+  "entries": []
+}

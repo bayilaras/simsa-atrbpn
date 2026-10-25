@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer';
+import nodemailer, { type Transporter } from 'nodemailer';
 import { createLogger } from '../utils/logger';
 import {
     buildEmailConfig,
@@ -49,7 +49,7 @@ export type EmailDeliveryResult =
     | { sent: false; status: 'not_configured' | 'failed'; error: string };
 
 export class EmailService {
-    private transporter: nodemailer.Transporter | null = null;
+    private transporter: Transporter | null = null;
 
     constructor(private readonly config: EmailConfig = buildEmailConfig()) {
         if (config.ready) {

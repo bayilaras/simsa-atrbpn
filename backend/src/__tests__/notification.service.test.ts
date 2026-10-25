@@ -141,6 +141,32 @@ describe('NotificationService', () => {
             expect(result[0].id).toContain(':awaiting_receipt:urgent');
         });
 
+        it('baris disposisi yang tidak boleh dibaca hanya bermuatan Dikecualikan (§4.8, T10-5)', async () => {
+            const { recordAccessService } = await import('../services/record-access.service');
+            const user = { id: 'user-1', role: 'admin_unit', unitKerjaId: 'dir_bppt' };
+            const SM_1 = '550e8400-e29b-41d4-a716-4466554400a1';
+            const SM_2 = '550e8400-e29b-41d4-a716-4466554400a2';
+            const spy = vi.spyOn(recordAccessService, 'checkMany').mockResolvedValue(new Map([
+                [`surat_masuk:${SM_1}`, { allowed: true }],
+                [`surat_masuk:${SM_2}`, { allowed: false }],
+            ]) as any);
+            try {
+                const waktu = new Date(Date.now() - 86_400_000);
+                enqueue([
+                    { id: UUID_1, suratMasukId: SM_1, status: 'sent', instruction: 'Mohon hadir', nomorSurat: 'SM-1', perihal: 'Undangan', sentAt: waktu, updatedAt: waktu },
+                    { id: UUID_2, suratMasukId: SM_2, status: 'received', instruction: 'Isi rahasia', nomorSurat: 'R-9', perihal: 'Tukar guling', sentAt: waktu, updatedAt: waktu },
+                ]);
+                const result = await notificationService.getDistributionNotifications('dir_bppt', 'user-1', null, new Set(), 'admin_unit', user);
+                expect(spy).toHaveBeenCalledWith(user, [{ type: 'surat_masuk', id: SM_1 }, { type: 'surat_masuk', id: SM_2 }]);
+                expect(result.map((item) => item.message)).toEqual(['SM-1 - Mohon hadir', 'Dikecualikan']);
+                expect(result[1]).toMatchObject({ referenceId: UUID_2, state: 'awaiting_processing', category: 'distribusi' });
+                const json = JSON.stringify(result[1]);
+                for (const bocor of ['R-9', 'Tukar guling', 'Isi rahasia', SM_2]) expect(json).not.toContain(bocor);
+            } finally {
+                spy.mockRestore();
+            }
+        });
+
         it('does not emit workflow deep-links to a role that cannot open them', async () => {
             expect(await notificationService.getDistributionNotifications(
                 'ditjen', 'staff-1', null, new Set(), 'staff',

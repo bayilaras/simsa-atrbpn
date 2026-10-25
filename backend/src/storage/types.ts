@@ -5,6 +5,8 @@ export interface UploadFileOptions {
     mimeType: string;
     buffer: Buffer;
     folder?: string;
+    /** Internal only: exact name reserved by a persisted bulk-upload intent. */
+    reservedObjectName?: string;
 }
 
 export interface CopyFileOptions {

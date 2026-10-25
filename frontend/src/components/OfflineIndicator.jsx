@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { WifiOff, Wifi, RefreshCw, CheckCircle } from 'lucide-react';
 import { isOnline, onConnectivityChange } from '@/lib/offline-storage';
 
@@ -10,16 +10,18 @@ export function OfflineIndicator() {
     const [online, setOnline] = useState(isOnline());
     const [showBanner, setShowBanner] = useState(false);
     const [justReconnected, setJustReconnected] = useState(false);
+    const dismissTimer = useRef(null);
 
     useEffect(() => {
         const cleanup = onConnectivityChange((isOnline) => {
+            clearTimeout(dismissTimer.current);
             setOnline(isOnline);
+            setJustReconnected(isOnline);
 
             if (isOnline) {
                 // Show "back online" message briefly
-                setJustReconnected(true);
                 setShowBanner(true);
-                setTimeout(() => {
+                dismissTimer.current = setTimeout(() => {
                     setJustReconnected(false);
                     setShowBanner(false);
                 }, 3000);
@@ -29,7 +31,10 @@ export function OfflineIndicator() {
             }
         });
 
-        return cleanup;
+        return () => {
+            clearTimeout(dismissTimer.current);
+            cleanup();
+        };
     }, []);
 
     // Don't show anything if online and not just reconnected
@@ -39,20 +44,22 @@ export function OfflineIndicator() {
 
     return (
         <div
-            className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-sm font-medium transition-all duration-300 ${justReconnected
-                    ? 'bg-green-500 text-white'
-                    : 'bg-amber-500 text-white'
+            role="status"
+            aria-live="polite"
+            className={`fixed bottom-4 left-4 right-4 z-50 mx-auto max-w-lg rounded-lg border px-4 py-3 shadow-sm flex items-center gap-2 text-sm font-medium ${justReconnected
+                    ? 'border-green-200 bg-green-50 text-green-950'
+                    : 'border-amber-200 bg-amber-50 text-amber-950'
                 }`}
         >
             {justReconnected ? (
                 <>
-                    <CheckCircle className="h-4 w-4" />
+                    <CheckCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
                     <span>Kembali online</span>
                 </>
             ) : (
                 <>
-                    <WifiOff className="h-4 w-4" />
-                    <span>Mode offline - data arsip tidak disimpan di perangkat</span>
+                    <WifiOff className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span>Koneksi terputus. Sambungkan kembali untuk memuat atau menyimpan data arsip.</span>
                 </>
             )}
         </div>

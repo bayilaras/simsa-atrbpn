@@ -1,81 +1,28 @@
-# 👤 Role & Hak Akses
+# Role dan Hak Akses
 
-SIMSA menggunakan sistem **Role-Based Access Control (RBAC)** untuk mengatur siapa bisa mengakses apa.
+SIMSA menyediakan dua pilihan peran saat super admin membuat atau menetapkan akun.
 
----
+| Peran | Cakupan |
+|---|---|
+| **Super Admin** | Mengelola seluruh unit, akun pengguna, pengaturan global, dan master klasifikasi/JRA. |
+| **Admin Unit Kerja** | Mengelola surat, arsip, distribusi, layanan, lokasi simpan, dan fitur operasional sesuai unit kerja yang ditetapkan. |
 
-## Daftar Role
+Admin Unit Kerja wajib memiliki unit kerja. Filter, alamat halaman, maupun ID data dari unit lain tidak memberikan akses lintas unit. Super Admin dapat mengakses semua unit dan menyaring tampilan menurut unit tertentu.
 
-| Role | Deskripsi |
-|------|-----------|
-| **Staff** | Pengguna biasa — hanya bisa **melihat** surat masuk/keluar dan arsip aktif (read-only), serta laporan |
-| **Admin Dirjen** | Admin khusus Direktorat Jenderal — bisa mengelola surat, arsip, master data, dan data khusus |
-| **Admin Sesditjen** | Admin khusus Sekretariat Dirjen — akses sama seperti Admin Dirjen |
-| **Super Admin** | Administrator utama — akses penuh ke seluruh fitur dan semua unit kerja |
-| **Auditor** | Pengawas — bisa melihat dashboard dan audit log untuk keperluan audit |
+## Pengelolaan akun
 
----
+Hanya Super Admin yang dapat membuat akun dan mengubah peran atau penugasan unit melalui **User Management**. Pilih **Admin Unit Kerja**, kemudian tetapkan unitnya. Penugasan **Super Admin** berlaku untuk seluruh unit.
 
-## Tabel Hak Akses Lengkap
+Akun lama tetap mempertahankan hak aksesnya sampai Super Admin menetapkan peran baru. Admin Dirjen dan Admin Sesditjen lama tetap terbatas pada unit semula; akun Staff dan Auditor lama tidak otomatis mendapat kewenangan menulis.
 
-| Fitur | Staff | Admin Dirjen | Admin Sesditjen | Super Admin | Auditor |
-|-------|:-----:|:------------:|:---------------:|:-----------:|:-------:|
-| Dashboard | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Surat Masuk/Keluar | 👁️ Lihat | ✅ | ✅ | ✅ | ❌ |
-| Distribusi | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Arsip Aktif | 👁️ Lihat | ✅ | ✅ | ✅ | ❌ |
-| Dosir | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Jadwal Retensi | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Manajemen Retensi | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Penyusutan | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Layanan Arsip | Ajukan/lihat sendiri | Proses unit | Proses unit | ✅ | 👁️ Lihat unit |
-| Peminjaman | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Lokasi Simpan | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Arsip Vital | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Arsip Terjaga | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Arsip Elektronik | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Autentikasi Arsip | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Tunjuk Silang | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Klasifikasi Arsip | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Laporan | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Audit Log | ❌ | ✅ | ✅ | ✅ | ✅ |
-| User Management | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Pengaturan: profil & preferensi | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Pengaturan: unit & template nomor | ❌ | ✅ (unit sendiri) | ✅ (unit sendiri) | ✅ | ❌ |
-| Tab Pengawasan (Dashboard) | ❌ | ❌ | ❌ | ✅ | ❌ |
+## Klasifikasi dan jadwal retensi arsip
 
-> 💡 **Keterangan:**
-> - 👁️ **Lihat** = Staff hanya bisa **melihat** data (read-only), **tidak bisa** menambah, mengedit, atau menghapus.
-> - Semua akun yang sudah diprovisi dapat mengelola **Profil** dan **Preferensi**. Tab unit kerja serta template nomor hanya tampil untuk admin sesuai cakupan unitnya.
+Super Admin mengelola master melalui **Master → Klasifikasi & JRA**. Setelah butir katalog, PDF sumber, manifest kelengkapan, dan laporan dampak tervalidasi, Super Admin dapat langsung memilih **Aktifkan**. Tahap ini tidak memerlukan akun penelaah atau penyetuju terpisah.
+
+Sistem tetap memeriksa integritas sumber dan isi katalog, menyimpan jejak audit aktivasi beserta akun pelaksananya, dan mempertahankan versi yang sudah digunakan. Aktivasi langsung tidak membuat catatan telaah atau persetujuan atas nama orang lain.
+
+Admin Unit Kerja menggunakan katalog aktif saat mengelola surat dan arsip pada unitnya. Perubahan master yang berlaku untuk semua unit tetap menjadi kewenangan Super Admin.
 
 ---
 
-## Filter Data Berdasarkan Unit Kerja
-
-Selain akses berdasarkan role, data juga difilter berdasarkan **unit kerja** pengguna:
-
-- **Staff / Admin / Auditor** → Hanya bisa melihat data dari **unit kerja sendiri**
-- **Super Admin** → Bisa melihat data dari **semua unit kerja** + memilih filter unit kerja di Dashboard
-
----
-
-## Notifikasi per Unit Kerja (Super Admin)
-
-Super Admin memiliki fitur tambahan di panel **Notifikasi** — yaitu **dropdown filter unit kerja** yang memungkinkan melihat notifikasi dari unit kerja tertentu:
-
-- Ditjen PTPP
-- Sesditjen
-- Dir. BPPT
-- Dir. PTEP
-- Dir. KTPP
-- Dir. PLP
-
----
-
-## Bagaimana Cara Mengubah Role?
-
-Hanya **Super Admin** yang bisa mengubah role pengguna melalui menu **User Management**. Jika kamu merasa perlu akses tambahan, hubungi Super Admin di unit kerja kamu.
-
----
-
-[⬅️ Sebelumnya: Navigasi Sidebar](navigasi-sidebar.md) | [Selanjutnya: Surat Masuk ➡️](../manajemen-surat/surat-masuk.md)
+[Sebelumnya: Navigasi Sidebar](navigasi-sidebar.md) | [Selanjutnya: Surat Masuk](../manajemen-surat/surat-masuk.md)

@@ -13,6 +13,9 @@ import {
     recordAccessService,
 } from '../services/record-access.service.js';
 import type { CriticalAuditContext } from '../services/audit-log.service.js';
+import { terjagaReportService } from '../services/terjaga-report.service';
+import { createTerjagaReportSchema, transitionTerjagaReportSchema } from '../validators/terjaga-report.schemas';
+import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
 
 const router = Router();
 
@@ -48,6 +51,28 @@ router.get('/print/daftar', canReadMiddleware(), async (req: AuthRequest, res, n
 
 // Validate all :id params as UUID
 router.param('id', uuidParamValidator);
+router.param('reportId', uuidParamValidator);
+
+router.get('/:id/reports', async (req: AuthRequest, res, next) => {
+    try {
+        const result = await terjagaReportService.list(String(req.params.id), { ...req.user, ipAddress: req.ip });
+        res.json({ success: true, data: result });
+    } catch (error) { next(error); }
+});
+
+router.post('/:id/reports', canWriteMiddleware(), sensitiveLimiter, validateBody(createTerjagaReportSchema), async (req: AuthRequest, res, next) => {
+    try {
+        const result = await terjagaReportService.createDraft(String(req.params.id), req.body, { ...req.user, ipAddress: req.ip });
+        res.status(201).json({ success: true, data: result });
+    } catch (error) { next(error); }
+});
+
+router.post('/:id/reports/:reportId/transitions', canWriteMiddleware(), sensitiveLimiter, validateBody(transitionTerjagaReportSchema), async (req: AuthRequest, res, next) => {
+    try {
+        const result = await terjagaReportService.transition(String(req.params.id), String(req.params.reportId), req.body, { ...req.user, ipAddress: req.ip });
+        res.json({ success: true, data: result });
+    } catch (error) { next(error); }
+});
 
 // GET /api/arsip-terjaga - List all arsip terjaga
 router.get('/', async (req: AuthRequest, res, next) => {
@@ -223,6 +248,8 @@ router.put('/:id',
 // PUT /api/arsip-terjaga/:id/report - Mark as reported to ANRI
 router.put('/:id/report',
     canWriteMiddleware(),
+    sensitiveLimiter,
+    validateBody(createTerjagaReportSchema),
     async (req: AuthRequest, res, next) => {
         try {
             const { id } = req.params;

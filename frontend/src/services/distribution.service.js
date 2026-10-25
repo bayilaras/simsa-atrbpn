@@ -70,6 +70,18 @@ export const distributionService = {
         return response.data;
     },
 
+    /** Chip instruksi statis dan status jalur akses disposisi surat terkendali. */
+    async getOpsi() {
+        const response = await api.get('/api/distributions/opsi');
+        return response.data;
+    },
+
+    /** Disposisi multi-direktorat dalam satu transaksi. */
+    async distributeMany({ suratMasukId, sourceUnitId, targets, instruksi }) {
+        const response = await api.post('/api/distributions', { suratMasukId, sourceUnitId, targets, instruction: instruksi || null });
+        return response.data;
+    },
+
     /**
      * Mark distribution as received
      */
@@ -80,9 +92,10 @@ export const distributionService = {
 
     /**
      * Mark distribution as processed
+     * Penyelesaian: { penyelesaianSuratKeluarId } atau { catatanPenyelesaian ≥10 }.
      */
-    async process(id, unitKerjaId) {
-        const response = await api.put(withUnit(`/api/distributions/${id}/process`, unitKerjaId));
+    async process(id, unitKerjaId, penyelesaian) {
+        const response = await api.put(withUnit(`/api/distributions/${id}/process`, unitKerjaId), penyelesaian);
         return response.data;
     },
 
@@ -92,6 +105,11 @@ export const distributionService = {
     async reject(id, reason, unitKerjaId) {
         const response = await api.put(withUnit(`/api/distributions/${id}/reject`, unitKerjaId), { reason });
         return response.data;
+    },
+
+    async getKandidatPenyelesaian(id, unitKerjaId) {
+        const response = await api.get(`/api/distributions/${id}/kandidat-penyelesaian`, { unitKerjaId });
+        return response.data || [];
     },
 };
 

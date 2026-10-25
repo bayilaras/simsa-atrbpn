@@ -60,15 +60,16 @@ describe('super-admin notification unit scope', () => {
             10,
             null,
             'super_admin',
+            expect.objectContaining({ id: '10000000-0000-4000-8000-000000000001' }),
         );
         expect(state.markCurrentAsRead).toHaveBeenNthCalledWith(
             1,
-            expect.objectContaining({ unitKerjaId: 'unit-server-a' }),
+            expect.objectContaining({ unitKerjaId: 'unit-server-a', user: expect.objectContaining({ role: 'super_admin' }) }),
             [notificationId],
         );
         expect(state.markCurrentAsRead).toHaveBeenNthCalledWith(
             2,
-            expect.objectContaining({ unitKerjaId: 'unit-server-a' }),
+            expect.objectContaining({ unitKerjaId: 'unit-server-a', user: expect.objectContaining({ role: 'super_admin' }) }),
             [notificationId],
         );
     });

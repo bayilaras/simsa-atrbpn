@@ -1,30 +1,27 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { Loader2, History, User } from 'lucide-react';
 import { api } from '@/services/api';
+import { Button } from '@/components/ui/button';
 
-export default function PreservationHistory({ arsipId }) {
+export default function PreservationHistory({ arsipId, refreshVersion = 0 }) {
     const [history, setHistory] = useState([]);
-    const [loading, setLoading] = useState(true);
-
-    const loadHistory = useCallback(async () => {
-        try {
-            const data = await api.get(`/api/arsip-elektronik/${arsipId}/preservasi`);
-            setHistory(data);
-        } catch (error) {
-            console.error('Failed to load preservation history:', error);
-        } finally {
-            setLoading(false);
-        }
-    }, [arsipId]);
+    const [loadedScope, setLoadedScope] = useState('');
+    const [error, setError] = useState('');
+    const [retry, setRetry] = useState(0);
+    const scope = `${arsipId}:${refreshVersion}:${retry}`;
+    const loading = loadedScope !== scope;
 
     useEffect(() => {
-        if (arsipId) {
-            loadHistory();
-        }
-    }, [arsipId, loadHistory]);
+        let active = true;
+        api.get(`/api/arsip-elektronik/${arsipId}/preservasi`).then(data => {
+            if (active) { setHistory(data); setError(''); }
+        }).catch(err => { if (active) setError(err.message || 'Riwayat gagal dimuat'); })
+            .finally(() => { if (active) setLoadedScope(scope); });
+        return () => { active = false; };
+    }, [arsipId, scope]);
 
     if (loading) {
         return (
@@ -33,6 +30,9 @@ export default function PreservationHistory({ arsipId }) {
             </div>
         );
     }
+
+    if (error) return <div className="space-y-2"><p role="alert">{error}</p>
+        <Button variant="outline" onClick={() => setRetry(value => value + 1)}>Muat ulang riwayat</Button></div>;
 
     if (history.length === 0) {
         return (
@@ -71,12 +71,17 @@ export default function PreservationHistory({ arsipId }) {
                                     </span>
                                 </div>
 
+                                <p className={`text-xs ${item.evidenceSnapshot?.result === 'mismatch' ? 'text-destructive' : 'text-muted-foreground'}`}>
+                                    {item.recordingMode === 'system_integrity_check'
+                                        ? item.evidenceSnapshot?.result === 'match' ? 'Pemeriksaan sistem: hash sesuai' : 'Pemeriksaan sistem: hash tidak cocok'
+                                        : item.recordingMode === 'external_activity_recorded' ? 'Tindakan eksternal dicatat dengan bukti; tidak dijalankan oleh SIMSA'
+                                            : 'Catatan lama: pelaksanaan dan bukti belum diverifikasi'}
+                                </p>
+                                {item.evidenceSnapshot?.toolName && <p className="text-xs">Perangkat: {item.evidenceSnapshot.toolName} {item.evidenceSnapshot.toolVersion}</p>}
+
                                 {item.details && (
                                     <div className="bg-muted/50 p-2 rounded text-xs font-mono">
-                                        {typeof item.details === 'string' && item.details.startsWith('{')
-                                            ? <pre className="whitespace-pre-wrap">{JSON.stringify(JSON.parse(item.details), null, 2)}</pre>
-                                            : item.details
-                                        }
+                                        <p className="whitespace-pre-wrap">{item.details}</p>
                                     </div>
                                 )}
 

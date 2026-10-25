@@ -17,7 +17,7 @@ concurrency:
 jobs:
   lint-and-typecheck:
     name: Lint & Type Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -36,6 +36,29 @@ jobs:
       - name: Install backend dependencies
         run: npm ci
         working-directory: backend
+
+      - name: Install PostgreSQL 18 for the isolated recovery target regression
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg /etc/postgresql-common
+          echo 'create_main_cluster = false' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          curl --fail --silent --show-error https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc >/dev/null
+          echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main' | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-18 postgresql-client-18
+
+      - name: Test operations monitoring, recovery, and integrity contracts
+        env:
+          OPERATIONS_RECOVERY_TEST_PG_BIN: /usr/lib/postgresql/18/bin
+        run: >-
+          node --test
+          scripts/check-operations.test.mjs
+          scripts/operations-recovery.test.mjs
+          scripts/operations-recovery-documents.test.mjs
+          scripts/operations-recovery-extract.test.mjs
+          scripts/operations-recovery-target.test.mjs
+          scripts/check-file-integrity.test.mjs
+          scripts/ops/neon-role-rotation.postgres.test.mjs
 
       - name: Install frontend dependencies
         run: npm ci
@@ -86,8 +109,15 @@ jobs:
             for required in \
               drizzle.config.ts \
               src/db/migrations/0033_final_object_orphan_queue.sql \
+              src/db/migrations/0034_scheduled_file_fixity.sql \
+              src/db/migrations/0035_disposition_lifecycle_evidence.sql \
+              src/db/migrations/0036_terjaga_reporting_evidence.sql \
+              src/db/migrations/0037_preservation_activity_evidence.sql \
+              src/db/migrations/0038_arsip_direct_upload.sql \
+              src/db/migrations/0039_shared_rate_limits.sql \
               src/db/grants/0001_bootstrap_cloud_sql_roles.sql \
               src/db/grants/0002_converge_application_grants.sql \
+              src/db/grants/0003_optional_pg_trgm.sql \
               scripts/apply-database-grant-convergence.mjs
             do
               if [ ! -f "$required" ]; then
@@ -359,6 +389,17 @@ jobs:
         run: npx vitest run --reporter=verbose
         working-directory: backend
 
+      # PostgreSQL role memberships are cluster-wide. Run the alternate
+      # upgrade fixture before the canonical bootstrap restores CI principals.
+      - name: Verify the exact 0038 backup baseline and upgrade to the current journal
+        run: |
+          node --test .github/scripts/backup-upgrade-target.test.mjs
+          node .github/scripts/test-backup-upgrade-profile.mjs
+        env:
+          TEST_POSTGRES_URL: postgresql://simsa_test:simsa_test_password@127.0.0.1:5432/simsa_test
+          TEST_POSTGRES_IMAGE: ${{ env.POSTGRES_IMAGE }}
+          TEST_POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+
       - name: Bootstrap least-privilege roles, migrate, and prove seed idempotency
         run: |
           set -euo pipefail
@@ -396,6 +437,16 @@ jobs:
               --set migrator_principal=simsa_ci_migrator \
               --set backup_principal=simsa_ci_backup \
               --file /grants/0001_bootstrap_cloud_sql_roles.sql
+          # Langkah privileged pg_trgm (migrasi 0049) oleh administrator grant,
+          # terpisah dari 0001 karena drill restore Cloud SQL menjalankan ulang
+          # 0001 dan membandingkan bukti extension secara persis.
+          docker run --rm --network host \
+            --env PGPASSWORD \
+            --volume "$GITHUB_WORKSPACE/backend/src/db/grants:/grants:ro" \
+            "$POSTGRES_IMAGE" \
+            psql --host 127.0.0.1 --username simsa_test --dbname simsa_test \
+              --no-psqlrc --set ON_ERROR_STOP=on \
+              --file /grants/0003_optional_pg_trgm.sql
 
           MIGRATOR_DATABASE_URL='postgresql://simsa_ci_migrator:simsa_test_password@127.0.0.1:5432/simsa_test'
           MAINTENANCE_DATABASE_URL='postgresql://simsa_ci_maintenance:simsa_test_password@127.0.0.1:5432/simsa_test'
@@ -633,7 +684,7 @@ jobs:
           SQL
 
           # Scheduled mode may resolve only one of the exact histories. On the
-          # current 34-migration DB it must resolve to post_migration.
+          # current reviewed DB it must resolve to post_migration.
           docker run --rm --interactive --network host \
             --env PGPASSWORD \
             --volume "$GITHUB_WORKSPACE/.github/scripts:/verifier:ro" \
@@ -656,7 +707,7 @@ jobs:
           SQL
           grep -Fq $'schema_profile\tpost_migration\t1\t' "$POST_AUTO_EVIDENCE"
 
-          # A 34-migration database must fail closed when the operator chooses
+          # A database at the reviewed head must fail closed when the operator chooses
           # the pre-migration (0000-0020) profile.
           if docker run --rm --interactive --network host \
             --env PGPASSWORD \
@@ -781,6 +832,27 @@ jobs:
           TEST_DB_BACKUP_PRINCIPAL: simsa_ci_backup
           TEST_DB_GRANT_ADMIN_PRINCIPAL: simsa_test
 
+      # P4 §10 / P4-T22-2: gerbang keras EXPLAIN seed Lacak nyata dan ringkasan D7
+      # (non-vakum, tanpa timeout) hanya berjalan dengan LACAK_PERF=1 (seed
+      # rangkaian/anggota/distribusi penuh). p95 < 150 ms adalah TARGET
+      # (spec:582), bukan gerbang: log ini hanya mencetak p50/p95 untuk
+      # ditempel di PR; p95 >= 150 ms dirutekan ke penerimaan pemilik
+      # (plan:1942-1943), bukan membuat langkah ini merah.
+      - name: Run Lacak EXPLAIN and p95 gate (LACAK_PERF)
+        run: npm run test:postgres-locks -- integration/lacak-explain.postgres.test.ts
+        working-directory: backend
+        env:
+          LACAK_PERF: '1'
+          TEST_POSTGRES_URL: postgresql://simsa_test:simsa_test_password@127.0.0.1:5432/simsa_test
+          TEST_DB_API_PRINCIPAL: simsa-api-runtime@simsa-ci-db.iam
+          TEST_DB_EVENT_PRINCIPAL: simsa-event-runtime@simsa-ci-db.iam
+          TEST_DB_WORKER_PRINCIPAL: simsa-malware-worker@simsa-ci-db.iam
+          TEST_DB_FINAL_CLEANUP_PRINCIPAL: simsa-final-cleanup@simsa-ci-db.iam
+          TEST_DB_MAINTENANCE_PRINCIPAL: simsa_ci_maintenance
+          TEST_DB_MIGRATOR_PRINCIPAL: simsa_ci_migrator
+          TEST_DB_BACKUP_PRINCIPAL: simsa_ci_backup
+          TEST_DB_GRANT_ADMIN_PRINCIPAL: simsa_test
+
   backend-tests-required:
     name: Backend Tests
     if: ${{ always() }}
@@ -823,7 +895,7 @@ jobs:
         working-directory: frontend
 
       - name: Setup Java for isolated Firebase emulators
-        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: '21'
@@ -864,20 +936,33 @@ jobs:
         with:
           node-version: 24
 
-      - name: Audit backend
-        run: npm audit --audit-level=high
-        working-directory: backend
+      # Kebijakan audit (lihat .github/npm-audit-allowlist.json):
+      # - backend: semua dependensi, tanpa pengecualian;
+      # - frontend & Spark: gerbang pada dependensi produksi (--omit=dev);
+      #   audit penuh tetap dicetak sebagai informasi;
+      # - docs-site: semua dependensi, dengan pengecualian sementara bertanggal
+      #   kedaluwarsa untuk advisori yang belum memiliki versi perbaikan.
+      - name: Test gerbang audit dan cakupan Dependabot
+        run: node --test .github/scripts/npm-audit-gate.test.mjs .github/scripts/dependabot-config.test.mjs
 
-      - name: Audit frontend
+      - name: Audit backend
+        run: node .github/scripts/npm-audit-gate.mjs backend
+
+      - name: Audit frontend (dependensi produksi)
+        run: node .github/scripts/npm-audit-gate.mjs frontend --omit=dev
+
+      - name: Audit frontend (semua dependensi, informasi)
+        continue-on-error: true
         run: npm audit --audit-level=high
         working-directory: frontend
 
-      - name: Audit Firebase Spark edition
+      - name: Audit Firebase Spark edition (dependensi produksi)
+        run: node .github/scripts/npm-audit-gate.mjs spark --omit=dev
+
+      - name: Audit Firebase Spark edition (semua dependensi, informasi)
+        continue-on-error: true
         run: npm audit --audit-level=high
         working-directory: spark
 
-      # Docusaurus currently has a no-fix high advisory in its trusted local-image
-      # build pipeline. Block critical regressions until upstream ships a patch.
       - name: Audit documentation
-        run: npm audit --audit-level=critical
-        working-directory: docs-site
+        run: node .github/scripts/npm-audit-gate.mjs docs-site

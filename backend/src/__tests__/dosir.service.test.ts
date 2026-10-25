@@ -76,6 +76,25 @@ describe('DosirService', () => {
     });
 
     describe('update', () => {
+        it.each([
+            [{ tanggalMulai: '2026-09-14' }, { tanggalSelesai: '2026-09-13' }],
+            [{ tanggalSelesai: '2026-09-14' }, { tanggalMulai: '2026-09-15' }],
+            [{}, { tanggalMulai: '2026-09-14', tanggalSelesai: '2026-09-13' }],
+        ])('rejects an inverted range after merging a partial update (%j)', async (before, patch) => {
+            enqueue([{ id: 'dosir-1', ...before }], [{ id: 'dosir-1', ...patch }]);
+            await expect(dosirService.update('dosir-1', patch, 'u1')).rejects.toThrow('Tanggal selesai');
+            expect(transactionRollbacks).toBe(1);
+            expect(auditMocks.logActionOrThrow).not.toHaveBeenCalled();
+            expect(resultQueue).toHaveLength(1);
+        });
+
+        it('allows equal dates and an explicitly cleared optional end date', async () => {
+            enqueue([{ id: 'dosir-1', tanggalMulai: '2026-09-14' }], [{ id: 'dosir-1', tanggalSelesai: '2026-09-14' }]);
+            expect(await dosirService.update('dosir-1', { tanggalSelesai: '2026-09-14' }, 'u1')).toBeDefined();
+            enqueue([{ id: 'dosir-1', tanggalMulai: '2026-09-14', tanggalSelesai: '2026-09-15' }], [{ id: 'dosir-1', tanggalSelesai: null }]);
+            expect(await dosirService.update('dosir-1', { tanggalSelesai: null }, 'u1')).toBeDefined();
+        });
+
         it('should update dosir details', async () => {
             enqueue(
                 [{ id: 'dosir-1', judul: 'Before' }],

@@ -21,9 +21,12 @@ import {
     isValidNotificationId,
     MAX_NOTIFICATION_READ_IDS,
 } from '../utils/notification-id.js';
+import { klasifikasiInSql } from './access/visibility-spec';
+import { LABEL_DIKECUALIKAN, readRefKey, recordAccessService, type RecordUser } from './rangkaian/deps.js';
+import { jakartaDate } from '../utils/jakarta-date.js';
 
 type SecurityClassScope = string[] | null | undefined;
-const ADMIN_NOTIFICATION_ROLES = new Set(['super_admin', 'admin_dirjen', 'admin_sesditjen']);
+const ADMIN_NOTIFICATION_ROLES = new Set(['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']);
 const RETENTION_NOTIFICATION_ROLES = new Set([...ADMIN_NOTIFICATION_ROLES, 'auditor']);
 
 function incomingSecurityCondition(classes: SecurityClassScope) {
@@ -115,6 +118,38 @@ function excerpt(value: string | null | undefined, length = 70): string {
     return text.length > length ? `${text.slice(0, length)}...` : text;
 }
 
+const DEADLINE_WINDOW_DAYS = 2;
+
+/** Spec §5: distribusi dengan batas_waktu ≤ 2 hari (atau terlewati) selalu mendesak. Tanggal dibanding pada kalender Jakarta. */
+export function deadlineUrgency(
+    batasWaktu: string | null | undefined,
+    today: string = jakartaDate(),
+): { type: 'urgent'; sisaHari: number } | null {
+    if (!batasWaktu) return null;
+    const sisaHari = Math.round(
+        (Date.parse(`${batasWaktu}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000,
+    );
+    if (!Number.isFinite(sisaHari) || sisaHari > DEADLINE_WINDOW_DAYS) return null;
+    return { type: 'urgent', sisaHari };
+}
+
+export function deadlineTitle(sisaHari: number): string {
+    if (sisaHari < 0) return `Disposisi lewat batas waktu ${Math.abs(sisaHari)} hari`;
+    if (sisaHari === 0) return 'Batas waktu disposisi hari ini';
+    return `Batas waktu disposisi ${sisaHari} hari lagi`;
+}
+
+/** Spec §5/§8: surat induk rangkaian data lama yang tertutup tidak masuk daftar kerja/notifikasi. */
+export function notDataLamaIncomingCondition(): SQL {
+    return sql`NOT EXISTS (
+        SELECT 1 FROM rangkaian_anggota notif_ra
+        JOIN rangkaian_surat notif_rs ON notif_rs.id = notif_ra.rangkaian_id
+        WHERE notif_ra.surat_masuk_id = ${suratMasuk.id}
+          AND notif_rs.asal = 'data_lama'
+          AND notif_rs.status <> 'aktif'
+    )`;
+}
+
 export interface Notification {
     id: string;
     type: 'urgent' | 'warning' | 'info';
@@ -154,6 +189,8 @@ export interface NotificationReadContext {
     userId: string;
     securityClassifications?: string[] | null;
     userRole?: string;
+    /** Pengguna pemanggil; bila ada, notifikasi disposisi disamarkan per checkMany (§4.8). */
+    user?: RecordUser;
 }
 
 export class NotificationService {
@@ -185,8 +222,10 @@ export class NotificationService {
             .where(and(
                 eq(suratMasuk.unitKerjaId, unitKerjaId),
                 eq(suratMasuk.isArchived, false),
-                eq(suratMasuk.isDeleted, false),
+                // Baris lama bisa ber-is_deleted NULL; hanya TRUE yang berarti terhapus.
+                sql`${suratMasuk.isDeleted} IS NOT TRUE`,
                 incomingSecurityCondition(securityClassifications),
+                notDataLamaIncomingCondition(),
             ))
             .orderBy(desc(suratMasuk.createdAt))
             .limit(50);
@@ -304,21 +343,31 @@ export class NotificationService {
         return new Set(rows.map(row => row.notificationId));
     }
 
+    /**
+     * Notifikasi disposisi terbuka unit target. Dengan `user`, kebijakan
+     * penyamaran sama dengan DistributionService.findInbox (§4.8): semua baris
+     * target tampil, baris yang tidak boleh dibaca hanya bermuatan
+     * 'Dikecualikan' (tanpa nomor, perihal, atau instruksi). Tanpa `user`
+     * (pemanggil lama) baris disaring per kelas role.
+     */
     async getDistributionNotifications(
         unitKerjaId: string,
         userId: string,
         securityClassifications?: string[] | null,
         knownReadIds?: Set<string>,
         userRole = 'user',
+        user?: RecordUser,
     ): Promise<Notification[]> {
         if (!ADMIN_NOTIFICATION_ROLES.has(userRole)) return [];
         const readIds = knownReadIds || await this.getReadIds(userId);
         const rows = await db.select({
             id: suratDistributions.id,
+            suratMasukId: suratDistributions.suratMasukId,
             status: suratDistributions.status,
             instruction: suratDistributions.instruction,
             sentAt: suratDistributions.sentAt,
             updatedAt: suratDistributions.updatedAt,
+            batasWaktu: suratDistributions.batasWaktu,
             nomorSurat: suratMasuk.nomorSurat,
             perihal: suratMasuk.perihal,
         })
@@ -327,23 +376,36 @@ export class NotificationService {
             .where(and(
                 eq(suratDistributions.targetUnitId, unitKerjaId),
                 inArray(suratDistributions.status, ['sent', 'received']),
-                incomingSecurityCondition(securityClassifications),
+                sql`${suratMasuk.isDeleted} IS NOT TRUE`,
+                // Kebijakan penyamaran sama dengan DistributionService.findInbox (§4.8).
+                user ? undefined : klasifikasiInSql(suratMasuk.sifatSurat, securityClassifications),
             ))
             .orderBy(desc(suratDistributions.updatedAt))
             .limit(50);
+        const akses = user && rows.length > 0
+            ? await recordAccessService.checkMany(user, rows.map(row => ({ type: 'surat_masuk' as const, id: row.suratMasukId })))
+            : null;
+        const bolehDibaca = (suratMasukId: string) => akses === null
+            || akses.get(readRefKey({ type: 'surat_masuk', id: suratMasukId }))?.allowed === true;
 
         return rows.map(row => {
             const urgency = ageUrgency(row.updatedAt || row.sentAt, new Date(), 1, 3);
+            const deadline = deadlineUrgency(row.batasWaktu);
+            const type = deadline ? deadline.type : urgency.type;
             const state = row.status === 'sent' ? 'awaiting_receipt' : 'awaiting_processing';
             const notification: Notification = {
-                id: statefulId('distribusi', row.id, state, urgency.type),
-                type: urgency.type,
+                id: statefulId('distribusi', row.id, state, type),
+                type,
                 category: 'distribusi',
-                title: row.status === 'sent'
-                    ? 'Distribusi menunggu penerimaan'
-                    : 'Distribusi menunggu tindak lanjut',
-                message: `${row.nomorSurat || 'Surat'} - ${excerpt(row.instruction || row.perihal)}`,
-                daysLeft: urgency.ageDays,
+                title: deadline
+                    ? deadlineTitle(deadline.sisaHari)
+                    : row.status === 'sent'
+                        ? 'Distribusi menunggu penerimaan'
+                        : 'Distribusi menunggu tindak lanjut',
+                message: bolehDibaca(row.suratMasukId)
+                    ? `${row.nomorSurat || 'Surat'} - ${excerpt(row.instruction || row.perihal)}`
+                    : LABEL_DIKECUALIKAN,
+                daysLeft: deadline ? deadline.sisaHari : urgency.ageDays,
                 referenceId: row.id,
                 createdAt: row.updatedAt || row.sentAt,
                 isRead: false,
@@ -415,7 +477,7 @@ export class NotificationService {
     ): Promise<Notification[]> {
         if (!RETENTION_NOTIFICATION_ROLES.has(userRole)) return [];
         const readIds = knownReadIds || await this.getReadIds(userId);
-        const reviewer = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'auditor']
+        const reviewer = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen', 'auditor']
             .includes(userRole);
         const actionable = reviewer
             ? or(
@@ -473,7 +535,7 @@ export class NotificationService {
         securityClassifications?: string[] | null,
         knownReadIds?: Set<string>,
     ): Promise<Notification[]> {
-        const reviewer = ['super_admin', 'admin_dirjen', 'admin_sesditjen'].includes(userRole);
+        const reviewer = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'].includes(userRole);
         if (!reviewer) return [];
         const readIds = knownReadIds || await this.getReadIds(userId);
         const statuses = userRole === 'super_admin'
@@ -539,7 +601,7 @@ export class NotificationService {
         securityClassifications?: string[] | null,
         knownReadIds?: Set<string>,
     ): Promise<Notification[]> {
-        if (!['super_admin', 'admin_dirjen', 'admin_sesditjen'].includes(userRole)) return [];
+        if (!['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'].includes(userRole)) return [];
         const readIds = knownReadIds || await this.getReadIds(userId);
         const rows = await db.select({
             id: permanentTransferManifests.id,
@@ -610,6 +672,7 @@ export class NotificationService {
         limit: number = 20,
         securityClassifications?: string[] | null,
         userRole = 'user',
+        user?: RecordUser,
     ): Promise<{
         notifications: Notification[];
         counts: NotificationCounts;
@@ -643,7 +706,7 @@ export class NotificationService {
             this.getPendingSuratMasuk(unitKerjaId, userId, securityClassifications, readIds),
             this.getExpiringArchives(unitKerjaId, userId, 90, securityClassifications, readIds),
             this.getDistributionNotifications(
-                unitKerjaId, userId, securityClassifications, readIds, userRole,
+                unitKerjaId, userId, securityClassifications, readIds, userRole, user,
             ),
             this.getRetentionVerificationNotifications(
                 unitKerjaId, userId, securityClassifications, readIds, userRole,
@@ -707,6 +770,7 @@ export class NotificationService {
         userId: string,
         securityClassifications?: string[] | null,
         userRole = 'user',
+        user?: RecordUser,
     ): Promise<{
         total: number;
         urgent: number;
@@ -725,6 +789,7 @@ export class NotificationService {
             100,
             securityClassifications,
             userRole,
+            user,
         );
         return {
             total: counts.total,
@@ -811,6 +876,7 @@ export class NotificationService {
             350,
             context.securityClassifications,
             context.userRole || 'user',
+            context.user,
         );
         const currentIds = new Set(current.notifications.map(item => item.id));
         if (unresolved.some(id => !currentIds.has(id))) {

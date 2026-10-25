@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -14,12 +15,13 @@ import { useToast } from '@/hooks/use-toast'
 import archiveLendingService from '@/services/archive-lending.service'
 import arsipService from '@/services/arsip.service'
 import storageLocationService from '@/services/storage-location.service'
-import { format, isPast, parseISO } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
 import { TableSkeleton } from '@/components/LoadingSkeletons'
 import { useAuth } from '@/context/AuthContext'
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
+import { usePaginatedResource } from '@/hooks/use-paginated-resource'
 
 const STATUS_CONFIG = {
     borrowed: { label: 'Dipinjam', variant: 'default', icon: ArrowLeftRight, className: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 hover:bg-blue-200 border-blue-200' },
@@ -57,7 +59,7 @@ function StatusBadge({ status }) {
 }
 
 function LendingRow({ item, onReturn, onExtend }) {
-    const isOverdue = item.status === 'borrowed' && isPast(parseISO(item.dueDate))
+    const isOverdue = item.status === 'overdue'
     const typeConfig = TYPE_CONFIG[item.lendingType] || TYPE_CONFIG.arsip
     const TypeIcon = typeConfig.icon
 
@@ -75,8 +77,13 @@ function LendingRow({ item, onReturn, onExtend }) {
             </TableCell>
             <TableCell data-label="ID Arsip/Lokasi" className="font-medium">
                 <code className="text-xs bg-muted px-1.5 py-0.5 rounded border border-border">
-                    {item.lendingType === 'arsip' ? item.arsip?.noArsip : item.storageLocation?.code}
+                    {item.lendingType === 'arsip'
+                        ? item.arsip?.noArsip || item.arsip?.nomorBerkas || item.arsipId || '—'
+                        : item.storageLocation?.code || item.storageLocationId || '—'}
                 </code>
+                <p className="mt-1 text-xs text-muted-foreground break-words">
+                    {item.lendingType === 'arsip' ? item.arsip?.uraianBerkas : item.storageLocation?.name}
+                </p>
             </TableCell>
             <TableCell data-label="Peminjam">
                 <div className="flex items-center gap-2">
@@ -104,7 +111,7 @@ function LendingRow({ item, onReturn, onExtend }) {
             </TableCell>
             <TableCell data-label="Aksi" className="text-right">
                 <div className="flex justify-end gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
-                    {item.status === 'borrowed' && (
+                    {['borrowed', 'overdue'].includes(item.status) && (
                         <>
                             <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={() => onExtend(item)}>
                                 <Calendar className="h-3.5 w-3.5" />
@@ -131,13 +138,35 @@ function LendingRow({ item, onReturn, onExtend }) {
 export default function ArchiveLending() {
     const { user } = useAuth()
     const { toast } = useToast()
-    const unitScope = useRequiredUnitKerjaScope(user)
-    const unitKerjaId = unitScope.unitKerjaId
-    const [activeTab, setActiveTab] = useState('active')
-    const [data, setData] = useState([])
-    const [stats, setStats] = useState(null)
-    const [loading, setLoading] = useState(true)
+    const [searchParams, setSearchParams] = useSearchParams()
+    const requiredScope = useRequiredUnitKerjaScope(user)
+    const requestedUnit = searchParams.get('unitKerjaId') || ''
+    // Only Super Admin can choose a unit; URL input never overrides an assigned mandate.
+    const unitKerjaId = requiredScope.isSuperAdmin
+        ? (requiredScope.unitKerjaList.some(unit => unit.id === requestedUnit) ? requestedUnit : '')
+        : requiredScope.unitKerjaId
+    const unitScope = {
+        ...requiredScope,
+        unitKerjaId,
+        selectedUnitKerjaId: unitKerjaId,
+        setSelectedUnitKerjaId: requiredScope.isSuperAdmin ? value => setSearchParams(previous => {
+            const next = new URLSearchParams(previous)
+            if (value) next.set('unitKerjaId', value)
+            else next.delete('unitKerjaId')
+            return next
+        }) : requiredScope.setSelectedUnitKerjaId,
+    }
+    const activeTab = searchParams.get('status') === 'overdue' ? 'overdue'
+        : searchParams.get('status') === 'returned' ? 'history' : 'active'
+    const setActiveTab = value => setSearchParams(previous => {
+        const next = new URLSearchParams(previous)
+        next.set('status', value === 'overdue' ? 'overdue' : value === 'history' ? 'returned' : 'borrowed')
+        return next
+    })
+    const [statsSnapshot, setStatsSnapshot] = useState(null)
+    const [statsRevision, setStatsRevision] = useState(0)
     const [searchQuery, setSearchQuery] = useState('')
+    const [debouncedSearch, setDebouncedSearch] = useState('')
     const [returnDialogOpen, setReturnDialogOpen] = useState(false)
     const [extendDialogOpen, setExtendDialogOpen] = useState(false)
     const [borrowDialogOpen, setBorrowDialogOpen] = useState(false)
@@ -153,46 +182,43 @@ export default function ArchiveLending() {
     const [pendingAction, setPendingAction] = useState(null)
     const targetSearchSeq = useRef(0)
 
-    // Fetch data
-    const fetchData = useCallback(async () => {
-        if (!unitKerjaId) return
-        setLoading(true)
-        try {
-            const status = activeTab === 'active' ? 'borrowed' : activeTab === 'overdue' ? 'overdue' : 'returned'
-            const response = await archiveLendingService.getAll({ unitKerjaId, status, limit: 50 })
-            if (response.success) {
-                setData(response.data)
-            }
-        } catch (error) {
-            console.error('Gagal memuat data peminjaman:', error)
-        } finally {
-            setLoading(false)
-        }
-    }, [activeTab, unitKerjaId])
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300)
+        return () => clearTimeout(timer)
+    }, [searchQuery])
 
-    const fetchStats = useCallback(async () => {
-        if (!unitKerjaId) return
-        try {
-            const response = await archiveLendingService.getStats(unitKerjaId)
-            if (response.success) {
-                setStats(response.data)
-            }
-        } catch (error) {
-            console.error('Error fetching stats:', error)
+    const status = activeTab === 'active' ? 'borrowed' : activeTab === 'overdue' ? 'overdue' : 'returned'
+    const fetchPage = useCallback(async ({ page, limit }) => {
+        const response = await archiveLendingService.getAll({ unitKerjaId, status, search: debouncedSearch, page, limit })
+        if (!response.success || !Array.isArray(response.data)) {
+            throw new Error('Daftar peminjaman belum dapat dimuat. Coba lagi.')
         }
-    }, [unitKerjaId])
+        return response
+    }, [unitKerjaId, status, debouncedSearch])
+    const resource = usePaginatedResource(fetchPage, {
+        queryKey: `${unitKerjaId}:${status}:${debouncedSearch}`, enabled: Boolean(unitKerjaId), pageSize: 50,
+    })
+    const searchPending = searchQuery.trim() !== debouncedSearch
+    const data = searchPending ? [] : resource.rows
+    const loading = searchPending || resource.loading
+    const loadError = searchPending ? null : resource.error
+    const fetchData = resource.reload
+    const fetchStats = useCallback(() => setStatsRevision(value => value + 1), [])
+    const stats = statsSnapshot?.unitKerjaId === unitKerjaId && statsSnapshot.revision === statsRevision
+        ? statsSnapshot.data : null
 
     useEffect(() => {
-        if (unitKerjaId) {
-            fetchData()
-            fetchStats()
-        } else {
-            setData([])
-            setStats(null)
-            setSelectedItem(null)
-            setLoading(false)
-        }
-    }, [fetchData, fetchStats, unitKerjaId])
+        if (!unitKerjaId) return
+        let active = true
+        archiveLendingService.getStats(unitKerjaId)
+            .then(response => {
+                if (active) setStatsSnapshot({ unitKerjaId, revision: statsRevision, data: response.success ? response.data : null })
+            })
+            .catch(() => {
+                if (active) setStatsSnapshot({ unitKerjaId, revision: statsRevision, data: null })
+            })
+        return () => { active = false }
+    }, [unitKerjaId, statsRevision])
 
     // Return handler
     const handleReturn = async () => {
@@ -228,6 +254,7 @@ export default function ArchiveLending() {
             setExtendDialogOpen(false)
             setNewDueDate('')
             fetchData()
+            fetchStats()
         } catch (error) {
             toast({ title: 'Gagal memperpanjang', description: error.message, variant: 'destructive' })
         } finally {
@@ -354,17 +381,6 @@ export default function ArchiveLending() {
         setExtendDialogOpen(true)
     }
 
-    // Filter data
-    const filteredData = data.filter(item => {
-        if (!searchQuery) return true
-        const query = searchQuery.toLowerCase()
-        return (
-            item.borrowerName?.toLowerCase().includes(query) ||
-            item.arsip?.noArsip?.toLowerCase().includes(query) ||
-            item.storageLocation?.code?.toLowerCase().includes(query)
-        )
-    })
-
     if (!unitKerjaId) {
         return (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -486,6 +502,8 @@ export default function ArchiveLending() {
                                 placeholder="Cari peminjam, nomor arsip..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
+                                maxLength={255}
+                                aria-label="Cari peminjaman"
                                 className="pl-9 bg-background"
                             />
                         </div>
@@ -513,7 +531,16 @@ export default function ArchiveLending() {
                                         <TableSkeleton rows={5} columns={8} />
                                     </TableCell>
                                 </TableRow>
-                            ) : filteredData.length === 0 ? (
+                            ) : loadError ? (
+                                <TableRow>
+                                    <TableCell colSpan={8} className="p-6">
+                                        <div role="alert" className="space-y-3 text-center text-destructive">
+                                            <p>{loadError.message || 'Gagal memuat daftar peminjaman.'}</p>
+                                            <Button variant="outline" onClick={fetchData}>Coba lagi</Button>
+                                        </div>
+                                    </TableCell>
+                                </TableRow>
+                            ) : data.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
                                         <div className="flex flex-col items-center justify-center gap-2">
@@ -522,7 +549,7 @@ export default function ArchiveLending() {
                                         </div>
                                     </TableCell>
                                 </TableRow>
-                            ) : filteredData.map((item) => (
+                            ) : data.map((item) => (
                                 <LendingRow
                                     key={item.id}
                                     item={item}
@@ -532,6 +559,15 @@ export default function ArchiveLending() {
                             ))}
                         </TableBody>
                     </Table>
+                    <nav aria-label="Halaman peminjaman" className="flex flex-wrap items-center justify-between gap-3 border-t p-4">
+                        <p role="status" className="text-sm text-muted-foreground">
+                            {loading ? 'Memuat daftar…' : loadError ? 'Daftar belum tersedia.' : `${resource.total} peminjaman · Halaman ${resource.page} dari ${resource.totalPages}`}
+                        </p>
+                        <div className="flex gap-2">
+                            <Button variant="outline" disabled={loading || Boolean(loadError) || resource.page <= 1} onClick={() => resource.setPage(resource.page - 1)}>Sebelumnya</Button>
+                            <Button variant="outline" disabled={loading || Boolean(loadError) || resource.page >= resource.totalPages} onClick={() => resource.setPage(resource.page + 1)}>Berikutnya</Button>
+                        </div>
+                    </nav>
                 </CardContent>
             </Card>
 

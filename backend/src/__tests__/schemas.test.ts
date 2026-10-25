@@ -19,6 +19,7 @@ import {
     updateLayananStatusSchema,
     markAllReadSchema,
     createSuratKeluarSchema,
+    updateSuratKeluarSchema,
 } from '../validators/schemas';
 
 const validUUID = '550e8400-e29b-41d4-a716-446655440000';
@@ -82,6 +83,27 @@ describe('createSuratKeluarSchema numbering contract', () => {
 });
 
 // ==================== Dosir Schemas ====================
+
+describe('surat keluar sifat (urgensi)', () => {
+    const base = { unitKerjaId: 'ditjen', tanggalSurat: '2026-08-28', perihal: 'Undangan rapat', kepada: 'Seluruh unit' };
+
+    it('keeps the sifat sent on create and update', () => {
+        const created = createSuratKeluarSchema.safeParse({ ...base, sifatSurat: 'segera' });
+        expect(created.success && created.data.sifatSurat).toBe('segera');
+        const updated = updateSuratKeluarSchema.safeParse({ sifatSurat: 'penting' });
+        expect(updated.success && updated.data).toEqual({ sifatSurat: 'penting' });
+    });
+
+    it('does not invent a sifat for records that omit it', () => {
+        const created = createSuratKeluarSchema.safeParse(base);
+        expect(created.success && created.data).not.toHaveProperty('sifatSurat');
+        expect(updateSuratKeluarSchema.safeParse({}).data).toEqual({});
+    });
+
+    it('rejects a sifat longer than the column', () => {
+        expect(createSuratKeluarSchema.safeParse({ ...base, sifatSurat: 'x'.repeat(51) }).success).toBe(false);
+    });
+});
 
 describe('createDosirSchema', () => {
     it('accepts valid input', () => {
@@ -178,6 +200,27 @@ describe('createDistributionSchema', () => {
             ccUnits: ['unit-c', 'unit-d'],
         });
         expect(result.success).toBe(true);
+    });
+
+    it('accepts instruction: null as sent by DistributeDialog', () => {
+        const result = createDistributionSchema.safeParse({
+            suratMasukId: validUUID,
+            sourceUnitId: 'unit-a',
+            targetUnitId: 'unit-b',
+            instruction: null,
+        });
+        expect(result.success).toBe(true);
+        if (result.success) expect(result.data.instruksi).toBeNull();
+    });
+
+    it('rejects an instruction longer than 2000 characters', () => {
+        const result = createDistributionSchema.safeParse({
+            suratMasukId: validUUID,
+            sourceUnitId: 'unit-a',
+            targetUnitId: 'unit-b',
+            instruction: 'x'.repeat(2001),
+        });
+        expect(result.success).toBe(false);
     });
 
     it('rejects missing required fields', () => {
@@ -297,7 +340,9 @@ describe('retention and legal hold schemas', () => {
     });
 
     it('allows legacy updates without a trigger and keeps them non-actionable', () => {
-        expect(updateArsipSchema.safeParse({ catatan: 'Koreksi metadata' }).success).toBe(true);
+        expect(updateArsipSchema.parse({ keterangan: 'Koreksi metadata' })).toEqual({
+            keterangan: 'Koreksi metadata',
+        });
     });
 
     it('requires a unit and a meaningful legal-hold reason', () => {

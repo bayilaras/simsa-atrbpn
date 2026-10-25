@@ -52,6 +52,20 @@ const ALLOWED_METADATA_ROUTES: readonly AllowedRoute[] = [
     { methods: PUT, path: exact(`/surat-keluar/${UUID}`) },
     { methods: DELETE, path: exact(`/surat-keluar/${UUID}`) },
 
+    { methods: GET, path: exact(`/rangkaian/(?:lacak|${UUID}|by-surat/(?:surat_masuk|surat_keluar)/${UUID})`) },
+    { methods: GET, path: exact('/rangkaian') },
+    { methods: GET, path: exact('/rangkaian/perlu-dilengkapi(?:/ringkasan)?') },
+    { methods: POST, path: exact(`/rangkaian/surat-keluar/${UUID}/tandai-inisiatif`) },
+    { methods: POST, path: exact(`/rangkaian/anggota/${UUID}/ajukan-akses`) },
+    { methods: POST, path: exact(`/rangkaian/disposisi/${UUID}/tutup`) },
+    { methods: POST, path: exact('/rangkaian/tautan') },
+    { methods: GET, path: exact(`/rangkaian/${UUID}/(?:opsi-berkas|gabung/pratinjau)`) },
+    { methods: POST, path: exact(`/rangkaian/${UUID}/(?:selesai|buka-kembali|berkaskan|tautan|gabung)`) },
+    { methods: PUT, path: exact(`/rangkaian/${UUID}/unit-pengolah`) },
+    { methods: POST, path: exact(`/rangkaian/relasi/${UUID}/batal`) },
+    { methods: GET, path: exact(`/rangkaian/(?:data-lama/ringkasan|${UUID}/koreksi-berkas)`) },
+    { methods: POST, path: exact(`/rangkaian/(?:data-lama/tutup-massal|${UUID}/koreksi-berkas|koreksi-berkas/${UUID}/putuskan)`) },
+
     { methods: GET, path: exact(`/arsip(?:/(?:expiring|stats|search/(?:fulltext|suggestions|keywords)|${UUID}(?:/(?:related|rule-history))?))?`) },
     { methods: POST, path: exact(`/arsip(?:/${UUID}/reconcile-rules)?`) },
     { methods: PUT, path: exact(`/arsip/${UUID}`) },
@@ -106,7 +120,7 @@ const ALLOWED_METADATA_ROUTES: readonly AllowedRoute[] = [
     { methods: POST, path: exact('/retention/disposal-report') },
     { methods: PUT, path: exact(`/retention/${UUID}/(?:hold|release)`) },
 
-    { methods: GET, path: exact(`/distributions(?:/(?:units|inbox|outbox|stats|surat/${UUID}|${UUID}))?`) },
+    { methods: GET, path: exact(`/distributions(?:/(?:units|opsi|inbox|outbox|stats|surat/${UUID}|${UUID}(?:/kandidat-penyelesaian)?))?`) },
     { methods: POST, path: exact('/distributions') },
     { methods: PUT, path: exact(`/distributions/${UUID}/(?:receive|process|reject)`) },
 
@@ -281,6 +295,8 @@ function blockedCapability(path: string): DemoBlockedCapability {
     if (/^\/regulatory-rule-sets\/(?:[^/]+\/)?source-document(?:\/|$)/.test(path)) {
         return 'file_storage';
     }
+    // Uploaded CSV/XLSX files are an operational import like /migration, not an external source.
+    if (path.startsWith('/import/berkas/')) return 'operational_admin';
     if (path.startsWith('/import/')) return 'external_import';
     if (path.startsWith('/integrations/srikandi')) return 'external_delivery';
     if (path.startsWith('/migration/')) return 'operational_admin';

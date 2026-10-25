@@ -1,4 +1,5 @@
 import api from './api';
+import { uploadArsipAttachment } from './arsip-attachment-upload.service';
 
 const BASE_URL = '/api/arsip-terjaga';
 
@@ -45,6 +46,16 @@ export const arsipTerjagaService = {
     // Report to ANRI
     async markAsReported(id, nomorLaporan, tanggalPelaporan) {
         return api.put(`${BASE_URL}/${id}/report`, { nomorLaporan, tanggalPelaporan });
+    },
+
+    getReports(id) { return api.get(`${BASE_URL}/${id}/reports`); },
+    createReport(id, data) { return api.post(`${BASE_URL}/${id}/reports`, data); },
+    transitionReport(id, reportId, data) { return api.post(`${BASE_URL}/${id}/reports/${reportId}/transitions`, data); },
+    uploadEvidence(arsipId, file) {
+        return uploadArsipAttachment(arsipId, file);
+    },
+    downloadEvidence(attachmentId) {
+        return api.get(`/api/files/attachment/${attachmentId}`, { download: 1 }, { responseType: 'blob' });
     },
 
     // Delete

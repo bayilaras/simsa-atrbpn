@@ -3,7 +3,7 @@ import { Readable } from 'node:stream';
 import { Storage } from '@google-cloud/storage';
 import { buildCloudPlatformConfig } from '../config/cloud-platform.js';
 import { createLogger } from '../utils/logger.js';
-import { parseGcsLocator, toGcsLocator } from './locator.js';
+import { parseGcsLocator, toGcsLocator, assertReservedBulkObjectName } from './locator.js';
 import type {
     CopyFileOptions,
     DownloadFileOptions,
@@ -314,7 +314,8 @@ export class GcsStorageAdapter implements ObjectStorageAdapter {
 
     async uploadFile(options: UploadFileOptions): Promise<StoredFile> {
         const fileName = safeName(options.fileName);
-        const objectName = `${safePrefix(options.folder)}/${randomUUID()}-${fileName}`;
+        const objectName = options.reservedObjectName ? assertReservedBulkObjectName(options.reservedObjectName)
+            : `${safePrefix(options.folder)}/${randomUUID()}-${fileName}`;
         const file = this.storage.bucket(this.defaultBucket).file(objectName);
         await file.save(options.buffer, {
             resumable: options.buffer.length >= 8 * 1024 * 1024,
@@ -328,6 +329,17 @@ export class GcsStorageAdapter implements ObjectStorageAdapter {
         });
         const [metadata] = await file.getMetadata();
         return this.storedFile(this.defaultBucket, objectName, metadata, options.fileName);
+    }
+
+    async getFileByReservedName(objectName: string): Promise<StoredFile | null> {
+        assertReservedBulkObjectName(objectName);
+        try {
+            const [metadata] = await this.storage.bucket(this.defaultBucket).file(objectName).getMetadata();
+            return this.storedFile(this.defaultBucket, objectName, metadata);
+        } catch (error) {
+            if (isNotFound(error)) return null;
+            throw error;
+        }
     }
 
     /**

@@ -98,8 +98,8 @@ class RoleAliasTests(unittest.TestCase):
             with self.subTest(case=case), self.assertRaises(ValueError):
                 MODULE.select_toc(case, DATABASE)
 
-    def test_canonical_both_migration_profiles(self):
-        for profile in ["pre_migration", "post_migration"]:
+    def test_canonical_reviewed_migration_profiles(self):
+        for profile in ["pre_migration", "pre_upgrade_0038", "post_migration"]:
             with self.subTest(profile=profile):
                 result = parse(profile=profile)
                 self.assertEqual(len(result["source_roles"]), 7)
@@ -111,6 +111,10 @@ class RoleAliasTests(unittest.TestCase):
         self.assertTrue(MODULE.select_toc(empty, DATABASE, "pre_migration").startswith(";"))
         with self.assertRaises(ValueError):
             MODULE.select_toc(empty, DATABASE, "post_migration")
+        with self.assertRaises(ValueError):
+            MODULE.select_toc(empty, DATABASE, "pre_upgrade_0038")
+        with self.assertRaises(ValueError):
+            parse(sql(present=False), profile="pre_upgrade_0038", present=False)
         with self.assertRaises(ValueError):
             MODULE.select_toc(empty.replace("TOC Entries: 5", "TOC Entries: 6"), DATABASE, "pre_migration")
         plan = parse(sql(present=False), profile="pre_migration", present=False)

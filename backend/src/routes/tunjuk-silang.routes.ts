@@ -10,6 +10,7 @@ import {
 } from '../services/record-access.service.js';
 import { dosirService } from '../services/dosir.service.js';
 import { resolveRecordUnitScope } from '../utils/record-unit-scope.js';
+import { hasPostgresErrorCode } from '../utils/postgres-errors.js';
 
 const router = Router();
 
@@ -227,7 +228,7 @@ router.post('/', canWriteMiddleware(), async (req: AuthRequest, res: Response, n
         });
         res.status(201).json(result);
     } catch (error) {
-        if ((error as { code?: string })?.code === '23505') {
+        if (hasPostgresErrorCode(error, '23505')) {
             return res.status(409).json({ error: 'Tunjuk silang aktif tersebut sudah tercatat' });
         }
         next(error);

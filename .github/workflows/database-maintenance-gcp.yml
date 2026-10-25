@@ -785,10 +785,11 @@ jobs:
               seed: $database[0].seed,
               ordered_operations: [
                 "db:roles:bootstrap-initial", "db:migrate",
-                "db:roles:bootstrap-final", "db:grants:converge", "seed:all"
+                "db:roles:bootstrap-final", "db:grants:converge", "seed:deployment"
               ]
             }' >maintenance-evidence/maintenance-summary.json
-          jq -e '.database_journal.count == 34 and .database_journal.latest_created_at == 1788060600000 and (.migrator_database_create == false) and .principal_memberships_verified and .role_membership_closure_verified and .runtime_identity_bindings.verified and .seed.verified' \
+          python3 .github/scripts/build-migration-manifest.py --verify-journal-summary maintenance-evidence/maintenance-summary.json
+          jq -e '(.migrator_database_create == false) and .principal_memberships_verified and .role_membership_closure_verified and .runtime_identity_bindings.verified and .seed.verified' \
             maintenance-evidence/maintenance-summary.json >/dev/null
           (
             cd maintenance-evidence

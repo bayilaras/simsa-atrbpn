@@ -32,8 +32,132 @@ vi.mock('../services/blob-storage.service.js', () => ({
 }));
 
 const { collectReadiness, evaluateWorkerReadiness } = await import('../services/readiness.service.js');
+const { evaluateOnDemandMalwareReadiness } = await import('../services/readiness.service.js');
+
+describe('on-demand native scanner readiness', () => {
+    const now = Date.parse('2026-09-12T10:00:00.000Z');
+    const row = () => ({ worker: 'malware-scan' as const, status: 'running' as const,
+        last_seen_at: new Date(now - 3_600_000), details: { runtime: 'on-demand', engineEvidence: {
+            engineVersion: '1.4.3', definitionsVerifiedAt: new Date(now - 3_600_000).toISOString(),
+            definitionsExpiresAt: new Date(now - 3_600_000 + 86_400_000).toISOString(), definitionsDigest: 'a'.repeat(64),
+            databases: ['main', 'daily', 'bytecode'].map(name => ({ name, version: 1, sha256: 'b'.repeat(64), signatureSha256: 'c'.repeat(64) })),
+        } } });
+    // A row whose 24-hour lease started `verifiedAgoMs` before now.
+    const leased = (verifiedAgoMs: number, details: Record<string, unknown> = {}) => {
+        const candidate = row();
+        const verifiedAt = now - verifiedAgoMs;
+        candidate.last_seen_at = new Date(verifiedAt + 1000);
+        Object.assign(candidate.details.engineEvidence, { definitionsVerifiedAt: new Date(verifiedAt).toISOString(),
+            definitionsExpiresAt: new Date(verifiedAt + 86_400_000).toISOString() });
+        Object.assign(candidate.details, details);
+        return candidate;
+    };
+    const failure = (seenAgoMs: number, details: Record<string, unknown> = {}) => ({ worker: 'malware-scan' as const,
+        status: 'degraded' as const, last_seen_at: new Date(now - seenAgoMs),
+        details: { runtime: 'on-demand', reason: 'invocation_failed', ...details } });
+    it('accepts real verification until its definition lease expires without a 60-second timer heartbeat', () => {
+        expect(evaluateOnDemandMalwareReadiness([row()], now)).toMatchObject({ required: true, state: 'ready' });
+    });
+    it.each(['missing', 'future', 'wrong-runtime'])('rejects %s proof without invoking an engine', variant => {
+        const candidate = row();
+        if (variant === 'future') candidate.details.engineEvidence.definitionsVerifiedAt = new Date(now + 1000).toISOString();
+        if (variant === 'wrong-runtime') candidate.details.runtime = 'external';
+        const rows = variant === 'missing' ? [] : [candidate];
+        expect(evaluateOnDemandMalwareReadiness(rows, now)).toEqual({ required: true, state: 'not_ready',
+            reason: 'on_demand_verification_missing_or_expired' });
+    });
+    it('reports a lapsed lease after a successful run as wakeable standby, not as a fault', () => {
+        expect(evaluateOnDemandMalwareReadiness([leased(86_400_001)], now)).toEqual({ required: true, state: 'standby',
+            reason: 'definitions_lease_expired', runtime: 'on-demand', lastSeenAt: new Date(now - 86_400_001 + 1000).toISOString(),
+            definitionsExpiresAt: new Date(now - 1).toISOString() });
+    });
+    it('stops treating a lapsed lease as standby once four-hourly wakes have not refreshed it for eight hours', () => {
+        expect(evaluateOnDemandMalwareReadiness([leased(86_400_000 + 8 * 3_600_000)], now)).toMatchObject({ state: 'standby' });
+        expect(evaluateOnDemandMalwareReadiness([leased(86_400_000 + 8 * 3_600_000 + 1)], now)).toMatchObject({ state: 'not_ready',
+            reason: 'on_demand_verification_missing_or_expired' });
+    });
+    it('reports a newer failed run of this deployment as a refresh failure even while an older lease is valid', () => {
+        const rows = [row(), failure(1000, { deploymentId: 'dpl_current123' })];
+        expect(evaluateOnDemandMalwareReadiness(rows, now, 'dpl_current123')).toEqual({ required: true, state: 'not_ready',
+            reason: 'on_demand_refresh_failed' });
+        expect(evaluateOnDemandMalwareReadiness([row(), failure(1000)], now)).toMatchObject({ reason: 'on_demand_refresh_failed' });
+    });
+    it.each([
+        ['a superseded deployment', { deploymentId: 'dpl_previous12' }],
+        ['code that predates deployment tagging', {}],
+    ])('does not blame a freshly promoted deployment for a failure recorded by %s', (_label, details) => {
+        expect(evaluateOnDemandMalwareReadiness([leased(30 * 3_600_000), failure(3_600_000, details)], now, 'dpl_current123'))
+            .toEqual({ required: true, state: 'standby', reason: 'awaiting_first_run_on_deployment', runtime: 'on-demand',
+                lastSeenAt: new Date(now - 3_600_000).toISOString() });
+        // A superseded deployment's last run used build-time definitions that have since lapsed.
+        const stale = leased(25 * 3_600_000, details); stale.last_seen_at = new Date(now - 3_600_000);
+        expect(evaluateOnDemandMalwareReadiness([stale], now, 'dpl_current123'))
+            .toMatchObject({ state: 'standby', reason: 'awaiting_first_run_on_deployment' });
+    });
+    it('keeps a valid lease from a superseded deployment ready', () => {
+        expect(evaluateOnDemandMalwareReadiness([leased(3_600_000, { deploymentId: 'dpl_previous12' })], now, 'dpl_current123'))
+            .toMatchObject({ state: 'ready' });
+    });
+    it('reports a new deployment that has not run its scanner within eight hours as a fault', () => {
+        // E.g. its wake dispatch is rejected before the worker can publish anything.
+        expect(evaluateOnDemandMalwareReadiness([failure(8 * 3_600_000, { deploymentId: 'dpl_previous12' })], now, 'dpl_current123'))
+            .toMatchObject({ state: 'standby' });
+        expect(evaluateOnDemandMalwareReadiness([failure(8 * 3_600_000 + 1, { deploymentId: 'dpl_previous12' })], now, 'dpl_current123'))
+            .toMatchObject({ state: 'not_ready', reason: 'on_demand_refresh_failed' });
+        expect(evaluateOnDemandMalwareReadiness([leased(9 * 3_600_000, { deploymentId: 'dpl_previous12' })], now, 'dpl_current123'))
+            .toMatchObject({ state: 'ready' });
+    });
+});
 
 describe('collectReadiness', () => {
+    it('requires on-demand verification while never invoking the embedded scanner probe', async () => {
+        const { malwareScanConfig } = await import('../config/env.js');
+        const prior = { mode: malwareScanConfig.mode, workerEnabled: malwareScanConfig.workerEnabled,
+            runtime: malwareScanConfig.worker.runtime, transport: malwareScanConfig.transport };
+        const now = Date.now();
+        const proof = { engineVersion: '1.4.3', definitionsVerifiedAt: new Date(now - 1000).toISOString(),
+            definitionsExpiresAt: new Date(now - 1000 + 86_400_000).toISOString(), definitionsDigest: 'a'.repeat(64),
+            databases: ['main', 'daily', 'bytecode'].map(name => ({ name, version: 1, sha256: 'b'.repeat(64), signatureSha256: 'c'.repeat(64) })) };
+        try {
+            malwareScanConfig.mode = 'clamav'; malwareScanConfig.workerEnabled = true;
+            malwareScanConfig.worker.runtime = 'on-demand'; malwareScanConfig.transport = 'native';
+            vi.stubEnv('OBJECT_STORAGE_PROVIDER', 'vercel-blob');
+            const embedded = vi.fn().mockRejectedValue(new Error('must not initialize native engine'));
+            const dependencies = { probeDatabase: async () => {}, probeBlob: async () => {}, probeEmbeddedScanner: embedded,
+                readHeartbeats: async () => [{ worker: 'malware-scan' as const, status: 'running' as const, last_seen_at: new Date(now), details: { runtime: 'on-demand', engineEvidence: proof } }], now: () => now };
+            const ready = await collectReadiness(dependencies);
+            expect(ready.status).toBe('ready'); expect(ready.dependencies.malwareScanner.state).toBe('on_demand');
+            expect((await collectReadiness({ ...dependencies, readHeartbeats: async () => [] })).status).toBe('not_ready');
+            // A lapsed lease serves traffic (HTTP 200) but is reported as degraded.
+            const lapsed = await collectReadiness({ ...dependencies, now: () => now + 86_400_000 });
+            expect(lapsed.status).toBe('degraded'); expect(lapsed.dependencies.malwareWorker.state).toBe('standby');
+            expect(embedded).not.toHaveBeenCalled();
+        } finally {
+            malwareScanConfig.mode = prior.mode; malwareScanConfig.workerEnabled = prior.workerEnabled;
+            malwareScanConfig.worker.runtime = prior.runtime; malwareScanConfig.transport = prior.transport;
+        }
+    });
+    it('probes only the database for full internal mode with explicitly disabled storage and workers', async () => {
+        vi.stubEnv('SIMSA_APP_MODE', 'full');
+        vi.stubEnv('APP_PROFILE', 'internal');
+        vi.stubEnv('AUTH_PROVIDER', 'better-auth');
+        vi.stubEnv('OBJECT_STORAGE_PROVIDER', 'disabled');
+        blobStatus.mockReturnValue({ provider: 'disabled', required: false, configured: false,
+            ready: false, validationErrors: [] });
+        const probeDatabase = vi.fn().mockResolvedValue(undefined);
+        const probeBlob = vi.fn().mockRejectedValue(new Error('must not access storage'));
+        const probeEmbeddedScanner = vi.fn().mockRejectedValue(new Error('must not access scanner'));
+        const readHeartbeats = vi.fn().mockRejectedValue(new Error('must not poll workers'));
+        const result = await collectReadiness({ probeDatabase, probeBlob, probeEmbeddedScanner,
+            readHeartbeats, now: Date.now });
+        expect(result.status).toBe('ready');
+        expect(probeDatabase).toHaveBeenCalledOnce();
+        expect(probeBlob).not.toHaveBeenCalled();
+        expect(probeEmbeddedScanner).not.toHaveBeenCalled();
+        expect(readHeartbeats).not.toHaveBeenCalled();
+        expect(result.dependencies.blobStorage).toMatchObject({ provider: 'disabled', ready: false,
+            runtime: { ready: true, skipped: true } });
+    });
     afterEach(() => {
         vi.unstubAllEnvs();
     });
@@ -98,7 +222,7 @@ describe('collectReadiness', () => {
         expect(JSON.stringify(result)).not.toContain('permission denied');
     });
 
-    it('requires the complete 0033 least-privilege schema contract in the default database probe', async () => {
+    it('requires the complete 0037 least-privilege schema contract in the default database probe', async () => {
         const databaseQuery = vi.fn().mockResolvedValue({ rows: [{ schema_ready: true }] });
         const databaseRelease = vi.fn();
         const heartbeatRelease = vi.fn();
@@ -117,7 +241,7 @@ describe('collectReadiness', () => {
         const [query, parameters] = databaseQuery.mock.calls[0] as [string, undefined?];
         expect(parameters).toBeUndefined();
         // Runtime identities deliberately cannot read the Drizzle journal.
-        // Readiness proves the resulting 0033 contract from public catalogs.
+        // Readiness proves the resulting 0037 contract from public catalogs.
         expect(query).not.toContain('drizzle.__drizzle_migrations');
         expect(query).toContain('pg_catalog.pg_attribute');
         expect(query).toContain('FROM pg_constraint AS constraint_record');
@@ -368,4 +492,45 @@ describe('collectReadiness', () => {
             details: { scanner: 'reachable', queue: 'failed' },
         });
     });
+});
+
+describe('schema readiness for rangkaian surat (0046)', () => {
+    it('requires the rangkaian columns, constraints, and closure triggers', async () => {
+        const { DATABASE_SCHEMA_READINESS_SQL } = await import('../services/readiness.service.js');
+        for (const fragment of [
+            "('unit_kerja', 'is_unit_pengawas')",
+            "('surat_keluar', 'asal_naskah')",
+            "('surat_distributions', 'rangkaian_id')",
+            "('surat_distributions', 'ditutup_pengawas')",
+            "('rangkaian_surat', 'kode')",
+            "('rangkaian_relasi', 'cancelled_at')",
+            "('surat_distributions', 'surat_distributions_status_check')",
+            "('rangkaian_surat', 'rangkaian_berkas_check')",
+            "('rangkaian_relasi', 'rangkaian_relasi_pembatalan_check')",
+            "('surat_distributions', 'surat_distributions_closed_guard')",
+            "('rangkaian_surat', 'rangkaian_surat_status_guard')",
+            "('rangkaian_koreksi_berkas', 'rangkaian_koreksi_lifecycle_guard')",
+        ]) {
+            expect(DATABASE_SCHEMA_READINESS_SQL).toContain(fragment);
+        }
+    });
+
+    // Minor 3 (review final): /ready juga wajib memeriksa bahwa role runtime
+    // TIDAK punya DELETE pada seluruh tabel rangkaian_* (0046 REVOKE DELETE,
+    // lihat grants/0002 & runbook langkah 4), dan bahwa index parsial anti-duplikat
+    // surat_distributions_active_target_uidx (0047) tersedia.
+    it('requires the runtime to lack DELETE on every rangkaian_* table and the active-target unique index', async () => {
+        const { DATABASE_SCHEMA_READINESS_SQL } = await import('../services/readiness.service.js');
+        for (const fragment of [
+            "NOT has_table_privilege(current_user, 'public.rangkaian_surat', 'DELETE')",
+            "NOT has_table_privilege(current_user, 'public.rangkaian_anggota', 'DELETE')",
+            "NOT has_table_privilege(current_user, 'public.rangkaian_relasi', 'DELETE')",
+            "NOT has_table_privilege(current_user, 'public.rangkaian_peserta', 'DELETE')",
+            "NOT has_table_privilege(current_user, 'public.rangkaian_koreksi_berkas', 'DELETE')",
+            'surat_distributions_active_target_uidx',
+        ]) {
+            expect(DATABASE_SCHEMA_READINESS_SQL).toContain(fragment);
+        }
+    });
+
 });

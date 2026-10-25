@@ -206,17 +206,47 @@ function codeMatchesSegmentPrefix(code: string, prefix: string): boolean {
 }
 
 export class ArchiveRuleAssignmentService {
-    async resolveActive(executor: Executor, input: RuleSelectionInput) {
+    readClassificationSnapshot(evidence: {
+        archiveId: string;
+        currentSnapshotId: string | null;
+        snapshotId: string | null;
+        snapshotArsipId: string | null;
+        snapshotStatus: string | null;
+        snapshot: unknown;
+        snapshotSha256: string | null;
+        classificationItemId: number | null;
+        classificationRuleSetId: string | null;
+        classificationSnapshotHash: string | null;
+    }): { title: string; type: string | null } | null {
+        if (!evidence.currentSnapshotId || evidence.snapshotId !== evidence.currentSnapshotId
+            || evidence.snapshotArsipId !== evidence.archiveId || evidence.snapshotStatus !== 'verified'
+            || !evidence.snapshotSha256 || !evidence.snapshot
+            || sha256(evidence.snapshot) !== evidence.snapshotSha256) return null;
+        const classification = snapshotObject(snapshotObject(evidence.snapshot)?.classification);
+        if (!classification || classification.itemId !== evidence.classificationItemId
+            || classification.ruleSetId !== evidence.classificationRuleSetId
+            || !evidence.classificationSnapshotHash || sha256(classification) !== evidence.classificationSnapshotHash
+            || typeof classification.title !== 'string') return null;
+        return { title: classification.title, type: typeof classification.type === 'string' ? classification.type : null };
+    }
+
+    async resolveClassification(executor: Executor, input: RuleSelectionInput) {
+        if (input.klasifikasiItemId !== undefined
+            && (!Number.isInteger(input.klasifikasiItemId) || input.klasifikasiItemId <= 0)) {
+            throw new ValidationError('ID butir klasifikasi harus berupa bilangan bulat positif.');
+        }
         const classificationConditions = [
             eq(regulatoryRuleSets.instrumentType, 'klasifikasi'),
             eq(regulatoryRuleSets.status, 'active'),
             eq(klasifikasiArsip.isActive, true),
             eq(klasifikasiArsip.isSelectable, true),
-            eq(klasifikasiArsip.organizationalScope, 'kementerian'),
         ];
         if (input.klasifikasiItemId) {
             classificationConditions.push(eq(klasifikasiArsip.id, input.klasifikasiItemId));
         } else if (input.kodeKlasifikasi?.trim()) {
+            // Code-only legacy commands retain their original scope; exact IDs
+            // identify official items across all organizational appendices.
+            classificationConditions.push(eq(klasifikasiArsip.organizationalScope, 'kementerian'));
             classificationConditions.push(eq(klasifikasiArsip.kode, input.kodeKlasifikasi.trim()));
         } else {
             throw new ValidationError('Pilih klasifikasi arsip dari versi peraturan yang aktif.');
@@ -242,6 +272,14 @@ export class ArchiveRuleAssignmentService {
             );
         }
 
+        return classification;
+    }
+
+    async resolveRetention(executor: Executor, input: RuleSelectionInput) {
+        if (input.jraItemId !== undefined
+            && (!Number.isInteger(input.jraItemId) || input.jraItemId <= 0)) {
+            throw new ValidationError('ID butir JRA harus berupa bilangan bulat positif.');
+        }
         const retentionConditions = [
             eq(regulatoryRuleSets.instrumentType, 'jra'),
             eq(regulatoryRuleSets.status, 'active'),
@@ -270,10 +308,17 @@ export class ArchiveRuleAssignmentService {
             throw new ValidationError('ID butir JRA tidak cocok dengan kode JRA yang dikirim.');
         }
 
-        // The mapping endpoint is only a picker aid. Registration and rule
-        // reconciliation must independently enforce the exact, version-bound
-        // thematic pair on the server. A more-specific classification prefix
-        // (for example TU.02) overrides its broader root (TU).
+        return retention;
+    }
+
+    async resolveActive(executor: Executor, input: RuleSelectionInput) {
+        const classification = await this.resolveClassification(executor, input);
+        const retention = await this.resolveRetention(executor, input);
+
+        // Published mappings constrain the selected pair when one applies to
+        // this classification. An absent mapping does not invalidate two
+        // independently validated active rules. Preserve that absence in the
+        // snapshot, while a more-specific prefix still overrides a broad root.
         const mappings = await executor
             .select()
             .from(klasifikasiJraMapping)
@@ -285,12 +330,7 @@ export class ArchiveRuleAssignmentService {
         const classificationMappings = mappings.filter((mapping: any) =>
             codeMatchesSegmentPrefix(classification.item.kode, mapping.klasifikasiPrefix),
         );
-        if (classificationMappings.length === 0) {
-            throw new ConflictError(
-                `Pemetaan Klasifikasi-JRA aktif untuk ${classification.item.kode} tidak ditemukan pada pasangan versi peraturan yang dipublikasikan.`,
-            );
-        }
-        const mostSpecificLength = Math.max(...classificationMappings.map((mapping: any) =>
+        const mostSpecificLength = Math.max(0, ...classificationMappings.map((mapping: any) =>
             mapping.klasifikasiPrefix.trim().length,
         ));
         const applicableMappings = classificationMappings.filter((mapping: any) =>
@@ -303,7 +343,7 @@ export class ArchiveRuleAssignmentService {
             .sort((left: any, right: any) =>
                 right.jraPrefix.trim().length - left.jraPrefix.trim().length,
             )[0];
-        if (!selectedMapping) {
+        if (classificationMappings.length > 0 && !selectedMapping) {
             const allowedPrefixes = [...new Set(applicableMappings.map((mapping: any) =>
                 mapping.jraPrefix,
             ))].join(', ');
@@ -314,14 +354,14 @@ export class ArchiveRuleAssignmentService {
 
         const snapshot = {
             schemaVersion: 1,
-            mapping: {
+            mapping: selectedMapping ? {
                 id: selectedMapping.id,
                 klasifikasiRuleSetId: selectedMapping.klasifikasiRuleSetId,
                 jraRuleSetId: selectedMapping.jraRuleSetId,
                 klasifikasiPrefix: selectedMapping.klasifikasiPrefix,
                 jraPrefix: selectedMapping.jraPrefix,
                 tema: selectedMapping.tema,
-            },
+            } : null,
             classification: {
                 itemId: classification.item.id,
                 ruleSetId: classification.ruleSet.id,

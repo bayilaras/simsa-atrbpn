@@ -4,6 +4,7 @@
  *
  * Role hierarchy:
  * - super_admin: Full access to ALL units + user management + settings
+ * - admin_unit: Operational administration in one explicitly assigned unit
  * - admin_dirjen: Full access scoped to 'ditjen' unit kerja
  * - admin_sesditjen: Full access scoped to 'sesditjen' unit kerja
  * - staff: Read-only access scoped to their own unit kerja (assigned by super_admin)
@@ -12,7 +13,9 @@
  */
 
 // Available roles in the system
-export type Role = 'super_admin' | 'admin_dirjen' | 'admin_sesditjen' | 'staff' | 'auditor' | 'user';
+export const ASSIGNABLE_ROLES = ['super_admin', 'admin_unit'] as const;
+export const KNOWN_ROLES = [...ASSIGNABLE_ROLES, 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor', 'user'] as const;
+export type Role = typeof KNOWN_ROLES[number];
 
 // Available modules
 export type Module =
@@ -33,7 +36,7 @@ export type Module =
 export type Action = 'read' | 'create' | 'update' | 'delete' | 'archive' | 'destroy' | 'export';
 
 // Shorthand for admin roles that have full CRUD (scoped by unit kerja)
-const FULL_ADMIN: Role[] = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
+const FULL_ADMIN: Role[] = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'];
 
 // Permission matrix: which roles can perform which actions on which modules
 // NOTE: admin_dirjen and admin_sesditjen have FULL access like super_admin,
@@ -119,6 +122,7 @@ export const PERMISSIONS: Record<Module, Partial<Record<Action, Role[]>>> = {
 // Role hierarchy - higher roles inherit permissions from lower roles
 export const ROLE_HIERARCHY: Record<Role, number> = {
     'super_admin': 100,
+    'admin_unit': 80,
     'admin_dirjen': 80,
     'admin_sesditjen': 60,
     'staff': 30,
@@ -129,6 +133,7 @@ export const ROLE_HIERARCHY: Record<Role, number> = {
 // Unit kerja access by role (uses actual DB IDs from unit_kerja table)
 export const UNIT_KERJA_ACCESS: Record<Role, string[] | '*'> = {
     'super_admin': '*', // Access to all units
+    'admin_unit': [], // Exactly the assigned unit; never global when unassigned
     'admin_dirjen': ['ditjen'], // Dirjen unit only
     'admin_sesditjen': ['sesditjen'], // Fixed Sesditjen mandate
     'staff': [], // Determined by user's unitKerjaId at runtime
@@ -159,16 +164,16 @@ export function canAccessUnit(role: Role, userUnitKerjaId: string | null, target
     if (accessConfig === '*') return true;
 
     // user role has no access at all
-    if (role === 'user') return false;
+    if (role === 'user' || !accessConfig || !targetUnitKerjaId?.trim()) return false;
 
     // Staff and auditors can only access their explicitly assigned unit. A
     // cross-unit auditor mandate must be modelled and approved, never inferred.
-    if (role === 'staff' || role === 'auditor') {
-        return userUnitKerjaId === targetUnitKerjaId;
+    if (role === 'admin_unit' || role === 'staff' || role === 'auditor') {
+        return Boolean(userUnitKerjaId?.trim()) && userUnitKerjaId === targetUnitKerjaId;
     }
 
     // admin_dirjen / admin_sesditjen: check against their allowed units
-    return accessConfig.includes(targetUnitKerjaId);
+    return Array.isArray(accessConfig) && accessConfig.includes(targetUnitKerjaId);
 }
 
 /**
@@ -187,12 +192,12 @@ export function getAllowedActions(role: Role, module: Module): Action[] {
  * Check if role is read-only (cannot create/update/delete)
  */
 export function isReadOnlyRole(role: Role): boolean {
-    return role === 'auditor' || role === 'staff' || role === 'user';
+    return !FULL_ADMIN.includes(role);
 }
 
 /**
  * Check if role has zero access (new users awaiting role assignment)
  */
 export function isNoAccessRole(role: Role): boolean {
-    return role === 'user';
+    return role === 'user' || !KNOWN_ROLES.includes(role);
 }

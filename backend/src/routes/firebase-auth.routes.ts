@@ -1,5 +1,7 @@
 import express, { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
+import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
+import type { Role } from '../config/permissions.js';
 import { buildCloudPlatformConfig } from '../config/cloud-platform.js';
 import { getFirebaseAdminAuth } from '../config/firebase-admin.js';
 import { isTrustedOrigin } from '../config/trusted-origins.js';
@@ -20,6 +22,7 @@ import {
     verifyRequestIdentity,
     type VerifiedRequestIdentity,
 } from '../services/request-identity.service.js';
+import { createPendingFirebaseGoogleUser } from '../services/pending-google-user.service.js';
 
 const router = Router();
 
@@ -50,14 +53,18 @@ function publicUser(user: Awaited<ReturnType<typeof findProvisionedIdentityUser>
         email: user.email,
         name: user.name,
         role: user.role,
-        unitKerjaId: user.unitKerjaId,
+        isActive: user.isActive,
+        unitKerjaId: resolveEffectiveUnitKerjaId(user.role as Role, user.unitKerjaId),
     };
 }
 
-async function requireProvisionedFirebaseIdentity(identity: VerifiedRequestIdentity) {
+async function requireSessionFirebaseIdentity(identity: VerifiedRequestIdentity, registerGoogle = false) {
     if (identity.provider !== 'firebase' || identity.emailVerified !== true) return null;
-    const user = await findProvisionedIdentityUser(identity);
-    if (!user || !user.isActive || archiveAccessProvisioningIssue(user) !== null) return null;
+    const user = await findProvisionedIdentityUser(identity)
+        || (registerGoogle ? await createPendingFirebaseGoogleUser(identity) : null);
+    // A pending identity can hold its own session. Archive authMiddleware
+    // remains the separate, unchanged boundary for every business module.
+    if (!user || !user.isActive) return null;
     return user;
 }
 
@@ -94,18 +101,19 @@ router.post('/session', firebaseReplayProtectedAppCheckMiddleware, requireTruste
     }
     try {
         const created = await createFirebaseSession(parsed.data.idToken);
-        const user = await requireProvisionedFirebaseIdentity({
+        const user = await requireSessionFirebaseIdentity({
             provider: 'firebase',
             subject: created.decoded.uid,
             email: created.decoded.email,
             emailVerified: created.decoded.email_verified,
             name: typeof created.decoded.name === 'string' ? created.decoded.name : undefined,
+            signInProvider: created.decoded.firebase?.sign_in_provider,
             tokenKind: 'firebase-id-token',
-        });
+        }, true);
         if (!user) {
             clearFirebaseSessionCookie(res);
             res.status(403).json({
-                error: 'Identity is not fully provisioned, active, and email-verified in SIMSA',
+                error: 'Identity is not registered, active, and email-verified in SIMSA',
             });
             return;
         }
@@ -137,7 +145,7 @@ router.get('/get-session', async (req, res) => {
             res.status(200).json(null);
             return;
         }
-        const user = await requireProvisionedFirebaseIdentity(identity);
+        const user = await requireSessionFirebaseIdentity(identity);
         if (!user) {
             res.status(200).json(null);
             return;
@@ -177,8 +185,8 @@ router.post('/revoke-sessions', firebaseReplayProtectedAppCheckMiddleware, requi
             return;
         }
         const identity = await verifyRequestIdentity(req);
-        const user = identity ? await requireProvisionedFirebaseIdentity(identity) : null;
-        if (!identity || !user) {
+        const user = identity ? await requireSessionFirebaseIdentity(identity) : null;
+        if (!identity || !user || archiveAccessProvisioningIssue(user) !== null) {
             res.status(401).json({ error: 'Unauthorized' });
             return;
         }

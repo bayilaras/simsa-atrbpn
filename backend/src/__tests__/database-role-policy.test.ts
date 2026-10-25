@@ -90,6 +90,51 @@ describe('versioned PostgreSQL role policy', () => {
             .toBeGreaterThanOrEqual(6);
     });
 
+    it('memasang pg_trgm hanya lewat langkah privileged 0003 administrator grant, tidak pernah di 0001 atau migrasi', () => {
+        const baca = (relatif: string) => readFileSync(fileURLToPath(new URL(relatif, import.meta.url)), 'utf8');
+        // Review I-1: drill restore Cloud SQL menjalankan ulang 0001 setelah pg_restore lalu
+        // membandingkan bukti (termasuk baris extension) secara persis; arsip pre_migration /
+        // pre_upgrade_0038 tidak memuat pg_trgm. 0001 karena itu tidak boleh menyentuhnya.
+        expect(bootstrapSql).not.toMatch(/pg_trgm/);
+        const trgm = baca('../db/grants/0003_optional_pg_trgm.sql');
+        expect(trgm).not.toContain('\r');
+        expect(trgm).toMatch(/^\\set ON_ERROR_STOP on$/m);
+        expect(trgm).toContain('CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public');
+        expect(trgm).toContain('extension_record.extversion <> extension_record.default_version');
+        expect(trgm).toContain("extension_record.schema_name <> 'public'");
+        expect(trgm).toContain('extension_record.owner_name <> current_user');
+        expect(trgm).toContain("pg_catalog.pg_has_role(current_user, 'simsa_migrator', 'USAGE')");
+        expect(trgm.indexOf('$trgm_actor$')).toBeLessThan(trgm.indexOf('CREATE EXTENSION'));
+        // GCP maintenance/preview: db:roles:bootstrap = 0001 lalu 0003, identitas yang sama,
+        // sebelum fase migrate. Drill restore Cloud SQL memanggil psql 0001 langsung.
+        expect(bootstrapRunner.indexOf("'../src/db/grants/0001_bootstrap_cloud_sql_roles.sql'"))
+            .toBeLessThan(bootstrapRunner.indexOf("'../src/db/grants/0003_optional_pg_trgm.sql'"));
+        expect(bootstrapRunner).toContain("'--set', 'ON_ERROR_STOP=on', '--file', trgmFile");
+        const akar = (relatif: string) => baca(`../../../${relatif}`);
+        const restoreDrill = akar('.github/workflows/backup-cloud-sql.yml');
+        expect(restoreDrill).toContain('--file /grants/0001_bootstrap_cloud_sql_roles.sql');
+        expect(restoreDrill).not.toMatch(/0003_optional_pg_trgm|db:roles:bootstrap/);
+        // CI PG16/17/18: 0003 sebagai administrator grant setelah 0001, sebelum db:migrate.
+        const ci = akar('.github/workflows/ci.yml');
+        const bootstrapCi = ci.indexOf('--file /grants/0001_bootstrap_cloud_sql_roles.sql');
+        const trgmCi = ci.indexOf('--file /grants/0003_optional_pg_trgm.sql');
+        expect(bootstrapCi).toBeGreaterThan(0);
+        expect(trgmCi).toBeGreaterThan(bootstrapCi);
+        expect(trgmCi).toBeLessThan(ci.indexOf('DATABASE_URL="$MIGRATOR_DATABASE_URL" npm run db:migrate'));
+        // Profil backup-upgrade: 0003 setelah bukti 0038, sebelum upgrade ke head; migrator ditolak.
+        const upgrade = akar('.github/scripts/test-backup-upgrade-profile.mjs');
+        expect(upgrade).toContain("psql('migrator cannot run the privileged pg_trgm step', trgmStep, { role: principals[5], rejected: true })");
+        expect(upgrade.indexOf("psql('privileged pg_trgm step before 0049', trgmStep)"))
+            .toBeLessThan(upgrade.indexOf('await migrateDatabase(upgrade)'));
+        // Drill backup lokal (sumber) dan harness Postgres memakai berkas 0003 yang sama.
+        expect(akar('scripts/local-backup-drill.mjs')).toContain("'backend/src/db/grants/0003_optional_pg_trgm.sql'");
+        expect(baca('../../integration/helpers/rangkaian-db.ts')).toContain("'../../src/db/grants/0003_optional_pg_trgm.sql'");
+        const migration = baca('../db/migrations/0049_lacak_trgm.sql');
+        expect(migration).not.toMatch(/CREATE\s+EXTENSION/i);
+        expect(migration).toContain("RAISE EXCEPTION '0049: extension pg_trgm belum dipasang");
+        expect(migration).not.toContain('\r');
+    });
+
     it('keeps event, worker, cleanup, and seed roles on explicit table grants', () => {
         expect(grantMigration).toContain('GRANT SELECT, UPDATE ON TABLE public.client_blob_uploads');
         expect(grantMigration).toContain('GRANT INSERT ON TABLE public.audit_log');
@@ -108,7 +153,7 @@ describe('versioned PostgreSQL role policy', () => {
 
     it('provides fail-closed grant convergence for no-privileges disaster restores', () => {
         expect(convergenceSql).toContain("current_user <> 'simsa_migrator'");
-        expect(convergenceSql).toContain("jsonb_array_length(expected_manifest) <> 34");
+        expect(convergenceSql).toContain("cardinality(actual_timestamps) <> pg_catalog.jsonb_array_length(expected_manifest)");
         expect(convergenceSql).toContain("value->'accepted_sha256' ? applied.hash");
         expect(convergenceRunner).toContain('EXPECTED_MIGRATIONS_JSON');
         expect(bootstrapSql).toContain('REVOKE %I FROM %I');
@@ -179,5 +224,26 @@ describe('versioned PostgreSQL role policy', () => {
             expect(source).toContain('simsa-final-cleanup@');
             expect(source).toContain('[.]gserviceaccount[.]com$');
         }
+    });
+
+    it('keeps rangkaian berkas tables append-only for the API across convergence', () => {
+        for (const table of [
+            'rangkaian_surat',
+            'rangkaian_anggota',
+            'rangkaian_relasi',
+            'rangkaian_peserta',
+            'rangkaian_koreksi_berkas',
+        ]) {
+            expect(convergenceSql).toContain(`'${table}'`);
+        }
+        expect(convergenceSql).toContain(
+            "EXECUTE pg_catalog.format('REVOKE DELETE ON TABLE public.%I FROM simsa_api_runtime', relation_name)",
+        );
+        // Restore/upgrade drill memakai skema lama (0038): tabel yang belum ada dilewati.
+        expect(convergenceSql).toContain("pg_catalog.to_regclass(pg_catalog.format('public.%I', relation_name))");
+        const grantIndex = convergenceSql.indexOf('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public');
+        const revokeIndex = convergenceSql.indexOf('$rangkaian_append_only$');
+        expect(grantIndex).toBeGreaterThan(0);
+        expect(revokeIndex).toBeGreaterThan(grantIndex);
     });
 });

@@ -46,6 +46,25 @@ vi.mock('../config/database', () => ({ db: mockDb }));
 
 const { klasifikasiService, jraService, mappingService } = await import('../services/klasifikasi.service');
 
+describe('active catalog readiness', () => {
+    beforeEach(() => { resultQueue.length = 0; capturedWhere.length = 0; });
+    it.each([
+        ['klasifikasi', () => klasifikasiService.getAll()],
+        ['jra', () => jraService.getAll()],
+        ['mapping', () => mappingService.getAllMappings()],
+    ])('reports missing active %s as an expected unavailable catalog', async (_name, read) => {
+        enqueue([], []);
+        await expect((read as () => Promise<unknown>)()).rejects.toMatchObject({ name: 'CatalogNotReadyError', statusCode: 503 });
+    });
+    it.each([
+        ['klasifikasi', () => klasifikasiService.getAll({ ruleSetId: 'missing' })],
+        ['jra', () => jraService.getAll({ ruleSetId: 'missing' })],
+    ])('keeps explicitly missing %s versions as 404', async (_name, read) => {
+        enqueue([]);
+        await expect((read as () => Promise<unknown>)()).rejects.toMatchObject({ name: 'NotFoundError', statusCode: 404 });
+    });
+});
+
 describe('KlasifikasiService', () => {
     beforeEach(() => { resultQueue.length = 0; capturedWhere.length = 0; });
 

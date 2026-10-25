@@ -50,7 +50,7 @@ export interface RetentionGovernanceActor extends RecordUser {
 type Executor = any;
 type TransferEventType = 'handover' | 'acknowledgement';
 
-const REVIEWER_ROLES = new Set(['super_admin', 'admin_dirjen', 'admin_sesditjen']);
+const REVIEWER_ROLES = new Set(['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']);
 
 function canonicalJson(value: unknown): string {
     if (value instanceof Date) return JSON.stringify(value.toISOString());
@@ -247,7 +247,7 @@ function unitCondition(actor: RetentionGovernanceActor) {
     const role = actor.role as Role;
     const configured = UNIT_KERJA_ACCESS[role];
     if (configured === '*') return undefined;
-    if (role === 'staff' || role === 'auditor') {
+    if (role === 'admin_unit' || role === 'staff' || role === 'auditor') {
         return eq(arsip.unitKerjaId, actor.unitKerjaId || '');
     }
     if (!Array.isArray(configured) || configured.length === 0) return sql`false`;
@@ -277,7 +277,7 @@ function manifestUnitCondition(actor: RetentionGovernanceActor) {
     const role = actor.role as Role;
     const configured = UNIT_KERJA_ACCESS[role];
     if (configured === '*') return undefined;
-    if (role === 'staff' || role === 'auditor') {
+    if (role === 'admin_unit' || role === 'staff' || role === 'auditor') {
         return eq(permanentTransferManifests.unitKerjaId, actor.unitKerjaId || '');
     }
     if (!Array.isArray(configured) || configured.length === 0) return sql`false`;

@@ -47,8 +47,8 @@ export default function ArsipTerjagaDetail({
                                     <Select value={form.kategoriTerjaga} onValueChange={v => setForm(f => ({ ...f, kategoriTerjaga: v }))}>
                                         <SelectTrigger><SelectValue /></SelectTrigger>
                                         <SelectContent>
-                                            {Object.entries(KATEGORI_CONFIG).map(([k, v]) => (
-                                                <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                                            {Object.entries(KATEGORI_CONFIG).filter(([k, v]) => !v.legacy || k === selectedItem.kategoriTerjaga).map(([k, v]) => (
+                                                <SelectItem key={k} value={k} disabled={v.legacy}>{v.label}</SelectItem>
                                             ))}
                                         </SelectContent>
                                     </Select>
@@ -133,9 +133,9 @@ export default function ArsipTerjagaDetail({
                     ) : (
                         <>
                             <Button variant="outline" onClick={() => onOpenChange(false)}>Tutup</Button>
-                            {selectedItem?.statusPelaporan === 'belum_dilaporkan' && (
+                            {selectedItem && (
                                 <Button className="bg-primary hover:bg-primary" onClick={() => { onOpenChange(false); onOpenReport(selectedItem) }}>
-                                    <Send className="h-4 w-4 mr-2" /> Laporkan ke ANRI
+                                    <Send className="h-4 w-4 mr-2" /> Catatan pelaporan
                                 </Button>
                             )}
                             <Button variant="secondary" onClick={() => setIsEditing(true)}>

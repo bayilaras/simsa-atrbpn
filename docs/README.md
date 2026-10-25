@@ -4,7 +4,9 @@ Website ini adalah Kumpulan Panduan Penggunaan **Aplikasi SIMSA** (Sistem Inform
 
 Baca panduan ini dengan seksama agar kamu bisa menggunakan SIMSA dengan lancar tanpa hambatan.
 
-> **Profil aplikasi:** SIMSA adalah aplikasi internal/beta, bukan produk yang dinyatakan tersertifikasi atau sepenuhnya patuh. Permen ATR/BPN Nomor 2 Tahun 2026 dan ketentuan ANRI menjadi rujukan desain. Tanda tangan elektronik BSrE/PSrE berada di luar ruang lingkup produk. Integrasi SRIKANDI, WORM, dan SIEM bersifat kondisional serta tetap nonaktif/deferred sampai diwajibkan kebijakan internal dan siap secara resmi. Kontrol keamanan dasar tetap berlaku. Baca [Profil Aplikasi Internal SIMSA](PROFIL_APLIKASI_INTERNAL.md).
+**Pengguna baru:** ikuti [Mulai Inventaris Internal](../docs-site/docs/mulai-inventaris-internal.md) untuk membuka aplikasi Windows, memakai akun per unit, mencatat surat, mengimpor CSV, dan menemukan arsip fisik.
+
+> **Profil aplikasi:** SIMSA mengelola surat dan arsip secara mandiri; integrasi SRIKANDI tidak menjadi prasyarat fitur inti dan tetap nonaktif pada penerapan saat ini. Mulai dengan metadata dan arsip fisik; fitur digital digunakan setelah penyimpanan serta pemeriksaan berkas siap. Gunakan instrumen instansi yang berlaku. Baca [Profil Aplikasi Internal SIMSA](PROFIL_APLIKASI_INTERNAL.md) untuk konfigurasi, kontrol, dan batas klaim produk.
 
 ---
 

@@ -166,16 +166,19 @@ case "$MODE" in
     [ "$DATABASE_PRINCIPAL" = "$DB_MAINTENANCE_PRINCIPAL" ] \
       || fail "seed convergence must use the maintenance database principal"
     "${common_docker[@]}" --env "DATABASE_URL=$database_url" \
-      "$MAINTENANCE_IMAGE" npm run seed:all 2>&1 | tee "$phase_log"
+      "$MAINTENANCE_IMAGE" npm run seed:deployment 2>&1 | tee "$phase_log"
     ;;
   evidence)
     [ "$DATABASE_PRINCIPAL" = "$DB_MIGRATOR_PRINCIPAL" ] \
       || fail "database evidence must use the migrator database principal"
     evidence_sql="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/collect-database-maintenance-evidence.sql"
     [ -f "$evidence_sql" ] || fail "database evidence SQL is missing"
+    regulatory_gate_sql="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../backend/src/db" && pwd)/deployment-regulatory-evidence.sql"
+    [ -f "$regulatory_gate_sql" ] || fail "deployment regulatory evidence gate is missing"
     require_value EXPECTED_MIGRATIONS_JSON
     "${common_docker[@]}" \
       --volume "$evidence_sql:/evidence/collect.sql:ro" \
+      --volume "$regulatory_gate_sql:/evidence/deployment-regulatory-evidence.sql:ro" \
       --entrypoint psql "$MAINTENANCE_IMAGE" \
       --no-psqlrc --quiet --tuples-only --no-align --set ON_ERROR_STOP=on \
       --set "identity_project_id=$DB_IDENTITY_PROJECT_ID" \
@@ -192,9 +195,8 @@ case "$MODE" in
       --set "backup_principal=$DB_BACKUP_PRINCIPAL" \
       --set "expected_migrations_json=$EXPECTED_MIGRATIONS_JSON" \
       --file /evidence/collect.sql >"$EVIDENCE_DIR/database-evidence.json"
+    python3 .github/scripts/build-migration-manifest.py --verify-journal-summary "$EVIDENCE_DIR/database-evidence.json"
     jq -e '
-      .journal.count == 34 and
-      .journal.latest_created_at == 1788060600000 and
       .evidence_role == "simsa_migrator" and
       .ownership_violations == 0 and
       .migrator_database_create == false and
@@ -204,6 +206,7 @@ case "$MODE" in
       .runtime_identity_bindings.verified == true and
       .runtime_identity_bindings.project_id == env.DB_IDENTITY_PROJECT_ID and
       .seed.verified == true and
+      .seed.governance_verified == true and
       (.acl_fingerprint_md5 | test("^[0-9a-f]{32}$")) and
       (.role_membership_fingerprint_md5 | test("^[0-9a-f]{32}$"))
     ' "$EVIDENCE_DIR/database-evidence.json" >/dev/null

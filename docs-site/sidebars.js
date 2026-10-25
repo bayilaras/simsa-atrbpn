@@ -2,6 +2,7 @@
 const sidebars = {
   panduanSidebar: [
     'index',
+    'mulai-inventaris-internal',
     'profil-aplikasi-internal',
     'panduan-pengguna',
     {

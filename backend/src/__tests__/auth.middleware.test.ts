@@ -60,6 +60,22 @@ describe('authMiddleware', () => {
         vi.clearAllMocks();
     });
 
+    it.each(['unit-a', null, '', '   '])('uses DB admin_unit assignment and blocks incomplete unit %s', async unitKerjaId => {
+        (auth.api.getSession as any).mockResolvedValue({ user: { id: 'user-1', role: 'super_admin' } });
+        (db.select as any).mockReturnValue({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([{ ...mockUser, role: 'admin_unit', unitKerjaId }]),
+        }) }) });
+        const req = createMockReq(); const res = createMockRes();
+        await authMiddleware(req, res, mockNext);
+        if (unitKerjaId?.trim()) {
+            expect(req.user).toMatchObject({ role: 'admin_unit', unitKerjaId: 'unit-a' });
+            expect(mockNext).toHaveBeenCalledOnce();
+        } else {
+            expect(res.status).toHaveBeenCalledWith(403); expect(mockNext).not.toHaveBeenCalled();
+            expect(req.user).toBeUndefined();
+        }
+    });
+
     it('should attach user to req and call next() when session is valid', async () => {
         // Arrange
         (auth.api.getSession as any).mockResolvedValue({ user: { id: 'user-1' } });

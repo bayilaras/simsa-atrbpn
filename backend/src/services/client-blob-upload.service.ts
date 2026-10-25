@@ -8,7 +8,16 @@ import { toGcsLocator } from '../storage/locator.js';
 
 const log = createLogger('ClientBlobUploadService');
 
-export type ClientBlobPurpose = 'surat_masuk' | 'surat_keluar' | 'regulatory_source';
+export type ClientBlobPurpose = 'surat_masuk' | 'surat_keluar' | 'regulatory_source' | 'arsip';
+
+/** The signed token and finalizer both bind an archive upload to this namespace. */
+export function parseArsipUploadPath(pathname: string): { arsipId: string; fileName: string } | null {
+    const match = /^arsip-attachments\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/([^/\\]+\.[pP][dD][fF])$/.exec(pathname);
+    // Callback names include the storage provider's random suffix. Token input
+    // is capped separately at 240 so the completed immutable name still fits.
+    if (!match || pathname.includes('..') || match[2].length > 512 || /[\u0000-\u001f\u007f]/.test(pathname)) return null;
+    return { arsipId: match[1], fileName: match[2] };
+}
 
 export interface CompletedClientBlobUpload {
     blobUrl: string;
@@ -22,6 +31,10 @@ export interface ClaimClientBlobUpload {
     purpose: ClientBlobPurpose;
     uploadedBy: string;
 }
+
+export type ClientBlobUploadReadiness =
+    | { status: 'waiting' | 'unavailable' }
+    | { status: 'ready'; expiresAt: string };
 
 export interface AuthorizedGcsUpload {
     id: string;
@@ -86,6 +99,7 @@ function expectedPrefix(purpose: ClientBlobPurpose): string {
         case 'surat_masuk': return 'surat-masuk/';
         case 'surat_keluar': return 'surat-keluar/';
         case 'regulatory_source': return 'regulatory-sources/';
+        case 'arsip': return 'arsip-attachments/';
     }
 }
 
@@ -139,6 +153,51 @@ function assertCallbackOwnedLocator(input: CompletedClientBlobUpload): string {
 }
 
 export class ClientBlobUploadService {
+    /** Callback receipt is independent of the browser SDK upload response. */
+    async getReadiness(
+        input: ClaimClientBlobUpload,
+        now = new Date(),
+    ): Promise<ClientBlobUploadReadiness> {
+        const blobUrl = normalizeBlobLocator(input.blobUrl);
+        let parsed: URL;
+        let pathname: string;
+        try {
+            parsed = new URL(blobUrl);
+            pathname = decodeURIComponent(parsed.pathname.slice(1));
+        } catch {
+            throw new ValidationError('Locator unggahan tidak valid.');
+        }
+        // The installed Blob SDK uses this token component as its store ID.
+        // No network request or unsigned callback reconstruction is performed.
+        const storeId = process.env.BLOB_READ_WRITE_TOKEN?.trim().split('_')[3];
+        if (!storeId || !/^[a-z0-9]+$/i.test(storeId)) {
+            throw new Error('Private Blob storage is not configured for upload status');
+        }
+        if (blobUrl.length > 2048 || /[\u0000-\u0020\u007f]/.test(blobUrl)
+            || parsed.hostname !== `${storeId.toLowerCase()}.private.blob.vercel-storage.com`
+            || parsed.port || !/\.pdf$/i.test(pathname)
+            || /[\u0000-\u001f\u007f]/.test(pathname)
+            || !['surat_masuk', 'surat_keluar', 'regulatory_source', 'arsip'].includes(input.purpose)) {
+            throw new ValidationError('Locator unggahan tidak sesuai dengan penyimpanan atau tujuan unggahan.');
+        }
+        assertCallbackOwnedLocator({ ...input, blobUrl, pathname });
+        const [lease] = await db.select({ status: clientBlobUploads.status, expiresAt: clientBlobUploads.expiresAt })
+            .from(clientBlobUploads).where(and(
+                eq(clientBlobUploads.blobUrl, blobUrl),
+                eq(clientBlobUploads.purpose, input.purpose),
+                eq(clientBlobUploads.uploadedBy, input.uploadedBy),
+                eq(clientBlobUploads.provider, 'vercel_blob'),
+            )).limit(1);
+        // Never disclose another user's lease, even to a super administrator.
+        if (!lease) return { status: 'waiting' };
+        // Match the existing claim preflights, including the longer PDF source check.
+        const minimumRemainingMs = input.purpose === 'regulatory_source' ? 10 * 60 * 1000 : 35_000;
+        if (lease.status !== 'pending' || lease.expiresAt.getTime() <= now.getTime() + minimumRemainingMs) {
+            return { status: 'unavailable' };
+        }
+        return { status: 'ready', expiresAt: lease.expiresAt.toISOString() };
+    }
+
     async authorizeGcsUpload(
         input: AuthorizedGcsUpload,
         now = new Date(),
@@ -297,7 +356,7 @@ export class ClientBlobUploadService {
     async claimWithExecutor(
         executor: any,
         input: ClaimClientBlobUpload,
-        entityType: 'surat_masuk' | 'surat_keluar' | 'regulatory_rule_set',
+        entityType: 'surat_masuk' | 'surat_keluar' | 'regulatory_rule_set' | 'arsip',
         entityId: string,
         now = new Date(),
     ): Promise<ClientBlobUpload> {

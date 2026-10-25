@@ -14,3 +14,7 @@ services:
   blob-reconciler:
     pull_policy: build
     build: *worker-build
+
+  file-fixity:
+    pull_policy: build
+    build: *worker-build

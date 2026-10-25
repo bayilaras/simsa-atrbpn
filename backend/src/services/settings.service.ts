@@ -16,6 +16,8 @@ export interface UnitKerjaUpdateData {
     name?: string;
     description?: string;
     canReceiveDistribution?: boolean;
+    /** D5: hanya super_admin (route); menentukan unit pengawas rangkaian. */
+    isUnitPengawas?: boolean;
 }
 
 export interface SuratTemplate {
@@ -194,7 +196,15 @@ class SettingsService {
                 ...auditContext,
                 action: 'update',
                 entityType: 'unit_kerja',
-                changes: { unitKerjaId, before, after: updated, fields: Object.keys(data) },
+                changes: {
+                    unitKerjaId,
+                    before,
+                    after: updated,
+                    fields: Object.keys(data).filter((key) => data[key as keyof UnitKerjaUpdateData] !== undefined),
+                    ...(data.isUnitPengawas !== undefined && before.isUnitPengawas !== updated.isUnitPengawas
+                        ? { pengawas: { before: before.isUnitPengawas, after: updated.isUnitPengawas } }
+                        : {}),
+                },
             }, tx);
         }
         return updated || null;

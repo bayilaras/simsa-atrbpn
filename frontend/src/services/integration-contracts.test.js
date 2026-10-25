@@ -241,14 +241,14 @@ describe('frontend/API integration contracts', () => {
         await expect(distributionService.getOutbox('unit-a')).resolves.toEqual(rows);
         await expect(distributionService.getStats('unit-a')).resolves.toEqual(stats);
         await distributionService.receive('dist-1', 'unit-a');
-        await distributionService.process('dist-1', 'unit-a');
+        await distributionService.process('dist-1', 'unit-a', { catatanPenyelesaian: 'Sudah dikoordinasikan' });
         await distributionService.reject('dist-1', 'Alasan', 'unit-a');
 
         expect(apiMock.get).toHaveBeenNthCalledWith(1, '/api/distributions/inbox', { unitKerjaId: 'unit-a' });
         expect(apiMock.get).toHaveBeenNthCalledWith(2, '/api/distributions/outbox', { unitKerjaId: 'unit-a' });
         expect(apiMock.get).toHaveBeenNthCalledWith(3, '/api/distributions/stats', { unitKerjaId: 'unit-a' });
         expect(apiMock.put).toHaveBeenNthCalledWith(1, '/api/distributions/dist-1/receive?unitKerjaId=unit-a');
-        expect(apiMock.put).toHaveBeenNthCalledWith(2, '/api/distributions/dist-1/process?unitKerjaId=unit-a');
+        expect(apiMock.put).toHaveBeenNthCalledWith(2, '/api/distributions/dist-1/process?unitKerjaId=unit-a', { catatanPenyelesaian: 'Sudah dikoordinasikan' });
         expect(apiMock.put).toHaveBeenNthCalledWith(3, '/api/distributions/dist-1/reject?unitKerjaId=unit-a', { reason: 'Alasan' });
     });
 

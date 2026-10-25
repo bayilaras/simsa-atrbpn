@@ -97,8 +97,11 @@ The `pre_migration` profile may represent a legacy 0000–0020 database with no
 complete, authenticated TOC proves the entry is absent, selected SQL contains
 no role properties, and the restored database has no database-role settings.
 An empty/truncated extraction is never evidence of absence. If the entry exists
-in either profile, all seven roles/eight canonical settings are mandatory;
-`post_migration` never accepts the zero-alias case. This does not waive the
+in any profile, all seven roles/eight canonical settings are mandatory;
+`pre_upgrade_0038` and `post_migration` never accept the zero-alias case. Both
+also require the mature database role/ACL checks. Restore grant convergence
+uses the exact manifest selected for that profile, not a newer schema's chain.
+This does not waive the
 separate exact migration-history or backup-role checks.
 
 The lifecycle SQL deliberately requires the exact ephemeral PostgreSQL
@@ -265,8 +268,11 @@ access.
    repository PostgreSQL-major variable.
 3. Dispatch **Cloud SQL PostgreSQL Backup and Restore Drill** from the default
    branch and select the exact schema profile. New Cloud SQL targets should
-   normally use `post_migration`; use `pre_migration` only while the database
-   truly has that exact history.
+   normally use `post_migration` for the entire reviewed checkout. Use
+   `pre_migration` only for the exact 0000–0020 history, or `pre_upgrade_0038`
+   for the exact 0000–0038 history before the 0039 upgrade. Scheduled `auto`
+   accepts only these reviewed chains; intermediate or unreviewed histories
+   are rejected. The sealed `schema_profile` identifies the chosen baseline.
 4. Require both jobs to pass. The backup job alone is not a successful drill.
 5. Record the workflow run URL, source commit, artifact name/digest, encrypted
    file hashes, `source_identity_sha256`, schema profile, and review approval in

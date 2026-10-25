@@ -13,7 +13,7 @@ const state = vi.hoisted(() => ({
     batch: null as any,
     limits: {
         maxFiles: 50,
-        maxFileBytes: 50 * 1024 * 1024,
+        maxFileBytes: 10 * 1024 * 1024,
         maxBatchBytes: 100 * 1024 * 1024,
     },
     service: {

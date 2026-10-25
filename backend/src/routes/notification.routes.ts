@@ -70,6 +70,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
             limit ? parseInt(limit as string) : 10,
             allowedSecurityClassifications(req.user),
             req.user?.role || 'user',
+            req.user,
         );
 
         res.json(result);
@@ -115,6 +116,7 @@ router.get('/count', async (req: AuthRequest, res: Response) => {
             userId,
             allowedSecurityClassifications(req.user),
             req.user?.role || 'user',
+            req.user,
         );
         res.json(counts);
     } catch (error) {
@@ -238,6 +240,7 @@ router.patch(
             userId,
             securityClassifications: allowedSecurityClassifications(req.user),
             userRole: req.user?.role || 'user',
+            user: req.user,
         }, [parsedId.data]);
         res.json({ success: true, message: 'Notification marked as read' });
     } catch (error) {
@@ -292,6 +295,7 @@ router.patch(
             userId,
             securityClassifications: allowedSecurityClassifications(req.user),
             userRole: req.user?.role || 'user',
+            user: req.user,
         }, notificationIds);
         res.json({ success: true, message: 'All notifications marked as read' });
     } catch (error) {

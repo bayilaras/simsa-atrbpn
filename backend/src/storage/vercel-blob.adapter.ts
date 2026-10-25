@@ -2,7 +2,7 @@ import { copy, del, get, head, list, put } from '@vercel/blob';
 import { Readable } from 'node:stream';
 import { buildBlobStorageConfig } from '../config/blob-storage.js';
 import { createLogger } from '../utils/logger.js';
-import { isVercelBlobLocator } from './locator.js';
+import { isVercelBlobLocator, assertReservedBulkObjectName, assertBulkObjectLocator } from './locator.js';
 import type {
     CopyFileOptions,
     DownloadFileOptions,
@@ -33,14 +33,16 @@ export class VercelBlobAdapter implements ObjectStorageAdapter {
 
     async uploadFile(options: UploadFileOptions): Promise<StoredFile> {
         this.assertConfigured();
-        const pathname = options.folder
+        const pathname = options.reservedObjectName ? assertReservedBulkObjectName(options.reservedObjectName) : options.folder
             ? `${options.folder}/${options.fileName}`
             : `uploads/${options.fileName}`;
         const blob = await put(pathname, options.buffer, {
             access: 'private',
             contentType: options.mimeType,
-            addRandomSuffix: true,
+            addRandomSuffix: !options.reservedObjectName,
+            allowOverwrite: false,
         });
+        if (options.reservedObjectName) assertBulkObjectLocator(blob.url, options.reservedObjectName);
         return {
             id: blob.url,
             name: options.fileName,
@@ -49,6 +51,20 @@ export class VercelBlobAdapter implements ObjectStorageAdapter {
             downloadUrl: blob.downloadUrl,
             size: options.buffer.length,
         };
+    }
+
+    async getFileByReservedName(objectName: string): Promise<StoredFile | null> {
+        this.assertConfigured();
+        assertReservedBulkObjectName(objectName);
+        try {
+            const metadata = await head(objectName);
+            assertBulkObjectLocator(metadata.url, objectName);
+            return { id: metadata.url, url: metadata.url, downloadUrl: metadata.downloadUrl,
+                name: objectName.split('/').pop()!, mimeType: metadata.contentType, size: metadata.size };
+        } catch (error) {
+            if ((error as { name?: string }).name === 'BlobNotFoundError') return null;
+            throw error;
+        }
     }
 
     async copyFile(options: CopyFileOptions): Promise<StoredFile> {

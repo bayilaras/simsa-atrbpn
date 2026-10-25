@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { REGULATORY_SOURCE_MAX_BYTES } from '../config/archive-upload.js';
 import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { db } from '../config/database';
+import { allowsLocalRegulatoryBootstrap } from '../config/regulatory-bootstrap';
 import {
     jadwalRetensiArsip,
     klasifikasiArsip,
@@ -14,6 +16,7 @@ import {
     type RegulatoryRuleSet,
 } from '../db/schema';
 import { ConflictError, NotFoundError, ValidationError } from '../utils/errors';
+import { logger } from '../utils/logger.js';
 import type {
     CloneActiveRuleSetInput,
     ImportRegulatoryRuleItemsInput,
@@ -43,7 +46,9 @@ import {
 type RuleItem = Record<string, any>;
 type JsonObject = Record<string, unknown>;
 
-export const REGULATORY_SOURCE_MAX_BYTES = 50 * 1024 * 1024;
+export { REGULATORY_SOURCE_MAX_BYTES } from '../config/archive-upload.js';
+// The new-upload cap must not make previously retained source evidence unreadable.
+const RETAINED_SOURCE_MAX_BYTES = 50 * 1024 * 1024;
 
 interface VerifiedSourceDocument {
     originalName: string;
@@ -235,7 +240,8 @@ function applyGovernanceReadinessChecks(
     items: RuleItem[],
     requireImpact = true,
 ) {
-    const officialBaseline = [KLASIFIKASI_RULE_SET_2018_ID, JRA_RULE_SET_2020_ID].includes(ruleSet.id);
+    const officialBaseline = allowsLocalRegulatoryBootstrap()
+        && [KLASIFIKASI_RULE_SET_2018_ID, JRA_RULE_SET_2020_ID].includes(ruleSet.id);
     const manifest = asJsonObject(ruleSet.completenessManifest) as Partial<RegulatoryCompletenessManifestInput>;
     const ranges = Array.isArray(manifest.coveredPageRanges)
         ? manifest.coveredPageRanges.filter((range: any) => (
@@ -692,7 +698,16 @@ async function pdfPageCount(buffer: Buffer): Promise<number> {
         const count = document.numPages;
         await document.destroy();
         return count;
-    } catch {
+    } catch (error) {
+        const name = error instanceof Error ? error.name : 'UnknownError';
+        const invalidDocument = ['InvalidPDFException', 'PasswordException', 'MissingPDFException'].includes(name);
+        const safeName = ['Error', 'TypeError', 'ReferenceError', 'UnknownError', 'InvalidPDFException', 'PasswordException', 'MissingPDFException'].includes(name)
+            ? name : 'OtherError';
+        logger.warn({
+            event: 'regulatory_source_pdf_parse_failed',
+            failure: invalidDocument ? 'invalid_document' : 'parser_runtime_or_unknown',
+            errorType: safeName,
+        }, 'Regulatory source PDF inspection failed');
         throw new ValidationError('PDF sumber tidak dapat dibaca atau rusak.');
     }
 }
@@ -812,7 +827,7 @@ async function readLimitedStream(stream: NodeJS.ReadableStream, maximumBytes: nu
         total += bytes.length;
         if (total > maximumBytes) {
             if (typeof (stream as any).destroy === 'function') (stream as any).destroy();
-            throw new ValidationError('PDF sumber melebihi batas 50 MB.');
+            throw new ValidationError('PDF sumber melebihi batas 50 MiB.');
         }
         chunks.push(bytes);
     }
@@ -827,7 +842,7 @@ async function inspectSourcePdf(
         throw new ValidationError('Ukuran dokumen sumber tidak valid.');
     }
     if (declaredSize > REGULATORY_SOURCE_MAX_BYTES) {
-        throw new ValidationError('PDF sumber melebihi batas 50 MB.');
+        throw new ValidationError('PDF sumber melebihi batas 50 MiB.');
     }
     if (!buffer.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
         throw new ValidationError('Dokumen sumber harus berupa PDF dengan signature yang valid.');
@@ -868,7 +883,7 @@ async function retrieveAndInspectSourceBlob(
         throw new ValidationError('Ukuran objek private Blob tidak valid.');
     }
     if (Number(metadata.size) > REGULATORY_SOURCE_MAX_BYTES) {
-        throw new ValidationError('PDF sumber melebihi batas 50 MB.');
+        throw new ValidationError('PDF sumber melebihi batas 50 MiB.');
     }
 
     const downloaded = await blobStorageService.downloadFile(blobUrl, {
@@ -964,7 +979,7 @@ export class RegulatoryRuleSetService {
             || metadata.mimeType !== 'application/pdf'
             || !Number.isInteger(metadata.size)
             || Number(metadata.size) <= 0
-            || Number(metadata.size) > REGULATORY_SOURCE_MAX_BYTES
+            || Number(metadata.size) > RETAINED_SOURCE_MAX_BYTES
             || (Number.isInteger(ruleSet.sourceDocumentSizeBytes)
                 && metadata.size !== ruleSet.sourceDocumentSizeBytes)
         ) {
@@ -1019,7 +1034,8 @@ export class RegulatoryRuleSetService {
     }
 
     private async assertStoredSourceAvailable(ruleSet: RegulatoryRuleSet): Promise<void> {
-        if ([KLASIFIKASI_RULE_SET_2018_ID, JRA_RULE_SET_2020_ID].includes(ruleSet.id)) return;
+        if (allowsLocalRegulatoryBootstrap()
+            && [KLASIFIKASI_RULE_SET_2018_ID, JRA_RULE_SET_2020_ID].includes(ruleSet.id)) return;
         if (!ruleSet.sourceDocumentBlobUrl) {
             throw new ConflictError('Byte PDF sumber belum disimpan pada private Blob.');
         }
@@ -2028,6 +2044,9 @@ export class RegulatoryRuleSetService {
         actorId?: string,
         auditContext: Omit<GovernanceAuditContext, 'actorId'> = {},
     ) {
+        if (!allowsLocalRegulatoryBootstrap() && !actorId?.trim()) {
+            throw new ValidationError('Keputusan aktivasi wajib mencatat superadmin yang mengesahkan instrumen.');
+        }
         try {
             return await db.transaction(async (tx: any) => {
                 const [candidate] = await tx
@@ -2037,14 +2056,17 @@ export class RegulatoryRuleSetService {
                     .limit(1)
                     .for('update');
                 if (!candidate) throw new NotFoundError('Versi aturan');
-                const bootstrapBaseline = !actorId
+                const bootstrapBaseline = allowsLocalRegulatoryBootstrap() && !actorId
                     && [KLASIFIKASI_RULE_SET_2018_ID, JRA_RULE_SET_2020_ID].includes(candidate.id)
                     && candidate.status === 'draft';
-                if (candidate.status !== 'approved' && !bootstrapBaseline) {
+                if (!bootstrapBaseline && !actorId?.trim()) {
+                    throw new ValidationError('Keputusan aktivasi wajib mencatat superadmin yang mengesahkan instrumen.');
+                }
+                if (!['draft', 'submitted', 'reviewed', 'approved'].includes(candidate.status)) {
                     if (['active', 'superseded', 'withdrawn'].includes(candidate.status)) {
                         throw new ConflictError('Versi yang sudah dipublikasikan bersifat immutable.');
                     }
-                    throw new ConflictError('Versi harus melalui submitted, reviewed, dan approved sebelum aktivasi.');
+                    throw new ConflictError('Hanya edisi yang belum dipublikasikan dapat diaktifkan.');
                 }
 
                 const instrumentType = candidate.instrumentType as RegulatoryInstrumentType;
@@ -2068,15 +2090,14 @@ export class RegulatoryRuleSetService {
                     );
                 }
 
-                // Refresh only changed/manual draft rows. The per-item digest is
-                // later copied into every archive decision snapshot, while the
-                // set digest below protects the edition as a whole.
+                // Direct publication seals a mutable draft inside this same
+                // transaction. Previously submitted content remains frozen.
                 for (const item of items) {
                     const itemHash = deterministicRegulatoryContentHash(instrumentType, [item]);
                     if (item.contentHash === itemHash) continue;
-                    if (!bootstrapBaseline) {
+                    if (candidate.status !== 'draft') {
                         throw new ConflictError(
-                            `Hash butir ${item.kode} berubah setelah persetujuan. Aktivasi dibatalkan.`,
+                            `Hash butir ${item.kode} berubah setelah pengajuan. Aktivasi dibatalkan.`,
                         );
                     }
                     if (instrumentType === 'klasifikasi') {
@@ -2156,7 +2177,7 @@ export class RegulatoryRuleSetService {
                         action: 'supersede',
                         before: { status: 'active', effectiveTo: current.effectiveTo },
                         after: { status: 'superseded', effectiveTo: updatedCurrent.effectiveTo, supersededById: candidate.id },
-                        reason: auditContext.reason || candidate.approvalNote || 'Digantikan oleh edisi yang telah disetujui.',
+                        reason: auditContext.reason || 'Digantikan oleh edisi yang disahkan superadmin.',
                     }], governanceContext(actorId, auditContext));
                 } else if (candidate.supersedesId) {
                     throw new ConflictError('Versi yang hendak digantikan tidak lagi aktif.');
@@ -2169,7 +2190,9 @@ export class RegulatoryRuleSetService {
                     contentHashAlgorithm: 'sha256',
                     contentSchemaVersion: 1,
                     contentItemCount: report.stats.total,
-                    validatedAt: asJsonObject(candidate.metadata).validatedAt || now.toISOString(),
+                    validatedAt: candidate.status === 'draft'
+                        ? now.toISOString()
+                        : asJsonObject(candidate.metadata).validatedAt || now.toISOString(),
                 };
                 const [activated] = await tx
                     .update(regulatoryRuleSets)
@@ -2178,16 +2201,16 @@ export class RegulatoryRuleSetService {
                         effectiveTo: null,
                         metadata,
                         publishedAt: now,
-                        publishedBy: actorId || candidate.approvedBy || null,
+                        publishedBy: actorId || null,
                         updatedAt: now,
                     })
                     .where(and(
                         eq(regulatoryRuleSets.id, candidate.id),
-                        eq(regulatoryRuleSets.status, bootstrapBaseline ? 'draft' : 'approved'),
+                        eq(regulatoryRuleSets.status, candidate.status),
                     ))
                     .returning();
                 if (!activated) {
-                    throw new ConflictError('Status persetujuan berubah selama proses aktivasi.');
+                    throw new ConflictError('Status edisi berubah selama proses aktivasi.');
                 }
 
                 await appendRegulatoryEvents(tx, [{
@@ -2200,9 +2223,12 @@ export class RegulatoryRuleSetService {
                         status: 'active',
                         contentHash: report.contentHash,
                         effectiveFrom: candidate.effectiveFrom,
-                        publishedBy: actorId || candidate.approvedBy || null,
+                        publishedBy: actorId || null,
+                        authorizationPolicy: bootstrapBaseline ? 'local_bootstrap' : 'super_admin',
                     },
-                    reason: auditContext.reason || candidate.approvalNote || 'Edisi disetujui diaktifkan.',
+                    reason: auditContext.reason || (bootstrapBaseline
+                        ? 'Inisialisasi lokal edisi dasar.'
+                        : 'Superadmin mengesahkan dan mengaktifkan edisi aturan yang telah tervalidasi.'),
                 }], governanceContext(actorId, auditContext));
 
                 return {

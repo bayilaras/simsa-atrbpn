@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import api from '@/services/api'
+import { useAuth } from '@/context/AuthContext'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -27,8 +28,38 @@ import { filterJraPickerItems, filterKlasifikasiPickerItems } from '@/lib/klasif
 
 const RESULT_PAGE_SIZE = 100
 
+function catalogueLoadError(error, fallback) {
+    const body = error?.data || error?.response?.data || error
+    const catalogueNotReady = body?.code === 'CATALOG_NOT_READY'
+    return {
+        catalogueNotReady,
+        message: catalogueNotReady
+            ? body.message || body.error || 'Katalog klasifikasi dan jadwal retensi arsip belum tersedia. Hubungi administrator untuk mengaktifkan katalog.'
+            : error?.status ? fallback : 'Gagal terhubung ke server',
+    }
+}
+
+function CatalogueLoadError({ error, onRetry, canManageCatalogue }) {
+    return (
+        <div role="alert" className="flex h-full flex-col items-center justify-center gap-3 p-4 text-center text-destructive">
+            <Info className="h-8 w-8 shrink-0" aria-hidden="true" />
+            <p className="text-sm font-medium">{error.message}</p>
+            {error.catalogueNotReady && canManageCatalogue && (
+                <a className="text-sm text-primary underline underline-offset-4" href="/master/regulatory-rules" target="_blank" rel="noopener noreferrer">
+                    Kelola katalog (tab baru)
+                </a>
+            )}
+            <Button type="button" variant="outline" size="sm" onClick={onRetry}>Coba Lagi</Button>
+        </div>
+    )
+}
+
 function ruleItemIdentity(item) {
     return item?.id ?? item?.sourceRecordKey ?? item?.kode
+}
+
+function hasRuleItemId(item) {
+    return item?.id != null && String(item.id).trim() !== ''
 }
 
 function isSameRuleItem(left, right) {
@@ -109,9 +140,6 @@ function KlasifikasiItem({ item, isSelected, onSelect }) {
                         Induk: {item.parentKode}
                     </p>
                 )}
-                {item.sourcePage && (
-                    <p className="mt-0.5 text-[10px] text-muted-foreground/70">Sumber halaman {item.sourcePage}</p>
-                )}
             </div>
 
             {isSelected && (
@@ -140,6 +168,13 @@ function JRAGroupHeader({ item }) {
 
 // JRA suggestion item component (selectable, with retention info)
 function JRAItem({ item, isSelected, onSelect }) {
+    const triggerGuidance = typeof item.triggerGuidance === 'string'
+        ? item.triggerGuidance.split(';')
+            .map((part) => part.trim())
+            .filter((part) => part && !/^Rujukan\s+sumber\s*:/i.test(part))
+            .join('; ')
+        : ''
+
     return (
         <button
             type="button"
@@ -184,10 +219,9 @@ function JRAItem({ item, isSelected, onSelect }) {
                         )}>{item.keterangan}</span>
                     </span>
                     <span>Mode: <b className="text-foreground">{item.calculationMode === 'duration' ? 'terstruktur' : 'appraisal'}</b></span>
-                    {item.sourcePage && <span>Sumber hlm. {item.sourcePage}</span>}
                 </div>
-                {item.triggerGuidance && (
-                    <p className="mt-1 line-clamp-2 text-[9px] text-muted-foreground">Pemicu: {item.triggerGuidance}</p>
+                {triggerGuidance && (
+                    <p className="mt-1 line-clamp-2 text-[9px] text-muted-foreground">Pemicu: {triggerGuidance}</p>
                 )}
             </div>
         </button>
@@ -197,7 +231,9 @@ function JRAItem({ item, isSelected, onSelect }) {
 /**
  * KlasifikasiPicker Component - Enhanced with JRA Mapping Suggestions
  */
-export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi Arsip", id }) {
+export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi Arsip", id, selectedClassification, selectedRetention, disabled = false }) {
+    const { user } = useAuth()
+    const canManageCatalogue = user?.role === 'super_admin'
     const [open, setOpen] = useState(false)
     const [activeTab, setActiveTab] = useState('all')
     const [allData, setAllData] = useState([])
@@ -206,32 +242,63 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
     const [visibleResultLimit, setVisibleResultLimit] = useState(RESULT_PAGE_SIZE)
     const [selectedItem, setSelectedItem] = useState(null)
     const [error, setError] = useState(null)
+    const [confirmedSelection, setConfirmedSelection] = useState(null)
+    const classificationRequest = useRef(0)
+    const suggestionRequest = useRef(0)
+    const allJraRequest = useRef(0)
+    const tabChoice = useRef(0)
+    const displayedClassification = selectedClassification !== undefined ? selectedClassification
+        : confirmedSelection?.classification?.kode === value ? confirmedSelection.classification : null
+    const displayedRetention = selectedRetention !== undefined ? selectedRetention
+        : confirmedSelection?.classification?.kode === value ? confirmedSelection.retention : null
 
     // JRA Mapping State
     const [suggestedJRA, setSuggestedJRA] = useState([])
     const [jraMappings, setJraMappings] = useState([])
     const [allJRA, setAllJRA] = useState([]) // New: Store all JRA items
     const [selectedJRA, setSelectedJRA] = useState(null)
-    const [loadingJRA, setLoadingJRA] = useState(false)
+    const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+    const [loadingAllJRA, setLoadingAllJRA] = useState(false)
     const [showJRAPanel, setShowJRAPanel] = useState(false)
     const [jraTab, setJraTab] = useState('suggested') // New: 'suggested' | 'all'
     const [jraSearchQuery, setJraSearchQuery] = useState('') // New: Search for JRA
+    const [jraErrors, setJraErrors] = useState({ suggested: null, all: null })
+    const jraError = jraErrors[jraTab]
+    const loadingJRA = jraTab === 'all' ? loadingAllJRA : loadingSuggestions
+    const selectedCode = selectedItem?.kode
+    const selectedIdentity = ruleItemIdentity(selectedItem)
+    const classificationReady = hasRuleItemId(selectedItem) && allData.some(item => isSameRuleItem(item, selectedItem) && item.isSelectable !== false)
+    const retentionReady = hasRuleItemId(selectedJRA) && selectedJRA.isSelectable !== false
 
     const fetchData = useCallback(async () => {
+        const request = ++classificationRequest.current
         setLoading(true)
         setError(null)
+        setAllData([])
         try {
             const result = await api.get('/api/klasifikasi')
-            if (result.success && result.data) {
+            if (request !== classificationRequest.current) return
+            if (result.success && Array.isArray(result.data)) {
                 setAllData(result.data)
+                setSelectedItem(current => {
+                    if (!current) return current
+                    const matches = result.data.filter(item => item.isSelectable !== false && (hasRuleItemId(current)
+                        ? isSameRuleItem(item, current)
+                        : item.kode === current.kode
+                            && (!current.tipe || item.tipe === current.tipe)
+                            && (!current.organizationalScope || item.organizationalScope === current.organizationalScope)))
+                    return matches.length === 1 ? matches[0] : current
+                })
             } else {
-                setError('Gagal memuat data klasifikasi')
+                throw Object.assign(new Error('Gagal memuat data klasifikasi'), { data: result, status: 200 })
             }
         } catch (err) {
+            if (request !== classificationRequest.current) return
             console.error('Error fetching klasifikasi:', err)
-            setError('Gagal terhubung ke server')
+            setAllData([])
+            setError(catalogueLoadError(err, 'Data klasifikasi belum dapat dimuat. Silakan coba lagi.'))
         } finally {
-            setLoading(false)
+            if (request === classificationRequest.current) setLoading(false)
         }
     }, [])
 
@@ -240,49 +307,68 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
     useEffect(() => {
         if (open) {
             fetchData()
-            setAllJRA([])
         }
+        return () => { classificationRequest.current += 1 }
     }, [fetchData, open])
 
     // Fetch suggested JRA via the thematic mapping API
-    const fetchSuggestedJRA = async (kode) => {
-        setLoadingJRA(true)
+    const fetchSuggestedJRA = useCallback(async (kode) => {
+        const request = ++suggestionRequest.current
+        const requestedTabChoice = tabChoice.current
+        setLoadingSuggestions(true)
         setSuggestedJRA([])
         setJraMappings([])
-        setSelectedJRA(null)
+        setShowJRAPanel(true)
+        setJraErrors((previous) => ({ ...previous, suggested: null }))
         try {
             const result = await api.get(`/api/mapping/suggest-jra/${encodeURIComponent(kode)}`)
+            if (request !== suggestionRequest.current) return
             if (result.success) {
                 setSuggestedJRA(result.suggestedJRA || [])
                 setJraMappings(result.mappings || [])
                 setShowJRAPanel(true)
 
                 // Auto-switch to 'all' if no suggestions found
-                if (!result.suggestedJRA || result.suggestedJRA.length === 0) {
-                    setJraTab('all')
-                } else {
-                    setJraTab('suggested')
+                if (requestedTabChoice === tabChoice.current) {
+                    setJraTab(result.suggestedJRA?.length ? 'suggested' : 'all')
                 }
+            } else {
+                throw Object.assign(new Error('Gagal memuat saran JRA'), { data: result, status: 200 })
             }
         } catch (err) {
+            if (request !== suggestionRequest.current) return
             console.error('Error fetching JRA suggestions:', err)
+            setJraErrors((previous) => ({ ...previous, suggested: catalogueLoadError(err, 'Saran jadwal retensi belum dapat dimuat. Silakan coba lagi.') }))
         } finally {
-            setLoadingJRA(false)
+            if (request === suggestionRequest.current) setLoadingSuggestions(false)
         }
-    }
+    }, [])
+
+    useEffect(() => {
+        if (open && selectedCode) fetchSuggestedJRA(selectedCode)
+        return () => { suggestionRequest.current += 1 }
+    }, [fetchSuggestedJRA, open, selectedCode, selectedIdentity])
 
     // New: Fetch all JRA items
     const fetchAllJRA = useCallback(async () => {
-        setLoadingJRA(true)
+        const request = ++allJraRequest.current
+        setLoadingAllJRA(true)
+        setAllJRA([])
+        setJraErrors((previous) => ({ ...previous, all: null }))
         try {
             const result = await api.get('/api/jra')
-            if (result.success) {
+            if (request !== allJraRequest.current) return
+            if (result.success && Array.isArray(result.data)) {
                 setAllJRA(result.data || [])
+            } else {
+                throw Object.assign(new Error('Gagal memuat JRA'), { data: result, status: 200 })
             }
         } catch (err) {
+            if (request !== allJraRequest.current) return
             console.error('Error fetching all JRA:', err)
+            setJraErrors((previous) => ({ ...previous, all: catalogueLoadError(err, 'Jadwal retensi belum dapat dimuat. Silakan coba lagi.') }))
         } finally {
-            setLoadingJRA(false)
+            if (request === allJraRequest.current) setLoadingAllJRA(false)
         }
     }, [])
 
@@ -291,6 +377,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
         if (open && jraTab === 'all') {
             fetchAllJRA()
         }
+        return () => { allJraRequest.current += 1 }
     }, [fetchAllJRA, open, jraTab])
 
     // Filter data based on tab and search
@@ -311,8 +398,8 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
 
     // Separate JRA items into groups (headers) and leaf items (selectable)
     const { groupedJRA, leafJRA } = useMemo(() => {
-        const groups = suggestedJRA.filter(j => !j.retensiAktif || j.retensiAktif === '-')
-        const leaves = suggestedJRA.filter(j => j.retensiAktif && j.retensiAktif !== '-')
+        const groups = suggestedJRA.filter(j => j.isSelectable === false)
+        const leaves = suggestedJRA.filter(j => j.isSelectable !== false)
         return { groupedJRA: groups, leafJRA: leaves }
     }, [suggestedJRA])
 
@@ -362,24 +449,59 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
     }
 
     const handleSelect = (item) => {
+        if (disabled || item.isSelectable === false || isSameRuleItem(item, selectedItem)) return
+        suggestionRequest.current += 1
+        allJraRequest.current += 1
+        tabChoice.current += 1
         setSelectedItem(item)
+        setSelectedJRA(null)
+        setLoadingAllJRA(false)
         // Reset JRA selection state
         setJraTab('suggested')
         setJraSearchQuery('')
-        // Fetch suggestions and determine initial tab
-        fetchSuggestedJRA(item.kode)
     }
 
     const handleConfirm = () => {
-        if (selectedItem && selectedJRA) {
+        if (classificationReady && retentionReady && !loading && !loadingJRA && !error && !jraError && !disabled) {
             onChange(selectedItem.kode, selectedItem, selectedJRA)
-            setOpen(false)
+            setConfirmedSelection({ classification: selectedItem, retention: selectedJRA })
+            handleOpenChange(false)
         }
+    }
+
+    const handleOpenChange = (nextOpen) => {
+        if (nextOpen && disabled) return
+        classificationRequest.current += 1
+        suggestionRequest.current += 1
+        allJraRequest.current += 1
+        tabChoice.current += 1
+        if (nextOpen) {
+            setLoading(true)
+            setError(null)
+            setSelectedItem(displayedClassification)
+            setSelectedJRA(displayedRetention)
+            setSuggestedJRA([])
+            setJraMappings([])
+            setAllJRA([])
+            setJraErrors({ suggested: null, all: null })
+            setLoadingSuggestions(false)
+            setLoadingAllJRA(false)
+            setShowJRAPanel(Boolean(displayedClassification))
+            setJraTab('suggested')
+            setJraSearchQuery('')
+            setSearchQuery('')
+            setVisibleResultLimit(RESULT_PAGE_SIZE)
+        }
+        setOpen(nextOpen)
     }
 
     const handleClear = (e) => {
         e?.stopPropagation()
+        if (disabled) return
+        suggestionRequest.current += 1
+        allJraRequest.current += 1
         onChange('', null, null)
+        setConfirmedSelection(null)
         setSelectedItem(null)
         setSelectedJRA(null)
         setSuggestedJRA([])
@@ -388,8 +510,9 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
     }
 
     const handleClearAndClose = () => {
+        if (disabled) return
         handleClear()
-        setOpen(false)
+        handleOpenChange(false)
     }
 
     return (
@@ -402,15 +525,13 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                     variant="outline"
                     aria-haspopup="dialog"
                     aria-expanded={open}
+                    disabled={disabled}
                     className={cn(
                         "group h-auto w-full justify-between px-3 py-2 text-left font-normal",
                         value && "pr-20",
                         !value && "text-muted-foreground"
                     )}
-                    onClick={() => {
-                        setVisibleResultLimit(RESULT_PAGE_SIZE)
-                        setOpen(true)
-                    }}
+                    onClick={() => handleOpenChange(true)}
                 >
                 {value ? (
                     <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -419,12 +540,12 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                         </Badge>
                         <div className="flex flex-col min-w-0">
                             <span className="truncate text-sm line-clamp-1 block">
-                                {selectedItem?.jenis || 'Klasifikasi terpilih'}
+                                {displayedClassification?.jenis || 'Klasifikasi terpilih'}
                             </span>
-                            {selectedJRA && (
+                            {displayedRetention && (
                                 <span className="text-[10px] text-muted-foreground truncate flex items-center gap-1">
                                     <Clock className="h-3 w-3" />
-                                    JRA: {selectedJRA.kode} — Aktif: {selectedJRA.retensiAktif}, {selectedJRA.keterangan}
+                                    JRA: {displayedRetention.kode} — Aktif: {displayedRetention.retensiAktif}, {displayedRetention.keterangan}
                                 </span>
                             )}
                         </div>
@@ -442,6 +563,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                         type="button"
                         className="absolute right-9 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={handleClear}
+                        disabled={disabled}
                         aria-label="Hapus klasifikasi yang dipilih"
                     >
                         <X className="h-4 w-4" />
@@ -450,7 +572,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
             </div>
 
             {/* Dialog - Two Panel Layout */}
-            <Dialog open={open} onOpenChange={setOpen}>
+            <Dialog open={open} onOpenChange={handleOpenChange}>
                 <DialogContent className="max-w-[95vw] md:max-w-5xl h-[92vh] flex flex-col p-0 gap-0 overflow-hidden sm:rounded-xl">
                     {/* Header - Compact */}
                     <div className="p-3 md:p-4 border-b bg-muted/30 flex-shrink-0">
@@ -526,13 +648,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                     <p className="text-sm">Memuat data...</p>
                                 </div>
                             ) : error ? (
-                                <div className="flex flex-col items-center justify-center h-full gap-3 text-destructive">
-                                    <Info className="h-8 w-8" />
-                                    <p className="text-sm font-medium">{error}</p>
-                                    <Button variant="outline" size="sm" onClick={fetchData}>
-                                        Coba Lagi
-                                    </Button>
-                                </div>
+                                <CatalogueLoadError error={error} onRetry={fetchData} canManageCatalogue={canManageCatalogue} />
                             ) : filteredData.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground p-8 text-center opacity-70">
                                     <Search className="h-10 w-10 text-muted-foreground/30" />
@@ -617,7 +733,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                                     ? "bg-card shadow text-amber-900 dark:text-amber-300"
                                                     : "text-muted-foreground hover:text-foreground"
                                             )}
-                                            onClick={() => setJraTab('suggested')}
+                                            onClick={() => { tabChoice.current += 1; setJraTab('suggested') }}
                                         >
                                             Disarankan ({leafJRA.length})
                                         </button>
@@ -630,7 +746,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                                     ? "bg-card shadow text-amber-900 dark:text-amber-300"
                                                     : "text-muted-foreground hover:text-foreground"
                                             )}
-                                            onClick={() => setJraTab('all')}
+                                            onClick={() => { tabChoice.current += 1; setJraTab('all') }}
                                         >
                                             Semua ({allJRA.length || '...'})
                                         </button>
@@ -657,6 +773,12 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                             <Loader2 className="h-6 w-6 animate-spin text-amber-600" />
                                             <p className="text-xs">Memuat data...</p>
                                         </div>
+                                    ) : jraError ? (
+                                        <CatalogueLoadError
+                                            error={jraError}
+                                            onRetry={() => jraTab === 'all' ? fetchAllJRA() : fetchSuggestedJRA(selectedItem.kode)}
+                                            canManageCatalogue={canManageCatalogue}
+                                        />
                                     ) : jraTab === 'suggested' ? (
                                         leafJRA.length === 0 ? (
                                             <div className="flex flex-col items-center justify-center py-12 gap-2 text-muted-foreground">
@@ -676,7 +798,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                                             key={ruleItemIdentity(entry.item)}
                                                             item={entry.item}
                                                             isSelected={isSameRuleItem(selectedJRA, entry.item)}
-                                                            onSelect={setSelectedJRA}
+                                                            onSelect={item => { if (!disabled && item.isSelectable !== false) setSelectedJRA(item) }}
                                                         />
                                                     )
                                                 ))}
@@ -694,7 +816,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                                         key={ruleItemIdentity(item)}
                                                         item={item}
                                                         isSelected={isSameRuleItem(selectedJRA, item)}
-                                                        onSelect={setSelectedJRA}
+                                                        onSelect={item => { if (!disabled && item.isSelectable !== false) setSelectedJRA(item) }}
                                                     />
                                                 ))
                                             )}
@@ -767,6 +889,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                                         variant="ghost"
                                         size="sm"
                                         onClick={handleClearAndClose}
+                                        disabled={disabled}
                                         className="min-h-11 w-full px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive sm:w-auto md:text-sm"
                                     >
                                         <Trash2 className="h-4 w-4 mr-1.5" />
@@ -777,13 +900,13 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
 
                             {/* Right Side: Action Buttons */}
                             <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
-                                <Button type="button" variant="outline" onClick={() => setOpen(false)} className="min-h-11 text-xs md:text-sm">
+                                <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} className="min-h-11 text-xs md:text-sm">
                                     Batal
                                 </Button>
                                 <Button
                                     type="button"
                                     onClick={handleConfirm}
-                                    disabled={!selectedItem || !selectedJRA}
+                                    disabled={!classificationReady || !retentionReady || loading || loadingJRA || Boolean(error) || Boolean(jraError) || disabled}
                                     title={!selectedItem ? 'Pilih klasifikasi arsip' : !selectedJRA ? 'Pilih dan konfirmasi JRA' : 'Gunakan pasangan klasifikasi dan JRA ini'}
                                     className="min-h-11 text-xs font-medium shadow-sm sm:min-w-[100px] md:text-sm"
                                 >

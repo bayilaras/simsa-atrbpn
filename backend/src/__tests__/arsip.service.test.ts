@@ -27,6 +27,7 @@ const mockChain: any = new Proxy({}, {
 });
 
 const mockDb = {
+    execute: vi.fn().mockResolvedValue([]),
     select: (..._a: any[]) => mockChain,
     insert: (..._a: any[]) => mockChain,
     update: (..._a: any[]) => mockChain,
@@ -45,9 +46,13 @@ const mockDb = {
 
 vi.mock('../config/database', () => ({ db: mockDb }));
 vi.mock('../services/audit-log.service.js', () => ({ default: auditMocks }));
+vi.mock('../services/record-access.service', () => ({
+    isAllowedForClassification: () => true,
+    recordAccessService: { check: vi.fn().mockResolvedValue({ allowed: true, mutable: true, grantId: null, grantExpiresAt: null }) },
+}));
 
 const canonicalAssignment = {
-    snapshot: { schemaVersion: 1 },
+    snapshot: { schemaVersion: 1, classification: { title: 'Pengadaan Tanah', type: 'substantif' } },
     snapshotSha256: 'a'.repeat(64),
     cache: {
         kodeKlasifikasi: 'PT.01.01',
@@ -86,6 +91,7 @@ vi.mock('../services/archive-rule-assignment.service', () => ({
     CURRENT_APPRAISAL_CASE_JOIN: {},
     archiveRuleAssignmentService: {
         resolveActive: vi.fn().mockResolvedValue(canonicalAssignment),
+        readClassificationSnapshot: vi.fn().mockReturnValue(null),
         calculateExpiry: vi.fn((triggerDate: string | undefined, normalized: any) => {
             if (!triggerDate || normalized.calculationMode !== 'duration') return null;
             const date = new Date(`${triggerDate}T00:00:00.000Z`);
@@ -167,6 +173,9 @@ vi.mock('../services/archive-rule-assignment.service', () => ({
 
 const { ArsipService } = await import('../services/arsip.service');
 const { archiveRuleAssignmentService } = await import('../services/archive-rule-assignment.service');
+const { ArchiveRuleAssignmentService: ActualArchiveRuleAssignmentService } = await vi.importActual<
+    typeof import('../services/archive-rule-assignment.service')
+>('../services/archive-rule-assignment.service');
 
 describe('ArsipService', () => {
     let svc: InstanceType<typeof ArsipService>;
@@ -374,6 +383,7 @@ describe('ArsipService', () => {
         it('rolls back an archive update when the critical audit insert fails', async () => {
             enqueue(
                 [{ id: '1', disposalStatus: 'active', disposalBatchId: null, legalHold: false }],
+                [{ id: 'user-1', email: 'operator@example.test', role: 'admin_dirjen', unitKerjaId: 'ditjen', isActive: true }],
                 [{ id: '1', keterangan: 'updated' }],
             );
             auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
@@ -763,6 +773,86 @@ describe('ArsipService', () => {
                 .rejects.toThrow(/persetujuan final/i);
             expect(archiveRuleAssignmentService.resolveActive).not.toHaveBeenCalled();
         });
+    });
+
+    describe.each(['archiveFromSuratMasuk', 'archiveFromSuratKeluar'] as const)('%s saved rule transfer', method => {
+        const source = { id: 'surat-1', unitKerjaId: 'u1', tahun: 2026, approvalStatus: 'approved',
+            klasifikasiItemId: 10, jraItemId: 20 };
+
+        it('inherits both saved decisions, snapshots canonical archive data, and retains them on the source', async () => {
+            enqueue([source], [], [{ id: 'arsip-1' }], []);
+            await svc[method]('surat-1', {}, 'u1', { userId: 'user-1' });
+            expect(archiveRuleAssignmentService.resolveActive).toHaveBeenCalledWith(mockDb, {
+                klasifikasiItemId: 10, jraItemId: 20,
+            });
+            expect(capturedValues[0]).toMatchObject({ sourceSuratId: 'surat-1', kodeKlasifikasi: 'PT.01.01',
+                klasifikasiArsipId: 10, jraItemId: 20, jraUraian: 'Pengadaan tanah', retensiAktif: '2 tahun',
+                retensiInaktif: '3 tahun', retentionTriggerDate: null, tanggalKadaluarsa: null });
+            expect(capturedSets).toContainEqual(expect.objectContaining({ isArchived: true, klasifikasiItemId: 10, jraItemId: 20,
+                ...(method === 'archiveFromSuratMasuk'
+                    ? { klasifikasiKode: 'PT.01.01', klasifikasiUraian: 'Pengadaan Tanah' }
+                    : { klasifikasiFasilitatifKode: null, klasifikasiSubstantifKode: 'PT.01.01', klasifikasiSubstantif: 'Pengadaan Tanah' }),
+            }));
+            expect(archiveRuleAssignmentService.attachInitialSnapshot).toHaveBeenCalledWith(mockDb, 'arsip-1', canonicalAssignment, undefined);
+            expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(expect.objectContaining({
+                action: 'archive', changes: expect.objectContaining({
+                    before: { klasifikasiItemId: 10, jraItemId: 20 },
+                    after: expect.objectContaining({ klasifikasiItemId: 10, jraItemId: 20 }),
+                }),
+            }), mockDb);
+            expect(transactionCommits).toBe(1);
+        });
+
+        it('inherits and snapshots the saved pair through the real resolver when no mapping exists', async () => {
+            const realResolver = new ActualArchiveRuleAssignmentService();
+            vi.mocked(archiveRuleAssignmentService.resolveActive).mockImplementationOnce((tx, input) => realResolver.resolveActive(tx, input));
+            enqueue([source], [], [{
+                item: { id: 10, kode: 'PT.01.01', jenis: 'Pengadaan Tanah', tipe: 'substantif',
+                    organizationalScope: 'kementerian', contentHash: 'b'.repeat(64) },
+                ruleSet: { id: 'classification-set', version: 'ATR-BPN-10-2018', sourceDocumentSha256: '1'.repeat(64) },
+            }], [{
+                item: { id: 20, kode: 'S.VI.A.0001', uraian: 'Pengadaan tanah', retensiAktif: '2 tahun',
+                    retensiInaktif: '3 tahun', activeMonths: 24, inactiveMonths: 36,
+                    calculationMode: 'duration', dispositionCode: 'musnah', keterangan: 'Musnah', contentHash: 'c'.repeat(64) },
+                ruleSet: { id: 'retention-set', version: 'ATR-BPN-8-2020', sourceDocumentSha256: '2'.repeat(64) },
+            }], [], [{ id: 'arsip-1' }], []);
+
+            await svc[method]('surat-1', {}, 'u1', { userId: 'user-1' });
+
+            const assignment = vi.mocked(archiveRuleAssignmentService.attachInitialSnapshot).mock.calls[0][2];
+            expect(assignment.snapshot.mapping).toBeNull();
+            expect(assignment.cache).toMatchObject({ klasifikasiArsipId: 10, jraItemId: 20,
+                klasifikasiRuleSetId: 'classification-set', jraRuleSetId: 'retention-set' });
+            expect(capturedValues[0]).toMatchObject({ sourceSuratId: 'surat-1', klasifikasiArsipId: 10, jraItemId: 20,
+                kodeKlasifikasi: 'PT.01.01', jraKode: 'S.VI.A.0001', retensiAktif: '2 tahun', retensiInaktif: '3 tahun',
+                retentionTriggerDate: null, tanggalKadaluarsa: null });
+            expect(capturedSets).toContainEqual(expect.objectContaining({ isArchived: true, klasifikasiItemId: 10, jraItemId: 20 }));
+            expect(realResolver.readClassificationSnapshot({
+                archiveId: 'arsip-1', currentSnapshotId: 'snapshot-1', snapshotId: 'snapshot-1', snapshotArsipId: 'arsip-1',
+                snapshotStatus: 'verified', snapshot: assignment.snapshot, snapshotSha256: assignment.snapshotSha256,
+                classificationItemId: 10, classificationRuleSetId: 'classification-set',
+                classificationSnapshotHash: assignment.cache.klasifikasiSnapshotHash,
+            })).toEqual({ title: 'Pengadaan Tanah', type: 'substantif' });
+            expect(resultQueue).toHaveLength(0);
+            expect(transactionCommits).toBe(1);
+            expect(transactionRollbacks).toBe(0);
+        });
+
+        it.each(['klasifikasiItemId', 'jraItemId'] as const)('rejects a %s that differs from the source before any archive write', async field => {
+            enqueue([{ ...source, [field]: 99 }], []);
+            await expect(svc[method]('surat-1', { klasifikasiItemId: 10, jraItemId: 20 }, 'u1'))
+                .rejects.toThrow(/Ubah pilihan pada surat sumber/);
+            expect(capturedValues).toHaveLength(0);
+            expect(capturedSets).toHaveLength(0);
+            expect(transactionRollbacks).toBe(1);
+        });
+    });
+
+    it('returns the canonical archive classification label separately from retention eligibility', async () => {
+        vi.mocked(archiveRuleAssignmentService.readClassificationSnapshot).mockReturnValueOnce({ title: 'Pengadaan Tanah', type: 'substantif' });
+        enqueue([{ id: 'archive', kodeKlasifikasi: 'PT.01.01', klasifikasiArsipId: 10, jraItemId: 20 }]);
+        expect(await svc.findById('archive')).toMatchObject({ kodeKlasifikasi: 'PT.01.01', klasifikasiArsip: 'Pengadaan Tanah',
+            klasifikasiTipe: 'substantif', klasifikasiArsipId: 10, jraItemId: 20 });
     });
 
     describe('getDisposalCandidates', () => {

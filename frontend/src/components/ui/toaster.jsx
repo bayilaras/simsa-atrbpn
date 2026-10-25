@@ -5,7 +5,7 @@ export function Toaster() {
     const { toasts, dismiss } = useToast()
 
     return (
-        <div aria-label="Pemberitahuan aplikasi" className="fixed right-0 top-0 z-[100] flex w-full max-w-sm flex-col gap-2 p-4 pointer-events-none">
+        <div role="region" aria-label="Pemberitahuan aplikasi" className="fixed right-0 top-0 z-[100] flex w-full max-w-sm flex-col gap-2 p-4 pointer-events-none">
             {toasts.map(function ({ id, title, description, variant, ...props }) {
                 return (
                     <div

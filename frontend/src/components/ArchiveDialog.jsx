@@ -44,6 +44,7 @@ import { Separator } from '@/components/ui/separator'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Link } from 'react-router-dom'
 import { validateArchiveRegistration } from './archive-registration-validation'
+import { selectedSuratArchiveRules } from '@/lib/surat-archive-selection'
 
 const TINGKAT_PERKEMBANGAN_OPTIONS = [
     { value: 'Asli', label: 'Asli' },
@@ -66,26 +67,26 @@ const UNIT_PENGOLAH_OPTIONS = [
     { value: 'Dit. KTPP', label: 'Dit. KTPP' },
 ]
 
-const buildFormData = ({ nomorSurat, klasifikasiKode, perihal }) => ({
-    nomorBerkas: nomorSurat || '',
-    kodeKlasifikasi: klasifikasiKode || '',
-    klasifikasiItemId: '',
-    klasifikasiArsip: '',
-    uraianBerkas: perihal || '',
+const buildFormData = (record = {}) => ({
+    nomorBerkas: record.nomorSurat || '',
+    kodeKlasifikasi: record.klasifikasiKode || record.klasifikasiFasilitatifKode || record.klasifikasiSubstantifKode || '',
+    klasifikasiItemId: record.klasifikasiItemId || '',
+    klasifikasiArsip: selectedSuratArchiveRules(record).classification?.jenis || '',
+    uraianBerkas: record.perihal || '',
     unitPengolah: '',
     kurunWaktuDari: '',
     kurunWaktuSampai: '',
     // JRA
-    jraKode: '',
-    jraItemId: '',
-    jraUraianPreview: '',
-    retensiAktifPreview: '',
-    retensiInaktifPreview: '',
-    hasilAkhirPreview: '',
-    jraVersionPreview: '',
-    jraReferencePreview: '',
+    jraKode: record.jraKode || '',
+    jraItemId: record.jraItemId || '',
+    jraUraianPreview: record.jraUraian || '',
+    retensiAktifPreview: record.jraRetensiAktif ?? '',
+    retensiInaktifPreview: record.jraRetensiInaktif ?? '',
+    hasilAkhirPreview: record.jraKeterangan || '',
+    jraVersionPreview: record.jraVersion || '',
+    jraReferencePreview: record.jraReference || '',
     // Keamanan & PIC
-    klasifikasiKeamanan: 'biasa',
+    klasifikasiKeamanan: record.klasifikasiKeamanan || 'biasa',
     personInCharge: '',
     keterangan: '',
 })
@@ -144,10 +145,11 @@ export function ArchiveDialog({
     const [loading, setLoading] = useState(false)
     const [formError, setFormError] = useState('')
 
-    const { nomorSurat, klasifikasiKode, perihal, tanggalSurat } = suratData || {}
+    const { perihal, tanggalSurat } = suratData || {}
+    const sourceData = JSON.stringify(suratData || {})
 
     // Form state for Identifikasi Berkas
-    const [formData, setFormData] = useState(() => buildFormData({ nomorSurat, klasifikasiKode, perihal }))
+    const [formData, setFormData] = useState(() => buildFormData(suratData || {}))
 
     // Items state
     const [items, setItems] = useState(() => buildItems({ perihal, tanggalSurat }))
@@ -155,10 +157,11 @@ export function ArchiveDialog({
     // Dialog stays mounted between surat, so refill the form from the surat being archived
     useEffect(() => {
         if (!open) return
-        setFormData(buildFormData({ nomorSurat, klasifikasiKode, perihal }))
-        setItems(buildItems({ perihal, tanggalSurat }))
+        const source = JSON.parse(sourceData)
+        setFormData(buildFormData(source))
+        setItems(buildItems(source))
         setFormError('')
-    }, [open, nomorSurat, klasifikasiKode, perihal, tanggalSurat])
+    }, [open, sourceData])
 
     const handleChange = (field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }))
@@ -319,6 +322,9 @@ export function ArchiveDialog({
                                     >
                                         <KlasifikasiPicker
                                             value={formData.kodeKlasifikasi}
+                                            disabled={loading}
+                                            selectedClassification={{ id: formData.klasifikasiItemId, kode: formData.kodeKlasifikasi, jenis: formData.klasifikasiArsip }}
+                                            selectedRetention={formData.jraKode ? { id: formData.jraItemId, kode: formData.jraKode, uraian: formData.jraUraianPreview, retensiAktif: formData.retensiAktifPreview, retensiInaktif: formData.retensiInaktifPreview, keterangan: formData.hasilAkhirPreview } : null}
                                             onChange={(kode, klasifikasi, jra) => {
                                                 handleChange('kodeKlasifikasi', kode)
                                                 handleChange('klasifikasiItemId', klasifikasi?.id || '')
@@ -328,8 +334,8 @@ export function ArchiveDialog({
                                                     handleChange('jraKode', jra.kode || '')
                                                     handleChange('jraItemId', jra.id || '')
                                                     handleChange('jraUraianPreview', jra.uraian || '')
-                                                    handleChange('retensiAktifPreview', jra.retensiAktif || '')
-                                                    handleChange('retensiInaktifPreview', jra.retensiInaktif || '')
+                                                    handleChange('retensiAktifPreview', jra.retensiAktif ?? '')
+                                                    handleChange('retensiInaktifPreview', jra.retensiInaktif ?? '')
                                                     handleChange('hasilAkhirPreview', jra.keterangan || '')
                                                     handleChange('jraVersionPreview', jra.ruleSet?.version || jra.version || '')
                                                     handleChange('jraReferencePreview', jra.ruleSet?.legalBasis || jra.referensi || jra.reference || '')

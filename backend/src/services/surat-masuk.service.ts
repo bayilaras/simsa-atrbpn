@@ -2,6 +2,8 @@ import { db } from '../config/database';
 import { suratMasuk, NewSuratMasuk, SuratMasuk } from '../db/schema';
 import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull, inArray } from 'drizzle-orm';
 import { ConflictError, DatabaseError } from '../utils/errors';
+import { denganRetryDeadlock } from '../utils/deadlock-retry.js';
+import { createLogger } from '../utils/logger';
 import {
     scopedRecordByIdWhere,
     type RecordUnitScope,
@@ -17,11 +19,25 @@ import fileAttachmentService, {
     type RegisterSuratAttachmentData,
 } from './file-attachment.service.js';
 import { settingsService } from './settings.service.js';
+import { hasSuratRuleSelection, hydrateSuratRuleSelections, prepareSuratRuleSelection } from './surat-rule-selection.service';
+import {
+    assertImportConnected, DuplicateSuratImportError, existingSuratImportIdentities, matchSuratImportIdentities, suratImportIdentityKey,
+    suratImportIdentityWhere, type SuratImportIdentityKey, type SuratImportMatch, type SuratImportOptions,
+} from './surat-import-identity.js';
 import {
     resolveSuratCalendar,
     type SuratNumberContext,
     type SuratNumberPreview,
 } from '../utils/surat-numbering.js';
+import { afterSuratMasukInsert, afterSuratMasukMutation, guardSuratMasukMutation } from './rangkaian/tindak-lanjut.hook.js';
+import type { DisposisiRoutingInput } from '../validators/schemas.js';
+import type { RecordUser } from './record-access.service.js';
+
+export type CreateSuratMasukInput = Omit<NewSuratMasuk, 'disposisi'> & {
+    disposisi?: string[] | DisposisiRoutingInput | null;
+    referensi?: { jenis: 'surat_keluar'; id: string };
+    actor?: RecordUser | null;
+};
 
 export interface SuratMasukFilters {
     unitKerjaId?: string | null;
@@ -38,6 +54,8 @@ export interface SuratMasukFilters {
     /** null means all classes (super_admin); [] fails closed. */
     securityClassifications?: string[] | null;
 }
+
+const log = createLogger('SuratMasukService');
 
 function securityClassificationCondition(classes: string[] | null | undefined) {
     if (classes === undefined || classes === null) return undefined;
@@ -121,7 +139,7 @@ export class SuratMasukService {
             .offset(offset);
 
         return {
-            data: data || [],
+            data: await hydrateSuratRuleSelections(db, data || [], 'masuk'),
             pagination: {
                 page,
                 limit,
@@ -148,20 +166,54 @@ export class SuratMasukService {
             .where(and(...conditions))
             .limit(1);
 
-        return result || null;
+        return result ? (await hydrateSuratRuleSelections(db, [result], 'masuk'))[0] : null;
+    }
+
+    async createImported(data: NewSuratMasuk, auditContext: CriticalAuditContext, options: SuratImportOptions = {}) {
+        return this.create(data as CreateSuratMasukInput, auditContext, undefined, undefined, options);
+    }
+
+    /** The identity createImported checks under the unit lock; throws when the row cannot have one. */
+    importIdentityKey(data: Pick<NewSuratMasuk, 'unitKerjaId' | 'tahun' | 'nomorSurat' | 'tanggalSurat' | 'perihal' | 'dari'>): SuratImportIdentityKey {
+        const { tahun } = resolveSuratCalendar({ tahun: data.tahun, tanggalSurat: data.tanggalSurat });
+        return suratImportIdentityKey('masuk', { ...data, tahun });
+    }
+
+    /** Advisory bulk lookup; createImported stays the authority. */
+    async existingImportIdentities(keys: SuratImportIdentityKey[]): Promise<boolean[]> {
+        return existingSuratImportIdentities(db, 'masuk', keys);
+    }
+
+    /**
+     * Sinkron import: the letters each identity matches, with the source fields it may change. update() stays the
+     * authority. The sifat of a surat masuk is its security classification and is never changed by an import.
+     */
+    async importMatches(keys: SuratImportIdentityKey[]): Promise<SuratImportMatch[][]> {
+        return matchSuratImportIdentities(db, 'masuk', keys, {
+            perihal: suratMasuk.perihal, tanggalSurat: suratMasuk.tanggalSurat, jenisSurat: suratMasuk.jenisSurat,
+            // Compared with the source, never written by an import.
+            dari: suratMasuk.dari,
+        });
     }
 
     async create(
-        data: NewSuratMasuk,
+        input: CreateSuratMasukInput,
         auditContext?: CriticalAuditContext,
         clientBlobClaim?: ClaimClientBlobUpload,
         attachment?: RegisterSuratAttachmentData,
+        importOptions?: SuratImportOptions,
     ) {
+        const { disposisi: disposisiInput, referensi, actor, ...rest } = input;
+        const routing = disposisiInput && !Array.isArray(disposisiInput) ? disposisiInput : undefined;
+        // Label text[] hanya berisi label lama/Kabag; nama unit ditambahkan oleh distribute().
+        const labels = Array.isArray(disposisiInput) ? disposisiInput : routing?.labelTambahan;
+        const data = { ...rest, ...(labels ? { disposisi: labels } : {}) } as NewSuratMasuk;
         const calendar = resolveSuratCalendar({
             tahun: data.tahun,
             tanggalSurat: data.tanggalSurat,
         });
         const tahun = calendar.tahun;
+        const importIdentity = importOptions ? suratImportIdentityWhere('masuk', this.importIdentityKey(data)) : undefined;
         if (
             attachment
             && (
@@ -182,10 +234,18 @@ export class SuratMasukService {
             : undefined;
 
         try {
-            const result = await db.transaction(async (tx: any) => {
+            // C-4: seluruh transaksi diulang pada 40P01/40001; prepareExisting di atas
+            // tetap di luar agar percobaan ulang tidak mengulang efek eksternal.
+            const result = await denganRetryDeadlock(() => db.transaction(async (tx: any) => {
                 // The unit template row is the numbering mutex. Unlike locking
                 // the last surat row, this also serializes an empty sequence.
                 const templates = await settingsService.lockSuratTemplates(tx, data.unitKerjaId);
+                if (importIdentity) {
+                    assertImportConnected(importOptions);
+                    const [existing] = await tx.select({ id: suratMasuk.id }).from(suratMasuk).where(importIdentity).limit(1);
+                    assertImportConnected(importOptions);
+                    if (existing) throw new DuplicateSuratImportError();
+                }
                 const [lastSurat] = await tx
                     .select({ noUrut: suratMasuk.noUrut })
                     .from(suratMasuk)
@@ -212,9 +272,11 @@ export class SuratMasukService {
                 // fallback for numberless registrations/imports.
                 const nomorSurat = data.nomorSurat?.trim() || generatedNomorSurat;
 
+                assertImportConnected(importOptions);
+                const ruleSelection = await prepareSuratRuleSelection(tx, 'masuk', data);
                 const [inserted] = await tx
                     .insert(suratMasuk)
-                    .values({ ...data, nomorSurat, noUrut, tahun })
+                    .values({ ...data, ...ruleSelection, nomorSurat, noUrut, tahun })
                     .returning();
 
                 if (clientBlobClaim) {
@@ -234,6 +296,17 @@ export class SuratMasukService {
                     }, tx);
                 }
 
+                const registrasi = await afterSuratMasukInsert(tx, {
+                    user: actor ?? null,
+                    inserted: { id: inserted.id, unitKerjaId: inserted.unitKerjaId },
+                    disposisi: routing,
+                    referensi,
+                    audit: auditContext,
+                });
+                const tersimpan = registrasi
+                    ? (await tx.select().from(suratMasuk).where(eq(suratMasuk.id, inserted.id)).limit(1))[0]
+                    : inserted;
+
                 if (auditContext) {
                     await auditLogService.logActionOrThrow({
                         ...auditContext,
@@ -245,6 +318,10 @@ export class SuratMasukService {
                                 nomorSurat: inserted.nomorSurat,
                                 perihal: inserted.perihal,
                                 unitKerjaId: inserted.unitKerjaId,
+                                klasifikasiItemId: inserted.klasifikasiItemId,
+                                jraItemId: inserted.jraItemId,
+                                disposisiUnitIds: routing?.targets.map((t) => t.unitKerjaId) ?? null,
+                                referensiSuratKeluarId: referensi?.id ?? null,
                             },
                         },
                     }, tx);
@@ -260,8 +337,8 @@ export class SuratMasukService {
                     createdAt: inserted.createdAt,
                 }, auditContext?.userId || data.createdBy || undefined);
 
-                return inserted;
-            });
+                return (await hydrateSuratRuleSelections(tx, [tersimpan], 'masuk'))[0];
+            }));
 
             return result;
         } catch (error: any) {
@@ -275,11 +352,13 @@ export class SuratMasukService {
 
     async update(
         id: string,
-        data: Partial<SuratMasuk>,
+        data: Partial<SuratMasuk> & { alasan?: string },
         unitScope: RecordUnitScope,
         clientBlobClaim?: ClaimClientBlobUpload,
         auditContext?: CriticalAuditContext,
         attachment?: RegisterSuratAttachmentData,
+        /** Extra audit detail, such as the values before a sinkron import. */
+        auditDetails?: Record<string, unknown>,
     ) {
         const conditions = [
             scopedRecordByIdWhere(
@@ -310,10 +389,19 @@ export class SuratMasukService {
             })
             : undefined;
 
-        return db.transaction(async (tx) => {
+        // C-4: hanya transaksi yang diulang; prepareExisting dan unggahan rute tetap di luar.
+        return denganRetryDeadlock(() => db.transaction(async (tx) => {
+            const { alasan, ...patch } = data;
+            // G-LOCK: kunci surat_masuk → rangkaian sebelum UPDATE (T13-1).
+            const guard = await guardSuratMasukMutation(tx, { suratMasukId: id, perubahan: patch, alasan, audit: auditContext });
+            const current = hasSuratRuleSelection(patch)
+                ? (await tx.select().from(suratMasuk).where(and(...conditions)).limit(1).for('update'))[0]
+                : undefined;
+            if (hasSuratRuleSelection(patch) && !current) return undefined;
+            const ruleSelection = await prepareSuratRuleSelection(tx, 'masuk', patch, current);
             const [result] = await tx
                 .update(suratMasuk)
-                .set({ ...data, updatedAt: new Date() })
+                .set({ ...patch, ...ruleSelection, updatedAt: new Date() })
                 .where(and(...conditions))
                 .returning();
 
@@ -339,6 +427,7 @@ export class SuratMasukService {
                     entityType: 'surat_masuk',
                     entityId: id,
                     changes: {
+                        ...auditDetails,
                         after: {
                             nomorSurat: result.nomorSurat,
                             tanggalSurat: result.tanggalSurat,
@@ -351,12 +440,14 @@ export class SuratMasukService {
                             fileOriginalName: result.fileOriginalName,
                             hasFile: Boolean(result.filePath),
                         },
-                        fields: Object.keys(data),
+                        fields: Object.keys(patch),
+                        ruleSelection,
                     },
                 }, tx);
             }
-            return result;
-        });
+            if (result) await afterSuratMasukMutation(tx, guard, id, auditContext);
+            return result ? (await hydrateSuratRuleSelections(tx, [result], 'masuk'))[0] : result;
+        }));
     }
 
     async delete(
@@ -364,6 +455,7 @@ export class SuratMasukService {
         deletedByUserId: string | undefined,
         unitScope: RecordUnitScope,
         auditContext?: CriticalAuditContext,
+        options: { alasan?: string } = {},
     ) {
         // Soft delete - mark as deleted instead of permanently removing
         const conditions = [
@@ -377,7 +469,9 @@ export class SuratMasukService {
             or(eq(suratMasuk.isArchived, false), isNull(suratMasuk.isArchived))!,
         ];
 
-        return db.transaction(async (tx) => {
+        return denganRetryDeadlock(() => db.transaction(async (tx) => {
+            // G-LOCK: kunci surat_masuk → rangkaian sebelum soft delete (T13-1).
+            const guard = await guardSuratMasukMutation(tx, { suratMasukId: id, perubahan: 'hapus', alasan: options.alasan, audit: auditContext });
             const [result] = await tx
                 .update(suratMasuk)
                 .set({
@@ -397,12 +491,13 @@ export class SuratMasukService {
                     entityId: id,
                     changes: {
                         before: { isDeleted: false, nomorSurat: result.nomorSurat, perihal: result.perihal },
-                        after: { isDeleted: true, deletedBy: deletedByUserId || null },
+                        after: { isDeleted: true, deletedBy: deletedByUserId || null, alasan: options.alasan ?? null },
                     },
                 }, tx);
             }
+            if (result) await afterSuratMasukMutation(tx, guard, id, auditContext);
             return result;
-        });
+        }));
     }
 
     async hardDelete(id: string) {
@@ -474,11 +569,6 @@ export class SuratMasukService {
         securityClassifications?: string[] | null,
     ) {
         try {
-            // Mirror dashboard service pattern exactly:
-            // - When unitKerjaId is null → skip WHERE clause (query all records)
-            // - Use individual count queries in parallel (proven working in dashboard)
-            // Dashboard shows 1721 surat masuk correctly using this approach
-
             const classificationCondition = securityClassificationCondition(securityClassifications);
             const baseConditions = [
                 or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted))!,
@@ -487,39 +577,26 @@ export class SuratMasukService {
                 ...(classificationCondition ? [classificationCondition] : []),
             ];
 
-            // Run all counts in parallel (same approach as dashboard service)
-            const [
-                [totalResult],
-                [belumDibalasResult],
-                [sudahDibalasResult],
-                [diarsipkanResult],
-            ] = await Promise.all([
-                db.select({ count: sql<number>`count(*)::int` })
-                    .from(suratMasuk)
-                    .where(and(...baseConditions)),
-                db.select({ count: sql<number>`count(*)::int` })
-                    .from(suratMasuk)
-                    .where(and(...baseConditions, eq(suratMasuk.status, 'belum_dibalas'))),
-                db.select({ count: sql<number>`count(*)::int` })
-                    .from(suratMasuk)
-                    .where(and(...baseConditions, eq(suratMasuk.status, 'sudah_dibalas'))),
-                db.select({ count: sql<number>`count(*)::int` })
-                    .from(suratMasuk)
-                    .where(and(...baseConditions, eq(suratMasuk.isArchived, true))),
-            ]);
+            // One statement shares the visibility predicate and database
+            // snapshot across every counter, using one connection/round trip.
+            const [counts] = await db.select({
+                total: sql<number>`count(*)::int`,
+                belumDibalas: sql<number>`count(*) filter (where ${suratMasuk.status} = 'belum_dibalas')::int`,
+                sudahDibalas: sql<number>`count(*) filter (where ${suratMasuk.status} = 'sudah_dibalas')::int`,
+                diarsipkan: sql<number>`count(*) filter (where ${suratMasuk.isArchived} = true)::int`,
+            }).from(suratMasuk).where(and(...baseConditions));
 
             const result = {
-                total: totalResult?.count || 0,
-                belumDibalas: belumDibalasResult?.count || 0,
-                sudahDibalas: sudahDibalasResult?.count || 0,
-                diarsipkan: diarsipkanResult?.count || 0,
+                total: counts?.total ?? 0,
+                belumDibalas: counts?.belumDibalas ?? 0,
+                sudahDibalas: counts?.sudahDibalas ?? 0,
+                diarsipkan: counts?.diarsipkan ?? 0,
             };
 
-            console.log('[getStats] unitKerjaId:', unitKerjaId, 'result:', JSON.stringify(result));
             return result;
         } catch (error) {
-            console.error('[SuratMasukService.getStats] Query failed:', error);
-            return { total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0 };
+            log.error({ err: error }, 'Failed to fetch incoming letter statistics');
+            throw error;
         }
     }
 

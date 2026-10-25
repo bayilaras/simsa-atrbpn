@@ -4,13 +4,17 @@ import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware.js';
 import { uploadLimiter } from '../middlewares/rate-limiter.middleware.js';
 import { createLogger } from '../utils/logger.js';
 import { canWriteMiddleware, roleMiddleware } from '../middlewares/role.middleware.js';
+import { ARCHIVE_UPLOAD_MAX_BYTES } from '../config/archive-upload.js';
 import regulatoryRuleSetService, {
     REGULATORY_SOURCE_MAX_BYTES,
 } from '../services/regulatory-rule-set.service.js';
 import {
     clientBlobUploadService,
+    parseArsipUploadPath,
     type ClientBlobPurpose,
 } from '../services/client-blob-upload.service.js';
+import { arsipAttachmentUploadService } from '../services/arsip-attachment-upload.service.js';
+import { ValidationError } from '../utils/errors.js';
 
 const log = createLogger('ClientUploadRoutes');
 
@@ -39,19 +43,21 @@ function completedTokenPayload(value: string | null | undefined): {
     purpose: ClientBlobPurpose;
     userId: string;
     ruleSetId?: string;
+    arsipId?: string;
 } {
     try {
         const parsed = JSON.parse(value || 'null');
         if (
             parsed
             && typeof parsed === 'object'
-            && ['surat_masuk', 'surat_keluar', 'regulatory_source'].includes(parsed.purpose)
+            && ['surat_masuk', 'surat_keluar', 'regulatory_source', 'arsip'].includes(parsed.purpose)
             && typeof parsed.userId === 'string'
         ) {
             return {
                 purpose: parsed.purpose,
                 userId: parsed.userId,
                 ruleSetId: typeof parsed.ruleSetId === 'string' ? parsed.ruleSetId : undefined,
+                arsipId: typeof parsed.arsipId === 'string' ? parsed.arsipId : undefined,
             };
         }
     } catch {
@@ -83,6 +89,29 @@ function limitTokenGeneration(req: AuthRequest, res: Response, next: NextFunctio
     if ((req.body as HandleUploadBody)?.type === 'blob.upload-completed') return next();
     return uploadLimiter(req, res, next);
 }
+
+// Read-only receipt check: uploading bytes does not imply the signed callback
+// has committed its owner-bound lease yet. Never claim or fetch the object here.
+router.get('/status', authMiddleware as any, writeGuard, async (req: AuthRequest, res, next) => {
+    res.setHeader('Cache-Control', 'private, no-store');
+    try {
+        const { blobUrl, purpose } = req.query;
+        if (typeof blobUrl !== 'string' || !blobUrl || blobUrl.length > 2048
+            || typeof purpose !== 'string'
+            || !['surat_masuk', 'surat_keluar', 'regulatory_source', 'arsip'].includes(purpose)) {
+            throw new ValidationError('Locator dan tujuan unggahan diperlukan.');
+        }
+        if (purpose === 'regulatory_source' && req.user?.role !== 'super_admin') {
+            return res.status(403).json({ error: 'Regulatory source upload requires super_admin.' });
+        }
+        const status = await clientBlobUploadService.getReadiness({
+            blobUrl, purpose: purpose as ClientBlobPurpose, uploadedBy: req.user!.id,
+        });
+        return res.json(status);
+    } catch (error) {
+        return next(error);
+    }
+});
 
 // A scheduler can call this authenticated endpoint. Deletion is limited to
 // expired callback-proven leases atomically reserved by the reconciler.
@@ -134,6 +163,16 @@ router.post('/', authorizeTokenGeneration, limitTokenGeneration, async (req: Aut
             body,
             request: webRequest,
             onBeforeGenerateToken: async (pathname: string, clientPayload: string | null) => {
+                const archivePath = parseArsipUploadPath(pathname);
+                if (archivePath) {
+                    if (archivePath.fileName.length > 240) throw new Error('Archive upload filename is too long');
+                    await arsipAttachmentUploadService.assertUploadAllowed(archivePath.arsipId, { userId: req.user?.id });
+                    return {
+                        allowedContentTypes: ['application/pdf'], maximumSizeInBytes: ARCHIVE_UPLOAD_MAX_BYTES,
+                        addRandomSuffix: true, allowOverwrite: false, validUntil: Date.now() + 10 * 60 * 1000,
+                        tokenPayload: JSON.stringify({ purpose: 'arsip', arsipId: archivePath.arsipId, userId: req.user?.id }),
+                    };
+                }
                 const regulatoryMatch = pathname.match(REGULATORY_SOURCE_PATH);
                 if (regulatoryMatch) {
                     const [, ruleSetId, fileName] = regulatoryMatch;
@@ -173,7 +212,7 @@ router.post('/', authorizeTokenGeneration, limitTokenGeneration, async (req: Aut
                 if (
                     !allowedPrefixes.some(prefix => pathname.startsWith(prefix)) ||
                     pathname.includes('..') ||
-                    pathname.includes('\\')
+                    pathname.includes('\\') || !/\.pdf$/i.test(pathname)
                 ) {
                     throw new Error('Upload pathname is not permitted');
                 }
@@ -184,18 +223,8 @@ router.post('/', authorizeTokenGeneration, limitTokenGeneration, async (req: Aut
                 );
 
                 return {
-                    allowedContentTypes: [
-                        'application/pdf',
-                        'application/msword',
-                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                        'application/vnd.ms-excel',
-                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                        'image/jpeg',
-                        'image/png',
-                        'image/gif',
-                        'image/webp',
-                    ],
-                    maximumSizeInBytes: 10 * 1024 * 1024, // 10MB
+                    allowedContentTypes: ['application/pdf'],
+                    maximumSizeInBytes: ARCHIVE_UPLOAD_MAX_BYTES,
                     addRandomSuffix: true,
                     validUntil: Date.now() + 10 * 60 * 1000,
                     tokenPayload: JSON.stringify({
@@ -209,6 +238,12 @@ router.post('/', authorizeTokenGeneration, limitTokenGeneration, async (req: Aut
             },
             onUploadCompleted: async ({ blob, tokenPayload }) => {
                 const payload = completedTokenPayload(tokenPayload);
+                if (payload.purpose === 'arsip') {
+                    const archivePath = parseArsipUploadPath(blob.pathname);
+                    if (!archivePath || !payload.arsipId || archivePath.arsipId !== payload.arsipId) {
+                        throw new Error('Archive upload completion is not bound to its archive');
+                    }
+                }
                 if (payload.purpose === 'regulatory_source') {
                     const match = blob.pathname.match(REGULATORY_SOURCE_PATH);
                     if (!match || payload.ruleSetId?.toLowerCase() !== match[1].toLowerCase()) {

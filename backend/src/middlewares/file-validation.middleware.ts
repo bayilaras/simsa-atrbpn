@@ -25,7 +25,7 @@ const FILE_SIGNATURES: FileSignature[] = [
     {
         mimeType: 'application/pdf',
         extension: 'pdf',
-        signature: [[0x25, 0x50, 0x44, 0x46]] // %PDF
+        signature: [[0x25, 0x50, 0x44, 0x46, 0x2D]] // %PDF-
     },
     // JPEG
     {

@@ -1,6 +1,8 @@
+import { scheduleMalwareScanWake } from '../services/malware-scan-dispatch.service.js';
 import { Router, Response } from 'express';
 import multer from 'multer';
-import path from 'path';
+import { ARCHIVE_UPLOAD_MAX_BYTES, isPdfUploadMetadata } from '../config/archive-upload.js';
+import { ValidationError } from '../utils/errors.js';
 import { suratKeluarService } from '../services/surat-keluar.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
@@ -15,7 +17,7 @@ import {
 import { createLogger } from '../utils/logger';
 import { blobStorageService } from '../services/blob-storage.service';
 import { deleteRequestCreatedBlob } from '../utils/blob-upload-compensation.js';
-import { resolveRecordUnitScope } from '../utils/record-unit-scope.js';
+import { resolveRecordUnitScope, scopeForAuthorizedRead } from '../utils/record-unit-scope.js';
 import {
     sanitizeSuratKeluarWithLinks,
     sanitizeSuratRecord,
@@ -25,6 +27,8 @@ import {
     isAllowedForClassification,
     recordAccessService,
 } from '../services/record-access.service.js';
+import auditLogService from '../services/audit-log.service.js';
+import { suratAksiPayload } from '../services/rangkaian/aksi.js';
 import { fileValidationMiddleware } from '../middlewares/file-validation.middleware.js';
 
 const log = createLogger('SuratKeluarRoutes');
@@ -32,14 +36,12 @@ const log = createLogger('SuratKeluarRoutes');
 // Keep uploads in memory until the private Blob ingest path accepts them.
 const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    limits: { fileSize: ARCHIVE_UPLOAD_MAX_BYTES },
     fileFilter: (req, file, cb) => {
-        const allowedTypes = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png'];
-        const ext = path.extname(file.originalname).toLowerCase();
-        if (allowedTypes.includes(ext)) {
+        if (isPdfUploadMetadata(file.originalname, file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Invalid file type'));
+            cb(new ValidationError('Hanya PDF yang diperbolehkan (maks. 10 MiB).'));
         }
     }
 });
@@ -147,21 +149,36 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
     }
 });
 
-// GET /api/surat-keluar/:id
+// GET /api/surat-keluar/:id - pemilik, atau lintas unit via rangkaian (selalu read-only)
 router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
-        const result = await suratKeluarService.findById(id, resolveRecordUnitScope(req));
-
-        if (!result) {
-            return res.status(404).json({ error: 'Surat keluar not found' });
-        }
-        const access = await recordAccessService.check(req.user, 'surat_keluar', id);
+        const access = await recordAccessService.checkRead(req.user, 'surat_keluar', id);
         if (!access.exists || !access.allowed) {
             return res.status(404).json({ error: 'Surat keluar not found' });
         }
+        const result = await suratKeluarService.findById(id, scopeForAuthorizedRead(req, access));
+        if (!result) {
+            return res.status(404).json({ error: 'Surat keluar not found' });
+        }
+        if (access.via !== 'owner') {
+            await auditLogService.logActionOrThrow({
+                userId: req.user?.id,
+                userEmail: req.user?.email,
+                action: 'view_via_rangkaian',
+                entityType: 'surat_keluar',
+                entityId: id,
+                changes: { via: access.via, rangkaianId: access.rangkaianId, grantId: access.grantId },
+                ipAddress: req.ip,
+            });
+        }
 
-        res.json({ success: true, data: sanitizeSuratRecord(result, 'surat_keluar') });
+        // P3 (§7): aksiDiizinkan/statusAlur dari server; hanya membaca.
+        const aksi = await suratAksiPayload(req.user!, 'surat_keluar', id, access);
+        res.json({
+            success: true,
+            data: { ...sanitizeSuratRecord(result, 'surat_keluar'), aksesMelalui: access.via, ...aksi },
+        });
     } catch (error) {
         next(error);
     }
@@ -183,6 +200,10 @@ router.post('/',
                 return sendValidationFailure(res, bodyValidation.error.issues);
             }
 
+            if (!isAllowedForClassification(req.user, bodyValidation.data.klasifikasiKeamanan)) {
+                return res.status(403).json({ error: 'Klasifikasi keamanan melebihi kewenangan pengguna' });
+            }
+
             const unitScope = resolveRecordUnitScope(req);
             const serverUnitKerjaId = unitScope === null ? bodyValidation.data.unitKerjaId : unitScope;
 
@@ -190,20 +211,8 @@ router.post('/',
                 return res.status(403).json({ error: 'Unit kerja pengguna belum ditetapkan.' });
             }
 
-            if (bodyValidation.data.balasanUntuk) {
-                const sourceAccess = await recordAccessService.check(
-                    req.user,
-                    'surat_masuk',
-                    bodyValidation.data.balasanUntuk,
-                );
-                if (
-                    !sourceAccess.exists
-                    || !sourceAccess.mutable
-                    || sourceAccess.unitKerjaId !== serverUnitKerjaId
-                ) {
-                    return res.status(404).json({ error: 'Surat masuk balasan not found' });
-                }
-            }
+            // Wewenang tindak lanjut (pemilik induk / target disposisi hidup / pengawas)
+            // dan checkRead atas induk diperiksa di hook, di dalam transaksi create.
 
             if (file && bodyValidation.data.filePath) {
                 return res.status(400).json({
@@ -229,7 +238,7 @@ router.post('/',
                     requestCreatedObjectGeneration = blobFile.generation || null;
                     filePath = `blob:${blobFile.url}`;
                     fileOriginalName = file.originalname;
-                    log.info({ objectLocator: blobFile.url, fileName: file.originalname }, 'File uploaded to private object storage');
+                    log.info({ mimeType: file.mimetype, sizeBytes: file.size }, 'File uploaded to private object storage');
                 } catch (uploadError: any) {
                     log.error({ err: uploadError }, 'Failed to upload file to private object storage');
                     return res.status(500).json({
@@ -251,6 +260,7 @@ router.post('/',
                 ...bodyValidation.data,
                 unitKerjaId: serverUnitKerjaId,
                 createdBy: req.user?.id,
+                actor: req.user,
                 filePath,
                 fileOriginalName,
             }, {
@@ -272,6 +282,7 @@ router.post('/',
 
             requestCreatedBlobUrl = null;
 
+            if (filePath) scheduleMalwareScanWake();
             res.status(201).json({ success: true, data: sanitizeSuratRecord(result, 'surat_keluar') });
         } catch (error) {
             await deleteRequestCreatedBlob(requestCreatedBlobUrl, {
@@ -369,7 +380,7 @@ router.put('/:id', validateIdParam(),
                     requestCreatedObjectGeneration = blobFile.generation || null;
                     updateData.filePath = `blob:${blobFile.url}`;
                     updateData.fileOriginalName = file.originalname;
-                    log.info({ objectLocator: blobFile.url, fileName: file.originalname }, 'File uploaded to private object storage (update)');
+                    log.info({ mimeType: file.mimetype, sizeBytes: file.size }, 'File uploaded to private object storage (update)');
                 } catch (uploadError: any) {
                     log.error({ err: uploadError }, 'Failed to upload file to private object storage');
                     return res.status(500).json({
@@ -431,6 +442,7 @@ router.put('/:id', validateIdParam(),
 
             requestCreatedBlobUrl = null;
 
+            if (shouldRegisterAttachment) scheduleMalwareScanWake();
             res.json({ success: true, data: sanitizeSuratRecord(result, 'surat_keluar') });
         } catch (error: any) {
             await deleteRequestCreatedBlob(requestCreatedBlobUrl, {
@@ -438,7 +450,7 @@ router.put('/:id', validateIdParam(),
                 entityId: req.params.id,
                 userId: req.user?.id,
             }, requestCreatedObjectGeneration);
-            log.error({ err: error, message: error?.message, stack: error?.stack }, '[PUT /surat-keluar/:id] Error:');
+            log.error({ err: error }, 'Failed to update outgoing letter');
             next(error);
         }
     }
@@ -484,7 +496,7 @@ router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthR
 });
 
 // POST /api/surat-keluar/:id/archive-full - Archive with metadata (creates arsip entry)
-router.post('/:id/archive-full', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
+router.post('/:id/archive-full', validateIdParam(), canWriteMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
         const existing = await suratKeluarService.findById(id, resolveRecordUnitScope(req));
@@ -548,7 +560,7 @@ router.post('/:id/archive', canWriteMiddleware(), async (req: AuthRequest, res, 
 });
 
 // GET /api/surat-keluar/:id/source - Get source surat masuk yang dibalas
-router.get('/:id/source', async (req: AuthRequest, res, next) => {
+router.get('/:id/source', validateIdParam(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
         const unitScope = resolveRecordUnitScope(req);
@@ -578,7 +590,7 @@ router.get('/:id/source', async (req: AuthRequest, res, next) => {
 });
 
 // GET /api/surat-keluar/:id/with-links - Get surat with all linked data
-router.get('/:id/with-links', async (req: AuthRequest, res, next) => {
+router.get('/:id/with-links', validateIdParam(), async (req: AuthRequest, res, next) => {
     try {
         const id = req.params.id as string;
         const result = await suratKeluarService.findByIdWithLinks(id, resolveRecordUnitScope(req));
@@ -613,4 +625,3 @@ router.get('/:id/with-links', async (req: AuthRequest, res, next) => {
 });
 
 export default router;
-

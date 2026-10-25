@@ -1,4 +1,5 @@
 import { Pool, type PoolConfig } from 'pg';
+import { attachDatabasePool } from '@vercel/functions';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema';
 import { createLogger } from '../utils/logger';
@@ -135,6 +136,12 @@ export function buildDatabasePoolConfig(
 // connect to the PostgreSQL service used by the documented Docker deployment.
 // On Vercel, keep the per-instance pool small and retire idle connections.
 const pool = new Pool(buildDatabasePoolConfig());
+
+// Fluid Compute may suspend the instance before a normal idle timer fires.
+// Register this module's one shared pool so idle connections close first.
+// Checked-out clients keep their existing transaction/session-lock lifetime;
+// callers must still release them in finally. Persistent runtimes need no hook.
+if (process.env.VERCEL === '1') attachDatabasePool(pool);
 
 // node-postgres emits errors from idle clients on the Pool itself. Keeping an
 // error listener prevents a transient database/network interruption from

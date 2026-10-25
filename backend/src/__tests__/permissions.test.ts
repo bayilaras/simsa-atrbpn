@@ -232,7 +232,7 @@ function createMockReq(user?: Partial<AuthRequest['user']>): AuthRequest {
             email: user.email || 'test@atrbpn.go.id',
             name: user.name || 'Test User',
             role: user.role || 'user',
-            unitKerjaId: user.unitKerjaId || null,
+            unitKerjaId: user.unitKerjaId === undefined ? 'unit-test' : user.unitKerjaId,
         } : undefined,
     } as AuthRequest;
 }
@@ -367,7 +367,7 @@ describe('canWriteMiddleware', () => {
 });
 
 describe('canReadMiddleware', () => {
-    it('should allow any authenticated user to read', () => {
+    it('denies a pending account even when authenticated', () => {
         const middleware = canReadMiddleware();
         const req = createMockReq({ role: 'user' });
         const res = createMockRes();
@@ -375,7 +375,8 @@ describe('canReadMiddleware', () => {
 
         middleware(req, res, next);
 
-        expect(next).toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(next).not.toHaveBeenCalled();
     });
 
     it('should allow staff to read', () => {

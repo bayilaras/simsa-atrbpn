@@ -4,6 +4,7 @@ import { getAuthTables } from 'better-auth/db';
 import { getTableConfig } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
 import { accounts } from '../db/schema/users';
+import { buildGoogleOAuthConfig } from '../config/google-oauth';
 
 describe('Better Auth account schema contract', () => {
     it('implements every required Better Auth 1.7 account field', () => {
@@ -56,20 +57,17 @@ describe('Better Auth account schema contract', () => {
         );
     });
 
-    it('keeps Google login invitation-only for the internal application', () => {
-        const authConfigPath = fileURLToPath(new URL('../config/auth.ts', import.meta.url));
-        const authConfig = readFileSync(authConfigPath, 'utf8');
-
-        expect(authConfig).toMatch(
-            /google:\s*\{[\s\S]*disableImplicitSignUp:\s*true[\s\S]*disableSignUp:\s*true/,
-        );
-        expect(authConfig).toMatch(
-            /accountLinking:\s*\{[\s\S]*requireLocalEmailVerified:\s*false/,
-        );
-        expect(authConfig).toMatch(/allowDifferentEmails:\s*false/);
-        expect(authConfig).toContain('authOrigin !== frontendOrigin');
-        expect(authConfig).toContain(
-            'BETTER_AUTH_URL must match the public FRONTEND_URL origin in production.',
-        );
+    it('keeps new Google identities closed unless pending signup is explicitly and validly enabled', () => {
+        const configured = {
+            NODE_ENV: 'production', APP_PROFILE: 'internal', AUTH_PROVIDER: 'better-auth',
+            GOOGLE_CLIENT_ID: 'test-client', GOOGLE_CLIENT_SECRET: 'test-secret',
+        };
+        expect(buildGoogleOAuthConfig(configured).pendingSignupEnabled).toBe(false);
+        expect(buildGoogleOAuthConfig({ ...configured, GOOGLE_PENDING_SIGNUP_ENABLED: 'false' }).pendingSignupEnabled).toBe(false);
+        expect(buildGoogleOAuthConfig({ ...configured, GOOGLE_PENDING_SIGNUP_ENABLED: 'true' }).pendingSignupEnabled).toBe(true);
+        expect(buildGoogleOAuthConfig({ ...configured, GOOGLE_PENDING_SIGNUP_ENABLED: 'tru' }).pendingSignupEnabled).toBe(false);
+        expect(buildGoogleOAuthConfig({ ...configured, GOOGLE_PENDING_SIGNUP_ENABLED: 'true', GOOGLE_OAUTH_ENABLED: 'false' }).pendingSignupEnabled).toBe(false);
+        // Real callback creation, identity linking, and mandate/session boundaries
+        // are exercised through Better Auth in pending-google-auth.test.ts.
     });
 });

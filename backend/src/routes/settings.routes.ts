@@ -10,7 +10,7 @@ const log = createLogger('SettingsRoutes');
 
 const router = Router();
 
-const ADMIN_ROLES = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
+const ADMIN_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'];
 const preferenceUpdateSchema = z.object({
     theme: z.enum(['light', 'dark', 'system']).optional(),
     language: z.enum(['id', 'en']).optional(),
@@ -194,9 +194,9 @@ router.put('/unit-kerja/:id', async (req: Request, res: Response) => {
     try {
         const userRole = (req as any).user?.role;
 
-        // Only admins can update unit kerja
-        if (!['super_admin', 'admin_dirjen', 'admin_sesditjen'].includes(userRole)) {
-            res.status(403).json({ error: 'Forbidden: Admin access required' });
+        // Organisation master data is global system administration.
+        if (userRole !== 'super_admin') {
+            res.status(403).json({ error: 'Forbidden: Super admin access required' });
             return;
         }
 
@@ -210,12 +210,17 @@ router.put('/unit-kerja/:id', async (req: Request, res: Response) => {
             res.status(403).json({ error: 'Anda tidak memiliki akses ke unit kerja tersebut' });
             return;
         }
-        const { name, description, canReceiveDistribution } = req.body;
+        const { name, description, canReceiveDistribution, isUnitPengawas } = req.body;
+        if (isUnitPengawas !== undefined && typeof isUnitPengawas !== 'boolean') {
+            res.status(400).json({ error: 'isUnitPengawas harus bernilai boolean' });
+            return;
+        }
 
         const updated = await settingsService.updateUnitKerja(id as string, {
             name,
             description,
             canReceiveDistribution,
+            isUnitPengawas,
         }, {
             userId: user?.id, userEmail: user?.email, ipAddress: req.ip,
         });
@@ -305,7 +310,7 @@ router.put('/surat-templates', async (req: Request, res: Response) => {
     try {
         const userRole = (req as any).user?.role;
 
-        if (!['super_admin', 'admin_dirjen', 'admin_sesditjen'].includes(userRole)) {
+        if (!ADMIN_ROLES.includes(userRole)) {
             res.status(403).json({ error: 'Forbidden: Admin access required' });
             return;
         }

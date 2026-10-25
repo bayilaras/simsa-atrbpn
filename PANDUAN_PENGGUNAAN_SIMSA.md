@@ -17,6 +17,9 @@
    - 5.1 Surat Masuk
    - 5.2 Surat Keluar
    - 5.3 Distribusi Surat
+   - 5.4 Rangkaian Surat & Lacak Surat
+   - 5.5 Berkas Rangkaian, Koreksi Berkas & Data Lama
+   - 5.6 Perlu Dilengkapi
 6. [Siklus Hidup Arsip](#6-siklus-hidup-arsip)
    - 6.1 Arsip Aktif
    - 6.2 Pemberkasan (Dosir)
@@ -453,6 +456,8 @@ Halaman **Distribusi** menampilkan surat-surat yang didistribusikan kepada atau 
 2. Anda dapat melihat daftar surat yang perlu ditindaklanjuti.
 3. Klik surat untuk melihat detail dan mengambil tindakan.
 
+Setiap disposisi dapat diberi **batas waktu**. Notifikasi kategori Distribusi menjadi **mendesak** (merah) bila batas waktu tinggal 2 hari atau kurang, pada hari-H, atau sudah **lewat batas waktu**. Filter "lewat batas waktu" di Kotak Disposisi menampilkan baris yang terlambat.
+
 ```mermaid
 flowchart TD
     A[Surat Masuk Diterima] --> B{Perlu Distribusi?}
@@ -462,6 +467,41 @@ flowchart TD
     E --> F[Surat muncul di\nInbox Distribusi\ntujuan]
     B -->|Tidak| G[Proses Langsung]
 ```
+
+---
+
+### 5.4 Rangkaian Surat & Lacak Surat
+
+**Rangkaian Surat** menghimpun surat masuk, disposisi, tindak lanjut, dan surat keluar dalam satu urusan dengan kode `RS-YYYY-NNNNNN`. Panel **Alur Surat** di detail surat menampilkan pencatat → pengolah, status tindak lanjut per penerima, linimasa, dan rangkaian terkait. Node yang tidak boleh Anda baca tampil abu-abu bertuliskan "Dikecualikan".
+
+- **Lacak Surat** (menu Surat ▸ Lacak Surat): ketik nomor atau perihal (minimal 3 karakter). Hasil dikelompokkan per rangkaian dengan pratinjau rantai.
+- **Surat Inisiatif**: Surat Keluar ▸ Buat Surat Inisiatif memulai surat keluar tanpa induk surat masuk; kolom **Asal Naskah** mencatat `Inisiatif` atau `Tindak Lanjut`.
+- Tulis hanya untuk admin di unit yang berwenang; membuka detail lintas unit tidak pernah mengubah status disposisi.
+
+### 5.5 Berkas Rangkaian, Koreksi Berkas & Data Lama
+
+**Berkaskan ke Direktorat (Unit Pengolah).** Setelah rangkaian selesai, admin unit pengolah, pencatat, atau pengawas memilih unit pengolah (hanya dari unit yang sudah terlibat) dan klasifikasi berkas, lalu mengonfirmasi dua kali. Rangkaian menjadi *diberkaskan*, dikunci sistem, dan tampil di tab **Berkas Rangkaian** unit pengolah. Berkas Rangkaian adalah berkas naskah; Dosir adalah map kasus manual dan tidak dipakai untuk pemberkasan rangkaian.
+
+**Bukti penutupan berkas.** Panel Alur Surat menampilkan "Bukti penutupan berkas: RS-…, tgl …". Gunakan tanggal dan kode itu sebagai *evidence* saat mencatat pemicu retensi `berkas_ditutup`/`kegiatan_selesai` pada arsip anggota; pemberkasan tidak memulai retensi secara otomatis.
+
+**Koreksi Berkas.** Status diberkaskan tidak dapat dibuka kembali. Bila unit pengolah atau klasifikasi salah pilih:
+1. Super admin membuka panel Alur Surat ▸ **Koreksi Berkas**, memilih unit/klasifikasi baru, menulis alasan (minimal 10 karakter), memeriksa ringkasan, lalu **Ajukan Koreksi Berkas**.
+2. Seorang **super_admin lain** membuka rangkaian yang sama dan memilih **Setujui** (lalu **Ya, terapkan koreksi**) atau **Tolak**. Pengaju tidak dapat memutuskan koreksinya sendiri.
+3. Hanya perubahan yang disetujui yang diterapkan, persis sesuai usulan, dan seluruh langkah tercatat di Audit Log.
+
+**Data lama.** Surat dari aplikasi lama dengan label disposisi (misalnya "BPPT", "Dit. PTEP") dirangkai sebagai rangkaian *data lama* berstatus selesai dan disembunyikan dari daftar kerja. Label "Kabag …" hanya label, tidak pernah menjadi tujuan disposisi. Direktorat pada label lama baru dapat membaca surat tersebut setelah administrator menyalakan akses peserta data lama (flag `RANGKAIAN_DISPOSISI_LAMA_READ`) dengan sign-off keamanan tersendiri, terpisah dari persetujuan laporan pemetaan. Pengecualian: bila unit pengolah data lama diisi otomatis dari label (satu direktorat), direktorat pengolah itu dapat membaca rangkaiannya tanpa bergantung pada flag tersebut.
+
+**Tutup massal data lama** (super admin dan admin unit pengawas; panel baru tampil setelah administrator menyalakan fitur ini): tab Berkas Rangkaian ▸ pilih tahun (opsional) dan klasifikasi pengganti untuk rangkaian tanpa klasifikasi ▸ **Pratinjau** ▸ centang pernyataan ▸ **Tutup massal N rangkaian**. Bila jumlah berubah sejak pratinjau, sistem menolak dan Anda perlu mengulang pratinjau. Rangkaian yang tidak memiliki pengolah diberkaskan ke unit pencatat. Rangkaian yang calon unit pengolahnya (dari label lama) belum diisi tidak ikut Tutup massal; berkaskan satu per satu lewat panel Alur Surat.
+
+### 5.6 Perlu Dilengkapi
+
+Tab **Perlu Dilengkapi** (menu Surat ▸ Lacak Surat ▸ tab Perlu Dilengkapi) menampilkan surat dan rangkaian dalam jangkauan Anda yang rantainya belum lengkap. Surat yang tidak boleh Anda baca tampil sebagai "Dikecualikan".
+
+Baris dikelompokkan dalam **enam kategori**: Surat masuk belum ditindaklanjuti, Disposisi belum selesai, Keputusan tanpa ND penjelas, Tindak lanjut tertahan, Siap diberkaskan, dan Surat keluar tanpa asal. Tombol aksi pada setiap baris (Tindak Lanjut, Disposisi, Berkaskan, Tautkan, dan lainnya) hanya muncul bila server mengizinkannya untuk pengguna yang login.
+
+- Ikon **🔔 badge** pada sidebar (menu Lacak Surat) menghitung total baris tanpa data lama, disegarkan seirama notifikasi.
+- Centang **"Tampilkan data lama"** untuk menyertakan rangkaian data lama dalam daftar.
+- **Tandai Inisiatif** menandai surat keluar sebagai surat atas prakarsa sendiri (tanpa induk surat masuk); perubahan ini diaudit dan tidak mengubah isi surat.
 
 ---
 
@@ -526,6 +566,8 @@ Arsip aktif terbagi menjadi dua sub-halaman:
 1. Klik **Pemberkasan (Dosir)** pada sidebar.
 2. Lihat daftar dosir yang ada.
 3. Klik dosir untuk melihat detail berkas-berkas di dalamnya.
+
+Untuk berkas naskah surat masuk–keluar gunakan Berkas Rangkaian (5.5); Dosir tetap map kasus manual.
 
 ---
 
@@ -894,6 +936,10 @@ Panel notifikasi memiliki **3 tab** untuk memfilter notifikasi:
 | **Arsip** | 📦 | Arsip yang **mendekati masa retensi/kadaluarsa** — ditandai dengan sisa hari |
 | **Semua** | 🔔 | Gabungan semua notifikasi dari kedua kategori |
 
+#### Notifikasi Batas Waktu Disposisi
+
+Notifikasi disposisi berlabel **Distribusi** dan tampil di tab **Alur** dan **Semua**. Notifikasi ini ditandai mendesak bila batas waktu disposisi ≤ 2 hari, jatuh hari ini, atau sudah lewat batas waktu. Surat data lama yang sudah ditutup tidak dinotifikasi.
+
 #### Filter Unit Kerja (Super Admin)
 
 Jika Anda login sebagai **Super Admin**, panel notifikasi menampilkan **dropdown pilihan Unit Kerja** di bagian atas. Anda dapat memilih unit kerja berikut untuk melihat notifikasi spesifik:
@@ -905,7 +951,6 @@ Jika Anda login sebagai **Super Admin**, panel notifikasi menampilkan **dropdown
 | Dir. BPPT |
 | Dir. PTEP |
 | Dir. KTPP |
-| Dir. PLP |
 
 > [!TIP]
 > Gunakan filter unit kerja untuk memantau notifikasi dari unit kerja tertentu tanpa perlu berpindah halaman.
@@ -971,6 +1016,7 @@ Di bagian bawah sidebar, terdapat link **📖 Panduan** yang mengarah ke dokumen
 
 ### 11.8 Ekspor Data
 - Pada halaman daftar surat/arsip, klik tombol **"Ekspor"** untuk mengunduh data dalam format PDF, Excel, atau CSV.
+- Ekspor Excel Surat Keluar menampilkan **Balasan Untuk** sebagai nomor surat masuk (bukan kode internal). Bila surat masuk berada di unit lain tertulis `(lintas unit)`, bila kelasnya tidak boleh Anda baca tertulis `Dikecualikan`, dan bila sudah dihapus tertulis `(tidak tersedia)`. Sejak integrasi rangkaian, sistem hanya mengisi relasi Balasan Untuk untuk balasan dari unit yang sama; rantai balasan lintas unit dilihat di panel Alur Surat. Relasi ini dikosongkan bila tautan balasannya dibatalkan, sehingga kolomnya ikut kosong. Kolom **Asal Naskah** berisi `Inisiatif` atau `Tindak Lanjut`.
 
 ---
 

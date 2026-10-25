@@ -6,6 +6,9 @@ import { permissionMiddleware } from '../middlewares/role.middleware';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import { createLogger } from '../utils/logger';
 import { allowedSecurityClassifications } from '../services/record-access.service.js';
+import { exportLimiter } from '../middlewares/rate-limiter.middleware';
+import { ExportCompletenessError } from '../services/export-completeness.js';
+import { auditExport } from '../services/export-audit';
 
 const log = createLogger('ReportRoutes');
 
@@ -255,9 +258,9 @@ router.get('/summary', async (req: AuthRequest, res: Response) => {
  *           type: string
  *           enum: [pdf, excel]
  */
-router.get('/export/:type/:format', permissionMiddleware('reports', 'export'), async (req: AuthRequest, res: Response) => {
+router.get('/export/:type/:format', exportLimiter, permissionMiddleware('reports', 'export'), async (req: AuthRequest, res: Response) => {
     try {
-        const { type, format } = req.params;
+        const type = String(req.params.type), format = String(req.params.format);
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
         // only super_admin/auditor may target another unit via query param.
         const unitKerjaId = resolveUnitKerjaId(req) || undefined;
@@ -265,6 +268,21 @@ router.get('/export/:type/:format', permissionMiddleware('reports', 'export'), a
 
         if (!unitKerjaId) {
             res.status(400).json({ error: 'unitKerjaId is required' });
+            return;
+        }
+
+        if (!['surat-masuk', 'surat-keluar', 'arsip'].includes(type) || !['excel', 'pdf'].includes(format)) {
+            res.status(400).json({ error: 'Invalid report type' });
+            return;
+        }
+        // The arsip report filters (Akan Kadaluarsa/Permanen/Musnah, media) are
+        // not supported by the export query; refuse rather than export rows
+        // that do not match what the operator sees.
+        if (type === 'arsip' && ((arsipType && arsipType !== 'all') || (mediaType && mediaType !== 'all'))) {
+            res.status(422).json({
+                error: 'EXPORT_FILTER_UNSUPPORTED',
+                message: 'Ekspor laporan arsip hanya tersedia untuk filter "Semua" dan "Semua Media". Ubah filter, atau gunakan tombol Export di halaman Arsip.',
+            });
             return;
         }
 
@@ -300,8 +318,6 @@ router.get('/export/:type/:format', permissionMiddleware('reports', 'export'), a
                 res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
             }
         } else if (type === 'arsip') {
-            filters.jenisArsip = arsipType as string | undefined;
-            filters.mediaType = mediaType as string | undefined;
             if (format === 'excel') {
                 buffer = await exportService.generateExcelArsip(filters);
                 res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -316,8 +332,15 @@ router.get('/export/:type/:format', permissionMiddleware('reports', 'export'), a
             return;
         }
 
+        await auditExport(req, { source: 'laporan', type: type as 'surat-masuk' | 'surat-keluar' | 'arsip', format: format as 'excel' | 'pdf', filters });
         res.send(buffer);
     } catch (error) {
+        res.removeHeader('Content-Type');
+        res.removeHeader('Content-Disposition');
+        if (error instanceof ExportCompletenessError) {
+            res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
+            return;
+        }
         log.error({ err: error }, 'Error exporting report:');
         res.status(500).json({ error: 'Failed to export report' });
     }

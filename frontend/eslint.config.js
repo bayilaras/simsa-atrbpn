@@ -5,7 +5,9 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'dev-dist', 'coverage']),
+  // Deployment checks emit additional dist-* bundles; lint maintained source
+  // rather than parsing their generated/minified vendor copies.
+  globalIgnores(['dist', 'dist-*', 'dev-dist', 'coverage']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

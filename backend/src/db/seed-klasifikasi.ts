@@ -15,6 +15,7 @@ import {
   validateRegulatoryRuleItems,
 } from '../services/regulatory-rule-set.service';
 import { REGULATORY_SEED_LOCK, withRegulatorySeedLock } from './regulatory-seed-lock';
+import { assertLocalRegulatorySeed } from '../config/regulatory-bootstrap';
 
 type ClassificationSeedRecord = {
   sourceRecordKey: string;
@@ -159,7 +160,7 @@ async function seedKlasifikasiArsipUnlocked() {
   }
 
   const expectedValidation = validateRegulatoryRuleItems('klasifikasi', prepared.items);
-  // The bootstrap edition may activate without maker-checker actors, but the
+  // The local bootstrap edition may activate without maker-checker actors, but the
   // shared draft validator still requires a fresh persisted impact report.
   // Generate the baseline diff (all items added, no predecessor) so `seed:all`
   // exercises the same evidence/hash checks used by later editions.
@@ -180,6 +181,7 @@ async function seedKlasifikasiArsipUnlocked() {
 }
 
 export async function seedKlasifikasiArsip() {
+  assertLocalRegulatorySeed();
   return withRegulatorySeedLock(
     REGULATORY_SEED_LOCK.klasifikasi,
     seedKlasifikasiArsipUnlocked,

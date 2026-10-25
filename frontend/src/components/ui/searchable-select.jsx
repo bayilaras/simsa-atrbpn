@@ -30,6 +30,8 @@ export function SearchableSelect({
     disabled = false,
     id,
     ariaLabel,
+    'aria-invalid': ariaInvalid,
+    'aria-describedby': ariaDescribedBy,
 }) {
     const [open, setOpen] = React.useState(false)
     const [search, setSearch] = React.useState("")
@@ -66,6 +68,8 @@ export function SearchableSelect({
                     role="combobox"
                     aria-expanded={open}
                     aria-label={ariaLabel || placeholder}
+                    aria-invalid={ariaInvalid}
+                    aria-describedby={ariaDescribedBy}
                     disabled={disabled}
                     className={cn(
                         "w-full justify-between h-11 font-normal",

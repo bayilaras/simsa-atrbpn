@@ -34,6 +34,7 @@ import { DemoModeBadge } from '@/components/DemoModeBadge'
 // Role label mapping for display in Indonesian
 const ROLE_LABELS = {
     super_admin: 'Super Admin',
+    admin_unit: 'Admin Unit Kerja',
     admin_dirjen: 'Admin Dirjen',
     admin_sesditjen: 'Admin Sesditjen',
     staff: 'Staf',
@@ -424,7 +425,9 @@ export function AppHeader() {
                                                     <Clock className="h-3 w-3" />
                                                     {notif.category === 'surat-masuk'
                                                         ? `${notif.daysLeft} hari sejak diterima`
-                                                        : `${notif.daysLeft} hari lagi`
+                                                        : notif.daysLeft < 0
+                                                            ? `lewat ${-notif.daysLeft} hari`
+                                                            : `${notif.daysLeft} hari lagi`
                                                     }
                                                 </div>
                                                 {/* Category badge */}

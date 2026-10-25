@@ -120,9 +120,9 @@ describe('archive lending and storage unit boundaries', () => {
         expect((await request(app).get(`/api/storage-locations/${locationId}`)).status).toBe(200);
         expect((await request(app).get(`/api/storage-locations/${locationId}/qr`)).status).toBe(200);
 
-        expect(state.lending.findById).toHaveBeenCalledWith(lendingId, 'sesditjen');
-        expect(state.lending.getHistoryByArsipId).toHaveBeenCalledWith(arsipId, 'sesditjen');
-        expect(state.lending.getHistoryByLocationId).toHaveBeenCalledWith(locationId, 'sesditjen');
+        expect(state.lending.findById).toHaveBeenCalledWith(lendingId, 'sesditjen', ['biasa', 'terbatas']);
+        expect(state.lending.getHistoryByArsipId).toHaveBeenCalledWith(arsipId, 'sesditjen', ['biasa', 'terbatas']);
+        expect(state.lending.getHistoryByLocationId).toHaveBeenCalledWith(locationId, 'sesditjen', ['biasa', 'terbatas']);
         expect(state.storage.generateArsipQRCode)
             .toHaveBeenCalledWith(arsipId, expect.any(String), 'sesditjen');
         expect(state.storage.findById).toHaveBeenCalledWith(locationId, 'sesditjen');
@@ -140,7 +140,7 @@ describe('archive lending and storage unit boundaries', () => {
         expect((await request(app).get('/api/archive-lending/stats?unitKerjaId=ditjen')).status).toBe(200);
         expect((await request(app).get('/api/storage-locations/tree?unitKerjaId=ditjen')).status).toBe(200);
 
-        expect(state.lending.getStats).toHaveBeenCalledWith('ditjen');
+        expect(state.lending.getStats).toHaveBeenCalledWith('ditjen', ['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']);
         expect(state.storage.getTree).toHaveBeenCalledWith('ditjen');
     });
 

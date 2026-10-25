@@ -77,6 +77,10 @@ export function createSimsaBuildManifest(source = {}) {
   if (!['vercel-blob', 'gcs', 'disabled'].includes(storageProvider)) {
     throw new Error('VITE_STORAGE_PROVIDER has an unsupported deployment value.')
   }
+  if (appMode === 'full' && storageProvider === 'disabled'
+      && value('VITE_APP_PROFILE').toLowerCase() !== 'internal') {
+    throw new Error('Full builds with disabled storage require explicit VITE_APP_PROFILE=internal.')
+  }
 
   if (appMode === 'metadata-demo') {
     if ((value('VITE_APP_PROFILE') || 'internal').toLowerCase() !== 'internal') {
@@ -253,25 +257,41 @@ export default defineConfig(({ command, mode }) => {
     },
   },
   build: {
-    rollupOptions: {
+    // Vite 8 bundles with Rolldown, which dropped Rollup's object-form
+    // `manualChunks`. These codeSplitting groups keep the same four vendor
+    // chunks: each captures the listed packages plus their dependencies
+    // (includeDependenciesRecursively defaults to true), and a higher priority
+    // claims a shared module first, so React itself always lands in
+    // vendor-react rather than in a chunk of a package that imports it.
+    rolldownOptions: {
       output: {
-        manualChunks: {
-          // Core React — changes rarely, great cache hit rate
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          // UI primitives — Radix components used across many pages
-          'vendor-radix': [
-            '@radix-ui/react-dialog',
-            '@radix-ui/react-dropdown-menu',
-            '@radix-ui/react-select',
-            '@radix-ui/react-tabs',
-            '@radix-ui/react-tooltip',
-            '@radix-ui/react-popover',
-            '@radix-ui/react-slot',
+        codeSplitting: {
+          groups: [
+            {
+              // Core React — changes rarely, great cache hit rate
+              name: 'vendor-react',
+              test: /[\\/]node_modules[\\/](?:react|react-dom|react-router-dom)[\\/]/,
+              priority: 40,
+            },
+            {
+              // UI primitives — Radix components used across many pages
+              name: 'vendor-radix',
+              test: /[\\/]node_modules[\\/]@radix-ui[\\/]react-(?:dialog|dropdown-menu|select|tabs|tooltip|popover|slot)[\\/]/,
+              priority: 30,
+            },
+            {
+              // Icons — large set, rarely changes
+              name: 'vendor-icons',
+              test: /[\\/]node_modules[\\/]lucide-react[\\/]/,
+              priority: 20,
+            },
+            {
+              // Date utilities
+              name: 'vendor-date',
+              test: /[\\/]node_modules[\\/]date-fns[\\/]/,
+              priority: 10,
+            },
           ],
-          // Icons — large set, rarely changes
-          'vendor-icons': ['lucide-react'],
-          // Date utilities
-          'vendor-date': ['date-fns'],
         },
       },
     },

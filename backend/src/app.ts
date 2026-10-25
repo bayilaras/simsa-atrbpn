@@ -6,13 +6,17 @@ import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import { env, validateEnv, cloudPlatformConfig } from './config/env';
 import { getPublicAppMetadata } from './config/app-profile.js';
-import { getPublicCapabilities, isMetadataDemo } from './config/demo.js';
+import { isMetadataDemo } from './config/demo.js';
+import { isObjectStorageDisabled } from './config/demo.js';
+import { createFileStorageAccessMiddleware, createOptionalModuleAccessMiddleware } from './middlewares/file-storage-access.middleware.js';
+import { getPublicCapabilities } from './config/public-capabilities.js';
 import { createDemoAccessMiddleware } from './middlewares/demo-access.middleware.js';
 import { installFrontendHosting } from './middlewares/frontend-hosting.middleware.js';
 import { frontendSecurityDirectives } from './config/frontend-security.js';
 import { srikandiConfig } from './config/srikandi.js';
 import { isTrustedOrigin } from './config/trusted-origins';
 import { generalLimiter, authLimiter } from './middlewares/rate-limiter.middleware';
+import { prepareBetterAuthClientIp } from './middlewares/better-auth-ip.middleware.js';
 import { authMiddleware } from './middlewares/auth.middleware';
 import { roleMiddleware } from './middlewares/role.middleware';
 import { csrfCookieSetter, csrfProtection } from './middlewares/csrf.middleware';
@@ -20,6 +24,7 @@ import { firebaseAppCheckMiddleware } from './middlewares/firebase-app-check.mid
 import { sanitizeInput } from './middlewares/sanitize.middleware';
 import { setupSwagger } from './config/swagger';
 import { AppError, ForbiddenError } from './utils/errors';
+import { publicErrorResponse, publicErrorStatus } from './utils/public-error.js';
 import { logger } from './utils/logger';
 
 // Import routes
@@ -43,6 +48,10 @@ import dosirRoutes from './routes/dosir.routes';
 import { retentionRoutes } from './routes/retention.routes';
 import bulkUploadRoutes from './routes/bulk-upload.routes';
 import distributionRoutes from './routes/distribution.routes';
+import rangkaianRoutes from './routes/rangkaian.routes';
+import rangkaianDaftarRoutes from './routes/rangkaian-daftar.routes.js';
+import rangkaianPerluDilengkapiRoutes from './routes/rangkaian-perlu-dilengkapi.routes.js';
+import rangkaianBerkasRoutes from './routes/rangkaian-berkas.routes';
 import { reportRoutes } from './routes/report.routes';
 import { settingsRoutes } from './routes/settings.routes';
 import searchRoutes from './routes/search.routes';
@@ -58,6 +67,7 @@ import mappingRoutes from './routes/mapping.routes';
 import approvalRoutes from './routes/approval.routes';
 import securityRoutes from './routes/security.routes';
 import googleDriveImportRoutes from './routes/google-drive-import.routes';
+import fileImportRoutes from './routes/file-import.routes';
 import clientUploadRoutes from './routes/client-upload.routes';
 import fileAccessRoutes from './routes/file-access.routes';
 import srikandiRoutes from './routes/srikandi.routes';
@@ -67,6 +77,8 @@ import retentionGovernanceRoutes from './routes/retention-governance.routes';
 import firebaseAuthRoutes from './routes/firebase-auth.routes.js';
 import gcsUploadRoutes from './routes/gcs-upload.routes.js';
 import { getReadiness } from './services/readiness.service.js';
+import { createHttpObservability } from './middlewares/http-observability.middleware.js';
+import operationsRoutes from './routes/operations.routes.js';
 
 // Vercel imports app.ts directly and never executes index.ts. Validate the
 // production environment during module cold-start as well, while unit tests
@@ -80,6 +92,9 @@ if (deployedRuntime) {
 
 const app = express();
 const publicAppMetadata = getPublicAppMetadata(env.APP_PROFILE, srikandiConfig.enabled);
+
+// Run before CORS, auth, and parsers so rejected requests can also be traced.
+app.use(createHttpObservability());
 
 // Trust first proxy (Vercel's load balancer) for X-Forwarded-For headers
 // Required for express-rate-limit to correctly identify users behind a proxy
@@ -106,7 +121,7 @@ app.use(cors({
         'X-CSRF-Token',
         'X-Firebase-AppCheck',
     ],
-    exposedHeaders: ['Retry-After'],
+    exposedHeaders: ['Retry-After', 'X-Request-ID'],
     credentials: true,
 }));
 
@@ -245,15 +260,16 @@ const wrappedAuthHandler = async (req: Request, res: Response, next: NextFunctio
         res.setHeader('Access-Control-Allow-Credentials', 'true');
     }
     try {
+        prepareBetterAuthClientIp(req);
         const authHandler = await getBetterAuthHandler();
         await authHandler(req, res);
     } catch (error: any) {
-        console.error(`Auth handler error on ${req.method} ${req.path}:`, error.message, error.stack);
+        if (res.headersSent) return next(error);
+        logger.error({ event: 'http_auth_handler_failed', requestId: res.locals.requestId }, 'Authentication handler failed');
         res.status(500).json({
             error: 'Authentication Error',
-            message: deployedRuntime
-                ? 'Terjadi kesalahan pada proses autentikasi.'
-                : `Auth error: ${error.message}`,
+            message: 'Terjadi kesalahan pada proses autentikasi.',
+            requestId: res.locals.requestId,
         });
     }
 };
@@ -267,6 +283,7 @@ if (cloudPlatformConfig.authProvider === 'firebase') {
 }
 
 // Body parsing - AFTER Better Auth handler
+app.use('/api', createOptionalModuleAccessMiddleware());
 app.use(express.json({ limit: '10mb' }));  // Limit body size to prevent DoS
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -285,6 +302,7 @@ app.use('/api', firebaseAppCheckMiddleware);
 // Defense in depth: hiding file controls in the demo UI is not authorization.
 // Reject unsupported operations before any domain router or upload parser runs.
 app.use('/api', createDemoAccessMiddleware(isMetadataDemo()));
+app.use('/api', createFileStorageAccessMiddleware(isObjectStorageDisabled()));
 
 // Response compression - compress all responses
 app.use(compression({
@@ -355,6 +373,10 @@ app.use('/api/dosir', dosirRoutes);
 app.use('/api/retention', retentionRoutes);
 app.use('/api/bulk-upload', bulkUploadRoutes);
 app.use('/api/distributions', distributionRoutes);
+app.use('/api/rangkaian', rangkaianDaftarRoutes);  // P4 Task 6: hanya GET / (auth per-route)
+app.use('/api/rangkaian', rangkaianPerluDilengkapiRoutes); // P4 Task 18 (D7), auth per-route; sebelum router berkas P5 dan router utama
+app.use('/api/rangkaian', rangkaianBerkasRoutes); // P5 Task 8: /data-lama/*, /:id/koreksi-berkas, /koreksi-berkas/:koreksiId/putuskan (auth per-route); mount tepat sebelum router utama P2/P3. Router P4 dipasang tepat sebelumnya.
+app.use('/api/rangkaian', rangkaianRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/search', searchRoutes);
@@ -368,6 +390,8 @@ app.use('/api/layanan-arsip', layananArsipRoutes);
 app.use('/api/supervision', supervisionRoutes);
 app.use('/api/mapping', mappingRoutes);
 app.use('/api/security', securityRoutes); // Security utilities (password check, etc.)
+app.use('/api/operations', operationsRoutes);
+app.use('/api/import/berkas', fileImportRoutes); // CSV/XLSX metadata import with the Sheets mapping
 app.use('/api/import', googleDriveImportRoutes); // Public Google Sheets metadata import
 if (cloudPlatformConfig.storageProvider === 'gcs') {
     app.use('/api/object-uploads', gcsUploadRoutes);
@@ -390,25 +414,33 @@ app.use((req: Request, res: Response) => {
 
 // Global error handler — handles custom AppError instances and unexpected errors
 export function globalErrorHandler(err: Error, req: Request, res: Response, next: NextFunction) {
-    void next;
-    // Custom application errors carry their own status code
-    if (err instanceof AppError) {
-        res.status(err.statusCode).json({
+    if (res.headersSent) return next(err);
+    const requestId = res.locals?.requestId;
+    const parserError = err as Error & { type?: string; status?: number };
+    if ((parserError.type === 'entity.parse.failed' && parserError.status === 400)
+        || (parserError.type === 'entity.too.large' && parserError.status === 413)) {
+        res.status(parserError.status).json({
             success: false,
-            error: err.name,
-            message: err.message,
-            ...(env.NODE_ENV === 'development' && { stack: err.stack }),
+            error: parserError.status === 413 ? 'Payload Too Large' : 'Bad Request',
+            message: parserError.status === 413 ? 'Ukuran data melebihi batas yang diizinkan.' : 'Format JSON tidak valid.',
+            code: parserError.status === 413 ? 'PAYLOAD_TOO_LARGE' : 'VALIDATION_ERROR',
+            requestId,
         });
+        return;
+    }
+    // Custom application errors carry their own status code
+    if (err instanceof AppError && publicErrorStatus(err) < 500) {
+        res.status(publicErrorStatus(err)).json(publicErrorResponse(err, requestId));
         return;
     }
 
     // Unexpected errors
-    logger.error({ err, path: req.path, method: req.method }, 'Unhandled error');
-    res.status(500).json({
-        success: false,
-        error: 'Internal Server Error',
-        message: env.NODE_ENV === 'development' ? err.message : 'Terjadi kesalahan pada server.',
-    });
+    // Exception messages can contain SQL values, signed URLs or credentials.
+    // Keep operational classification and correlation, not raw exception data.
+    const errorType = err instanceof Error && ['Error', 'TypeError', 'RangeError', 'SyntaxError', 'ReferenceError', 'AggregateError', 'AbortError'].includes(err.name)
+        ? err.name : 'Error';
+    logger.error({ event: 'http_unhandled_error', requestId, errorType }, 'Unhandled error');
+    res.status(publicErrorStatus(err)).json(publicErrorResponse(err, requestId));
 }
 
 app.use(globalErrorHandler);

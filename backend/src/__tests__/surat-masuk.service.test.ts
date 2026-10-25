@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Readable } from 'node:stream';
 
@@ -52,6 +53,13 @@ const mockDb = {
 
 vi.mock('../config/database', () => ({ db: mockDb }));
 
+const hookMocks = vi.hoisted(() => ({
+    afterSuratMasukInsert: vi.fn(async () => null as any),
+    guardSuratMasukMutation: vi.fn(async () => null as any),
+    afterSuratMasukMutation: vi.fn(async () => undefined),
+}));
+vi.mock('../services/rangkaian/tindak-lanjut.hook.js', () => hookMocks);
+
 const { SuratMasukService } = await import('../services/surat-masuk.service');
 const { srikandiBusinessProducer } = await import('../services/srikandi-producer.service');
 const { auditLogService } = await import('../services/audit-log.service');
@@ -65,6 +73,14 @@ describe('SuratMasukService', () => {
 
     beforeEach(() => {
         vi.restoreAllMocks();
+        // [F2] vi.restoreAllMocks() (vitest 3+) hanya memulihkan vi.spyOn; hookMocks
+        // adalah vi.fn() hoisted level modul, riwayat panggilannya TIDAK ikut
+        // terhapus. Tanpa mockClear ini, asersi toHaveBeenCalledWith pada tes label
+        // lama lolos karena tes create() sebelumnya sudah memanggil hook dengan
+        // disposisi/referensi undefined — bukan karena tes ini benar.
+        hookMocks.afterSuratMasukInsert.mockClear();
+        hookMocks.guardSuratMasukMutation.mockClear();
+        hookMocks.afterSuratMasukMutation.mockClear();
         svc = new SuratMasukService();
         resultQueue.length = 0;
         capturedValues.length = 0;
@@ -236,7 +252,7 @@ describe('SuratMasukService', () => {
                     entityType: 'surat_masuk',
                     mimeType: 'application/pdf',
                     sizeBytes: 8,
-                    sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+                    sha256: createHash('sha256').update('%PDF-1.7').digest('hex'),
                 }),
                 expect.objectContaining({ insert: expect.any(Function) }),
             );
@@ -244,7 +260,7 @@ describe('SuratMasukService', () => {
             registration.mockRestore();
         });
 
-        it('downloads and hashes a direct Blob before opening the numbering transaction', async () => {
+        it('validates direct Blob PDF bytes before opening the numbering transaction', async () => {
             const events: string[] = [];
             const locator = 'blob:https://store.private.blob.vercel-storage.com/surat-masuk/direct.pdf';
             const claim = {
@@ -343,6 +359,33 @@ describe('SuratMasukService', () => {
 
             expect(download).not.toHaveBeenCalled();
             expect(transaction).not.toHaveBeenCalled();
+        });
+
+        it('meneruskan routing disposisi ke hook dan menyimpan label tambahan saja', async () => {
+            enqueue([], [templateRow], [{ noUrut: 5 }], [{ id: 'new', noUrut: 6, unitKerjaId: 'u1' }], [{ id: 'new', noUrut: 6, disposisi: ['Kabag Umum', 'Dit. BPPT'] }]);
+            hookMocks.afterSuratMasukInsert.mockResolvedValueOnce({ referensi: null, disposisi: [{ id: 'dist-1' }] });
+            const actor = { id: 'user-tu', role: 'admin_unit', unitKerjaId: 'u1' };
+            const routing = { targets: [{ unitKerjaId: 'dir_bppt', penanggungJawab: true }], instruksi: 'Mohon ditindaklanjuti', labelTambahan: ['Kabag Umum'] };
+            const res = await svc.create({ unitKerjaId: 'u1', tahun: 2026, tanggalSurat: '2026-08-01', disposisi: routing, actor } as any);
+            expect(capturedValues.at(-1)).toMatchObject({ disposisi: ['Kabag Umum'] });
+            expect(hookMocks.afterSuratMasukInsert).toHaveBeenCalledWith(expect.anything(), {
+                user: actor, inserted: { id: 'new', unitKerjaId: 'u1' }, disposisi: routing, referensi: undefined, audit: undefined,
+            });
+            expect(res.disposisi).toEqual(['Kabag Umum', 'Dit. BPPT']);
+        });
+
+        it('label disposisi lama tetap disimpan tanpa memanggil hook berantai', async () => {
+            enqueue([], [templateRow], [], [{ id: 'new', noUrut: 1, unitKerjaId: 'u1' }]);
+            await svc.create({ unitKerjaId: 'u1', tahun: 2026, tanggalSurat: '2026-03-17', disposisi: ['Ditjen'] } as any);
+            expect(capturedValues.at(-1)).toMatchObject({ disposisi: ['Ditjen'] });
+            // [F2] Riwayat hook dibersihkan di beforeEach (mockClear), jadi
+            // toHaveBeenCalledTimes(1)/toHaveBeenLastCalledWith di sini benar-benar
+            // menguji panggilan create() INI — bukan sisa panggilan tes sebelumnya —
+            // dan akan merah bila label lama string/array ikut dikirim sebagai
+            // routing disposisi ke hook multi-unit.
+            expect(hookMocks.afterSuratMasukInsert).toHaveBeenCalledTimes(1);
+            expect(hookMocks.afterSuratMasukInsert).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ disposisi: undefined, referensi: undefined }));
+            expect(resultQueue).toHaveLength(0);
         });
     });
 
@@ -496,12 +539,21 @@ describe('SuratMasukService', () => {
 
     // ── getStats ──
     describe('getStats', () => {
+        it('propagates a failed aggregate query instead of returning zero statistics', async () => {
+            const failure = new Error('database unavailable');
+            enqueue({ then: (_resolve: unknown, reject: (error: Error) => void) => reject(failure) });
+            await expect(svc.getStats('u1', 2026, ['biasa'])).rejects.toBe(failure);
+        });
+
+        it('returns zero statistics when the aggregate succeeds with no matching records', async () => {
+            enqueue([{ total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0 }]);
+            await expect(svc.getStats('u1', 2026, ['biasa'])).resolves.toEqual({
+                total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0,
+            });
+        });
+
         it('should return statistics for unit', async () => {
-            // getStats uses Promise.all with 4 parallel count queries
-            enqueue([{ count: 10 }]);  // total
-            enqueue([{ count: 3 }]);   // belumDibalas
-            enqueue([{ count: 5 }]);   // sudahDibalas
-            enqueue([{ count: 2 }]);   // diarsipkan
+            enqueue([{ total: 10, belumDibalas: 3, sudahDibalas: 5, diarsipkan: 2 }]);
             const res = await svc.getStats('u1', 2026);
             expect(res).toEqual({ total: 10, belumDibalas: 3, sudahDibalas: 5, diarsipkan: 2 });
         });

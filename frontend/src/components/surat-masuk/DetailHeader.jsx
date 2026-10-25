@@ -1,4 +1,4 @@
-import { ArrowLeft, MailOpen, Edit, Send, Archive, MoreHorizontal, Reply } from 'lucide-react';
+import { ArrowLeft, MailOpen, Edit, Archive, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -7,9 +7,29 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Link } from 'react-router-dom';
+import { TindakLanjutMenu } from '@/components/surat/TindakLanjutMenu';
 
-export function DetailHeader({ surat, onBack, onEdit, onReply, onDistribute, onArchive, isAdmin }) {
+export function DetailHeader({ surat, onBack, onEdit, onDistribute, onArchive, onTerima, onPenyelesaian, onTautkan, isAdmin }) {
+    // Respons lama tanpa aksesMelalui berasal dari jalur pemilik.
+    const milik = (surat.aksesMelalui ?? 'owner') === 'owner';
+    // aksiDiizinkan dari server (Task 16) adalah gerbang otoritatif; bila belum
+    // ada (respons lama), jatuh ke isAdmin lama sebagai fallback.
+    const aksi = Array.isArray(surat.aksiDiizinkan) ? surat.aksiDiizinkan : null;
+    const bolehEdit = (aksi ? aksi.includes('edit') : isAdmin) && milik;
+    const bolehArsip = (aksi ? aksi.includes('arsipkan') : isAdmin) && milik;
+    const menu = (variant, className) => (
+        <TindakLanjutMenu
+            jenis="surat_masuk"
+            surat={surat}
+            aksiDiizinkan={surat.aksiDiizinkan || []}
+            onDisposisi={onDistribute}
+            onTerima={onTerima}
+            onPenyelesaian={onPenyelesaian}
+            onTautkan={onTautkan}
+            variant={variant}
+            className={className}
+        />
+    );
     return (
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-600 p-6 md:p-8 text-white shadow-xl">
             {/* Background Pattern */}
@@ -52,8 +72,8 @@ export function DetailHeader({ surat, onBack, onEdit, onReply, onDistribute, onA
                 </div>
 
                 {/* Desktop Actions */}
-                {isAdmin && (
-                    <div className="hidden md:flex gap-2">
+                <div className="hidden md:flex gap-2">
+                    {bolehEdit && (
                         <Button
                             variant="secondary"
                             className="bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-sm"
@@ -62,37 +82,22 @@ export function DetailHeader({ surat, onBack, onEdit, onReply, onDistribute, onA
                             <Edit className="mr-2 h-4 w-4" />
                             Edit
                         </Button>
+                    )}
+                    {menu('secondary', 'bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-sm')}
+                    {bolehArsip && !surat.isArchived && (
                         <Button
-                            variant="secondary"
-                            className="bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-sm"
-                            onClick={onReply}
+                            className="bg-card text-emerald-700 dark:text-emerald-300 hover:bg-card/90"
+                            onClick={onArchive}
                         >
-                            <Reply className="mr-2 h-4 w-4" />
-                            Balas Surat
+                            <Archive className="mr-2 h-4 w-4" />
+                            Arsipkan
                         </Button>
-                        <Button
-                            variant="secondary"
-                            className="bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-sm"
-                            onClick={onDistribute}
-                        >
-                            <Send className="mr-2 h-4 w-4" />
-                            Distribusi
-                        </Button>
-                        {!surat.isArchived && (
-                            <Button
-                                className="bg-card text-emerald-700 dark:text-emerald-300 hover:bg-card/90"
-                                onClick={onArchive}
-                            >
-                                <Archive className="mr-2 h-4 w-4" />
-                                Arsipkan
-                            </Button>
-                        )}
-                    </div>
-                )}
+                    )}
+                </div>
 
                 {/* Mobile Actions */}
-                {isAdmin && (
-                    <div className="md:hidden flex gap-2">
+                <div className="md:hidden flex gap-2">
+                    {bolehEdit && (
                         <Button
                             variant="secondary"
                             size="sm"
@@ -102,35 +107,29 @@ export function DetailHeader({ surat, onBack, onEdit, onReply, onDistribute, onA
                             <Edit className="mr-2 h-4 w-4" />
                             Edit
                         </Button>
+                    )}
+                    {menu('secondary', 'bg-card/20 hover:bg-card/30 text-white border-0')}
+                    {bolehArsip && !surat.isArchived && (
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <Button
                                     variant="secondary"
                                     size="icon"
                                     className="bg-card/20 hover:bg-card/30 text-white border-0"
+                                    aria-label="Aksi lain"
                                 >
                                     <MoreHorizontal className="h-4 w-4" />
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={onReply}>
-                                    <Reply className="mr-2 h-4 w-4" />
-                                    Balas Surat
+                                <DropdownMenuItem onClick={onArchive}>
+                                    <Archive className="mr-2 h-4 w-4" />
+                                    Arsipkan
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={onDistribute}>
-                                    <Send className="mr-2 h-4 w-4" />
-                                    Distribusikan
-                                </DropdownMenuItem>
-                                {!surat.isArchived && (
-                                    <DropdownMenuItem onClick={onArchive}>
-                                        <Archive className="mr-2 h-4 w-4" />
-                                        Arsipkan
-                                    </DropdownMenuItem>
-                                )}
                             </DropdownMenuContent>
                         </DropdownMenu>
-                    </div>
-                )}
+                    )}
+                </div>
             </div>
         </div>
     );

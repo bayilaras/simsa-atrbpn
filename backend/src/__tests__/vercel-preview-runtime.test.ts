@@ -3,7 +3,7 @@ import {
     initializeVercelHandler,
     inspectPreviewRuntime,
     previewEnvironmentContract,
-} from '../../api/preview-runtime.js';
+} from '../../lib/preview-runtime.mjs';
 
 const fixedDate = new Date('2026-08-29T00:00:00.000Z');
 

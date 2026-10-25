@@ -126,8 +126,8 @@ export default function ArsipTerjagaTable({
                                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onOpenDetail(item)}>
                                                 <Eye className="h-4 w-4" />
                                             </Button>
-                                            {item.statusPelaporan === 'belum_dilaporkan' && (
-                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-500/15" onClick={() => onOpenReport(item)}>
+                                            {(
+                                                <Button variant="ghost" size="icon" aria-label="Catatan pelaporan" className="h-8 w-8 text-blue-600 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-500/15" onClick={() => onOpenReport(item)}>
                                                     <Send className="h-4 w-4" />
                                                 </Button>
                                             )}

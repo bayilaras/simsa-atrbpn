@@ -1,0 +1,50 @@
+# Blueprint path: deploy/render/render.yaml. All database provisioning is manual.
+services:
+  - type: web
+    name: simsa-cloud-metadata
+    runtime: node
+    branch: fix/user-readiness
+    plan: free
+    region: singapore
+    autoDeployTrigger: "off"
+    buildCommand: npm run build:cloud-metadata
+    startCommand: npm run start:cloud-metadata
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.21.0
+      - key: NODE_ENV
+        value: production
+      - key: SIMSA_APP_MODE
+        value: full
+      - key: APP_PROFILE
+        value: internal
+      - key: SIMSA_CLOUD_PLATFORM
+        value: local
+      - key: AUTH_PROVIDER
+        value: better-auth
+      - key: OBJECT_STORAGE_PROVIDER
+        value: disabled
+      - key: MALWARE_SCANNER_MODE
+        value: disabled
+      - key: MALWARE_SCAN_WORKER_ENABLED
+        value: "false"
+      - key: MALWARE_SCAN_WORKER_RUNTIME
+        value: embedded
+      - key: GOOGLE_OAUTH_ENABLED
+        value: "false"
+      - key: SRIKANDI_ENABLED
+        value: "false"
+      - key: DB_POOL_MAX
+        value: "3"
+      - key: DB_POOL_IDLE_TIMEOUT_MS
+        value: "10000"
+      - key: DB_CONNECT_TIMEOUT_MS
+        value: "15000"
+      - key: DATABASE_URL
+        sync: false
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
+# No databases, disks, worker/cron services, keep-alive jobs, or startup migrations.
+# FRONTEND_URL/BETTER_AUTH_URL default to Render's RENDER_EXTERNAL_URL in the
+# reviewed start wrapper; explicit custom HTTPS origins can be set in Dashboard.

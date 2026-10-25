@@ -13,8 +13,10 @@ vi.mock('../../config/database', () => ({
     },
 }));
 
-// Mock Schema — drizzle column references
-vi.mock('../../db/schema', () => ({
+// Keep the real catalog/retention metadata used by service dependencies while
+// retaining this fixture's simple surat column references and mocked DB calls.
+vi.mock('../../db/schema', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../db/schema')>()),
     suratMasuk: {
         id: 'id',
         unitKerjaId: 'unitKerjaId',

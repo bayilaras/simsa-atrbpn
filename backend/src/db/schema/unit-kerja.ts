@@ -9,6 +9,8 @@ export const unitKerja = pgTable('unit_kerja', {
     parentId: varchar('parent_id', { length: 50 }), // References parent unit (e.g., 'ditjen' for direktorat)
     unitType: varchar('unit_type', { length: 30 }), // 'ditjen', 'sesditjen', 'direktorat', 'bagian'
     canReceiveDistribution: boolean('can_receive_distribution').default(true), // false for bagian_keuangan, bagian_kepegawaian
+    // D5 (0046): unit pengawas rangkaian (ditjen, sesditjen). Diubah hanya oleh super_admin.
+    isUnitPengawas: boolean('is_unit_pengawas').notNull().default(false),
     // Legacy storage columns retained only for migration compatibility. The API
     // neither exposes nor writes them; private Blob is the canonical store.
     driveFolderId: varchar('drive_folder_id', { length: 255 }),

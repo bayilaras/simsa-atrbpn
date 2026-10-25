@@ -282,6 +282,16 @@ describe('regulatory rule-set pure policy', () => {
 describe('RegulatoryRuleSetService lifecycle', () => {
     let service: InstanceType<typeof RegulatoryRuleSetService>;
 
+    it('rejects source PDFs above 50 MiB before storage upload or evidence persistence', async () => {
+        vi.spyOn(service, 'assertSourceDocumentUploadAllowed').mockResolvedValueOnce({} as any);
+        const buffer = Buffer.alloc(52_428_801); buffer.write('%PDF-1.7');
+        await expect(service.verifySourceDocument('22222222-2222-4222-8222-222222222222', {
+            buffer, originalname: 'source.pdf', mimetype: 'application/pdf', size: buffer.length,
+        }, '33333333-3333-4333-8333-333333333333')).rejects.toThrow('50 MiB');
+        expect(blobStorageMocks.uploadUntrustedFile).not.toHaveBeenCalled();
+        expect(capturedValues).toEqual([]);
+    });
+
     beforeEach(() => {
         resultQueue.length = 0;
         capturedSets.length = 0;
@@ -614,11 +624,12 @@ describe('RegulatoryRuleSetService lifecycle', () => {
         expect(capturedValues).toHaveLength(0);
     }, 15_000);
 
-    it('supersedes the current edition and activates a validated draft atomically', async () => {
+    it.each(['draft', 'submitted', 'reviewed', 'approved'])(
+        'publishes a validated %s atomically without inventing workflow evidence', async (status) => {
         const item = {
             ...classificationLeaf,
             id: 21,
-            contentHash: deterministicRegulatoryContentHash('klasifikasi', [classificationLeaf]),
+            contentHash: status === 'draft' ? null : deterministicRegulatoryContentHash('klasifikasi', [classificationLeaf]),
         };
         const contentHash = deterministicRegulatoryContentHash('klasifikasi', [item]);
         const manifest = {
@@ -660,7 +671,7 @@ describe('RegulatoryRuleSetService lifecycle', () => {
             sourceDocumentVerifiedAt: new Date(),
             sourceDocumentVerifiedBy: 'user-source',
             sourceUrl: null,
-            status: 'approved',
+            status,
             effectiveFrom: '2026-01-01',
             effectiveTo: null,
             supersedesId: '11111111-1111-4111-8111-111111111111',
@@ -680,9 +691,9 @@ describe('RegulatoryRuleSetService lifecycle', () => {
             impactReportSha256: regulatoryEvidenceHash(impactReport),
             impactReportGeneratedAt: new Date(),
             impactReportGeneratedBy: 'user-impact',
-            submittedBy: 'user-1',
-            reviewedBy: 'user-2',
-            approvedBy: 'user-3',
+            submittedBy: status === 'draft' ? null : 'user-1',
+            reviewedBy: ['reviewed', 'approved'].includes(status) ? 'user-2' : null,
+            approvedBy: status === 'approved' ? 'user-3' : null,
             approvalNote: 'Edisi telah memenuhi hasil telaah dan siap diterbitkan.',
             publishedAt: null,
             publishedBy: null,
@@ -699,10 +710,11 @@ describe('RegulatoryRuleSetService lifecycle', () => {
             supersedesId: null,
         };
         const superseded = { ...current, status: 'superseded', effectiveTo: '2025-12-31' };
-        const activated = { ...candidate, status: 'active', publishedBy: 'user-4' };
+        const activated = { ...candidate, status: 'active', publishedBy: 'user-1' };
         enqueue(
             [candidate],
             [item],
+            ...(status === 'draft' ? [[]] : []),
             [current],
             [item],
             [superseded],
@@ -713,18 +725,27 @@ describe('RegulatoryRuleSetService lifecycle', () => {
             [],
         );
 
-        const result = await service.activate(candidate.id, 'user-4');
+        const result = await service.activate(candidate.id, 'user-1');
 
         expect(result.supersededRuleSet?.id).toBe(current.id);
         expect(result.validation.valid).toBe(true);
-        expect(capturedSets[0]).toMatchObject({
+        if (status === 'draft') expect(capturedSets[0]).toMatchObject({ contentHash });
+        const mutations = status === 'draft' ? capturedSets.slice(1) : capturedSets;
+        expect(mutations[0]).toMatchObject({
             status: 'superseded',
             effectiveTo: '2025-12-31',
         });
-        expect(capturedSets[1].status).toBe('active');
-        expect(capturedSets[1].publishedBy).toBe('user-4');
-        expect(capturedSets[1].metadata.contentHash).toMatch(/^[0-9a-f]{64}$/);
-        expect(capturedSets[1].metadata.contentHashAlgorithm).toBe('sha256');
+        expect(mutations[1].status).toBe('active');
+        expect(mutations[1].publishedBy).toBe('user-1');
+        expect(mutations[1].metadata.contentHash).toMatch(/^[0-9a-f]{64}$/);
+        expect(mutations[1].metadata.contentHashAlgorithm).toBe('sha256');
+        for (const field of ['submittedBy', 'submittedAt', 'reviewedBy', 'reviewedAt', 'approvedBy', 'approvedAt']) {
+            expect(mutations[1]).not.toHaveProperty(field);
+        }
+        const events = capturedValues.flat();
+        expect(events.map(event => event.action)).toEqual(['supersede', 'activate']);
+        expect(events[1]).toMatchObject({ actorId: 'user-1', before: { status },
+            after: { status: 'active', authorizationPolicy: 'super_admin' } });
     });
 
     it('replaces only a draft manifest after validating it in full', async () => {
@@ -749,6 +770,22 @@ describe('RegulatoryRuleSetService lifecycle', () => {
             sourceRecordKey: classificationLeaf.sourceRecordKey,
         });
         expect(capturedValues[0][0].contentHash).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('rejects direct draft activation before mutations when source and governance evidence are missing', async () => {
+        const draft = {
+            id: '22222222-2222-4222-8222-222222222222', instrumentType: 'klasifikasi',
+            status: 'draft', metadata: {}, sourceDocumentSha256: null,
+        };
+        enqueue([draft], [classificationLeaf]);
+        await expect(service.activate(draft.id, 'user-1')).rejects.toMatchObject({
+            report: expect.objectContaining({ valid: false, errors: expect.arrayContaining([
+                expect.objectContaining({ code: 'missing_source_hash' }),
+                expect.objectContaining({ code: 'missing_impact_report' }),
+            ]) }),
+        });
+        expect(capturedSets).toEqual([]);
+        expect(capturedValues).toEqual([]);
     });
 
     it('does not consider a draft publishable without its source-document hash', async () => {
@@ -829,6 +866,38 @@ describe('RegulatoryRuleSetService lifecycle', () => {
             verifiedAt: null,
             malwareScanStatus: 'not_scanned',
         });
+    });
+
+    it('accepts a source PDF above the business attachment ceiling and keeps it quarantined', async () => {
+        const id = '22222222-2222-4222-8222-222222222222';
+        const blobUrl = `https://store.private.blob.vercel-storage.com/regulatory-sources/${id}/annex.pdf`;
+        const pdf = await onePagePdf();
+        const insertAt = pdf.lastIndexOf(Buffer.from('startxref'));
+        const comment = Buffer.alloc(10 * 1024 * 1024 + 1 - pdf.length, 0x20);
+        comment[0] = 0x25; comment[comment.length - 1] = 0x0a;
+        const buffer = Buffer.concat([pdf.subarray(0, insertAt), comment, pdf.subarray(insertAt)]);
+        const draft = { id, instrumentType: 'klasifikasi', status: 'draft', sourceDocumentBlobUrl: null };
+        blobStorageMocks.getFile.mockResolvedValue({ url: blobUrl, mimeType: 'application/pdf', size: buffer.length });
+        blobStorageMocks.downloadFile.mockResolvedValue({ stream: Readable.from(buffer), mimeType: 'application/pdf', fileName: 'annex.pdf' });
+        enqueue([{ status: 'draft' }], [draft], [{ ...draft, sourceDocumentBlobUrl: blobUrl }], []);
+        const result = await service.verifySourceDocumentFromBlob(id, { blobUrl, originalFileName: 'annex.pdf' }, 'user-source');
+        expect(capturedSets[0]).toMatchObject({ sourceDocumentSizeBytes: buffer.length, sourceDocumentPageCount: 1,
+            sourceDocumentSha256: createHash('sha256').update(buffer).digest('hex'), sourceDocumentVerifiedAt: null });
+        expect(result.sourceDocument).toMatchObject({ verifiedAt: null, malwareScanStatus: 'not_scanned' });
+        expect(clientBlobMocks.claimWithExecutor).toHaveBeenCalledWith(expect.anything(),
+            expect.objectContaining({ purpose: 'regulatory_source', uploadedBy: 'user-source' }), 'regulatory_rule_set', id);
+    });
+
+    it('rejects oversized source Blob metadata before downloading or claiming bytes', async () => {
+        const id = '22222222-2222-4222-8222-222222222222';
+        const blobUrl = `https://store.private.blob.vercel-storage.com/regulatory-sources/${id}/oversize.pdf`;
+        enqueue([{ status: 'draft' }]);
+        blobStorageMocks.getFile.mockResolvedValue({ url: blobUrl, mimeType: 'application/pdf', size: 50 * 1024 * 1024 + 1 });
+        await expect(service.verifySourceDocumentFromBlob(id, { blobUrl, originalFileName: 'oversize.pdf' }, 'user-source'))
+            .rejects.toThrow('50 MiB');
+        expect(blobStorageMocks.downloadFile).not.toHaveBeenCalled();
+        expect(clientBlobMocks.claimWithExecutor).not.toHaveBeenCalled();
+        expect(capturedValues).toEqual([]);
     });
 
     it('pins GCS regulatory verification to the generation recorded by its upload lease', async () => {

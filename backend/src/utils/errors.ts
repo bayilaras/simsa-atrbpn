@@ -70,6 +70,13 @@ export class ServiceUnavailableError extends AppError {
     }
 }
 
+/** An expected catalog lifecycle state with a fixed, safe public message. */
+export class CatalogNotReadyError extends ServiceUnavailableError {
+    constructor() {
+        super('Katalog klasifikasi dan jadwal retensi arsip belum tersedia. Hubungi administrator untuk mengaktifkan katalog.');
+    }
+}
+
 export class DatabaseError extends AppError {
     constructor(message: string = 'Terjadi kesalahan pada database. Silakan coba lagi.') {
         super(message, 500);

@@ -22,10 +22,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { api } from '@/services/api';
 import { Save, PlusCircle } from 'lucide-react';
+import ExternalPreservationFields from './ExternalPreservationFields';
 
 export default function PreservationActionForm({ arsipId, onSuccess }) {
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
     const { toast } = useToast();
 
     const [formData, setFormData] = useState({
@@ -46,23 +48,35 @@ export default function PreservationActionForm({ arsipId, onSuccess }) {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
+        setError('');
 
         try {
-            await api.post(`/api/arsip-elektronik/${arsipId}/preservasi`, formData);
+            const { action, details, notes } = formData;
+            const payload = { action, details, notes };
+            if (action !== 'integrity_check') Object.assign(payload, {
+                outputAttachmentId: formData.outputAttachmentId, evidenceAttachmentId: formData.evidenceAttachmentId,
+                toolName: formData.toolName, toolVersion: formData.toolVersion,
+                activityAt: new Date(formData.activityAt).toISOString(),
+            });
+            const result = await api.post(`/api/arsip-elektronik/${arsipId}/preservasi`, payload);
+            const mismatch = result.evidenceSnapshot?.result === 'mismatch';
 
             toast({
-                title: 'Berhasil',
-                description: 'Tindakan preservasi berhasil dicatat',
+                title: mismatch ? 'Integritas tidak cocok' : 'Pencatatan selesai',
+                description: mismatch ? 'Hash sumber tidak cocok. Periksa berkas dan tindak lanjuti kerusakan.'
+                    : action === 'integrity_check' ? 'Hash bitstream sesuai baseline.' : 'Bukti tindakan eksternal tersimpan; SIMSA tidak menjalankan konversi.',
+                ...(mismatch ? { variant: 'destructive' } : {}),
             });
 
             setOpen(false);
             setFormData({ action: '', details: '', notes: '' });
             if (onSuccess) onSuccess();
         } catch (error) {
+            setError(error.message || 'Pencatatan gagal');
             console.error('Error recording preservation action:', error);
             toast({
                 title: 'Gagal',
-                description: 'Gagal mencatat tindakan preservasi',
+                description: error.message || 'Gagal mencatat tindakan preservasi',
                 variant: 'destructive',
             });
         } finally {
@@ -78,18 +92,19 @@ export default function PreservationActionForm({ arsipId, onSuccess }) {
                     Catat Preservasi
                 </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[560px]">
                 <DialogHeader>
                     <DialogTitle>Catat Tindakan Preservasi</DialogTitle>
                     <DialogDescription>
-                        Catat tindakan pelestarian yang dilakukan pada arsip elektronik ini.
+                        Cek integritas membaca bitstream secara langsung. Tindakan lain dicatat sebagai kegiatan eksternal dengan bukti.
                     </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
+                    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
                     <div className="space-y-2">
                         <Label htmlFor="action">Jenis Tindakan</Label>
                         <Select value={formData.action} onValueChange={handleSelectChange} required>
-                            <SelectTrigger>
+                            <SelectTrigger id="action">
                                 <SelectValue placeholder="Pilih tindakan..." />
                             </SelectTrigger>
                             <SelectContent>
@@ -105,6 +120,10 @@ export default function PreservationActionForm({ arsipId, onSuccess }) {
                         </Select>
                     </div>
 
+                    {formData.action && formData.action !== 'integrity_check' && <ExternalPreservationFields
+                        key={arsipId} electronicId={arsipId} data={formData} disabled={loading}
+                        onChange={(field, value) => setFormData(previous => ({ ...previous, [field]: value }))} />}
+
                     <div className="space-y-2">
                         <Label htmlFor="details">Detail Teknis</Label>
                         <Textarea
@@ -112,13 +131,10 @@ export default function PreservationActionForm({ arsipId, onSuccess }) {
                             name="details"
                             value={formData.details}
                             onChange={handleChange}
-                            placeholder='Contoh: {"format_asal": "doc", "format_tujuan": "pdf/a"}'
-                            className="font-mono text-xs"
+                            placeholder="Jelaskan perubahan format, parameter, dan hasil pemeriksaan mutu."
+                            maxLength={4000}
                             rows={3}
                         />
-                        <p className="text-[10px] text-muted-foreground">
-                            Format JSON disarankan untuk detail teknis.
-                        </p>
                     </div>
 
                     <div className="space-y-2">
@@ -130,6 +146,7 @@ export default function PreservationActionForm({ arsipId, onSuccess }) {
                             onChange={handleChange}
                             placeholder="Catatan manual..."
                             rows={2}
+                            maxLength={2000}
                         />
                     </div>
 
@@ -137,9 +154,9 @@ export default function PreservationActionForm({ arsipId, onSuccess }) {
                         <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                             Batal
                         </Button>
-                        <Button type="submit" disabled={loading}>
+                        <Button type="submit" disabled={loading || !formData.action}>
                             {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                            Simpan
+                            {formData.action === 'integrity_check' ? 'Jalankan cek integritas' : 'Simpan bukti tindakan eksternal'}
                         </Button>
                     </DialogFooter>
                 </form>

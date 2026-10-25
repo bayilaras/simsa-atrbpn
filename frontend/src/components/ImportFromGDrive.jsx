@@ -1,8 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Upload, X, Eye, ChevronDown, FileSpreadsheet, AlertCircle, CheckCircle2 } from 'lucide-react';
 import api from '@/services/api';
-import { buildGoogleSheetsImportPayload } from '@/lib/google-sheets-import';
+import { addImportPart, buildGoogleSheetsImportPayload, emptyImportTotals, IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import';
+import { runResumableImport, unfinishedImportNotice } from '@/lib/resumable-import';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import ImportRowReport from '@/components/ImportRowReport';
+import ImportSyncOption from '@/components/ImportSyncOption';
+import ImportUnitRequiredButton from '@/components/ImportUnitRequiredButton';
+import { importResultSummary } from '@/lib/import-report';
 import { useAppConfig } from '@/context/app-config-context';
 
 /**
@@ -17,32 +22,86 @@ import { useAppConfig } from '@/context/app-config-context';
  * 
  * Props:
  * - type: 'surat-masuk' | 'surat-keluar'
- * - unitKerjaId: concrete destination unit (required)
+ * - unitKerjaId: concrete destination unit; without one the button explains that a unit must be chosen first
  * - onImportComplete: () => void (callback to refresh data)
+ *
+ * Long sheets are imported in parts: the server stops starting rows after a
+ * time budget and returns where to continue, and the dialog sends the next
+ * part until the server reports the end.
  */
-const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
+const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
     const { capabilities } = useAppConfig();
     const [isOpen, setIsOpen] = useState(false);
     const [step, setStep] = useState('input'); // input, sheets, preview, importing, result
     const [spreadsheetUrl, setSpreadsheetUrl] = useState('');
     const [sheets, setSheets] = useState([]);
-    const [selectedSheet, setSelectedSheet] = useState('');
+    const [selectedGid, setSelectedGid] = useState('');
     const [previewData, setPreviewData] = useState(null);
     const [importResult, setImportResult] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
+    const requestRef = useRef(0);
+    const busyRef = useRef(false);
+    const [retryUntil, setRetryUntil] = useState({ sheets: 0, preview: 0, import: 0 });
+    const [now, setNow] = useState(() => Date.now());
+    const [progress, setProgress] = useState(null);
+    // When a rate-limited later part is sent again automatically.
+    const [continueAt, setContinueAt] = useState(0);
+    const [stopping, setStopping] = useState(false);
+    const stopRef = useRef(false);
+    const [sinkron, setSinkron] = useState(false);
+    const action = step === 'input' ? 'sheets' : step === 'sheets' ? 'preview' : 'import';
+    const retrySeconds = Math.max(0, Math.ceil((retryUntil[action] - now) / 1000));
+    const continueSeconds = Math.max(0, Math.ceil((continueAt - now) / 1000));
+
+    useEffect(() => () => { requestRef.current += 1; }, []);
+    useEffect(() => {
+        const until = Math.max(...Object.values(retryUntil), continueAt);
+        if (!isOpen || until <= Date.now()) return;
+        const timer = window.setInterval(() => {
+            const time = Date.now();
+            setNow(time);
+            if (time >= until) window.clearInterval(timer);
+        }, 1000);
+        return () => window.clearInterval(timer);
+    }, [isOpen, retryUntil, continueAt]);
 
     const typeLabel = type === 'surat-masuk' ? 'Surat Masuk' : 'Surat Keluar';
+    const selectedName = sheets.find(sheet => sheet.gid === selectedGid)?.name || '';
+    const summary = importResult ? importResultSummary(importResult) : null;
+
+    const invalidatePreview = () => {
+        requestRef.current += 1;
+        busyRef.current = false;
+        setIsLoading(false);
+        setPreviewData(null);
+        setError('');
+    };
+
+    const handleRequestError = (err, operation) => {
+        setError(err.message || 'Permintaan gagal. Silakan coba lagi.');
+        if ((err.status || err.response?.status) === 429) {
+            const reported = Number(err.data?.retryAfterSeconds ?? err.response?.data?.retryAfterSeconds
+                ?? err.response?.headers?.get?.('Retry-After'));
+            const seconds = Number.isFinite(reported) && reported > 0 ? Math.ceil(reported) : 60;
+            const time = Date.now();
+            setNow(time);
+            setRetryUntil(previous => ({ ...previous, [operation]: time + seconds * 1000 }));
+        }
+    };
 
     const reset = () => {
+        invalidatePreview();
         setStep('input');
         setSpreadsheetUrl('');
         setSheets([]);
-        setSelectedSheet('');
+        setSelectedGid('');
         setPreviewData(null);
         setImportResult(null);
         setIsLoading(false);
         setError('');
+        setNow(Date.now());
+        setSinkron(false);
     };
 
     const handleOpen = () => {
@@ -59,104 +118,159 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
 
     // Step 1: Fetch available sheets (GET request — no CSRF needed, but api client handles it)
     const fetchSheets = async () => {
+        if (busyRef.current || retryUntil.sheets > Date.now()) return;
         if (!spreadsheetUrl) {
             setError('Masukkan URL Google Spreadsheet');
             return;
         }
 
+        const request = ++requestRef.current;
+        busyRef.current = true;
         setIsLoading(true);
         setError('');
+        setPreviewData(null);
 
         try {
             const data = await api.get('/api/import/google-drive/sheets', {
                 url: spreadsheetUrl,
             });
 
-            setSheets(data.sheets || []);
-
-            if (data.sheets && data.sheets.length > 0) {
-                setSelectedSheet(data.sheets[0].name);
-                setStep('sheets');
-            } else {
-                // No sheets found, let user type sheet name manually
-                setStep('sheets');
-            }
+            if (request !== requestRef.current) return;
+            // Tabs are chosen by gid. When the tab list is unreadable, only the
+            // tab named by the pasted link is offered: a typed name could
+            // silently resolve to the first tab.
+            const detected = Array.isArray(data.sheets) ? data.sheets : [];
+            const linkedMissing = data.linkedGid && !detected.some(sheet => sheet.gid === data.linkedGid);
+            const options = linkedMissing
+                ? [...detected, { gid: data.linkedGid, name: `Lembar dari tautan (gid ${data.linkedGid})` }] : detected;
+            setSheets(options);
+            setSelectedGid((options.find(sheet => sheet.gid === data.linkedGid) || options[0])?.gid || '');
+            setStep('sheets');
         } catch (err) {
-            setError(err.message);
+            if (request === requestRef.current) handleRequestError(err, 'sheets');
         } finally {
-            setIsLoading(false);
+            if (request === requestRef.current) {
+                busyRef.current = false;
+                setIsLoading(false);
+            }
         }
     };
 
     // Step 2: Preview data from selected sheet (POST — api client sends CSRF token automatically)
     const handlePreview = async () => {
-        if (!selectedSheet) {
+        if (busyRef.current || retryUntil.preview > Date.now()) return;
+        if (!selectedGid) {
             setError('Pilih sheet yang akan diimpor');
             return;
         }
 
+        const request = ++requestRef.current;
+        busyRef.current = true;
         setIsLoading(true);
         setError('');
+        setPreviewData(null);
 
         try {
             const data = await api.post('/api/import/google-drive/preview', {
                 spreadsheetUrl,
-                sheetName: selectedSheet,
+                gid: selectedGid,
                 maxRows: 10,
+                type,
             });
 
+            if (request !== requestRef.current) return;
+            if (data.importType !== type || !Array.isArray(data.mapping) || !data.mapping.length
+                || !Number.isInteger(data.headerRow) || data.headerRow < 1) {
+                throw new Error('Pemetaan kolom belum dapat diverifikasi. Periksa pratinjau kembali.');
+            }
             setPreviewData(data);
             setStep('preview');
         } catch (err) {
-            setError(err.message);
+            if (request === requestRef.current) handleRequestError(err, 'preview');
         } finally {
-            setIsLoading(false);
+            if (request === requestRef.current) {
+                busyRef.current = false;
+                setIsLoading(false);
+            }
         }
     };
 
     // Step 3: Execute import (POST — api client sends CSRF token automatically)
-    // unitKerjaId is resolved from the authenticated user's session on the backend
+    // The backend verifies the selected destination against the authenticated user's scope.
     const handleImport = async () => {
+        if (busyRef.current || retryUntil.import > Date.now() || previewData?.importType !== type) return;
+        const request = ++requestRef.current;
+        busyRef.current = true;
+        stopRef.current = false;
+        setStopping(false);
         setStep('importing');
         setError('');
+        // Sent only when chosen, so a backend without sinkron still accepts the request.
+        const source = { ...buildGoogleSheetsImportPayload(spreadsheetUrl, selectedGid, unitKerjaId), ...(sinkron ? { sinkron: true } : {}) };
+        let totals = emptyImportTotals(previewData.totalRows);
+        setProgress(totals);
 
         try {
-            const result = await api.post(
-                `/api/import/google-drive/${type}`,
-                buildGoogleSheetsImportPayload(spreadsheetUrl, selectedSheet, unitKerjaId),
-            );
-
+            const outcome = await runResumableImport({
+                sendPart: position => api.post(`/api/import/google-drive/${type}`, { ...source, ...position },
+                    { timeoutMs: IMPORT_PART_TIMEOUT_MS }),
+                onPart: part => { totals = addImportPart(totals, part); setProgress(totals); },
+                onWait: until => { setNow(Date.now()); setContinueAt(until); },
+                shouldStop: () => stopRef.current,
+                isCurrent: () => request === requestRef.current,
+            });
+            if (outcome.cancelled) return;
+            const notice = unfinishedImportNotice(outcome, totals);
+            const result = notice ? { ...totals, notice } : totals;
             setImportResult(result);
             setStep('result');
 
-            if (result.importedRows > 0 && onImportComplete) {
+            if ((result.importedRows > 0 || result.updatedRows > 0) && onImportComplete) {
                 onImportComplete();
             }
         } catch (err) {
-            setError(err.message);
-            setStep('preview');
+            if (request === requestRef.current) {
+                handleRequestError(err, 'import');
+                setStep('preview');
+            }
+        } finally {
+            if (request === requestRef.current) {
+                busyRef.current = false;
+                setContinueAt(0);
+            }
         }
+    };
+
+    const requestStop = () => {
+        stopRef.current = true;
+        setStopping(true);
     };
 
     if (!capabilities.externalIntegrations) return null;
 
     return (
         <>
-            <button
-                type="button"
-                onClick={handleOpen}
-                disabled={!unitKerjaId}
-                className="inline-flex min-h-11 items-center gap-2 rounded-lg border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground shadow-sm transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-                <Upload aria-hidden="true" className="w-4 h-4" />
-                Impor dari Google Sheets
-            </button>
+            {unitKerjaId ? (
+                <button
+                    type="button"
+                    onClick={handleOpen}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-lg border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground shadow-sm transition-colors hover:bg-secondary/80"
+                >
+                    <Upload aria-hidden="true" className="w-4 h-4" />
+                    Impor dari Google Sheets
+                </button>
+            ) : (
+                <ImportUnitRequiredButton className="inline-flex min-h-11 items-center gap-2 rounded-lg border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground shadow-sm">
+                    <Upload aria-hidden="true" className="w-4 h-4" />
+                    Impor dari Google Sheets
+                </ImportUnitRequiredButton>
+            )}
             <Dialog open={isOpen} onOpenChange={(open) => !open && step !== 'importing' && handleClose()}>
                 <DialogContent
                     showCloseButton={false}
                     onEscapeKeyDown={(event) => step === 'importing' && event.preventDefault()}
                     onInteractOutside={(event) => step === 'importing' && event.preventDefault()}
-                    className="flex h-[min(90dvh,52rem)] w-full max-w-[calc(100%-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
+                    className="flex h-[min(90dvh,52rem)] w-full max-w-[calc(100%-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
                 >
                     {/* Header */}
                     <div className="flex items-center justify-between border-b bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-4 sm:px-6">
@@ -180,6 +294,9 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                                 <p>{error}</p>
                             </div>
                         )}
+                        {retrySeconds > 0 && <p role="status" className="mb-4 text-sm text-muted-foreground">
+                            Permintaan ini dapat dicoba lagi dalam {retrySeconds} detik.
+                        </p>}
 
                         {/* Step: Input URL */}
                         {step === 'input' && (
@@ -192,7 +309,12 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                                         id="google-spreadsheet-url"
                                         type="url"
                                         value={spreadsheetUrl}
-                                        onChange={(e) => setSpreadsheetUrl(e.target.value)}
+                                        onChange={(e) => {
+                                            invalidatePreview();
+                                            setSpreadsheetUrl(e.target.value);
+                                            setSheets([]);
+                                            setSelectedGid('');
+                                        }}
                                         placeholder="https://docs.google.com/spreadsheets/d/..."
                                         autoComplete="url"
                                         required
@@ -207,7 +329,7 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                                 <button
                                     type="button"
                                     onClick={fetchSheets}
-                                    disabled={isLoading || !spreadsheetUrl}
+                                    disabled={isLoading || retrySeconds > 0 || !spreadsheetUrl}
                                     className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                                 >
                                     {isLoading ? (
@@ -229,10 +351,10 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                                     </legend>
                                     {sheets.length > 0 ? (
                                         <div className="space-y-2 max-h-60 overflow-y-auto">
-                                            {sheets.map((sheet, idx) => (
+                                            {sheets.map((sheet) => (
                                                 <label
-                                                    key={idx}
-                                                    className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${selectedSheet === sheet.name
+                                                    key={sheet.gid}
+                                                    className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${selectedGid === sheet.gid
                                                         ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/15'
                                                         : 'border-border hover:bg-muted/50'
                                                         }`}
@@ -240,9 +362,9 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                                                     <input
                                                         type="radio"
                                                         name="sheet"
-                                                        value={sheet.name}
-                                                        checked={selectedSheet === sheet.name}
-                                                        onChange={() => setSelectedSheet(sheet.name)}
+                                                        value={sheet.gid}
+                                                        checked={selectedGid === sheet.gid}
+                                                        onChange={() => { invalidatePreview(); setSelectedGid(sheet.gid); }}
                                                         className="text-blue-600"
                                                     />
                                                     <span className="text-sm text-foreground">{sheet.name}</span>
@@ -250,27 +372,17 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                                             ))}
                                         </div>
                                     ) : (
-                                        <div>
-                                            <label htmlFor="manual-sheet-name" className="sr-only">Nama lembar kerja</label>
-                                            <input
-                                                id="manual-sheet-name"
-                                                type="text"
-                                                value={selectedSheet}
-                                                onChange={(e) => setSelectedSheet(e.target.value)}
-                                                placeholder="Nama lembar (mis. Surat Masuk 2024)"
-                                                className="min-h-11 w-full rounded-lg border border-border px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-ring"
-                                            />
-                                            <p className="mt-2 text-xs text-muted-foreground">
-                                                Daftar lembar tidak terdeteksi. Ketik nama lembar secara manual.
-                                            </p>
-                                        </div>
+                                        <p className="text-sm text-muted-foreground">
+                                            Daftar lembar tidak terdeteksi. Buka tab yang ingin diimpor di Google Sheets,
+                                            salin tautan dari tab tersebut (berisi <code>gid=</code>), lalu tempel pada langkah sebelumnya.
+                                        </p>
                                     )}
                                 </fieldset>
 
                                 <div className="flex flex-col-reverse gap-3 sm:flex-row">
                                     <button
                                         type="button"
-                                        onClick={() => setStep('input')}
+                                        onClick={() => { invalidatePreview(); setStep('input'); }}
                                         className="min-h-11 flex-1 rounded-lg border border-border py-2.5 text-sm text-foreground transition-colors hover:bg-muted/50"
                                     >
                                         Kembali
@@ -278,7 +390,7 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                                     <button
                                         type="button"
                                         onClick={handlePreview}
-                                        disabled={isLoading || !selectedSheet}
+                                        disabled={isLoading || retrySeconds > 0 || !selectedGid}
                                         className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                                     >
                                         {isLoading ? (
@@ -295,12 +407,30 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                         {/* Step: Preview */}
                         {step === 'preview' && previewData && (
                             <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <p className="text-sm font-medium">Tujuan: {typeLabel}</p>
+                                    <p className="text-xs text-muted-foreground">Judul ditemukan pada baris data ke-{previewData.headerRow} (baris kosong tidak dihitung).</p>
+                                    <p className="text-sm text-muted-foreground">Setiap baris perlu tanggal surat yang valid (YYYY-MM-DD atau DD/MM/YYYY). Jika nomor surat kosong atau “-”, isi perihal serta pengirim atau tujuan (untuk surat keluar, tautan dokumen juga cukup) agar data dapat dikenali saat impor ulang.</p>
+                                    <div className="overflow-x-auto rounded-lg border">
+                                        <table className="w-full text-sm">
+                                            <caption className="p-2 text-left font-medium">Pemetaan kolom ke data SIMSA</caption>
+                                            <thead><tr className="border-b bg-muted/50">
+                                                <th className="px-3 py-2 text-left">Kolom lembar kerja</th>
+                                                <th className="px-3 py-2 text-left">Data SIMSA</th>
+                                            </tr></thead>
+                                            <tbody>{previewData.mapping.map(item => <tr key={item.field} className="border-b last:border-0">
+                                                <td className="px-3 py-2">Kolom {item.columnIndex + 1}: {item.header}</td>
+                                                <td className="px-3 py-2">{item.label}</td>
+                                            </tr>)}</tbody>
+                                        </table>
+                                    </div>
+                                </div>
                                 <div className="flex items-center justify-between">
                                     <p className="text-sm text-muted-foreground">
                                         Menampilkan <strong>{previewData.rows.length}</strong> dari <strong>{previewData.totalRows}</strong> baris
                                     </p>
                                     <span className="text-xs bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 px-2 py-1 rounded-full">
-                                        Lembar: {selectedSheet}
+                                        Lembar: {selectedName}
                                     </span>
                                 </div>
 
@@ -330,10 +460,12 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                                     </table>
                                 </div>
 
+                                <ImportSyncOption type={type} checked={sinkron} onChange={setSinkron} />
+
                                 <div className="flex flex-col-reverse gap-3 sm:flex-row">
                                     <button
                                         type="button"
-                                        onClick={() => setStep('sheets')}
+                                        onClick={() => { invalidatePreview(); setStep('sheets'); }}
                                         className="min-h-11 flex-1 rounded-lg border border-border py-2.5 text-sm text-foreground transition-colors hover:bg-muted/50"
                                     >
                                         Kembali
@@ -341,7 +473,8 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
                                     <button
                                         type="button"
                                         onClick={handleImport}
-                                        className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-700"
+                                        disabled={retrySeconds > 0 || previewData.totalRows < 1}
+                                        className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
                                     >
                                         <Upload aria-hidden="true" className="w-4 h-4" />
                                         Impor {previewData.totalRows} baris
@@ -352,46 +485,77 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
 
                         {/* Step: Importing */}
                         {step === 'importing' && (
-                            <div role="status" aria-live="polite" className="flex flex-col items-center py-12">
+                            <div className="flex flex-col items-center py-12">
                                 <div aria-hidden="true" className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4" />
-                                <p className="text-sm text-muted-foreground font-medium">Mengimpor data...</p>
-                                <p className="text-xs text-muted-foreground mt-1">Harap tunggu, proses ini mungkin memakan waktu</p>
+                                <div role="status" aria-live="polite" className="flex w-full flex-col items-center text-center">
+                                    <p className="text-sm text-muted-foreground font-medium">Mengimpor data...</p>
+                                    {progress && <>
+                                        <div role="progressbar" aria-label="Kemajuan impor" aria-valuemin={0}
+                                            aria-valuemax={progress.totalRows} aria-valuenow={progress.processedRows}
+                                            className="mt-4 h-2 w-full max-w-sm overflow-hidden rounded-full bg-muted">
+                                            <div className="h-full bg-primary transition-[width]"
+                                                style={{ width: `${progress.totalRows ? Math.round(progress.processedRows / progress.totalRows * 100) : 0}%` }} />
+                                        </div>
+                                        <p className="mt-2 text-sm text-foreground">{`${progress.processedRows} dari ${progress.totalRows} baris diproses`}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                            {`Tersimpan ${progress.importedRows}${sinkron ? ` · diperbarui ${progress.updatedRows}` : ''} · duplikat ${progress.duplicateRows} · dilewati ${progress.skippedRows}`}
+                                        </p>
+                                    </>}
+                                    {continueSeconds > 0 && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                                        Batas permintaan impor tercapai; dilanjutkan otomatis dalam {continueSeconds} detik.
+                                    </p>}
+                                </div>
+                                <p className="mt-3 max-w-sm text-center text-xs text-muted-foreground">
+                                    Biarkan jendela ini terbuka. Lembar yang panjang diimpor per bagian; baris yang sudah tersimpan tetap tercatat bila impor dihentikan.
+                                </p>
+                                <button type="button" onClick={requestStop} disabled={stopping}
+                                    className="mt-4 min-h-11 rounded-lg border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50">
+                                    {stopping ? 'Menghentikan setelah bagian ini…' : 'Hentikan setelah bagian ini'}
+                                </button>
                             </div>
                         )}
 
                         {/* Step: Result */}
                         {step === 'result' && importResult && (
-                            <div role="status" aria-live="polite" className="space-y-4">
-                                <div className={`flex items-start gap-3 p-4 rounded-lg ${importResult.importedRows > 0
-                                    ? 'bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200'
-                                    : 'bg-red-50 dark:bg-red-500/15 border border-red-200'
+                            <div className="space-y-4">
+                                {/* Only the summary is announced; the row table below is not a live region. */}
+                                <div role="status" aria-live="polite" className={`flex items-start gap-3 p-4 rounded-lg ${summary.tone === 'warning'
+                                    ? 'bg-amber-50 dark:bg-amber-500/15 border border-amber-200'
+                                    : summary.tone === 'success'
+                                        ? 'bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200'
+                                        : 'bg-red-50 dark:bg-red-500/15 border border-red-200'
                                     }`}>
-                                    {importResult.importedRows > 0 ? (
+                                    {summary.tone === 'success' ? (
                                         <CheckCircle2 aria-hidden="true" className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5" />
                                     ) : (
-                                        <AlertCircle aria-hidden="true" className="w-5 h-5 text-red-600 mt-0.5" />
+                                        <AlertCircle aria-hidden="true" className={`w-5 h-5 mt-0.5 ${summary.tone === 'warning' ? 'text-amber-600' : 'text-red-600'}`} />
                                     )}
                                     <div>
-                                        <p className="font-medium text-foreground">
-                                            {importResult.importedRows > 0 ? 'Impor berhasil!' : 'Impor gagal'}
-                                        </p>
+                                        <p className="font-medium text-foreground">{summary.title}</p>
+                                        {importResult.notice && (
+                                            <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">{importResult.notice}</p>
+                                        )}
                                         <p className="text-sm text-muted-foreground mt-1">
-                                            {importResult.importedRows} dari {importResult.totalRows} baris berhasil diimpor
+                                            {summary.duplicateOnly ? 'Seluruh baris sudah tercatat; tidak ada data baru yang ditambahkan.'
+                                                : `${importResult.importedRows} dari ${importResult.totalRows} baris berhasil diimpor`}
                                         </p>
+                                        {importResult.updatedRows > 0 && (
+                                            <p className="text-sm text-blue-600 mt-1">{`${importResult.updatedRows} baris diperbarui dari sumber`}</p>
+                                        )}
+                                        {summary.lockedRows > 0 && (
+                                            <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">{`${summary.lockedRows} baris tidak diperbarui; lihat rincian di bawah.`}</p>
+                                        )}
                                         {importResult.skippedRows > 0 && (
                                             <p className="text-sm text-amber-600 dark:text-amber-400 mt-1">
                                                 {importResult.skippedRows} baris dilewati (data tidak valid/kosong)
                                             </p>
                                         )}
-                                        {importResult.duplicateRows > 0 && (
-                                            <p className="text-sm text-blue-600 mt-1">
-                                                {importResult.duplicateRows} baris duplikat dilewati (sudah ada di sistem)
-                                            </p>
-                                        )}
+                                        {summary.duplicateLines.map(line => <p key={line} className="text-sm text-blue-600 mt-1">{line}</p>)}
                                     </div>
                                 </div>
 
-                                {importResult.errors && importResult.errors.length > 0 && (
+                                {importResult.rows?.length > 0 ? <ImportRowReport rows={importResult.rows} type={type} />
+                                    : importResult.errors && importResult.errors.length > 0 && (
                                     <div className="border rounded-lg p-3 max-h-40 overflow-y-auto bg-muted/50">
                                         <p className="text-xs font-medium text-muted-foreground mb-2">Rincian kesalahan:</p>
                                         {importResult.errors.map((err, i) => (
@@ -428,5 +592,9 @@ const ImportFromGDrive = ({ type, unitKerjaId, onImportComplete }) => {
         </>
     );
 };
+
+// A verified preview belongs to one record type and destination unit.
+const ImportFromGDrive = props => <ImportFromGDriveFlow
+    key={JSON.stringify([props.type, props.unitKerjaId])} {...props} />;
 
 export default ImportFromGDrive;

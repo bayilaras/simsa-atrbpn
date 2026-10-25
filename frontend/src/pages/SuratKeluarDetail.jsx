@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
     ArrowLeft, Send, Calendar, Building, FileText,
@@ -28,13 +28,18 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useToast } from '@/hooks/use-toast'
 import { ArchiveDialog } from '@/components/ArchiveDialog'
+import { SuratRetentionSummary } from '@/components/SuratRetentionSummary'
 import suratKeluarService from '@/services/surat-keluar.service'
+import { sifatSuratKeluarLabel } from '@/lib/sifat-surat-keluar'
 import approvalService from '@/services/approval.service'
 import { FilePreviewSection } from '@/components/surat-masuk/FilePreviewSection'
 import { format, formatDistanceToNow } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
 import { useAuth } from '@/context/AuthContext'
 import { useAppConfig } from '@/context/app-config-context'
+import { AlurSuratPanel } from '@/components/surat/AlurSuratPanel'
+import { TindakLanjutMenu } from '@/components/surat/TindakLanjutMenu'
+import { TautkanDialog } from '@/components/surat/AlurSuratActions'
 
 export default function SuratKeluarDetail() {
     const { id } = useParams()
@@ -42,23 +47,39 @@ export default function SuratKeluarDetail() {
     const { toast } = useToast()
     const { canWrite, user } = useAuth()
     const { capabilities } = useAppConfig()
-    const isAdmin = canWrite()
 
     const [surat, setSurat] = useState(null)
+    const aksesMelalui = surat?.aksesMelalui ?? 'owner'
+    const isAdmin = Boolean(surat && aksesMelalui === 'owner' && canWrite(surat.unitKerjaId))
     const [loading, setLoading] = useState(true)
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
+    const [tautkanOpen, setTautkanOpen] = useState(false)
     const [approvalHistory, setApprovalHistory] = useState([])
     const [approvers, setApprovers] = useState([])
     const [approvalAction, setApprovalAction] = useState(null)
     const [approvalNotes, setApprovalNotes] = useState('')
     const [selectedApproverId, setSelectedApproverId] = useState('')
     const [approvalBusy, setApprovalBusy] = useState(false)
+    // Sinyal reload AlurSuratPanel yang dikendalikan halaman ini (N1): dinaikkan
+    // hanya setelah Arsip/persetujuan SUKSES, tidak pernah dari refresh yang
+    // dipicu onChanged panel sendiri -- lihat komentar muatUlangKe di
+    // AlurSuratPanel.jsx.
+    const [alurVersi, setAlurVersi] = useState(0)
+    // Sekali surat termuat untuk id ini, refresh berikutnya (mis. dari
+    // onChanged AlurSuratPanel, atau setelah Arsip/persetujuan) bersifat diam:
+    // tidak menyalakan `loading`, sehingga gerbang `if (loading) return
+    // <spinner>` di bawah tidak membongkar seluruh halaman (dan AlurSuratPanel
+    // di dalamnya) pada setiap refresh (F1).
+    const termuatRef = useRef(false)
+    useEffect(() => { termuatRef.current = false }, [id])
 
     const fetchSurat = useCallback(async () => {
-        setLoading(true)
+        const diam = termuatRef.current
+        if (!diam) setLoading(true)
         try {
             const data = await suratKeluarService.getById(id)
             setSurat(data)
+            termuatRef.current = true
         } catch (error) {
             console.error('Error fetching surat:', error)
             toast({
@@ -67,7 +88,7 @@ export default function SuratKeluarDetail() {
                 variant: 'destructive',
             })
         } finally {
-            setLoading(false)
+            if (!diam) setLoading(false)
         }
     }, [id, toast])
 
@@ -130,6 +151,7 @@ export default function SuratKeluarDetail() {
                 description: `Surat ${surat.nomorSurat} telah diarsipkan`,
             })
             fetchSurat()
+            setAlurVersi((v) => v + 1)
         } catch (error) {
             toast({
                 title: 'Error',
@@ -138,6 +160,12 @@ export default function SuratKeluarDetail() {
             })
             throw error
         }
+    }
+
+    const handleTautkanBerhasil = () => {
+        toast({ title: 'Berhasil', description: 'Surat ditautkan ke rangkaian' })
+        fetchSurat()
+        setAlurVersi((v) => v + 1)
     }
 
     const openApprovalDialog = (action) => {
@@ -184,6 +212,7 @@ export default function SuratKeluarDetail() {
             })
             setApprovalAction(null)
             await fetchSurat()
+            setAlurVersi((v) => v + 1)
         } catch (error) {
             toast({
                 title: 'Gagal memperbarui persetujuan',
@@ -241,8 +270,13 @@ export default function SuratKeluarDetail() {
         approved: 'Disetujui',
         rejected: 'Ditolak / Perlu Perbaikan',
     }[approvalStatus] || approvalStatus
-    const canEdit = isAdmin && !surat.isArchived && ['draft', 'rejected'].includes(approvalStatus)
-    const canArchive = isAdmin && !surat.isArchived && approvalStatus === 'approved'
+    // aksiDiizinkan dari server (Task 16) adalah gerbang otoritatif; bila belum
+    // ada (respons lama), jatuh ke isAdmin lama sebagai fallback.
+    const aksi = surat?.aksiDiizinkan
+    const bolehEdit = Array.isArray(aksi) ? aksi.includes('edit') : isAdmin
+    const bolehArsip = Array.isArray(aksi) ? aksi.includes('arsipkan') : isAdmin
+    const canEdit = bolehEdit && !surat.isArchived && ['draft', 'rejected'].includes(approvalStatus)
+    const canArchive = bolehArsip && !surat.isArchived && approvalStatus === 'approved'
     const canSubmitApproval = canEdit && surat.createdBy === user?.id
     const isCurrentApprover = isAdmin
         && approvalStatus === 'pending'
@@ -294,7 +328,7 @@ export default function SuratKeluarDetail() {
                     </div>
 
                     {/* Desktop Actions */}
-                    {isAdmin && (
+                    {(isAdmin || (surat.aksiDiizinkan || []).length > 0) && (
                         <div className="hidden md:flex gap-2">
                             {canEdit && (
                                 <Button
@@ -306,6 +340,14 @@ export default function SuratKeluarDetail() {
                                     Edit
                                 </Button>
                             )}
+                            <TindakLanjutMenu
+                                jenis="surat_keluar"
+                                surat={surat}
+                                aksiDiizinkan={surat.aksiDiizinkan || []}
+                                onTautkan={() => setTautkanOpen(true)}
+                                variant="secondary"
+                                className="bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-sm"
+                            />
                             {canArchive && (
                                 <Button
                                     className="bg-card text-blue-700 hover:bg-card/90"
@@ -319,7 +361,7 @@ export default function SuratKeluarDetail() {
                     )}
 
                     {/* Mobile Actions */}
-                    {isAdmin && (canEdit || canArchive) && (
+                    {(isAdmin && (canEdit || canArchive) || (surat.aksiDiizinkan || []).length > 0) && (
                         <div className="md:hidden flex gap-2">
                             {canEdit && (
                                 <Button
@@ -332,6 +374,14 @@ export default function SuratKeluarDetail() {
                                     Edit
                                 </Button>
                             )}
+                            <TindakLanjutMenu
+                                jenis="surat_keluar"
+                                surat={surat}
+                                aksiDiizinkan={surat.aksiDiizinkan || []}
+                                onTautkan={() => setTautkanOpen(true)}
+                                variant="secondary"
+                                className="bg-card/20 hover:bg-card/30 text-white border-0"
+                            />
                             {canArchive && (
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
@@ -339,6 +389,7 @@ export default function SuratKeluarDetail() {
                                             variant="secondary"
                                             size="icon"
                                             className="bg-card/20 hover:bg-card/30 text-white border-0"
+                                            aria-label="Aksi lain"
                                         >
                                             <MoreHorizontal className="h-4 w-4" />
                                         </Button>
@@ -419,22 +470,30 @@ export default function SuratKeluarDetail() {
                             </div>
 
                             {/* Type & Classification */}
-                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                                 <div className="space-y-1">
                                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Jenis Surat</label>
                                     <p className="text-sm font-medium">{surat.naskahDinas || '-'}</p>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sifat Surat</label>
+                                    <p className={`text-sm font-medium ${surat.sifatSurat ? '' : 'text-muted-foreground'}`}>
+                                        {sifatSuratKeluarLabel(surat.sifatSurat) || 'Belum tercatat'}
+                                    </p>
                                 </div>
                                 <div className="space-y-1">
                                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Klasifikasi Fasilitatif</label>
                                     <p className="text-sm font-medium">
                                         {surat.klasifikasiFasilitatifKode || surat.klasifikasiFasilitatif || '-'}
                                     </p>
+                                    {surat.klasifikasiFasilitatifKode && surat.klasifikasiFasilitatif && <p className="text-sm text-muted-foreground">{surat.klasifikasiFasilitatif}</p>}
                                 </div>
                                 <div className="space-y-1">
                                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Klasifikasi Substantif</label>
                                     <p className="text-sm font-medium">
                                         {surat.klasifikasiSubstantifKode || surat.klasifikasiSubstantif || '-'}
                                     </p>
+                                    {surat.klasifikasiSubstantifKode && surat.klasifikasiSubstantif && <p className="text-sm text-muted-foreground">{surat.klasifikasiSubstantif}</p>}
                                 </div>
                                 <div className="space-y-1">
                                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Klasifikasi Keamanan</label>
@@ -444,21 +503,30 @@ export default function SuratKeluarDetail() {
                                 </div>
                             </div>
 
-                            {/* Balasan dari Surat Masuk */}
-                            {surat.balasanUntuk && (
-                                <>
-                                    <Separator />
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Balasan dari Surat Masuk</label>
-                                        <Button variant="outline" size="sm" asChild className="group">
-                                            <Link to={`/surat/masuk/${surat.balasanUntuk}`}>
-                                                <MailOpen className="mr-2 h-4 w-4 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors" />
-                                                Lihat Surat Masuk
-                                            </Link>
-                                        </Button>
-                                    </div>
-                                </>
-                            )}
+                            <SuratRetentionSummary surat={surat} />
+
+                            {/* Alur Surat (fallback: tautan balasan lama untuk surat tunggal) */}
+                            <AlurSuratPanel
+                                jenis="surat_keluar"
+                                suratId={surat.id}
+                                aksesMelalui={aksesMelalui}
+                                onChanged={fetchSurat}
+                                muatUlangKe={alurVersi}
+                                fallback={aksesMelalui === 'owner' && surat.balasanUntuk ? (
+                                    <>
+                                        <Separator />
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Balasan dari Surat Masuk</label>
+                                            <Button variant="outline" size="sm" asChild className="group">
+                                                <Link to={`/surat/masuk/${surat.balasanUntuk}`}>
+                                                    <MailOpen className="mr-2 h-4 w-4 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors" />
+                                                    Lihat Surat Masuk
+                                                </Link>
+                                            </Button>
+                                        </div>
+                                    </>
+                                ) : null}
+                            />
 
                             {/* Link Dokumen */}
                             {capabilities.files && surat.linkDokumen && (
@@ -551,7 +619,7 @@ export default function SuratKeluarDetail() {
                                 </div>
                             </div>
 
-                            {surat.isArchived && surat.arsipId && (
+                            {surat.isArchived && surat.arsipId && aksesMelalui === 'owner' && (
                                 <Button variant="outline" className="w-full" size="sm" asChild>
                                     <Link to={`/arsip?id=${surat.arsipId}`}>
                                         <Eye className="mr-2 h-4 w-4" />
@@ -697,13 +765,16 @@ export default function SuratKeluarDetail() {
                 open={archiveDialogOpen}
                 onOpenChange={setArchiveDialogOpen}
                 suratType="keluar"
-                suratData={{
-                    id: surat.id,
-                    nomorSurat: surat.nomorSurat,
-                    perihal: surat.perihal,
-                    tanggalSurat: surat.tanggalSurat,
-                }}
+                suratData={surat}
                 onArchive={handleArchive}
+            />
+
+            <TautkanDialog
+                open={tautkanOpen}
+                onOpenChange={setTautkanOpen}
+                jenis="surat_keluar"
+                surat={surat}
+                onBerhasil={handleTautkanBerhasil}
             />
 
             <Dialog

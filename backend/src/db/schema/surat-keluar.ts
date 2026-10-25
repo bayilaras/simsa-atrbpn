@@ -1,10 +1,11 @@
-import { pgTable, uuid, varchar, text, date, boolean, integer, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, date, boolean, integer, timestamp, uniqueIndex, index, check } from 'drizzle-orm/pg-core';
 import { users } from './users';
 import { unitKerja } from './unit-kerja';
 import { suratMasuk } from './surat-masuk';
 import { approvalRequests } from './approvals';
 import { digitalSignatures } from './signatures';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
+import { klasifikasiArsip, jadwalRetensiArsip } from './master-data';
 
 export const suratKeluar = pgTable('surat_keluar', {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -12,13 +13,19 @@ export const suratKeluar = pgTable('surat_keluar', {
     noUrut: integer('no_urut').notNull(),
     tahun: integer('tahun').notNull(),
     naskahDinas: varchar('naskah_dinas', { length: 100 }), // Surat Dinas, Nota Dinas, Surat Tugas, etc
+    // 0051: urgensi (Biasa, Penting, Segera, Sangat Segera); keamanan ada di klasifikasiKeamanan.
+    sifatSurat: varchar('sifat_surat', { length: 50 }),
     nomorSurat: varchar('nomor_surat', { length: 255 }),
     tanggalSurat: date('tanggal_surat'),
     perihal: text('perihal'),
     kepada: text('kepada'),
     linkDokumen: text('link_dokumen'),
     balasanUntuk: uuid('balasan_untuk').references(() => suratMasuk.id),
+    // 0046: null = data lama; tidak dijaga trigger 0021.
+    asalNaskah: varchar('asal_naskah', { length: 15 }).$type<'inisiatif' | 'tindak_lanjut'>(),
     // Klasifikasi fields
+    klasifikasiItemId: integer('klasifikasi_item_id').references(() => klasifikasiArsip.id, { onDelete: 'restrict' }),
+    jraItemId: integer('jra_item_id').references(() => jadwalRetensiArsip.id, { onDelete: 'restrict' }),
     klasifikasiFasilitatifKode: varchar('klasifikasi_fasilitatif_kode', { length: 50 }),
     klasifikasiFasilitatif: text('klasifikasi_fasilitatif'),
     klasifikasiSubstantifKode: varchar('klasifikasi_substantif_kode', { length: 50 }),
@@ -47,6 +54,9 @@ export const suratKeluar = pgTable('surat_keluar', {
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
+    klasifikasiItemIndex: index('surat_keluar_klasifikasi_item_idx').on(table.klasifikasiItemId),
+    jraItemIndex: index('surat_keluar_jra_item_idx').on(table.jraItemId),
+    jraRequiresClassification: check('surat_keluar_jra_requires_classification', sql`${table.jraItemId} IS NULL OR ${table.klasifikasiItemId} IS NOT NULL`),
     unitYearSequenceUnique: uniqueIndex('surat_keluar_unit_year_sequence_uidx')
         .on(table.unitKerjaId, table.tahun, table.noUrut),
 }));

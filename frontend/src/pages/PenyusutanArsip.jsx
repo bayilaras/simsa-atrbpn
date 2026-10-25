@@ -18,6 +18,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Link } from 'react-router-dom'
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
+import PenyusutanExecutionForm from './PenyusutanExecutionForm'
 
 const STATUS_CONFIG = {
     draft: { label: 'Draft', color: 'bg-muted text-foreground border-border', icon: FileText },
@@ -56,6 +57,8 @@ export default function PenyusutanArsip() {
     const [selectedCandidates, setSelectedCandidates] = useState([])
     const [createKeterangan, setCreateKeterangan] = useState('')
     const [creating, setCreating] = useState(false)
+    const [advancing, setAdvancing] = useState(false)
+    const [recoveryReason, setRecoveryReason] = useState('')
 
     // Load batches for active tab
     const loadBatches = useCallback(async () => {
@@ -112,6 +115,7 @@ export default function PenyusutanArsip() {
         try {
             const result = await penyusutanService.findById(id, unitKerjaId)
             setSelectedBatch(result)
+            setRecoveryReason('')
         } catch (err) {
             toast({ title: 'Error', description: err.message || 'Gagal memuat detail batch', variant: 'destructive' })
         }
@@ -150,6 +154,8 @@ export default function PenyusutanArsip() {
     // Advance status
     const handleAdvanceStatus = async (id) => {
         if (!unitKerjaId) return
+        if (advancing) return
+        setAdvancing(true)
         try {
             await penyusutanService.updateStatus(id, unitKerjaId)
             toast({ title: 'Berhasil', description: 'Status berhasil dimajukan' })
@@ -157,7 +163,18 @@ export default function PenyusutanArsip() {
             if (selectedBatch?.id === id) loadBatchDetail(id)
         } catch (err) {
             toast({ title: 'Error', description: err.message || 'Gagal mengubah status', variant: 'destructive' })
-        }
+        } finally { setAdvancing(false) }
+    }
+
+    const handleRecoverTransfer = async () => {
+        if (!selectedBatch || !unitKerjaId || advancing) return
+        setAdvancing(true)
+        try {
+            await penyusutanService.recoverInactiveTransfer(selectedBatch.id, unitKerjaId, recoveryReason)
+            toast({ title: 'Pemindahan ditinjau', description: 'Arsip tersedia untuk tahap retensi berikutnya; riwayat pemindahan tetap tersimpan.' })
+            loadBatchDetail(selectedBatch.id); loadBatches(); loadCandidates()
+        } catch (err) { toast({ title: 'Peninjauan gagal', description: err.message, variant: 'destructive' }) }
+        finally { setAdvancing(false) }
     }
 
     // Delete batch
@@ -574,6 +591,26 @@ export default function PenyusutanArsip() {
                                 </div>
                             </CardContent>
 
+                            {selectedBatch.jenisPenyusutan === 'pemusnahan' && selectedBatch.status === 'approved' && user?.role === 'super_admin' && (
+                                <div className="px-6 pb-6"><PenyusutanExecutionForm key={`${unitKerjaId}:${selectedBatch.id}`} batch={selectedBatch} unitKerjaId={unitKerjaId}
+                                    onComplete={() => { loadBatchDetail(selectedBatch.id); loadBatches(); loadCandidates() }} /></div>
+                            )}
+                            {selectedBatch.executionEvidence && <div className="border-t px-6 py-4 text-sm">
+                                <p className="font-medium">Bukti pelaksanaan tersimpan</p>
+                                <p>{selectedBatch.executionEvidence.method}</p>
+                                <p>{selectedBatch.executionEvidence.copiesStatement}</p>
+                                <p className="text-muted-foreground">Saksi: {selectedBatch.executionEvidence.witnesses?.map(witness => witness.name).join(', ')}</p>
+                            </div>}
+                            {selectedBatch.jenisPenyusutan === 'pemindahan' && selectedBatch.status === 'executed' && user?.role === 'super_admin'
+                                && selectedBatch.items?.some(item => item.arsip?.disposalBatchId === selectedBatch.id && !item.arsip?.inactiveTransferBatchId) && (
+                                <div className="space-y-3 border-t px-6 py-4">
+                                    <p className="text-sm">Pemindahan lama masih mengunci arsip. Setelah meninjau rekam pelaksanaan, pulihkan ketersediaannya untuk tahap retensi berikutnya. Peninjau harus berbeda dari pelaksana lama.</p>
+                                    <label htmlFor="transfer-recovery-reason" className="text-sm font-medium">Alasan dan dasar peninjauan</label>
+                                    <Textarea id="transfer-recovery-reason" value={recoveryReason} maxLength={4000} onChange={event => setRecoveryReason(event.target.value)} />
+                                    <Button variant="outline" disabled={advancing || recoveryReason.trim().length < 20} onClick={handleRecoverTransfer}>Pulihkan kelanjutan retensi</Button>
+                                </div>
+                            )}
+
                             <CardFooter className="border-t bg-muted/10 p-4 flex justify-between gap-4">
                                 {!legacyTransferReadOnly && selectedBatch.status === 'draft' && (
                                     <Button variant="destructive" size="sm" onClick={() => handleDelete(selectedBatch.id)}>
@@ -582,8 +619,9 @@ export default function PenyusutanArsip() {
                                 )}
 
                                 <div className="flex gap-2 ml-auto">
-                                    {!legacyTransferReadOnly && NEXT_ACTION_LABEL[selectedBatch.status] && (
-                                        <Button onClick={() => handleAdvanceStatus(selectedBatch.id)} className="bg-primary hover:bg-primary/90">
+                                    {!legacyTransferReadOnly && NEXT_ACTION_LABEL[selectedBatch.status]
+                                        && !(selectedBatch.jenisPenyusutan === 'pemusnahan' && selectedBatch.status === 'approved') && (
+                                        <Button disabled={advancing} onClick={() => handleAdvanceStatus(selectedBatch.id)} className="bg-primary hover:bg-primary/90">
                                             <CheckCircle className="mr-1.5 h-4 w-4" />
                                             {NEXT_ACTION_LABEL[selectedBatch.status]}
                                         </Button>

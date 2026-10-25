@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
         reconcileRules: vi.fn(),
     },
     recordAccess: { check: vi.fn() },
+    isAllowedForClassification: vi.fn(),
     audit: { logAction: vi.fn() },
     fulltext: {
         search: vi.fn(),
@@ -44,7 +45,7 @@ vi.mock('../services/audit-log.service.js', () => ({ default: mocks.audit }));
 vi.mock('../services/fulltext-search.service.js', () => ({ fullTextSearchService: mocks.fulltext }));
 vi.mock('../services/record-access.service.js', () => ({
     allowedSecurityClassifications: () => ['biasa', 'terbatas'],
-    isAllowedForClassification: () => true,
+    isAllowedForClassification: mocks.isAllowedForClassification,
     recordAccessService: mocks.recordAccess,
 }));
 vi.mock('../utils/resolve-unit-kerja.js', () => ({
@@ -73,6 +74,7 @@ function access(mutable = true, allowed = true) {
 describe('arsip rule reconciliation routes', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.isAllowedForClassification.mockReturnValue(true);
         mocks.arsip.findById.mockResolvedValue({
             id: ARCHIVE_ID,
             unitKerjaId: 'ditjen',
@@ -95,6 +97,35 @@ describe('arsip rule reconciliation routes', () => {
         mocks.arsip.getRuleHistory.mockResolvedValue([
             { id: 'snapshot-1', revision: 1, status: 'verified' },
         ]);
+    });
+
+    it('updates archive metadata without resetting security or retention', async () => {
+        const stored = {
+            id: ARCHIVE_ID, unitKerjaId: 'ditjen', klasifikasiKeamanan: 'terbatas',
+            keterangan: 'Catatan lama', retensiAktif: '2 tahun', retensiInaktif: '3 tahun',
+        };
+        mocks.arsip.findById.mockResolvedValue(stored);
+        mocks.arsip.update.mockImplementation(async (_id, patch) => ({ ...stored, ...patch }));
+        const patch = { nomorBerkas: 'B-001', uraianBerkas: 'Uraian dikoreksi', keterangan: 'Catatan baru' };
+
+        const response = await request(app).put(`/arsip/${ARCHIVE_ID}`).send(patch).expect(200);
+
+        expect(mocks.arsip.update).toHaveBeenCalledWith(ARCHIVE_ID, patch, expect.any(Object));
+        expect(mocks.isAllowedForClassification).not.toHaveBeenCalled();
+        expect(response.body.data).toMatchObject({ ...stored, ...patch });
+    });
+
+    it('rejects empty and legacy archive updates before writing', async () => {
+        await request(app).put(`/arsip/${ARCHIVE_ID}`).send({}).expect(400);
+        await request(app).put(`/arsip/${ARCHIVE_ID}`).send({ catatan: 'Koreksi' }).expect(400);
+        expect(mocks.arsip.update).not.toHaveBeenCalled();
+    });
+
+    it('still checks authority for an explicitly changed security classification', async () => {
+        mocks.isAllowedForClassification.mockReturnValue(false);
+        await request(app).put(`/arsip/${ARCHIVE_ID}`)
+            .send({ klasifikasiKeamanan: 'sangat_rahasia' }).expect(403);
+        expect(mocks.arsip.update).not.toHaveBeenCalled();
     });
 
     it('validates item IDs and a meaningful reason before reconciliation', async () => {

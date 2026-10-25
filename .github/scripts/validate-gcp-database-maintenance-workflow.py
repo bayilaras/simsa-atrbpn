@@ -274,8 +274,11 @@ def main() -> int:
     require('--set "backup_principal=$DB_BACKUP_PRINCIPAL"' in runner,
             "database evidence is not bound to the exact backup login principal")
 
-    for command in ("db:roles:bootstrap", "db:migrate", "db:grants:converge", "seed:all"):
+    for command in ("db:roles:bootstrap", "db:migrate", "db:grants:converge", "seed:deployment"):
         require(command in workflow or command in runner, f"required command is missing: {command}")
+    require("npm run seed:all" not in runner, "deployment must not auto-publish local regulatory seeds")
+    require("deployment-regulatory-evidence.sql" in runner and "\\ir deployment-regulatory-evidence.sql" in evidence_sql,
+            "maintenance and evidence must share the deployed regulatory governance gate")
     for evidence_key in (
         "migration_manifest_verified",
         "migrator_database_create",
@@ -318,6 +321,7 @@ def main() -> int:
             and "database_principal = google_sql_user.worker.name" in terraform_outputs,
             "maintenance has no canonical Terraform output for runtime database identities")
 
+    subprocess.run([sys.executable, str(ROOT / ".github/scripts/build-migration-manifest.py"), "--check-bindings"], cwd=ROOT, check=True)
     subprocess.run([sys.executable, str(GATE), "--self-test"], cwd=ROOT, check=True)
     print("GCP database maintenance workflow validation: ok")
     return 0

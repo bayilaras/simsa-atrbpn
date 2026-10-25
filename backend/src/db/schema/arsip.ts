@@ -87,6 +87,10 @@ export const arsip = pgTable('arsip', {
     disposalStatus: varchar('disposal_status', { length: 30 }).default('active'),
     // 'active' | 'proposed_pindah' | 'proposed_musnah' | 'proposed_serah' | 'approved' | 'executed'
     disposalBatchId: uuid('disposal_batch_id'),
+    // Historical inactive transfer is separate from the current disposition lock.
+    // The FK is declared in migration 0035 to avoid a schema import cycle.
+    inactiveTransferredAt: timestamp('inactive_transferred_at', { withTimezone: true }),
+    inactiveTransferBatchId: uuid('inactive_transfer_batch_id'),
     // A legal hold suspends every retention/disposal action. The current state is
     // stored here; the complete sequence of hold/release events is kept in audit_log.
     legalHold: boolean('legal_hold').default(false).notNull(),

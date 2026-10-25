@@ -22,6 +22,8 @@ Tabel daftar surat keluar mirip dengan surat masuk, dengan perbedaan:
 
 ## Menambah Surat Keluar Baru
 
+Pilih **Buat Surat Inisiatif** untuk surat tanpa surat masuk induk, atau **Tindak Lanjut Surat Masuk…** untuk membalas. Kolom ekspor **Asal Naskah** mencatat pilihan ini.
+
 ### Langkah 1: Klik Tombol Tambah
 
 Klik tombol **"+ Tambah Surat Keluar"** berwarna biru di pojok kanan atas.

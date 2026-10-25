@@ -46,6 +46,8 @@ export default function Laporan() {
     const [tanggalSampai, setTanggalSampai] = useState('');
     const [arsipType, setArsipType] = useState('all');
     const [mediaType, setMediaType] = useState('all');
+    // The export only supports the unfiltered arsip list; other report filters would be ignored.
+    const arsipExportSupported = arsipType === 'all' && mediaType === 'all';
     const [lendingStatus, setLendingStatus] = useState('all');
 
     // Data states
@@ -141,7 +143,7 @@ export default function Laporan() {
             console.error('Export error:', error);
             toast({
                 title: 'Error',
-                description: 'Gagal mengexport laporan',
+                description: error?.message || 'Gagal mengexport laporan',
                 variant: 'destructive',
             });
         } finally {
@@ -624,7 +626,8 @@ export default function Laporan() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleExport('arsip', 'excel')}
-                                disabled={exporting}
+                                disabled={exporting || !arsipExportSupported}
+                                title={arsipExportSupported ? undefined : 'Ekspor hanya untuk filter Semua dan Semua Media'}
                                 className="flex-1 md:flex-none border-border hover:bg-emerald-50 dark:hover:bg-emerald-500/15 hover:text-emerald-600 dark:hover:text-emerald-400 hover:border-emerald-200 transition-colors"
                             >
                                 <FileSpreadsheet className="h-4 w-4 mr-2" />
@@ -634,7 +637,8 @@ export default function Laporan() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleExport('arsip', 'pdf')}
-                                disabled={exporting}
+                                disabled={exporting || !arsipExportSupported}
+                                title={arsipExportSupported ? undefined : 'Ekspor hanya untuk filter Semua dan Semua Media'}
                                 className="flex-1 md:flex-none border-border hover:bg-rose-50 dark:hover:bg-rose-500/15 hover:text-rose-600 dark:hover:text-rose-400 hover:border-rose-200 transition-colors"
                             >
                                 <FileText className="h-4 w-4 mr-2" />
@@ -642,6 +646,11 @@ export default function Laporan() {
                             </Button>
                         </div>}
                     </div>
+                    {canExport && !arsipExportSupported && (
+                        <p className="mb-4 text-xs text-muted-foreground">
+                            Ekspor hanya tersedia untuk filter &quot;Semua&quot; dan &quot;Semua Media&quot;. Untuk daftar arsip per jenis, gunakan tombol Export di halaman Arsip.
+                        </p>
+                    )}
 
                     {arsipData?.stats?.byMediaType && (
                         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-4">

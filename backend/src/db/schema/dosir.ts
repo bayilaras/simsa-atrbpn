@@ -1,5 +1,5 @@
-import { pgTable, uuid, varchar, text, date, timestamp, primaryKey } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { pgTable, uuid, varchar, text, date, timestamp, primaryKey, check } from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
 import { users } from './users';
 import { unitKerja } from './unit-kerja';
 import { suratMasuk } from './surat-masuk';
@@ -21,7 +21,7 @@ export const dosir = pgTable('dosir', {
     createdBy: uuid('created_by').references(() => users.id),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, table => [check('dosir_date_order', sql`${table.tanggalMulai} IS NULL OR ${table.tanggalSelesai} IS NULL OR ${table.tanggalSelesai} >= ${table.tanggalMulai}`)]);
 
 /**
  * Junction table: dosir <-> surat_masuk (many-to-many)

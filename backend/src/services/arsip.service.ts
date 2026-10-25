@@ -9,9 +9,14 @@ import {
     jraAppraisalDecisions,
     retentionTriggerEvents,
     retentionTriggerVerifications,
+    users,
+    recordAccessGrants,
 } from '../db/schema';
 import { eq, and, desc, sql, ilike, or, isNotNull, isNull, ne, inArray, getTableColumns } from 'drizzle-orm';
-import { ConflictError, NotFoundError, ValidationError } from '../utils/errors';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors';
+import { hasPermission, type Role } from '../config/permissions';
+import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-lock';
+import { isAllowedForClassification, recordAccessService } from './record-access.service';
 import {
     archiveRuleAssignmentService,
     CURRENT_APPRAISAL_CASE_JOIN,
@@ -161,6 +166,16 @@ function dispositionLabel(code: string | null | undefined): Arsip['hasilAkhir'] 
 }
 
 export class ArsipService {
+    private assertRuleIdentityMatchesSource(
+        assignment: { cache: { klasifikasiArsipId: number; jraItemId: number } },
+        source: { klasifikasiItemId?: number | null; jraItemId?: number | null },
+    ) {
+        if ((source.klasifikasiItemId && source.klasifikasiItemId !== assignment.cache.klasifikasiArsipId)
+            || (source.jraItemId && source.jraItemId !== assignment.cache.jraItemId)) {
+            throw new ValidationError('Pilihan klasifikasi atau JRA berbeda dari surat sumber. Ubah pilihan pada surat sumber sebelum mengarsipkan.');
+        }
+    }
+
     private assertClassificationMatchesSource(
         selectedCode: string,
         sourceCodes: Array<string | null | undefined>,
@@ -456,6 +471,11 @@ export class ArsipService {
     }
 
     async update(id: string, data: Partial<Arsip>, auditContext?: CriticalAuditContext) {
+        // HTTP callers supply this context on the server, never from the body.
+        // Retain the existing trusted internal, unaudited metadata API contract.
+        if (auditContext && !auditContext.userId) {
+            throw new ForbiddenError('Identitas aktor perubahan arsip wajib tersedia.');
+        }
         const requestedFields = Object.keys(data);
         const changesRuleAssignment = requestedFields.some(field =>
             RULE_ASSIGNMENT_FIELDS.has(field),
@@ -483,6 +503,7 @@ export class ArsipService {
         }
 
         return db.transaction(async (tx: any) => {
+            if (auditContext) await lockAuthorizationMandatesShared(tx);
             const [existing] = await tx
                 .select()
                 .from(arsip)
@@ -497,6 +518,39 @@ export class ArsipService {
                 );
             }
 
+            let actorAudit = auditContext;
+            let assertGrantCurrent = () => {};
+            if (auditContext) {
+                const [actor] = await tx.select({ id: users.id, email: users.email, role: users.role,
+                    unitKerjaId: users.unitKerjaId, isActive: users.isActive }).from(users)
+                    .where(eq(users.id, auditContext.userId!)).limit(1).for('update');
+                if (!actor?.isActive || !hasPermission(actor.role as Role, 'arsip', 'update')) {
+                    throw new ForbiddenError('Akun aktif dengan izin kelola arsip diperlukan.');
+                }
+                let access = await recordAccessService.check(actor, 'arsip', id, tx);
+                const lockedGrantId = access.grantId;
+                if (lockedGrantId) {
+                    await tx.select({ id: recordAccessGrants.id }).from(recordAccessGrants)
+                        .where(eq(recordAccessGrants.id, lockedGrantId)).for('update');
+                    // A revocation may have committed while the grant lock was pending.
+                    access = await recordAccessService.check(actor, 'arsip', id, tx);
+                }
+                if (!access.allowed || !access.mutable || access.grantId !== lockedGrantId || existing.disposalBatchId) {
+                    throw new ForbiddenError('Izin kelola arsip tidak tersedia atau arsip ditahan dalam penyusutan.');
+                }
+                assertGrantCurrent = () => {
+                    // Row locks cannot prevent a time-bounded mandate expiring.
+                    if (access.grantExpiresAt && access.grantExpiresAt <= new Date()) {
+                        throw new ForbiddenError('Izin akses kelola arsip telah berakhir.');
+                    }
+                };
+                assertGrantCurrent();
+                if (data.klasifikasiKeamanan !== undefined && !isAllowedForClassification(actor, data.klasifikasiKeamanan)) {
+                    throw new ForbiddenError('Klasifikasi keamanan melebihi kewenangan pengguna.');
+                }
+                actorAudit = { ...auditContext, userId: actor.id, userEmail: actor.email };
+            }
+
             const [result] = await tx
                 .update(arsip)
                 .set({ ...data, updatedAt: new Date() })
@@ -505,13 +559,15 @@ export class ArsipService {
 
             if (auditContext) {
                 await auditLogService.logActionOrThrow({
-                    ...auditContext,
+                    ...actorAudit,
                     action: 'update',
                     entityType: 'arsip',
                     entityId: id,
                     changes: { before: existing, after: result, fields: requestedFields },
                 }, tx);
             }
+
+            assertGrantCurrent();
 
             return result;
         });
@@ -603,7 +659,12 @@ export class ArsipService {
             // Resolve both decisions against the currently published instruments.
             // Client-provided retention text/version/outcome is display-only and is
             // intentionally ignored to prevent a forged disposal decision.
-            const assignment = await archiveRuleAssignmentService.resolveActive(tx, metadata);
+            const assignment = await archiveRuleAssignmentService.resolveActive(tx, {
+                ...metadata,
+                klasifikasiItemId: metadata.klasifikasiItemId ?? (metadata.kodeKlasifikasi?.trim() ? undefined : surat.klasifikasiItemId ?? undefined),
+                jraItemId: metadata.jraItemId ?? (metadata.jraKode?.trim() ? undefined : surat.jraItemId ?? undefined),
+            });
+            this.assertRuleIdentityMatchesSource(assignment, surat);
             this.assertClassificationMatchesSource(
                 assignment.cache.kodeKlasifikasi,
                 [surat.klasifikasiKode],
@@ -666,7 +727,12 @@ export class ArsipService {
             // Update surat masuk isArchived flag
             await tx
                 .update(suratMasuk)
-                .set({ isArchived: true, updatedAt: new Date() })
+                .set({ isArchived: true, updatedAt: new Date(),
+                    klasifikasiItemId: assignment.cache.klasifikasiArsipId,
+                    jraItemId: assignment.cache.jraItemId,
+                    klasifikasiKode: assignment.cache.kodeKlasifikasi,
+                    klasifikasiUraian: assignment.snapshot.classification.title,
+                })
                 .where(eq(suratMasuk.id, suratMasukId));
 
             const archived = await archiveRuleAssignmentService.attachInitialSnapshot(
@@ -681,7 +747,11 @@ export class ArsipService {
                     action: 'archive',
                     entityType: 'surat_masuk',
                     entityId: suratMasukId,
-                    changes: { after: { arsipId: arsipEntry.id, isArchived: true } },
+                    changes: {
+                        before: { klasifikasiItemId: surat.klasifikasiItemId ?? null, jraItemId: surat.jraItemId ?? null },
+                        after: { arsipId: arsipEntry.id, isArchived: true, klasifikasiItemId: assignment.cache.klasifikasiArsipId,
+                            jraItemId: assignment.cache.jraItemId, kodeKlasifikasi: assignment.cache.kodeKlasifikasi },
+                    },
                 }, tx);
                 await auditLogService.logActionOrThrow({
                     ...auditContext,
@@ -773,7 +843,12 @@ export class ArsipService {
                 throw new Error('Surat keluar sudah diarsipkan');
             }
 
-            const assignment = await archiveRuleAssignmentService.resolveActive(tx, metadata);
+            const assignment = await archiveRuleAssignmentService.resolveActive(tx, {
+                ...metadata,
+                klasifikasiItemId: metadata.klasifikasiItemId ?? (metadata.kodeKlasifikasi?.trim() ? undefined : surat.klasifikasiItemId ?? undefined),
+                jraItemId: metadata.jraItemId ?? (metadata.jraKode?.trim() ? undefined : surat.jraItemId ?? undefined),
+            });
+            this.assertRuleIdentityMatchesSource(assignment, surat);
             this.assertClassificationMatchesSource(
                 assignment.cache.kodeKlasifikasi,
                 [surat.klasifikasiFasilitatifKode, surat.klasifikasiSubstantifKode],
@@ -836,7 +911,14 @@ export class ArsipService {
             // Update surat keluar isArchived flag
             await tx
                 .update(suratKeluar)
-                .set({ isArchived: true, updatedAt: new Date() })
+                .set({ isArchived: true, updatedAt: new Date(),
+                    klasifikasiItemId: assignment.cache.klasifikasiArsipId,
+                    jraItemId: assignment.cache.jraItemId,
+                    klasifikasiFasilitatifKode: assignment.snapshot.classification.type === 'fasilitatif' ? assignment.cache.kodeKlasifikasi : null,
+                    klasifikasiFasilitatif: assignment.snapshot.classification.type === 'fasilitatif' ? assignment.snapshot.classification.title : null,
+                    klasifikasiSubstantifKode: assignment.snapshot.classification.type === 'substantif' ? assignment.cache.kodeKlasifikasi : null,
+                    klasifikasiSubstantif: assignment.snapshot.classification.type === 'substantif' ? assignment.snapshot.classification.title : null,
+                })
                 .where(eq(suratKeluar.id, suratKeluarId));
 
             const archived = await archiveRuleAssignmentService.attachInitialSnapshot(
@@ -851,7 +933,11 @@ export class ArsipService {
                     action: 'archive',
                     entityType: 'surat_keluar',
                     entityId: suratKeluarId,
-                    changes: { after: { arsipId: arsipEntry.id, isArchived: true } },
+                    changes: {
+                        before: { klasifikasiItemId: surat.klasifikasiItemId ?? null, jraItemId: surat.jraItemId ?? null },
+                        after: { arsipId: arsipEntry.id, isArchived: true, klasifikasiItemId: assignment.cache.klasifikasiArsipId,
+                            jraItemId: assignment.cache.jraItemId, kodeKlasifikasi: assignment.cache.kodeKlasifikasi },
+                    },
                 }, tx);
                 await auditLogService.logActionOrThrow({
                     ...auditContext,
@@ -965,11 +1051,20 @@ export class ArsipService {
     private toCanonicalReadModel(row: ArchiveWithRuleSnapshot) {
         const canonicalRetention = this.evaluateCanonicalRetention(row);
         const archive = withoutRuleSnapshot(row);
+        const classification = archiveRuleAssignmentService.readClassificationSnapshot({
+            archiveId: row.id, currentSnapshotId: row.currentRuleSnapshotId,
+            snapshotId: row.ruleSnapshotId, snapshotArsipId: row.ruleSnapshotArsipId,
+            snapshotStatus: row.ruleSnapshotStatus, snapshot: row.ruleSnapshot,
+            snapshotSha256: row.ruleSnapshotSha256, classificationItemId: row.klasifikasiArsipId,
+            classificationRuleSetId: row.klasifikasiRuleSetId, classificationSnapshotHash: row.klasifikasiSnapshotHash,
+        });
         const displayDisposition = canonicalRetention.effectiveDispositionCode
             || canonicalRetention.normalizedRetention?.dispositionCode
             || null;
         return {
             ...archive,
+            klasifikasiArsip: classification?.title ?? null,
+            klasifikasiTipe: classification?.type ?? null,
             retentionTriggerType: canonicalRetention.verified
                 ? (row.triggerEventType as Arsip['retentionTriggerType'])
                 : null,

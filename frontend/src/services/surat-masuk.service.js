@@ -68,7 +68,7 @@ export const suratMasukService = {
                 fileOriginalName = file.name;
             } catch (uploadError) {
                 console.error('Blob upload failed:', uploadError);
-                throw new Error('Gagal mengunggah file. Silakan coba lagi.');
+                throw uploadError instanceof Error ? uploadError : new Error('Gagal mengunggah file. Silakan coba lagi.', { cause: uploadError });
             }
         }
 
@@ -79,7 +79,8 @@ export const suratMasukService = {
             ...(fileOriginalName && { fileOriginalName }),
         };
 
-        const response = await api.post('/api/surat-masuk', payload);
+        // Registering a file includes server-side streaming and hash checks.
+        const response = await api.post('/api/surat-masuk', payload, ...(payload.filePath ? [{ timeoutMs: 60_000 }] : []));
         return response;
     },
 
@@ -96,7 +97,7 @@ export const suratMasukService = {
                 fileOriginalName = file.name;
             } catch (uploadError) {
                 console.error('Blob upload failed:', uploadError);
-                throw new Error('Gagal mengunggah file. Silakan coba lagi.');
+                throw uploadError instanceof Error ? uploadError : new Error('Gagal mengunggah file. Silakan coba lagi.', { cause: uploadError });
             }
         }
 
@@ -107,13 +108,13 @@ export const suratMasukService = {
             ...(fileOriginalName && { fileOriginalName }),
         };
 
-        const response = await api.put(`/api/surat-masuk/${id}`, payload);
+        const response = await api.put(`/api/surat-masuk/${id}`, payload, ...(payload.filePath ? [{ timeoutMs: 60_000 }] : []));
         return response.data;
     },
 
-    // Delete surat masuk
-    async delete(id) {
-        await api.delete(`/api/surat-masuk/${id}`);
+    // Delete surat masuk (alasan wajib dicatat -- T13/T24-3)
+    async delete(id, { alasan } = {}) {
+        await api.delete(`/api/surat-masuk/${id}`, alasan ? { alasan } : undefined);
     },
 
     // Archive surat masuk (creates arsip record with full metadata)
@@ -123,11 +124,13 @@ export const suratMasukService = {
     },
 
     // Get belum dibalas (untuk pilihan Surat Keluar)
-    async getBelumDibalas({ unitKerjaId } = {}) {
+    async getBelumDibalas({ unitKerjaId, search, page = 1, limit = 10 } = {}) {
         const response = await api.get('/api/surat-masuk', {
             unitKerjaId,
             status: 'belum_dibalas',
-            limit: 100,
+            search,
+            page,
+            limit,
         });
         return response;
     },

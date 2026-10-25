@@ -7,13 +7,19 @@ export type { Role, Module, Action } from '../config/permissions';
 
 // Legacy role hierarchy for backward compatibility
 const ROLE_PERMISSIONS: Record<Role, string[]> = {
-    'super_admin': ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor', 'user'],
+    'super_admin': ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor', 'user'],
+    'admin_unit': ['admin_unit', 'staff', 'user'],
     'admin_dirjen': ['admin_dirjen', 'staff', 'user'],
     'admin_sesditjen': ['admin_sesditjen', 'staff', 'user'],
     'staff': ['staff', 'user'],
     'auditor': ['auditor'],
     'user': ['user'],
 };
+
+function missingUnitMandate(req: AuthRequest): boolean {
+    return ['admin_unit', 'staff', 'auditor'].includes(req.user?.role || '')
+        && !req.user?.unitKerjaId?.trim();
+}
 
 /**
  * Check if user can write (create/update/delete) - read-only roles are blocked
@@ -26,7 +32,7 @@ export function canWriteMiddleware() {
 
         const userRole = req.user.role as Role;
 
-        if (isReadOnlyRole(userRole)) {
+        if (isReadOnlyRole(userRole) || missingUnitMandate(req)) {
             return res.status(403).json({
                 error: 'Forbidden',
                 message: 'Read-only access. You cannot modify data.'
@@ -45,6 +51,9 @@ export function canReadMiddleware() {
         if (!req.user) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
+        if (isNoAccessRole(req.user.role as Role) || missingUnitMandate(req)) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
         next();
     };
 }
@@ -61,11 +70,11 @@ export function roleMiddleware(allowedRoles: Role[]) {
         const userRole = req.user.role as Role;
 
         // Check if user's role or any role they inherit is allowed
-        const hasRole = allowedRoles.some(role =>
+        const hasRole = !isNoAccessRole(userRole) && allowedRoles.some(role =>
             ROLE_PERMISSIONS[userRole]?.includes(role)
         );
 
-        if (!hasRole) {
+        if (!hasRole || isNoAccessRole(userRole) || missingUnitMandate(req)) {
             return res.status(403).json({
                 error: 'Forbidden',
                 message: 'You do not have permission to access this resource'
@@ -88,7 +97,7 @@ export function permissionMiddleware(module: Module, action: Action) {
 
         const userRole = req.user.role as Role;
 
-        if (!hasPermission(userRole, module, action)) {
+        if (!hasPermission(userRole, module, action) || missingUnitMandate(req)) {
             return res.status(403).json({
                 error: 'Forbidden',
                 message: `You do not have permission to ${action} ${module.replace('_', ' ')}`
@@ -108,7 +117,11 @@ export function unitKerjaMiddleware(paramName: string = 'unitKerjaId') {
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
-        const targetUnitKerjaId = req.params[paramName] || req.body[paramName] || req.query[paramName];
+        if (isNoAccessRole(req.user.role as Role) || missingUnitMandate(req)) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+
+        const targetUnitKerjaId = req.params?.[paramName] || req.body?.[paramName] || req.query?.[paramName];
 
         // If no unit specified, let the route handle it
         if (!targetUnitKerjaId) {

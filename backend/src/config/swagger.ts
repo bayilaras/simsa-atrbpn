@@ -96,7 +96,7 @@ API ini menggunakan cookie-based session authentication melalui Better Auth.
                         tanggalSurat: { type: 'string', format: 'date' },
                         tujuan: { type: 'string' },
                         perihal: { type: 'string' },
-                        sifatSurat: { type: 'string', enum: ['biasa', 'segera', 'sangat_segera', 'rahasia', 'undangan', 'penting'] },
+                        sifatSurat: { type: 'string', nullable: true, maxLength: 50, description: 'Urgensi: biasa, penting, segera, sangat_segera; null bila tidak tercatat' },
                         status: { type: 'string', enum: ['draft', 'dikirim', 'arsip'] },
                         createdAt: { type: 'string', format: 'date-time' },
                         updatedAt: { type: 'string', format: 'date-time' },

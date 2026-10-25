@@ -27,6 +27,10 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('../config/database', () => ({ db: mocks.chain }));
+vi.mock('../services/rangkaian/grant-eligibility.js', async () => {
+    const actual = await vi.importActual<typeof import('../services/record-access.service')>('../services/record-access.service');
+    return { isGrantEligible: vi.fn(async (_tx: unknown, user: any, ref: any) => actual.isAllowedForRecordUnit(user, ref.unitKerjaId)) };
+});
 vi.mock('../services/audit-log.service.js', () => ({
     default: { logActionOrThrow: mocks.audit },
 }));

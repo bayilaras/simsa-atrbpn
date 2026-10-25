@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, or } from 'drizzle-orm';
 import { db } from '../config/database.js';
 import {
     approvalHistory,
@@ -17,10 +17,12 @@ import { createLogger } from '../utils/logger.js';
 import { env } from '../config/env.js';
 import { emailService } from './email.service.js';
 import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-lock.js';
+import { denganRetryDeadlock } from '../utils/deadlock-retry.js';
+import { afterSuratKeluarChanged } from './rangkaian/tindak-lanjut.hook.js';
 
 const log = createLogger('ApprovalService');
 
-const ADMIN_ROLES = new Set(['super_admin', 'admin_dirjen', 'admin_sesditjen']);
+const ADMIN_ROLES = new Set(['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']);
 const RESUBMITTABLE_REQUEST_STATES = ['rejected', 'cancelled'] as const;
 const SUBMITTABLE_SURAT_STATES = ['draft', 'rejected'] as const;
 
@@ -185,11 +187,12 @@ export class ApprovalService {
             .from(users)
             .where(and(
                 eq(users.isActive, true),
-                inArray(users.role, eligibleRoles),
+                or(inArray(users.role, eligibleRoles), and(eq(users.role, 'admin_unit'), eq(users.unitKerjaId, surat.unitKerjaId))),
             ))
             .orderBy(users.name);
 
-        return candidates.filter(candidate => candidate.id !== actor.id);
+        return candidates.filter(candidate => candidate.id !== actor.id
+            && (candidate.role !== 'admin_unit' || candidate.unitKerjaId === surat.unitKerjaId));
     }
 
     async getPending(actor: ApprovalActor) {
@@ -374,7 +377,8 @@ export class ApprovalService {
             throw new ValidationError('Penyetuju berikutnya harus berbeda dari penyetuju saat ini.');
         }
 
-        const outcome = await db.transaction(async (tx) => {
+        // C-4: batas transaksi dibungkus retry deadlock; notifikasi tetap di luar.
+        const outcome = await denganRetryDeadlock(() => db.transaction(async (tx) => {
             await lockAuthorizationMandatesShared(tx);
             const participants = await lockApprovalParticipants(
                 tx,
@@ -508,6 +512,11 @@ export class ApprovalService {
                 .returning({ id: suratKeluar.id });
 
             if (!updatedSurat) throw new ConflictError('Status surat telah berubah.');
+            if (!nextApproverId) {
+                // Persetujuan final: status surat masuk & rangkaian diturunkan di tx yang sama (§5, §8).
+                // Baris surat_keluar sudah terkunci di atas (G-LOCK: SK → SM → rangkaian).
+                await afterSuratKeluarChanged(tx, suratId, { userId: freshActor.id });
+            }
 
             await tx.insert(approvalHistory).values({
                 requestId: request.id,
@@ -518,7 +527,7 @@ export class ApprovalService {
             });
 
             return { notifyUserId, requesterId: request.requesterId };
-        });
+        }));
 
         if (outcome.notifyUserId && outcome.requesterId) {
             await this.sendNotification(suratId, outcome.notifyUserId, outcome.requesterId)
@@ -533,7 +542,8 @@ export class ApprovalService {
         _unitScope: RecordUnitScope,
         notes: string,
     ) {
-        return db.transaction(async (tx) => {
+        // C-4: batas transaksi dibungkus retry deadlock.
+        return denganRetryDeadlock(() => db.transaction(async (tx) => {
             await lockAuthorizationMandatesShared(tx);
             const participants = await lockApprovalParticipants(tx, [actor.id]);
             const freshActor = requireFreshApprovalActor(participants, actor.id);
@@ -625,6 +635,8 @@ export class ApprovalService {
                 ))
                 .returning({ id: suratKeluar.id });
             if (!updatedSurat) throw new ConflictError('Status surat telah berubah.');
+            // Surat ditolak kembali memblokir rangkaian; status diturunkan di tx yang sama (§8).
+            await afterSuratKeluarChanged(tx, suratId, { userId: freshActor.id });
 
             await tx.insert(approvalHistory).values({
                 requestId: request.id,
@@ -635,7 +647,7 @@ export class ApprovalService {
             });
 
             return { success: true };
-        });
+        }));
     }
 
     async getHistory(suratId: string, unitScope: RecordUnitScope) {

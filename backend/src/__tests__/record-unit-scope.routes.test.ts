@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
     },
     recordAccess: {
         check: vi.fn(),
+        checkRead: vi.fn(),
     },
 }));
 
@@ -76,6 +77,10 @@ vi.mock('../services/audit-log.service.js', () => ({
     default: auditLogService,
     auditLogService,
 }));
+// P3 (T16): aksiDiizinkan/statusAlur detail surat dihitung dari DB; di luar cakupan uji scoping ini.
+vi.mock('../services/rangkaian/aksi.js', () => ({
+    suratAksiPayload: vi.fn(async () => ({ aksiDiizinkan: [], statusAlur: 'terdaftar', distribusiUnitSaya: null, rangkaian: null })),
+}));
 vi.mock('../services/blob-storage.service.js', () => ({ blobStorageService: {} }));
 vi.mock('../services/print-template.service.js', () => ({ printTemplateService: {} }));
 vi.mock('../utils/logger.js', () => ({
@@ -118,6 +123,16 @@ describe('record route unit scoping', () => {
             unitKerjaId: 'unit-a',
             classification: 'biasa',
         });
+        mocks.recordAccess.checkRead.mockResolvedValue({
+            exists: true,
+            allowed: true,
+            mutable: true,
+            unitKerjaId: 'unit-a',
+            classification: 'biasa',
+            via: 'owner',
+            rangkaianId: null,
+            masked: false,
+        });
     });
 
     it('passes the staff unit to every module detail service', async () => {
@@ -130,6 +145,22 @@ describe('record route unit scoping', () => {
         expect(mocks.dosir.getById).toHaveBeenCalledWith('record-1', 'unit-a', ['biasa']);
         expect(mocks.arsipVital.findById).toHaveBeenCalledWith('record-1', 'unit-a', ['biasa']);
         expect(mocks.arsipTerjaga.findById).toHaveBeenCalledWith('record-1', 'unit-a', ['biasa']);
+    });
+
+    it('keeps admin_unit list/detail/create requests inside its assigned unit', async () => {
+        Object.assign(mocks.user, { role: 'admin_unit', unitKerjaId: 'unit-a' });
+        await request(app).get('/dosir').expect(200);
+        expect(mocks.dosir.getAll).toHaveBeenCalledWith(expect.objectContaining({ unitKerjaId: 'unit-a' }));
+        await request(app).get('/surat-keluar/record-1?unitKerjaId=unit-b').expect(200);
+        expect(mocks.suratKeluar.findById).toHaveBeenCalledWith('record-1', 'unit-a');
+        await request(app).post('/dosir').send({ judul: 'Own unit', unitKerjaId: 'unit-b' }).expect(201);
+        expect(mocks.dosir.create).toHaveBeenCalledWith(
+            expect.objectContaining({ unitKerjaId: 'unit-a', judul: 'Own unit' }),
+            expect.any(Object),
+        );
+        mocks.suratKeluar.findById.mockResolvedValue(null);
+        await request(app).get('/surat-keluar/cross-unit-record').expect(404);
+        expect(mocks.suratKeluar.findById).toHaveBeenLastCalledWith('cross-unit-record', 'unit-a');
     });
 
     it('fails closed on dosir list/statistics when the unit mandate is missing', async () => {
@@ -217,7 +248,7 @@ describe('record route unit scoping', () => {
         const terjagaPayload = {
             arsipId: '11111111-1111-4111-8111-111111111111',
             unitKerjaId: 'unit-attacker',
-            kategoriTerjaga: 'pertanahan',
+            kategoriTerjaga: 'kepulauan',
         };
 
         await request(app).post('/arsip-vital').send(vitalPayload).expect(201);

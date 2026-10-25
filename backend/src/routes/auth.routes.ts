@@ -1,19 +1,18 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { toNodeHandler } from 'better-auth/node';
 import { auth } from '../config/auth';
 import { db } from '../config/database';
 import { users } from '../db/schema';
 import { eq } from 'drizzle-orm';
-import { createLogger } from '../utils/logger';
 import userManagementService from '../services/user-management.service.js';
-import { AppError } from '../utils/errors.js';
-
-const log = createLogger('AuthRoutes');
+import { updateUserSchema } from '../validations/user-management.validation.js';
+import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
+import type { Role } from '../config/permissions.js';
 
 const router = Router();
 
 // Custom endpoint to get user with role - MUST come before Better Auth handler
-router.get('/me', async (req: Request, res: Response) => {
+router.get('/me', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const session = await auth.api.getSession({
             headers: req.headers as any,
@@ -31,6 +30,8 @@ router.get('/me', async (req: Request, res: Response) => {
                 name: users.name,
                 image: users.image,
                 role: users.role,
+                unitKerjaId: users.unitKerjaId,
+                isActive: users.isActive,
             })
             .from(users)
             .where(eq(users.id, session.user.id))
@@ -43,7 +44,7 @@ router.get('/me', async (req: Request, res: Response) => {
         res.json({
             success: true,
             data: {
-                user,
+                user: { ...user, unitKerjaId: resolveEffectiveUnitKerjaId(user.role as Role, user.unitKerjaId) },
                 session: {
                     id: session.session.id,
                     expiresAt: session.session.expiresAt,
@@ -51,13 +52,12 @@ router.get('/me', async (req: Request, res: Response) => {
             },
         });
     } catch (error) {
-        log.error({ err: error }, 'Auth /me error:');
-        res.status(500).json({ error: 'Internal server error' });
+        next(error);
     }
 });
 
 // List all users (admin only)
-router.get('/users', async (req: Request, res: Response) => {
+router.get('/users', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const session = await auth.api.getSession({
             headers: req.headers as any,
@@ -69,13 +69,12 @@ router.get('/users', async (req: Request, res: Response) => {
 
         // Check if current user is admin
         const [currentUser] = await db
-            .select({ role: users.role })
+            .select({ role: users.role, isActive: users.isActive })
             .from(users)
             .where(eq(users.id, session.user.id))
             .limit(1);
 
-        const adminRoles = ['super_admin', 'admin_dirjen', 'admin_sesditjen'];
-        if (!adminRoles.includes(currentUser?.role || '')) {
+        if (currentUser?.role !== 'super_admin' || currentUser.isActive === false) {
             return res.status(403).json({ error: 'Admin access required' });
         }
 
@@ -93,13 +92,12 @@ router.get('/users', async (req: Request, res: Response) => {
 
         res.json({ success: true, data: allUsers });
     } catch (error) {
-        log.error({ err: error }, 'List users error:');
-        res.status(500).json({ error: 'Internal server error' });
+        next(error);
     }
 });
 
 // Update user role (super_admin only)
-router.put('/users/:userId/role', async (req: Request, res: Response) => {
+router.put('/users/:userId/role', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const session = await auth.api.getSession({
             headers: req.headers as any,
@@ -121,16 +119,14 @@ router.put('/users/:userId/role', async (req: Request, res: Response) => {
         }
 
         const userId = req.params.userId as string;
-        const { role } = req.body;
-
-        const validRoles = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'user'];
-        if (!validRoles.includes(role)) {
+        const parsed = updateUserSchema.safeParse(req.body);
+        if (!parsed.success || !parsed.data.role) {
             return res.status(400).json({ error: 'Invalid role' });
         }
 
         const updatedUser = await userManagementService.updateUser(
             userId,
-            { role },
+            { role: parsed.data.role, ...(parsed.data.unitKerjaId !== undefined ? { unitKerjaId: parsed.data.unitKerjaId } : {}) },
             {
                 userId: session.user.id,
                 userEmail: session.user.email,
@@ -144,11 +140,7 @@ router.put('/users/:userId/role', async (req: Request, res: Response) => {
 
         res.json({ success: true, data: updatedUser });
     } catch (error) {
-        if (error instanceof AppError) {
-            return res.status(error.statusCode).json({ error: error.message });
-        }
-        log.error({ err: error }, 'Update role error:');
-        res.status(500).json({ error: 'Internal server error' });
+        next(error);
     }
 });
 
@@ -158,6 +150,6 @@ router.put('/users/:userId/role', async (req: Request, res: Response) => {
 // GET /api/auth/session - Get current session
 // POST /api/auth/sign-out - Sign out
 // This MUST come last as it catches all remaining routes
-router.all('/*', toNodeHandler(auth));
+router.all('/{*splat}', toNodeHandler(auth));
 
 export default router;

@@ -1,0 +1,12 @@
+[Unit]
+Description=Inspect a bounded batch of SIMSA files every fifteen minutes
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=15min
+RandomizedDelaySec=2min
+Persistent=true
+Unit=simsa-file-fixity.service
+
+[Install]
+WantedBy=timers.target

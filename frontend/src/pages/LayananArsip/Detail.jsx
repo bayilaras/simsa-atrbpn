@@ -28,7 +28,7 @@ export default function LayananArsipDetail() {
     const navigate = useNavigate();
     const { toast } = useToast();
     const { user } = useAuth();
-    const canManage = ['super_admin', 'admin_dirjen', 'admin_sesditjen'].includes(user?.role);
+    const canManage = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'].includes(user?.role);
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
     const [processing, setProcessing] = useState(false);

@@ -15,6 +15,7 @@ import {
   validateRegulatoryRuleItems,
 } from '../services/regulatory-rule-set.service.js';
 import { REGULATORY_SEED_LOCK, withRegulatorySeedLock } from './regulatory-seed-lock.js';
+import { assertLocalRegulatorySeed } from '../config/regulatory-bootstrap';
 
 type JraSeedRecord = {
   kode: string;
@@ -179,7 +180,7 @@ async function seedJadwalRetensiArsipUnlocked() {
 
   const expectedValidation = validateRegulatoryRuleItems('jra', prepared.items);
   // Persist a baseline impact report before invoking the shared validator.
-  // Bootstrap activation remains actor-less, while the report proves that the
+  // Local bootstrap activation remains actor-less, while the report proves that the
   // validated database contents match the initial all-added edition.
   await regulatoryRuleSetService.generateImpactReport(JRA_RULE_SET_2020_ID);
   const validation = await regulatoryRuleSetService.validateDraft(JRA_RULE_SET_2020_ID);
@@ -198,6 +199,7 @@ async function seedJadwalRetensiArsipUnlocked() {
 }
 
 export async function seedJadwalRetensiArsip() {
+  assertLocalRegulatorySeed();
   return withRegulatorySeedLock(
     REGULATORY_SEED_LOCK.jra,
     seedJadwalRetensiArsipUnlocked,

@@ -1,3 +1,6 @@
+import { ASSIGNABLE_ROLE_OPTIONS, managedUserRoleError } from '@/lib/role-access';
+import { hasProvisionedAccess, isPendingAccess } from '@/lib/provisioning-access';
+import { UserAccessApprovalDialog } from '@/components/UserAccessApprovalDialog';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Search, Filter, Users, Edit2, UserX, MoreHorizontal, Loader2, AlertTriangle, Shield, Building2, UserPlus, Mail, CheckCircle2, Ban, Eye, EyeOff, Lock } from 'lucide-react';
 import { Label } from '@/components/ui/label';
@@ -43,6 +46,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { getRoleMandatedUnitKerjaId, resolveManagedUserUnitKerjaId } from '@/lib/unit-kerja-scope';
 
 const ROLE_COLORS = {
+    'admin_unit': 'bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300 border-blue-200',
     'super_admin': 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300 border-red-200',
     'admin_dirjen': 'bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300 border-blue-200',
     'admin_sesditjen': 'bg-green-100 dark:bg-green-500/15 text-green-800 dark:text-green-300 border-green-200',
@@ -52,6 +56,7 @@ const ROLE_COLORS = {
 
 const ROLE_LABELS = {
     'super_admin': 'Super Admin',
+    'admin_unit': 'Admin Unit Kerja',
     'admin_dirjen': 'Admin Dirjen',
     'admin_sesditjen': 'Admin Sesditjen',
     'staff': 'Staf',
@@ -71,14 +76,17 @@ export default function UserManagement() {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [approvalTarget, setApprovalTarget] = useState(null);
+    const [approvalMessage, setApprovalMessage] = useState('');
 
     // Filters
     const [search, setSearch] = useState('');
     const [roleFilter, setRoleFilter] = useState('all');
+    const [approvalFilter, setApprovalFilter] = useState('all');
     const [unitKerjaFilter, setUnitKerjaFilter] = useState('all');
 
     // Dropdown data
-    const [roles, setRoles] = useState([]);
+    const [roles, setRoles] = useState(ASSIGNABLE_ROLE_OPTIONS);
     const [unitKerjaList, setUnitKerjaList] = useState([]);
 
     // Pagination
@@ -92,7 +100,7 @@ export default function UserManagement() {
 
     // Add user dialog
     const [addOpen, setAddOpen] = useState(false);
-    const [addData, setAddData] = useState({ email: '', name: '', role: 'user', unitKerjaId: '', jabatan: '', nip: '', password: '' });
+    const [addData, setAddData] = useState({ email: '', name: '', role: 'admin_unit', unitKerjaId: '', jabatan: '', nip: '', password: '' });
     const [creating, setCreating] = useState(false);
     const [addError, setAddError] = useState('');
     const [showPassword, setShowPassword] = useState(false);
@@ -112,7 +120,7 @@ export default function UserManagement() {
                 userManagementService.getRoles(),
                 userManagementService.getUnitKerja(),
             ]);
-            setRoles(rolesRes.data || []);
+            setRoles((rolesRes.data || ASSIGNABLE_ROLE_OPTIONS).filter(role => ASSIGNABLE_ROLE_OPTIONS.some(option => option.value === role.value)));
             setUnitKerjaList(unitKerjaRes.data || []);
         } catch (err) {
             console.error('Failed to load dropdown data:', err);
@@ -129,7 +137,10 @@ export default function UserManagement() {
                 limit: pagination.limit,
             };
             if (search) params.search = search;
-            if (roleFilter && roleFilter !== 'all') params.role = roleFilter;
+            if (approvalFilter === 'pending') {
+                params.role = 'user';
+                params.isActive = true;
+            } else if (roleFilter && roleFilter !== 'all') params.role = roleFilter;
             if (unitKerjaFilter && unitKerjaFilter !== 'all') params.unitKerjaId = unitKerjaFilter;
 
             const response = await userManagementService.listUsers(params);
@@ -145,7 +156,7 @@ export default function UserManagement() {
         } finally {
             setLoading(false);
         }
-    }, [search, roleFilter, unitKerjaFilter, pagination.page, pagination.limit]);
+    }, [search, roleFilter, approvalFilter, unitKerjaFilter, pagination.page, pagination.limit]);
 
     // Load role and unit options once access is available.
     useEffect(() => {
@@ -176,11 +187,13 @@ export default function UserManagement() {
 
     const handleSave = async () => {
         if (!editingUser) return;
+        const roleError = managedUserRoleError(editData.role, editData.unitKerjaId, editingUser.role);
+        if (roleError) { alert(roleError); return; }
 
         try {
             setSaving(true);
             await userManagementService.updateUser(editingUser.id, {
-                role: editData.role,
+                ...(editData.role === editingUser.role ? {} : { role: editData.role }),
                 unitKerjaId: editData.unitKerjaId || null,
                 isActive: editData.isActive,
                 jabatan: editData.jabatan || null,
@@ -197,7 +210,7 @@ export default function UserManagement() {
     };
 
     const handleAddUser = () => {
-        setAddData({ email: '', name: '', role: 'user', unitKerjaId: '', jabatan: '', nip: '', password: '' });
+        setAddData({ email: '', name: '', role: 'admin_unit', unitKerjaId: '', jabatan: '', nip: '', password: '' });
         setAddError('');
         setShowPassword(false);
         setAddOpen(true);
@@ -208,6 +221,8 @@ export default function UserManagement() {
             setAddError('Email dan nama wajib diisi');
             return;
         }
+        const roleError = managedUserRoleError(addData.role, addData.unitKerjaId);
+        if (roleError) { setAddError(roleError); return; }
         if (addData.password && addData.password.length < 8) {
             setAddError('Password minimal 8 karakter');
             return;
@@ -339,6 +354,7 @@ export default function UserManagement() {
             </div>
 
             {/* Stats Overview */}
+            {approvalMessage && <p role="status" className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-900 dark:bg-green-500/15 dark:text-green-300">{approvalMessage}</p>}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <Card className="shadow-sm border-l-4 border-l-blue-500">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -358,7 +374,7 @@ export default function UserManagement() {
                     <CardContent>
                         <div className="text-2xl font-bold text-green-700 dark:text-green-300">
                             {/* Ideally fetch from stats endpoint, simplified here */}
-                            {users.filter(u => u.isActive).length}
+                            {users.filter(hasProvisionedAccess).length}
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">Pengguna aktif (halaman ini)</p>
                     </CardContent>
@@ -380,6 +396,10 @@ export default function UserManagement() {
             {/* Filters */}
             <Card className="shadow-sm border-border/60">
                 <CardHeader className="pb-4 bg-muted/20">
+                    <div role="group" aria-label="Status persetujuan pengguna" className="flex flex-wrap gap-2 mb-4">
+                        <Button type="button" size="sm" variant={approvalFilter === 'all' ? 'default' : 'outline'} aria-pressed={approvalFilter === 'all'} onClick={() => applyFilter(setApprovalFilter)('all')}>Semua pengguna</Button>
+                        <Button type="button" size="sm" variant={approvalFilter === 'pending' ? 'default' : 'outline'} aria-pressed={approvalFilter === 'pending'} onClick={() => applyFilter(setApprovalFilter)('pending')}>Menunggu persetujuan</Button>
+                    </div>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                         <div className="relative flex-1 w-full sm:w-auto">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -391,8 +411,8 @@ export default function UserManagement() {
                             />
                         </div>
                         <div className="flex items-center gap-2 w-full sm:w-auto">
-                            <Select value={roleFilter} onValueChange={applyFilter(setRoleFilter)}>
-                                <SelectTrigger className="w-full sm:w-[180px] bg-background">
+                            <Select value={roleFilter} disabled={approvalFilter === 'pending'} onValueChange={applyFilter(setRoleFilter)}>
+                                <SelectTrigger aria-label="Filter peran" className="w-full sm:w-[180px] bg-background">
                                     <SelectValue placeholder="Filter peran" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -405,7 +425,7 @@ export default function UserManagement() {
                                 </SelectContent>
                             </Select>
                             <Select value={unitKerjaFilter} onValueChange={applyFilter(setUnitKerjaFilter)}>
-                                <SelectTrigger className="w-full sm:w-[180px] bg-background">
+                                <SelectTrigger aria-label="Filter unit kerja" className="w-full sm:w-[180px] bg-background">
                                     <SelectValue placeholder="Filter Unit" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -491,6 +511,7 @@ export default function UserManagement() {
                                             )}
                                         </TableCell>
                                         <TableCell data-label="Status">
+                                            {isPendingAccess(user) ? <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-900 dark:bg-amber-500/15 dark:text-amber-300">Menunggu persetujuan</Badge> :
                                             <Badge
                                                 variant={user.isActive ? 'default' : 'secondary'}
                                                 className={user.isActive ? "bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-300 hover:bg-green-200 border-green-200 shadow-none border" : "bg-muted text-muted-foreground border-border shadow-none border"}
@@ -498,8 +519,10 @@ export default function UserManagement() {
                                                 {user.isActive ? <CheckCircle2 className="w-3 h-3 mr-1" /> : <Ban className="w-3 h-3 mr-1" />}
                                                 {user.isActive ? 'Aktif' : 'Nonaktif'}
                                             </Badge>
+                                            }
                                         </TableCell>
                                         <TableCell data-label="Aksi" className="text-right">
+                                            {isPendingAccess(user) && <Button type="button" variant="outline" size="sm" aria-label={`Setujui akses untuk ${user.name || user.email}`} onClick={() => { setApprovalMessage(''); setApprovalTarget(user); }}>Setujui akses</Button>}
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
                                                     <Button type="button" variant="ghost" size="icon" aria-label={`Buka tindakan untuk ${user.name || user.email}`} className="h-10 w-10">
@@ -571,6 +594,13 @@ export default function UserManagement() {
                 )}
             </Card>
 
+            {approvalTarget && <UserAccessApprovalDialog key={approvalTarget.id} user={approvalTarget} unitKerjaList={unitKerjaList}
+                onClose={() => setApprovalTarget(null)} onApproved={approved => {
+                    setApprovalTarget(null);
+                    setApprovalMessage(`Akses ${approved.name || approved.email} disetujui. Sesi lama telah ditutup; pengguna perlu masuk kembali.`);
+                    loadUsers();
+                }} />}
+
             {/* Edit Sheet Modal */}
             <Sheet open={editOpen} onOpenChange={setEditOpen}>
                 <SheetContent className="sm:max-w-md">
@@ -594,10 +624,13 @@ export default function UserManagement() {
                                 onValueChange={(v) => setEditData(d => applyRoleMandate(d, v))}
                                 disabled={editingUser?.id === currentUser?.id}
                             >
-                                <SelectTrigger>
+                                <SelectTrigger aria-label="Peran pengguna">
                                     <SelectValue placeholder="Pilih peran" />
                                 </SelectTrigger>
                                 <SelectContent>
+                                    {!ASSIGNABLE_ROLE_OPTIONS.some(option => option.value === editData.role) && editData.role && (
+                                        <SelectItem value={editData.role} disabled>{ROLE_LABELS[editData.role] || editData.role} (peran lama)</SelectItem>
+                                    )}
                                     {roles.map(role => (
                                         <SelectItem key={role.value} value={role.value}>
                                             {role.label}
@@ -608,7 +641,7 @@ export default function UserManagement() {
                             <p className="text-xs text-muted-foreground">
                                 {editingUser?.id === currentUser?.id
                                     ? 'Peran akun sendiri tidak dapat diubah.'
-                                    : 'Peran menentukan hak akses pengguna dalam sistem.'}
+                                    : 'Super Admin mengelola seluruh sistem. Admin Unit Kerja mengelola unit yang ditetapkan.'}
                             </p>
                         </div>
 
@@ -619,7 +652,7 @@ export default function UserManagement() {
                                 onValueChange={(v) => setEditData(d => ({ ...d, unitKerjaId: v === 'none' ? '' : v }))}
                                 disabled={editUnitLocked}
                             >
-                                <SelectTrigger>
+                                <SelectTrigger aria-label="Unit kerja pengguna">
                                     <SelectValue placeholder="Pilih Unit Kerja" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -636,7 +669,7 @@ export default function UserManagement() {
                                     ? 'Super admin bekerja lintas unit dan tidak memiliki unit kerja tersimpan.'
                                     : editMandatedUnitKerjaId
                                     ? `Unit ${editMandatedUnitKerjaId} ditetapkan otomatis oleh mandat peran.`
-                                    : 'Unit kerja membatasi data yang dapat dilihat dan dikelola.'}
+                                    : 'Unit kerja wajib dipilih untuk Admin Unit Kerja; akses dibatasi ke unit ini.'}
                             </p>
                         </div>
 
@@ -703,7 +736,7 @@ export default function UserManagement() {
                         <Button variant="outline" onClick={() => setEditOpen(false)}>
                             Batal
                         </Button>
-                        <Button onClick={handleSave} disabled={saving} className="bg-primary hover:bg-primary/90">
+                        <Button onClick={handleSave} disabled={saving || Boolean(managedUserRoleError(editData.role, editData.unitKerjaId, editingUser?.role))} className="bg-primary hover:bg-primary/90">
                             {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                             Simpan Perubahan
                         </Button>
@@ -756,7 +789,7 @@ export default function UserManagement() {
                         <div className="space-y-2">
                             <Label>Peran</Label>
                             <Select value={addData.role} onValueChange={(v) => setAddData(d => applyRoleMandate(d, v))}>
-                                <SelectTrigger>
+                                <SelectTrigger aria-label="Peran pengguna baru">
                                     <SelectValue placeholder="Pilih peran" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -776,7 +809,7 @@ export default function UserManagement() {
                                 onValueChange={(v) => setAddData(d => ({ ...d, unitKerjaId: v === 'none' ? '' : v }))}
                                 disabled={addUnitLocked}
                             >
-                                <SelectTrigger>
+                                <SelectTrigger aria-label="Unit kerja pengguna baru">
                                     <SelectValue placeholder="Pilih Unit Kerja" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -792,10 +825,8 @@ export default function UserManagement() {
                                 <p className="text-xs text-muted-foreground">
                                     Super admin bekerja lintas unit dan tidak memiliki unit kerja tersimpan.
                                 </p>
-                            ) : addMandatedUnitKerjaId && (
-                                <p className="text-xs text-muted-foreground">
-                                    Unit {addMandatedUnitKerjaId} ditetapkan otomatis oleh mandat peran.
-                                </p>
+                            ) : (
+                                <p className="text-xs text-muted-foreground">Unit kerja wajib dipilih. Admin Unit Kerja hanya mengelola data pada unit ini.</p>
                             )}
                         </div>
 

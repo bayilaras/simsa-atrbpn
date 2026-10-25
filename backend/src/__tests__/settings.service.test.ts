@@ -358,4 +358,48 @@ describe('SettingsService', () => {
             expect(result).toHaveLength(0);
         });
     });
+
+    describe('updateUnitKerja — Unit Pengawas (D5)', () => {
+        it('menyimpan penanda unit pengawas dan mengauditnya dalam transaksi yang sama', async () => {
+            enqueue(
+                [{ id: 'dir_bppt', name: 'Dit. BPPT', isUnitPengawas: false }],
+                [{ id: 'dir_bppt', name: 'Dit. BPPT', isUnitPengawas: true }],
+            );
+            const result = await settingsService.updateUnitKerja('dir_bppt', { isUnitPengawas: true }, {
+                userId: '550e8400-e29b-41d4-a716-446655440010', userEmail: 'super@example.test',
+            });
+            expect(result).toMatchObject({ isUnitPengawas: true });
+            expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(expect.objectContaining({
+                action: 'update',
+                entityType: 'unit_kerja',
+                changes: expect.objectContaining({
+                    unitKerjaId: 'dir_bppt',
+                    fields: ['isUnitPengawas'],
+                    pengawas: { before: false, after: true },
+                }),
+            }), mockDb);
+            expect(transactionCommits).toBe(1);
+        });
+
+        it('tidak menambahkan jejak pengawas bila field tidak dikirim', async () => {
+            enqueue(
+                [{ id: 'dir_bppt', name: 'Dit. BPPT', isUnitPengawas: false }],
+                [{ id: 'dir_bppt', name: 'Direktorat BPPT', isUnitPengawas: false }],
+            );
+            await settingsService.updateUnitKerja('dir_bppt', { name: 'Direktorat BPPT' }, { userId: 'u', userEmail: 'u@example.test' });
+            const [entry] = auditMocks.logActionOrThrow.mock.calls[0];
+            expect(entry.changes).not.toHaveProperty('pengawas');
+        });
+
+        it('tidak menambahkan jejak pengawas bila nilai isUnitPengawas dikirim tetapi tidak berubah [T26-1]', async () => {
+            enqueue(
+                [{ id: 'dir_bppt', name: 'Dit. BPPT', isUnitPengawas: true }],
+                [{ id: 'dir_bppt', name: 'Dit. BPPT', isUnitPengawas: true }],
+            );
+            await settingsService.updateUnitKerja('dir_bppt', { isUnitPengawas: true }, { userId: 'u', userEmail: 'u@example.test' });
+            const [entry] = auditMocks.logActionOrThrow.mock.calls[0];
+            expect(entry.changes).not.toHaveProperty('pengawas');
+            expect(entry.changes.fields).toEqual(['isUnitPengawas']);
+        });
+    });
 });

@@ -1,3 +1,4 @@
+import { AppError } from '../utils/errors';
 import PDFDocument from 'pdfkit';
 import { penyusutanService } from './penyusutan.service';
 import { NO_RECORD_UNIT_ACCESS, type RecordUnitScope } from '../utils/record-unit-scope';
@@ -226,7 +227,7 @@ class PrintTemplateService {
             unitScope,
             securityClassifications,
         );
-        if (!batch) throw new Error('Batch not found');
+        if (!batch) throw new AppError('Batch not found', 404);
 
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
@@ -277,7 +278,7 @@ class PrintTemplateService {
             unitScope,
             securityClassifications,
         );
-        if (!batch) throw new Error('Batch not found');
+        if (!batch) throw new AppError('Batch not found', 404);
 
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
@@ -340,7 +341,7 @@ class PrintTemplateService {
             unitScope,
             securityClassifications,
         );
-        if (!batch) throw new Error('Batch not found');
+        if (!batch) throw new AppError('Batch not found', 404);
 
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
@@ -403,7 +404,7 @@ class PrintTemplateService {
             unitScope,
             securityClassifications,
         );
-        if (!batch) throw new Error('Batch not found');
+        if (!batch) throw new AppError('Batch not found', 404);
 
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
@@ -482,7 +483,7 @@ class PrintTemplateService {
             unitScope,
             securityClassifications,
         );
-        if (!batch) throw new Error('Batch not found');
+        if (!batch) throw new AppError('Batch not found', 404);
 
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
@@ -573,7 +574,7 @@ class PrintTemplateService {
             unitScope,
             securityClassifications,
         );
-        if (!batch) throw new Error('Batch not found');
+        if (!batch) throw new AppError('Batch not found', 404);
 
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
@@ -707,7 +708,7 @@ class PrintTemplateService {
             unitScope,
             securityClassifications,
         );
-        if (!batch) throw new Error('Batch not found');
+        if (!batch) throw new AppError('Batch not found', 404);
 
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
@@ -798,7 +799,7 @@ class PrintTemplateService {
             unitScope,
             securityClassifications,
         );
-        if (!batch) throw new Error('Batch not found');
+        if (!batch) throw new AppError('Batch not found', 404);
 
         switch (batch.jenisPenyusutan) {
             case 'pemindahan':
@@ -826,7 +827,7 @@ class PrintTemplateService {
             unitScope,
             securityClassifications,
         );
-        if (!batch) throw new Error('Batch not found');
+        if (!batch) throw new AppError('Batch not found', 404);
 
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];

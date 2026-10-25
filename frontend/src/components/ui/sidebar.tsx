@@ -524,7 +524,9 @@ function SidebarMenuButton({
     />
   )
 
-  if (!tooltip) {
+  // A hidden tooltip still registers a dismissable layer and consumes Escape
+  // before the mobile sheet. Only mount it when its label is actually needed.
+  if (!tooltip || state !== "collapsed" || isMobile) {
     return button
   }
 
@@ -540,7 +542,6 @@ function SidebarMenuButton({
       <TooltipContent
         side="right"
         align="center"
-        hidden={state !== "collapsed" || isMobile}
         {...tooltip}
       />
     </Tooltip>

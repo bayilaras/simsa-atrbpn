@@ -10,6 +10,7 @@ import { createWriteStream } from 'node:fs';
 import { lstat, realpath, readFile, writeFile, mkdir, mkdtemp, chmod, appendFile, open } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
+import { assertReviewedMigrationManifest } from './migration-manifest.mjs';
 import {
   FORMAT, MAX_ARCHIVE_BYTES, MAX_EVIDENCE_BYTES, sha256, requireCondition, strictPath,
   parseArguments, sterileEnvironment, assertPort, assertClusterIdentity, inside,
@@ -315,7 +316,7 @@ async function runLocalDrill(options) {
     }
     const manifest = (await command('migration-manifest', options.python,
       ['-I', join(repository, '.github/scripts/build-migration-manifest.py')])).output.trim();
-    requireCondition(JSON.parse(manifest).length === 34, 'Expected current 0000-0033 manifest');
+    assertReviewedMigrationManifest(JSON.parse(manifest));
     const collector = await readFile(join(repository, '.github/scripts/collect-backup-evidence.sql'), 'utf8');
     const backupGuard = extractBackupGuard(await readFile(join(repository, '.github/workflows/backup-cloud-sql.yml'), 'utf8'));
     report.database = `simsa_local_${runId.slice(0, 16)}`;
@@ -324,6 +325,11 @@ async function runLocalDrill(options) {
     await psql(source, `CREATE DATABASE "${report.database}" TEMPLATE template0 ENCODING 'UTF8' LOCALE 'C';`,
       { mutation: true, label: 'create-synthetic-database' });
     await bootstrap(source);
+    // Langkah privileged pg_trgm (0049) hanya pada sumber, sebelum migrasi, seperti
+    // operator produksi. Restore mereproduksi extension dari arsip; 0001 di
+    // bootstrap restore sengaja tidak memasangnya.
+    await psql(source, await readFile(join(repository, 'backend/src/db/grants/0003_optional_pg_trgm.sql'), 'utf8'),
+      { mutation: true, database: report.database, label: 'privileged-pg-trgm-step' });
 
     // The generated workspace invokes the exact reviewed maintenance entry
     // points. Its cwd has no .env/.npmrc and never enters the user's backend cwd.
@@ -361,7 +367,7 @@ async function runLocalDrill(options) {
     await maintenance('seed:all', 4);
     requireCondition(beforeSeedRepeat.equals(await stableSourceEvidence('after-repeated-seed-evidence')),
       'Repeated seed:all changed normalized schema/data evidence');
-    report.steps.push('source-migrated-0033', 'seed-all-repeat-exact-evidence-match', 'exact-backup-role-closure');
+    report.steps.push(`source-migrated-${JSON.parse(manifest).at(-1).tag}`, 'seed-all-repeat-exact-evidence-match', 'exact-backup-role-closure');
     console.log('Synthetic source migrated, seeded, and least-privilege backup role verified.');
 
     const requireBackend = createRequire(join(repository, 'backend/package.json'));
