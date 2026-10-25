@@ -12,6 +12,16 @@ for (const relativePath of ['vercel.json', 'backend/vercel.json', 'docs-site/ver
         assert.equal(configuration.git?.deploymentEnabled?.main, false);
     });
 }
+// Hobby allows 100 deployments a day and every push builds each linked project.
+// A Dependabot preview of the docs site or the antivirus probe adds nothing CI
+// does not already build, so those branches must not spend that quota. Backend
+// and frontend keep Dependabot previews: those builds check Vercel packaging.
+for (const relativePath of ['vercel.json', 'docs-site/vercel.json', 'scripts/clamav-on-demand-poc/vercel.json']) {
+    test(`skips Dependabot branch deployments for the ${relativePath} project root`, () => {
+        const configuration = JSON.parse(readFileSync(new URL(`../${relativePath}`, import.meta.url), 'utf8'));
+        assert.equal(configuration.git?.deploymentEnabled?.['dependabot/**'], false);
+    });
+}
 
 test('Vercel routes explicitly use the gated Node function and Fluid Compute', () => {
     const config = JSON.parse(readFileSync(new URL('../backend/vercel.json', import.meta.url), 'utf8'));
