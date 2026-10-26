@@ -40,11 +40,12 @@ interface DosirFilters {
 }
 
 // Linked surat that is soft-deleted or outside the caller's classes is never
-// read, counted, linked, or unlinked through a dosir.
+// read, counted, linked, or unlinked through a dosir. Omitted classes fail
+// closed; null (super_admin) means every recognized class.
 function suratMasukTerlihat(classes: string[] | null | undefined) {
     return and(
         sql`${suratMasuk.isDeleted} IS NOT TRUE`,
-        klasifikasiInSql(suratMasuk.sifatSurat, classes),
+        klasifikasiInSql(suratMasuk.sifatSurat, classes === undefined ? [] : classes),
     );
 }
 
@@ -52,7 +53,7 @@ function suratMasukTerlihat(classes: string[] | null | undefined) {
 function suratKeluarTerlihat(classes: string[] | null | undefined) {
     return and(
         sql`${suratKeluar.isDeleted} IS NOT TRUE`,
-        klasifikasiInSql(sql`coalesce(${suratKeluar.klasifikasiKeamanan}, 'terbatas')`, classes),
+        klasifikasiInSql(sql`coalesce(${suratKeluar.klasifikasiKeamanan}, 'terbatas')`, classes === undefined ? [] : classes),
     );
 }
 
