@@ -13,10 +13,11 @@ import {
     recordAccessGrants,
 } from '../db/schema';
 import { eq, and, desc, sql, ilike, or, isNotNull, isNull, ne, inArray, getTableColumns } from 'drizzle-orm';
-import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors';
+import { AppError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors';
 import { hasPermission, type Role } from '../config/permissions';
 import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-lock';
 import { isAllowedForClassification, recordAccessService } from './record-access.service';
+import { kelasSumberSurat, normalizeSecurityClassification, rankKelas } from './access/visibility-spec';
 import {
     archiveRuleAssignmentService,
     CURRENT_APPRAISAL_CASE_JOIN,
@@ -168,6 +169,8 @@ function withoutRuleSnapshot(row: ArchiveWithRuleSnapshot): ArsipBaris {
     return archive;
 }
 
+export const PESAN_KELAS_DI_BAWAH_SUMBER = 'Klasifikasi arsip tidak boleh lebih rendah dari surat sumber';
+
 function dispositionLabel(code: string | null | undefined): Arsip['hasilAkhir'] {
     if (code === 'musnah') return 'Musnah';
     if (code === 'permanen') return 'Permanen';
@@ -199,6 +202,45 @@ export class ArsipService {
                 `Klasifikasi arsip ${selectedCode} tidak cocok dengan klasifikasi yang tercatat pada ${sourceLabel}.`,
             );
         }
+    }
+
+    /**
+     * Kelas keamanan arsip dari surat tidak boleh di bawah kelas surat
+     * sumbernya: nomor, tanggal, dan perihal yang tersalin ke arsip akan
+     * terbaca peran yang tidak memegang grant atas sumber. Tanpa pilihan,
+     * arsip mewarisi kelas sumber. Kelas sumber tak dikenal (atau sumber
+     * hilang, null) gagal-tertutup.
+     */
+    private kelasArsipDariSumber(kelasSumber: string | null, kelasDiminta: string | null | undefined): string {
+        const rankSumber = kelasSumber === null ? null : rankKelas(kelasSumber);
+        if (kelasSumber === null || rankSumber === null) {
+            throw new ValidationError(
+                'Klasifikasi keamanan surat sumber tidak dikenali. Perbaiki sifat atau klasifikasi keamanan surat sumber terlebih dahulu.',
+            );
+        }
+        if (kelasDiminta === undefined || kelasDiminta === null) return kelasSumber;
+        const kelas = normalizeSecurityClassification(kelasDiminta);
+        const rank = rankKelas(kelas);
+        if (rank === null) throw new ValidationError('Klasifikasi keamanan arsip tidak dikenali.');
+        if (rank < rankSumber) throw new AppError(PESAN_KELAS_DI_BAWAH_SUMBER, 422);
+        return kelas;
+    }
+
+    /** Kelas ternormalisasi surat sumber arsip tertaut; null bila sumbernya tidak ada. */
+    private async kelasSumberArsip(tx: any, existing: Pick<Arsip, 'jenisArsip' | 'sourceSuratId'>): Promise<string | null> {
+        const { suratMasuk, suratKeluar } = await import('../db/schema');
+        if (!existing.sourceSuratId) return null;
+        if (existing.jenisArsip === 'masuk') {
+            const [surat] = await tx.select({ sifatSurat: suratMasuk.sifatSurat }).from(suratMasuk)
+                .where(eq(suratMasuk.id, existing.sourceSuratId)).limit(1);
+            return surat ? kelasSumberSurat('surat_masuk', surat) : null;
+        }
+        if (existing.jenisArsip === 'keluar') {
+            const [surat] = await tx.select({ klasifikasiKeamanan: suratKeluar.klasifikasiKeamanan }).from(suratKeluar)
+                .where(eq(suratKeluar.id, existing.sourceSuratId)).limit(1);
+            return surat ? kelasSumberSurat('surat_keluar', surat) : null;
+        }
+        return null;
     }
 
     private assertNoDirectRetentionTrigger(data: Record<string, any>) {
@@ -559,6 +601,14 @@ export class ArsipService {
                 }
                 actorAudit = { ...auditContext, userId: actor.id, userEmail: actor.email };
             }
+            // Plafon peran di atas hanya membatasi kenaikan; arsip tertaut juga
+            // tidak boleh diturunkan di bawah kelas surat sumbernya (NULL = biasa).
+            if (data.klasifikasiKeamanan !== undefined && existing.sourceSuratId) {
+                this.kelasArsipDariSumber(
+                    await this.kelasSumberArsip(tx, existing),
+                    data.klasifikasiKeamanan ?? 'biasa',
+                );
+            }
 
             const [result] = await tx
                 .update(arsip)
@@ -650,6 +700,11 @@ export class ArsipService {
             if (surat.isArchived) {
                 throw new ConflictError('Surat masuk sudah diarsipkan');
             }
+            // Dihitung dari baris yang terkunci: kelas arsip >= kelas sumber.
+            const klasifikasiKeamanan = this.kelasArsipDariSumber(
+                kelasSumberSurat('surat_masuk', surat),
+                metadata.klasifikasiKeamanan,
+            );
 
             // Check if already archived
             const [existing] = await tx
@@ -698,7 +753,7 @@ export class ArsipService {
                     retentionTriggerLabel: null,
                     retentionTriggerDate: null,
                     retentionTriggerEvidence: null,
-                    klasifikasiKeamanan: metadata.klasifikasiKeamanan,
+                    klasifikasiKeamanan,
                     personInCharge: metadata.personInCharge,
                     unitPengolah: metadata.unitPengolah,
                     kurunWaktu: metadata.kurunWaktu,
@@ -837,6 +892,10 @@ export class ArsipService {
                     'Surat keluar harus memperoleh persetujuan final sebelum dapat diregistrasikan sebagai arsip',
                 );
             }
+            const klasifikasiKeamanan = this.kelasArsipDariSumber(
+                kelasSumberSurat('surat_keluar', surat),
+                metadata.klasifikasiKeamanan,
+            );
 
             // Check if already archived
             const [existing] = await tx
@@ -882,7 +941,7 @@ export class ArsipService {
                     retentionTriggerLabel: null,
                     retentionTriggerDate: null,
                     retentionTriggerEvidence: null,
-                    klasifikasiKeamanan: metadata.klasifikasiKeamanan,
+                    klasifikasiKeamanan,
                     personInCharge: metadata.personInCharge,
                     unitPengolah: metadata.unitPengolah,
                     kurunWaktu: metadata.kurunWaktu,

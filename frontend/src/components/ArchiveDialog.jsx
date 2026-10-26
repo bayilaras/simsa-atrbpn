@@ -45,6 +45,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Link } from 'react-router-dom'
 import { validateArchiveRegistration } from './archive-registration-validation'
 import { selectedSuratArchiveRules } from '@/lib/surat-archive-selection'
+import { normalisasiSifat } from '@/lib/tindak-lanjut'
 
 const TINGKAT_PERKEMBANGAN_OPTIONS = [
     { value: 'Asli', label: 'Asli' },
@@ -59,6 +60,17 @@ const KLASIFIKASI_KEAMANAN_OPTIONS = [
     { value: 'sangat_rahasia', label: 'Sangat Rahasia' },
 ]
 
+// Sama dengan RANK_KELAS backend (visibility-spec.ts); arsip dari surat tidak
+// boleh berkelas di bawah surat sumbernya (server menolak dengan 422).
+const RANK_KELAS = { biasa: 0, terbatas: 1, rahasia: 2, sangat_rahasia: 3 }
+const rankKelas = (kelas) => (Object.hasOwn(RANK_KELAS, kelas) ? RANK_KELAS[kelas] : undefined)
+
+/** Kelas surat sumber: sifatSurat untuk surat masuk, klasifikasiKeamanan (NULL = terbatas) untuk surat keluar. */
+const kelasSumberSurat = (record = {}, suratType) => {
+    const jenis = suratType || (record.klasifikasiKeamanan !== undefined ? 'keluar' : 'masuk')
+    return normalisasiSifat(jenis === 'keluar' ? record.klasifikasiKeamanan ?? 'terbatas' : record.sifatSurat)
+}
+
 const UNIT_PENGOLAH_OPTIONS = [
     { value: 'Ditjen', label: 'Ditjen' },
     { value: 'SekDitjen', label: 'SekDitjen' },
@@ -67,7 +79,7 @@ const UNIT_PENGOLAH_OPTIONS = [
     { value: 'Dit. KTPP', label: 'Dit. KTPP' },
 ]
 
-const buildFormData = (record = {}) => ({
+const buildFormData = (record = {}, kelasSumber) => ({
     nomorBerkas: record.nomorSurat || '',
     kodeKlasifikasi: record.klasifikasiKode || record.klasifikasiFasilitatifKode || record.klasifikasiSubstantifKode || '',
     klasifikasiItemId: record.klasifikasiItemId || '',
@@ -86,7 +98,8 @@ const buildFormData = (record = {}) => ({
     jraVersionPreview: record.jraVersion || '',
     jraReferencePreview: record.jraReference || '',
     // Keamanan & PIC
-    klasifikasiKeamanan: record.klasifikasiKeamanan || 'biasa',
+    // Kelas sumber tak dikenal dibiarkan kosong: tidak ada kelas yang bisa dipilih.
+    klasifikasiKeamanan: rankKelas(kelasSumber) === undefined ? '' : kelasSumber,
     personInCharge: '',
     keterangan: '',
 })
@@ -140,6 +153,7 @@ export function ArchiveDialog({
     open,
     onOpenChange,
     suratData,
+    suratType,
     onArchive
 }) {
     const [loading, setLoading] = useState(false)
@@ -147,9 +161,11 @@ export function ArchiveDialog({
 
     const { perihal, tanggalSurat } = suratData || {}
     const sourceData = JSON.stringify(suratData || {})
+    const kelasSumber = kelasSumberSurat(suratData || {}, suratType)
+    const rankSumber = rankKelas(kelasSumber)
 
     // Form state for Identifikasi Berkas
-    const [formData, setFormData] = useState(() => buildFormData(suratData || {}))
+    const [formData, setFormData] = useState(() => buildFormData(suratData || {}, kelasSumber))
 
     // Items state
     const [items, setItems] = useState(() => buildItems({ perihal, tanggalSurat }))
@@ -158,10 +174,10 @@ export function ArchiveDialog({
     useEffect(() => {
         if (!open) return
         const source = JSON.parse(sourceData)
-        setFormData(buildFormData(source))
+        setFormData(buildFormData(source, kelasSumberSurat(source, suratType)))
         setItems(buildItems(source))
         setFormError('')
-    }, [open, sourceData])
+    }, [open, sourceData, suratType])
 
     const handleChange = (field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }))
@@ -210,7 +226,7 @@ export function ArchiveDialog({
             // Flatten items[0] data into payload for backward compat
             const firstItem = items[0] || {}
             const registrationData = Object.fromEntries(
-                Object.entries(formData).filter(([field]) => ![
+                Object.entries(formData).filter(([field, value]) => ![
                     'kurunWaktuDari',
                     'kurunWaktuSampai',
                     'jraUraianPreview',
@@ -219,7 +235,7 @@ export function ArchiveDialog({
                     'hasilAkhirPreview',
                     'jraVersionPreview',
                     'jraReferencePreview',
-                ].includes(field)),
+                ].includes(field) && !(field === 'klasifikasiKeamanan' && !value)),
             )
             const payload = {
                 ...registrationData,
@@ -724,7 +740,9 @@ export function ArchiveDialog({
                                     <FormField
                                         label="Klasifikasi Keamanan"
                                         icon={Shield}
-                                        hint="Tingkat kerahasiaan dokumen"
+                                        hint={rankSumber === undefined
+                                            ? 'Kelas keamanan surat sumber tidak dikenali; perbaiki sifat surat sebelum mengarsipkan'
+                                            : `Tingkat kerahasiaan dokumen, minimal ${KLASIFIKASI_KEAMANAN_OPTIONS.find(opt => opt.value === kelasSumber)?.label} sesuai surat sumber`}
                                     >
                                         <Select
                                             value={formData.klasifikasiKeamanan}
@@ -735,7 +753,13 @@ export function ArchiveDialog({
                                             </SelectTrigger>
                                             <SelectContent>
                                                 {KLASIFIKASI_KEAMANAN_OPTIONS.map(opt => (
-                                                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                                                    <SelectItem
+                                                        key={opt.value}
+                                                        value={opt.value}
+                                                        disabled={rankSumber === undefined || RANK_KELAS[opt.value] < rankSumber}
+                                                    >
+                                                        {opt.label}
+                                                    </SelectItem>
                                                 ))}
                                             </SelectContent>
                                         </Select>

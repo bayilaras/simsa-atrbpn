@@ -46,3 +46,52 @@ describe('surat to archive rule transfer', () => {
         expect(screen.getByLabelText('Pasangan aturan surat')).not.toHaveTextContent('S.III.01')
     })
 })
+
+describe('kelas keamanan arsip mengikuti surat sumber', () => {
+    // Radix Select tertutup tetap merender <select> native tersembunyi berisi
+    // semua opsi (termasuk atribut disabled); pilih yang memuat opsi kelas.
+    const opsiKelas = () => {
+        const native = [...document.querySelectorAll('select')].find(select => select.querySelector('option[value="sangat_rahasia"]'))
+        return Object.fromEntries([...native.options].filter(option => option.value).map(option => [option.value, option.disabled]))
+    }
+    const kirim = async (suratData, suratType) => {
+        const onArchive = vi.fn().mockResolvedValue(undefined)
+        render(<MemoryRouter><ArchiveDialog open onOpenChange={vi.fn()} suratType={suratType} suratData={suratData} onArchive={onArchive} /></MemoryRouter>)
+        const opsi = opsiKelas()
+        fireEvent.submit(document.getElementById('archive-form'))
+        await waitFor(() => expect(onArchive).toHaveBeenCalled())
+        return { payload: onArchive.mock.calls[0][0], opsi }
+    }
+    const masuk = ({ klasifikasiKeamanan: _abaikan, ...rest }) => rest
+
+    it('surat masuk Rahasia: terisi rahasia dan kelas yang lebih rendah nonaktif', async () => {
+        const { payload, opsi } = await kirim({ ...masuk(source), sifatSurat: 'Rahasia' }, 'masuk')
+        expect(payload.klasifikasiKeamanan).toBe('rahasia')
+        expect(opsi).toEqual({ biasa: true, terbatas: true, rahasia: false, sangat_rahasia: false })
+        expect(screen.getByText(/minimal Rahasia sesuai surat sumber/)).toBeInTheDocument()
+    })
+
+    it('surat masuk berurgensi Segera tetap biasa tanpa opsi nonaktif', async () => {
+        const { payload, opsi } = await kirim({ ...masuk(source), sifatSurat: 'Segera' }, 'masuk')
+        expect(payload.klasifikasiKeamanan).toBe('biasa')
+        expect(opsi).toEqual({ biasa: false, terbatas: false, rahasia: false, sangat_rahasia: false })
+    })
+
+    it('surat masuk mengabaikan klasifikasiKeamanan yang tidak dimilikinya', async () => {
+        const { payload } = await kirim({ ...source, sifatSurat: 'Sangat Rahasia', klasifikasiKeamanan: 'biasa' }, 'masuk')
+        expect(payload.klasifikasiKeamanan).toBe('sangat_rahasia')
+    })
+
+    it('surat keluar lama tanpa kelas (NULL) terisi terbatas, biasa nonaktif', async () => {
+        const { payload, opsi } = await kirim({ ...source, klasifikasiKeamanan: null, sifatSurat: 'biasa' }, 'keluar')
+        expect(payload.klasifikasiKeamanan).toBe('terbatas')
+        expect(opsi).toEqual({ biasa: true, terbatas: false, rahasia: false, sangat_rahasia: false })
+    })
+
+    it('sifat tak dikenal gagal-tertutup: semua opsi nonaktif dan kelas tidak dikirim', async () => {
+        const { payload, opsi } = await kirim({ ...masuk(source), sifatSurat: 'Kilat Khusus' }, 'masuk')
+        expect(payload).not.toHaveProperty('klasifikasiKeamanan')
+        expect(opsi).toEqual({ biasa: true, terbatas: true, rahasia: true, sangat_rahasia: true })
+        expect(screen.getByText(/tidak dikenali/)).toBeInTheDocument()
+    })
+})

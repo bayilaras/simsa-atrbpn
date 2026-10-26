@@ -302,6 +302,37 @@ export function kelasBolehDibacaLintasUnit(
     return false;
 }
 
+/** Peringkat kelas keamanan: biasa < terbatas < rahasia < sangat_rahasia. */
+export const RANK_KELAS: Readonly<Record<(typeof SECURITY_CLASSES)[number], number>> = Object.freeze({
+    biasa: 0,
+    terbatas: 1,
+    rahasia: 2,
+    sangat_rahasia: 3,
+});
+const RANK_KELAS_MAP: ReadonlyMap<string, number> = new Map(Object.entries(RANK_KELAS));
+
+/**
+ * Peringkat kelas setelah dinormalisasi; null bila kelas tidak dikenal.
+ * Pemanggil WAJIB gagal-tertutup untuk null, bukan menganggapnya 'biasa'.
+ */
+export function rankKelas(kelas: string | null | undefined): number | null {
+    return RANK_KELAS_MAP.get(normalizeSecurityClassification(kelas)) ?? null;
+}
+
+/**
+ * Kelas keamanan ternormalisasi surat sumber, padanan TS klasifikasiRekamanSql:
+ * surat masuk dari sifat_surat, surat keluar dari klasifikasi_keamanan
+ * (NULL lama = terbatas). Hasil bisa berupa kelas tak dikenal; cek rankKelas.
+ */
+export function kelasSumberSurat(
+    type: JenisRekamanRangkaian,
+    row: { sifatSurat?: string | null; klasifikasiKeamanan?: string | null },
+): string {
+    return normalizeSecurityClassification(
+        type === 'surat_masuk' ? row.sifatSurat : row.klasifikasiKeamanan ?? 'terbatas',
+    );
+}
+
 /** Nilai klasifikasi mentah rekaman; surat keluar lama (NULL) = terbatas. */
 export function klasifikasiRekamanSql(type: JenisRekamanRangkaian, alias: string): SQL {
     const a = aliasAman(alias);
