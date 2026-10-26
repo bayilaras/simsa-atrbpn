@@ -20,6 +20,7 @@ import {
     RETENTION_GOVERNANCE_EVIDENCE_SELECT,
 } from './archive-rule-assignment.service';
 import { arsipService } from './arsip.service';
+import { klasifikasiInSql } from './access/visibility-spec';
 
 const SUPERVISION_RETENTION_SELECT = {
     id: arsip.id,
@@ -232,7 +233,7 @@ export class SupervisionService {
      * metadata needed for triage; document content remains behind normal
      * record-level access controls.
      */
-    async getComplianceIssues(limit: number = 50) {
+    async getComplianceIssues(limit: number = 50, securityClassifications?: string[] | null) {
         const safeLimit = Math.max(1, Math.min(limit, 200));
         const now = new Date();
         const in90Days = new Date(now);
@@ -240,9 +241,12 @@ export class SupervisionService {
         const today = now.toISOString().slice(0, 10);
         const dueCutoff = in90Days.toISOString().slice(0, 10);
 
+        // Only classes the role may list; unrecognized legacy values never surface.
         const rows = await retentionGovernanceJoins(
             db.select(SUPERVISION_RETENTION_SELECT).from(arsip),
-        ).orderBy(desc(arsip.updatedAt));
+        )
+            .where(klasifikasiInSql(arsip.klasifikasiKeamanan, securityClassifications))
+            .orderBy(desc(arsip.updatedAt));
 
         return rows.flatMap((row: any) => {
             const issues: string[] = [];

@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { supervisionService } from '../services/supervision.service';
-import { authMiddleware as requireAuth } from '../middlewares/auth.middleware';
+import { authMiddleware as requireAuth, type AuthRequest } from '../middlewares/auth.middleware';
 import { roleMiddleware } from '../middlewares/role.middleware';
 import { createLogger } from '../utils/logger';
+import { allowedSecurityClassifications } from '../services/record-access.service';
 
 const log = createLogger('SupervisionRoutes');
 
@@ -60,14 +61,17 @@ router.get('/stats/compliance', async (req, res) => {
     }
 });
 
-router.get('/stats/compliance/issues', async (req, res) => {
+router.get('/stats/compliance/issues', async (req: AuthRequest, res) => {
     try {
         const limit = boundedPositiveInteger(
             req.query.limit,
             50,
             MAX_COMPLIANCE_ISSUES_LIMIT,
         );
-        const data = await supervisionService.getComplianceIssues(limit);
+        const data = await supervisionService.getComplianceIssues(
+            limit,
+            allowedSecurityClassifications(req.user),
+        );
         res.json({ data, total: data.length });
     } catch (error) {
         log.error({ err: error }, 'Error fetching compliance issue queue:');

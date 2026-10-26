@@ -76,6 +76,7 @@ router.get('/content', ocrLimiter, async (req: AuthRequest, res, next) => {
             q,
             unitKerjaId as string,
             allowedSecurityClassifications(req.user),
+            req.user,
         );
 
         res.json({

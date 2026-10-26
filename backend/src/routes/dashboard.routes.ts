@@ -6,6 +6,20 @@ import { allowedSecurityClassifications } from '../services/record-access.servic
 
 const router = Router();
 
+const MAX_RECENT_LIMIT = 50;
+const MAX_EXPIRING_DAYS = 365;
+
+function boundedPositiveInteger(value: unknown, fallback: number, maximum: number): number {
+    if (typeof value !== 'string') return fallback;
+
+    const normalized = value.trim();
+    if (!/^-?\d+$/.test(normalized)) return fallback;
+
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed)) return normalized.startsWith('-') ? 1 : maximum;
+    return Math.min(maximum, Math.max(1, parsed));
+}
+
 router.use(authMiddleware);
 
 // GET /api/dashboard/stats - Get dashboard statistics
@@ -30,11 +44,10 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
 router.get('/recent', async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = resolveUnitKerjaId(req);
-        const { limit } = req.query;
 
         const activity = await dashboardService.getRecentActivity(
             unitKerjaId,
-            limit ? Number(limit) : 10,
+            boundedPositiveInteger(req.query.limit, 10, MAX_RECENT_LIMIT),
             allowedSecurityClassifications(req.user),
         );
 
@@ -48,11 +61,10 @@ router.get('/recent', async (req: AuthRequest, res, next) => {
 router.get('/expiring', async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = resolveUnitKerjaId(req);
-        const { daysAhead } = req.query;
 
         const expiring = await dashboardService.getExpiringArchives(
             unitKerjaId,
-            daysAhead ? Number(daysAhead) : 30,
+            boundedPositiveInteger(req.query.daysAhead, 30, MAX_EXPIRING_DAYS),
             allowedSecurityClassifications(req.user),
         );
 

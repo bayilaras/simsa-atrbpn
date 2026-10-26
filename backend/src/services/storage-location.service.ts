@@ -360,8 +360,15 @@ export class StorageLocationService {
     }
 
     async generateArsipQRCode(arsipId: string, baseUrl: string, unitKerjaId: RecordUnitScope) {
+        // A label needs only identity; klasifikasiKeamanan stays for the route's
+        // classification gate.
         const [arsipItem] = await db
-            .select()
+            .select({
+                id: arsip.id,
+                nomorBerkas: arsip.nomorBerkas,
+                kodeKlasifikasi: arsip.kodeKlasifikasi,
+                klasifikasiKeamanan: arsip.klasifikasiKeamanan,
+            })
             .from(arsip)
             .where(unitKerjaId === null
                 ? eq(arsip.id, arsipId)

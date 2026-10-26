@@ -116,6 +116,7 @@ router.get('/search/fulltext', validateQuery(archiveFulltextQuerySchema), async 
             jenisArsip,
             tahun,
             securityClassifications: allowedSecurityClassifications(req.user),
+            user: req.user,
             page,
             limit,
         });
@@ -166,6 +167,7 @@ router.get('/search/keywords', validateQuery(archiveKeywordsQuerySchema), async 
                 limit,
                 offset: (page - 1) * limit,
                 securityClassifications: allowedSecurityClassifications(req.user),
+                user: req.user,
             }
         );
 
@@ -202,6 +204,7 @@ router.get('/:id/related', validateIdParam(), validateQuery(archiveRelatedQueryS
             unitKerjaId,
             limit,
             allowedSecurityClassifications(req.user),
+            req.user,
         );
 
         res.json({ success: true, data: related });

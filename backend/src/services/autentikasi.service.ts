@@ -183,7 +183,7 @@ export class AutentikasiService {
                 },
                 itemArsip: {
                     with: {
-                        arsip: true
+                        arsip: { columns: { extractedText: false } }
                     }
                 }
             }

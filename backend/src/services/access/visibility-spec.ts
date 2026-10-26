@@ -349,7 +349,7 @@ export function jangkauanRekamanSql(ctx: KonteksBaca, type: JenisRekamanRangkaia
  */
 export function grantAktifSql(
     ctx: KonteksBaca,
-    type: JenisRekamanRangkaian,
+    type: JenisRekamanRangkaian | 'arsip',
     idCol: SQLWrapper,
     unitCol: SQLWrapper,
     kelasNorm: SQLWrapper,
@@ -398,6 +398,23 @@ export function visibleSql(ctx: KonteksBaca, target: TargetVisibilitas, mode: 'r
         : sql`(${unitSendiri} AND (${kelasList} OR ${kelasBaca}))`;
     const lintas = sql`(${jangkauanRekamanSql(ctx, target.type, a)} AND ${kelasBaca})`;
     return sql`(${sql.raw(`${a}.is_deleted IS NOT TRUE`)} AND (${pemilik} OR ${lintas}))`;
+}
+
+/**
+ * Padanan SQL `recordAccessService.check(user, 'arsip', id).allowed` (property
+ * test): unit sendiri DAN (kelas biasa yang diizinkan role ATAU kelas
+ * terkendali dengan grant aktif). Arsip tidak punya jangkauan lintas unit dan
+ * tidak memakai kebijakan list lama; dipakai untuk isi berkas (teks OCR).
+ */
+export function bacaArsipSql(user: PenggunaVisibilitas | undefined, alias: string): SQL {
+    const a = aliasAman(alias);
+    const unit = sql.raw(`${a}.unit_kerja_id`);
+    const kelas = klasifikasiNormSql(sql.raw(`${a}.klasifikasi_keamanan`));
+    const ctx: KonteksBaca = { user, unitJangkauan: null, pengawas: false, disposisiLamaRead: false };
+    const grant = grantAktifSql(ctx, 'arsip', sql.raw(`${a}.id`), unit, kelas);
+    const biasa = kelasUntukRole(user?.role).includes('biasa') ? sql`true` : sql`false`;
+    const kelasBaca = sql`((${kelas} = 'biasa' AND ${biasa}) OR (${kelas} IN ('terbatas', 'rahasia', 'sangat_rahasia') AND ${grant}))`;
+    return sql`(${cocokUnitRekamanSql(kecocokanUnitRekaman(user), unit)} AND ${kelasBaca})`;
 }
 
 export async function resolveKonteksBaca(

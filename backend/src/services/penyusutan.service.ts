@@ -7,7 +7,7 @@ import {
     retentionTriggerEvents, retentionTriggerVerifications,
 } from '../db/schema';
 import { eq, and, desc, sql, inArray, isNotNull, getTableColumns, gt, or, asc } from 'drizzle-orm';
-import { arsipService } from './arsip.service';
+import { ARSIP_KOLOM_DAFTAR, arsipService } from './arsip.service';
 import {
     CURRENT_APPRAISAL_CASE_JOIN,
     CURRENT_APPRAISAL_DECISION_JOIN,
@@ -68,7 +68,7 @@ const RULE_SNAPSHOT_EVIDENCE_SELECT = {
 };
 
 const ARCHIVE_WITH_RULE_SNAPSHOT_SELECT = {
-    ...getTableColumns(arsip),
+    ...ARSIP_KOLOM_DAFTAR,
     ...RULE_SNAPSHOT_EVIDENCE_SELECT,
     ...RETENTION_GOVERNANCE_EVIDENCE_SELECT,
 };
@@ -269,7 +269,7 @@ class PenyusutanService {
 
         const items = await db.select({
             item: penyusutanItems,
-            arsip: arsip,
+            arsip: ARSIP_KOLOM_DAFTAR,
         })
             .from(penyusutanItems)
             .innerJoin(arsip, eq(penyusutanItems.arsipId, arsip.id))

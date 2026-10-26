@@ -190,6 +190,70 @@ describe('paritas TS ↔ SQL', () => {
     }, 120_000);
 });
 
+// F1-3: bacaArsipSql adalah padanan SQL check('arsip').allowed. Generator
+// menyertakan kelas tak baku/tak dikenal dan grant yang TIDAK boleh membuka
+// apa pun (kedaluwarsa, unit lain, kelas lain, pending, dicabut).
+const KELAS_ARSIP = [null, '', ' ', 'biasa', 'Biasa/Terbuka', 'terbatas', 'TERBATAS', 'Rahasia', 'sangat_rahasia',
+    'Sangat Rahasia', 'rahasia negara', 'xyz'];
+
+describe('paritas bacaArsipSql ↔ check(arsip) (F1-3)', () => {
+    beforeAll(async () => {
+        const pengguna = Object.values(USER_ID).filter(id => id !== USER_ID.approver);
+        const rows: string[] = []; const approved: string[] = []; const lain: string[] = [];
+        for (let g = 1; g <= UNIT_REKAMAN.length * KELAS_ARSIP.length; g += 1) {
+            const id = `61000000-0000-4000-8000-${String(g).padStart(12, '0')}`;
+            const unit = UNIT_REKAMAN[g % UNIT_REKAMAN.length];
+            const kelas = KELAS_ARSIP[Math.floor(g / UNIT_REKAMAN.length) % KELAS_ARSIP.length];
+            rows.push(`('${id}','${unit}','masuk',2026,${literal(kelas)})`);
+            const norm = spec.normalizeSecurityClassification(kelas);
+            const wajib = (spec.KELAS_TERKENDALI as readonly string[]).includes(norm) ? norm : 'terbatas';
+            pengguna.forEach((user, u) => {
+                // 0 cocok, 1 kedaluwarsa, 2 unit lain, 3 kelas lain, 4 tanpa approved (pending/dicabut).
+                const varian = (g + u) % 5;
+                if (varian === 4) {
+                    lain.push(g % 2
+                        ? `('${user}','${user}','arsip','${id}','${unit}','${wajib}','Uji properti: grant arsip masih menunggu','view','pending',NULL,NULL,NULL,NULL,NULL,NULL,NULL)`
+                        : `('${user}','${user}','arsip','${id}','${unit}','${wajib}','Uji properti: grant arsip sudah dicabut','view','revoked','${USER_ID.approver}','2026-09-01T00:00:00Z','Uji properti terverifikasi','2099-01-01T00:00:00Z','${USER_ID.approver}','2026-09-10T00:00:00Z','Uji properti dicabut')`);
+                    return;
+                }
+                const unitGrant = varian === 2 ? (unit === 'ditjen' ? 'sesditjen' : 'ditjen') : unit;
+                const kelasGrant = varian === 3 ? (wajib === 'rahasia' ? 'terbatas' : 'rahasia') : wajib;
+                const [diputus, berakhir] = varian === 1
+                    ? ['2025-12-01T00:00:00Z', '2026-01-01T00:00:00Z']
+                    : ['2026-09-01T00:00:00Z', '2099-01-01T00:00:00Z'];
+                approved.push(`('${user}','${user}','arsip','${id}','${unitGrant}','${kelasGrant}','Uji properti paritas baca arsip','view','approved','${USER_ID.approver}','${diputus}','Uji properti terverifikasi','${berakhir}')`);
+            });
+        }
+        await database.exec(`
+            INSERT INTO arsip (id, unit_kerja_id, jenis_arsip, tahun, klasifikasi_keamanan) VALUES ${rows.join(',')};
+            INSERT INTO record_access_grants (requester_id, target_user_id, entity_type, entity_id, unit_kerja_id, required_classification, purpose, access_mode, status, decided_by, decided_at, decision_reason, expires_at)
+                VALUES ${approved.join(',')};
+            INSERT INTO record_access_grants (requester_id, target_user_id, entity_type, entity_id, unit_kerja_id, required_classification, purpose, access_mode, status, decided_by, decided_at, decision_reason, expires_at, revoked_by, revoked_at, revocation_reason)
+                VALUES ${lain.join(',')};
+        `);
+    }, 60_000);
+
+    it('bacaArsipSql identik dengan check(arsip).allowed untuk 120 pengguna acak', async () => {
+        const random = mulberry32(20261027);
+        const pick = <T,>(values: readonly T[]) => values[Math.floor(random() * values.length)];
+        const ids = spec.barisDari<{ id: string }>(await holder.db.execute(sql`SELECT id::text AS "id" FROM arsip`)).map(row => row.id);
+        let terkendaliTerbaca = 0;
+        for (let i = 0; i < 120; i += 1) {
+            const user = i === 0 ? undefined : { id: pick(ID_PENGGUNA), role: pick(ROLES), unitKerjaId: pick(UNIT_PENGGUNA) };
+            const terbaca = new Set(spec.barisDari<{ id: string }>(await holder.db.execute(
+                sql`SELECT a.id::text AS "id" FROM arsip a WHERE ${spec.bacaArsipSql(user as any, 'a')}`,
+            )).map(row => row.id));
+            for (const id of ids) {
+                const hasil = await access.recordAccessService.check(user as any, 'arsip', id);
+                expect(terbaca.has(id), JSON.stringify({ i, user, id })).toBe(hasil.allowed);
+                if (hasil.allowed && access.requiresExplicitAccessGrant(hasil.classification)) terkendaliTerbaca += 1;
+            }
+        }
+        // Generator benar-benar menguji cabang grant, bukan hanya kelas biasa.
+        expect(terkendaliTerbaca).toBeGreaterThan(0);
+    }, 180_000);
+});
+
 // Ruling controller pada counterexample 1: root cause adalah
 // normalizeSecurityClassification/klasifikasiNormSql yang tidak idempoten
 // untuk nilai murni whitespace (' ' -> '' pada satu kali, tapi '' dianggap

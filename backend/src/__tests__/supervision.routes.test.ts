@@ -67,14 +67,15 @@ describe('supervision route resource bounds', () => {
         expect(state.service.getUserActivityStats).toHaveBeenLastCalledWith(5);
     });
 
-    it('clamps compliance issue responses to one through 200', async () => {
+    it('clamps compliance issue responses to one through 200 within the role class scope', async () => {
+        const classes = ['biasa', 'terbatas', 'rahasia', 'sangat_rahasia'];
         await request(app).get('/supervision/stats/compliance/issues?limit=999999').expect(200);
-        expect(state.service.getComplianceIssues).toHaveBeenLastCalledWith(200);
+        expect(state.service.getComplianceIssues).toHaveBeenLastCalledWith(200, classes);
 
         await request(app).get('/supervision/stats/compliance/issues?limit=-2').expect(200);
-        expect(state.service.getComplianceIssues).toHaveBeenLastCalledWith(1);
+        expect(state.service.getComplianceIssues).toHaveBeenLastCalledWith(1, classes);
 
         await request(app).get('/supervision/stats/compliance/issues?limit=invalid').expect(200);
-        expect(state.service.getComplianceIssues).toHaveBeenLastCalledWith(50);
+        expect(state.service.getComplianceIssues).toHaveBeenLastCalledWith(50, classes);
     });
 });

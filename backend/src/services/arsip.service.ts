@@ -104,8 +104,14 @@ const SYSTEM_MANAGED_RETENTION_FIELDS = new Set([
     'tanggalKadaluarsa',
 ]);
 
-const ARCHIVE_WITH_RULE_SNAPSHOT = {
-    ...getTableColumns(arsip),
+// extractedText is document content (OCR text), not metadata. List read models
+// never carry it; only the detail read that passed check() returns it.
+const { extractedText: _extractedText, ...kolomDaftar } = getTableColumns(arsip);
+export const ARSIP_KOLOM_DAFTAR = kolomDaftar;
+export type ArsipDaftar = Omit<Arsip, 'extractedText'>;
+type ArsipBaris = ArsipDaftar & Partial<Pick<Arsip, 'extractedText'>>;
+
+const RULE_SNAPSHOT_SELECT = {
     ruleSnapshotId: arsipRuleSnapshots.id,
     ruleSnapshotArsipId: arsipRuleSnapshots.arsipId,
     ruleSnapshotStatus: arsipRuleSnapshots.status,
@@ -116,7 +122,10 @@ const ARCHIVE_WITH_RULE_SNAPSHOT = {
     ...RETENTION_GOVERNANCE_EVIDENCE_SELECT,
 };
 
-type ArchiveWithRuleSnapshot = Arsip & CanonicalRetentionEvidence & {
+const ARCHIVE_WITH_RULE_SNAPSHOT = { ...getTableColumns(arsip), ...RULE_SNAPSHOT_SELECT };
+const ARCHIVE_LIST_WITH_RULE_SNAPSHOT = { ...ARSIP_KOLOM_DAFTAR, ...RULE_SNAPSHOT_SELECT };
+
+type ArchiveWithRuleSnapshot = ArsipBaris & CanonicalRetentionEvidence & {
     ruleSnapshotId: string | null;
     ruleSnapshotArsipId: string | null;
     ruleSnapshotStatus: string | null;
@@ -126,7 +135,7 @@ type ArchiveWithRuleSnapshot = Arsip & CanonicalRetentionEvidence & {
     ruleSnapshotSha256: string | null;
 };
 
-function withoutRuleSnapshot(row: ArchiveWithRuleSnapshot): Arsip {
+function withoutRuleSnapshot(row: ArchiveWithRuleSnapshot): ArsipBaris {
     const {
         ruleSnapshotId: _ruleSnapshotId,
         ruleSnapshotArsipId: _ruleSnapshotArsipId,
@@ -156,7 +165,7 @@ function withoutRuleSnapshot(row: ArchiveWithRuleSnapshot): Arsip {
         hasActiveAppraisalCase: _hasActiveAppraisalCase,
         ...archive
     } = row;
-    return archive as Arsip;
+    return archive;
 }
 
 function dispositionLabel(code: string | null | undefined): Arsip['hasilAkhir'] {
@@ -268,7 +277,7 @@ export class ArsipService {
             .where(and(...conditions));
 
         const rows = await db
-            .select(ARCHIVE_WITH_RULE_SNAPSHOT)
+            .select(ARCHIVE_LIST_WITH_RULE_SNAPSHOT)
             .from(arsip)
             .leftJoin(arsipRuleSnapshots, and(
                 eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
@@ -954,7 +963,7 @@ export class ArsipService {
     // Find arsip by source surat id
     async findBySourceSurat(sourceSuratId: string) {
         const [result] = await db
-            .select(ARCHIVE_WITH_RULE_SNAPSHOT)
+            .select(ARCHIVE_LIST_WITH_RULE_SNAPSHOT)
             .from(arsip)
             .leftJoin(arsipRuleSnapshots, and(
                 eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
@@ -1094,7 +1103,7 @@ export class ArsipService {
         futureDate.setDate(today.getDate() + daysAhead);
 
         const rows = await db
-            .select(ARCHIVE_WITH_RULE_SNAPSHOT)
+            .select(ARCHIVE_LIST_WITH_RULE_SNAPSHOT)
             .from(arsip)
             .leftJoin(arsipRuleSnapshots, and(
                 eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
@@ -1135,7 +1144,7 @@ export class ArsipService {
 
     async getLegalHolds(unitKerjaId: string, securityClassifications?: string[] | null) {
         return db
-            .select()
+            .select(ARSIP_KOLOM_DAFTAR)
             .from(arsip)
             .where(and(
                 eq(arsip.unitKerjaId, unitKerjaId),
@@ -1345,7 +1354,7 @@ export class ArsipService {
         // Keep held/missing-trigger counts visible, but never mix them into actionable
         // lifecycle collections.
         const rows = await db
-            .select(ARCHIVE_WITH_RULE_SNAPSHOT)
+            .select(ARCHIVE_LIST_WITH_RULE_SNAPSHOT)
             .from(arsip)
             .leftJoin(arsipRuleSnapshots, and(
                 eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
@@ -1361,10 +1370,10 @@ export class ArsipService {
             ));
 
         const notifications = {
-            willBeInactive: [] as Arsip[],      // Akan memasuki masa inaktif
-            alreadyInactive: [] as Arsip[],     // Sudah inaktif
-            willExpire: [] as Arsip[],          // Akan kadaluarsa (30 hari)
-            expired: [] as Arsip[],             // Sudah kadaluarsa, perlu action
+            willBeInactive: [] as ArsipDaftar[],      // Akan memasuki masa inaktif
+            alreadyInactive: [] as ArsipDaftar[],     // Sudah inaktif
+            willExpire: [] as ArsipDaftar[],          // Akan kadaluarsa (30 hari)
+            expired: [] as ArsipDaftar[],             // Sudah kadaluarsa, perlu action
         };
         let held = 0;
         let missingTrigger = 0;
@@ -1465,7 +1474,7 @@ export class ArsipService {
             archiveSecurityCondition(securityClassifications),
         ];
         const rows = await db
-            .select(ARCHIVE_WITH_RULE_SNAPSHOT)
+            .select(ARCHIVE_LIST_WITH_RULE_SNAPSHOT)
             .from(arsip)
             .leftJoin(arsipRuleSnapshots, and(
                 eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
@@ -1579,7 +1588,7 @@ export class ArsipService {
             ? [...new Set(archiveIds)]
             : undefined;
         const rows = await db
-            .select(ARCHIVE_WITH_RULE_SNAPSHOT)
+            .select(ARCHIVE_LIST_WITH_RULE_SNAPSHOT)
             .from(arsip)
             .leftJoin(arsipRuleSnapshots, and(
                 eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),

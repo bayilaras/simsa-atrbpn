@@ -20,6 +20,8 @@ const app = express();
 app.use('/arsip', router);
 app.use((error: any, _req: any, res: any, _next: any) => res.status(error.statusCode || 500).json({ error: error.message }));
 const id = '20000000-0000-4000-8000-000000000001';
+// Pencarian isi OCR bergerbang check('arsip'), jadi rute meneruskan pengguna.
+const user = { id: '10000000-0000-4000-8000-000000000001', role: 'admin_dirjen', unitKerjaId: 'ditjen' };
 beforeEach(() => {
     vi.clearAllMocks();
     mocks.search.mockResolvedValue({ data: [], total: 0 });
@@ -58,7 +60,7 @@ describe('bounded archive auxiliary search queries', () => {
     });
     it('parses bounded fulltext values and preserves authenticated unit and classification scope', async () => {
         await request(app).get('/arsip/search/fulltext').query({ q: '  arsip tanah  ', unitKerjaId: 'sesditjen', tahun: '2026', page: '2', limit: '100', jenisArsip: 'masuk' }).expect(200);
-        expect(mocks.search).toHaveBeenCalledWith({ query: 'arsip tanah', unitKerjaId: 'ditjen', tahun: 2026, page: 2, limit: 100, jenisArsip: 'masuk', securityClassifications: ['biasa', 'terbatas'] });
+        expect(mocks.search).toHaveBeenCalledWith({ query: 'arsip tanah', unitKerjaId: 'ditjen', tahun: 2026, page: 2, limit: 100, jenisArsip: 'masuk', securityClassifications: ['biasa', 'terbatas'], user });
     });
     it('retains endpoint-specific default limits', async () => {
         await request(app).get('/arsip/search/fulltext').query({ q: 'arsip' }).expect(200);
@@ -67,7 +69,7 @@ describe('bounded archive auxiliary search queries', () => {
         await request(app).get(`/arsip/${id}/related`).expect(200);
         expect(mocks.search).toHaveBeenCalledWith(expect.objectContaining({ page: 1, limit: 20 }));
         expect(mocks.getSuggestions).toHaveBeenCalledWith('arsip', 'ditjen', 10, ['biasa', 'terbatas']);
-        expect(mocks.searchByKeywords).toHaveBeenCalledWith(['arsip', 'tanah'], 'ditjen', { limit: 20, offset: 0, securityClassifications: ['biasa', 'terbatas'] });
-        expect(mocks.getRelatedDocuments).toHaveBeenCalledWith(id, 'ditjen', 5, ['biasa', 'terbatas']);
+        expect(mocks.searchByKeywords).toHaveBeenCalledWith(['arsip', 'tanah'], 'ditjen', { limit: 20, offset: 0, securityClassifications: ['biasa', 'terbatas'], user });
+        expect(mocks.getRelatedDocuments).toHaveBeenCalledWith(id, 'ditjen', 5, ['biasa', 'terbatas'], user);
     });
 });
