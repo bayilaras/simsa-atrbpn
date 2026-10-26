@@ -193,6 +193,7 @@ router.get('/lending', async (req: AuthRequest, res: Response) => {
             tanggalSampai: tanggalSampai as string | undefined,
             page: page ? parseInt(page as string) : 1,
             limit: limit ? parseInt(limit as string) : 50,
+            securityClassifications: allowedSecurityClassifications(req.user),
         };
 
         const report = await reportService.getLendingReport(filters);

@@ -12,6 +12,8 @@ import {
     retentionTriggerVerifications,
 } from '../db/schema';
 import { eq, and, desc, sql, gte, lte, or, isNull, inArray } from 'drizzle-orm';
+import { klasifikasiInSql } from './access/visibility-spec';
+import { archiveLendingService } from './archive-lending.service';
 import {
     archiveRuleAssignmentService,
     CURRENT_APPRAISAL_CASE_JOIN,
@@ -52,6 +54,7 @@ export interface LendingReportFilters {
     tanggalSampai?: string;
     page?: number;
     limit?: number;
+    securityClassifications?: string[];
 }
 
 class ReportService {
@@ -123,8 +126,8 @@ class ReportService {
     }
 
     private outgoingClassificationCondition(classes: string[] | null | undefined) {
-        if (classes === undefined || classes === null || classes.includes('terbatas')) return undefined;
-        return sql`false`;
+        // Match the surat-keluar catalog policy: only legacy NULL rows are Terbatas.
+        return klasifikasiInSql(sql`coalesce(${suratKeluar.klasifikasiKeamanan}, 'terbatas')`, classes);
     }
 
     // ==================== SURAT MASUK REPORTS ====================
@@ -594,27 +597,14 @@ class ReportService {
     }
 
     // ==================== LENDING REPORTS ====================
-    // archive_lending has no unit column: an entry belongs to a unit through the
-    // arsip it borrows, or through the storage location for per-box lending.
-    private lendingUnitCondition(unitKerjaId?: string) {
-        if (!unitKerjaId) return undefined;
-
-        return or(
-            sql`${archiveLending.arsipId} IN (SELECT id FROM arsip WHERE unit_kerja_id = ${unitKerjaId})`,
-            sql`${archiveLending.storageLocationId} IN (SELECT id FROM storage_locations WHERE unit_kerja_id = ${unitKerjaId})`
-        );
-    }
-
+    // Reuse the lending catalog predicate: unit ownership per lending_type and
+    // the borrowed archive's security class, applied before counting/paging.
     async getLendingReport(filters: LendingReportFilters) {
-        const { unitKerjaId, status = 'all', tanggalDari, tanggalSampai, page = 1, limit = 50 } = filters;
+        const { unitKerjaId, status = 'all', tanggalDari, tanggalSampai, page = 1, limit = 50, securityClassifications = [] } = filters;
         const offset = (page - 1) * limit;
 
         const conditions: any[] = [];
 
-        const unitCondition = this.lendingUnitCondition(unitKerjaId);
-        if (unitCondition) {
-            conditions.push(unitCondition);
-        }
         if (status !== 'all') {
             conditions.push(eq(archiveLending.status, status));
         }
@@ -625,7 +615,7 @@ class ReportService {
             conditions.push(lte(archiveLending.borrowDate, tanggalSampai));
         }
 
-        const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+        const whereClause = archiveLendingService.readableWhere(unitKerjaId ?? null, securityClassifications, ...conditions);
 
         const countResult = await db
             .select({ count: sql<number>`count(*)::int` })
@@ -651,7 +641,7 @@ class ReportService {
             .limit(limit)
             .offset(offset);
 
-        const stats = await this.getLendingStats(unitKerjaId);
+        const stats = await this.getLendingStats(unitKerjaId, securityClassifications);
 
         return {
             data,
@@ -665,9 +655,10 @@ class ReportService {
         };
     }
 
-    async getLendingStats(unitKerjaId?: string) {
+    async getLendingStats(unitKerjaId?: string, securityClassifications: string[] = []) {
         const now = new Date().toISOString().split('T')[0];
-        const unitCondition = this.lendingUnitCondition(unitKerjaId);
+        const readable = (...conditions: any[]) =>
+            archiveLendingService.readableWhere(unitKerjaId ?? null, securityClassifications, ...conditions);
 
         const stats = await db
             .select({
@@ -677,7 +668,7 @@ class ReportService {
                 overdue: sql<number>`count(*) filter (where ${archiveLending.status} = 'borrowed' and ${archiveLending.dueDate} < ${now})::int`,
             })
             .from(archiveLending)
-            .where(unitCondition);
+            .where(readable());
 
         // Recent lending activity by month
         const currentYear = new Date().getFullYear();
@@ -687,10 +678,7 @@ class ReportService {
                 count: sql<number>`count(*)::int`,
             })
             .from(archiveLending)
-            .where(and(
-                sql`extract(year from ${archiveLending.borrowDate}) = ${currentYear}`,
-                unitCondition
-            ))
+            .where(readable(sql`extract(year from ${archiveLending.borrowDate}) = ${currentYear}`))
             .groupBy(sql`extract(month from ${archiveLending.borrowDate})`)
             .orderBy(sql`extract(month from ${archiveLending.borrowDate})`);
 
@@ -717,7 +705,7 @@ class ReportService {
         const suratMasukStats = await this.getSuratMasukStats(unitKerjaId, currentYear, securityClassifications);
         const suratKeluarStats = await this.getSuratKeluarStats(unitKerjaId, currentYear, securityClassifications);
         const arsipStats = await this.getArsipStats(unitKerjaId, currentYear, securityClassifications);
-        const lendingStats = await this.getLendingStats(unitKerjaId);
+        const lendingStats = await this.getLendingStats(unitKerjaId, securityClassifications ?? []);
 
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
         const combinedMonthly = monthNames.map((month, index) => ({

@@ -49,7 +49,7 @@ export class ArchiveLendingService {
         return allConditions.length > 0 ? and(...allConditions) : undefined;
     }
 
-    private readableWhere(unitKerjaId: RecordUnitScope, securityClassifications: string[], ...conditions: any[]) {
+    readableWhere(unitKerjaId: RecordUnitScope, securityClassifications: string[], ...conditions: any[]) {
         // Match the archive catalog's role policy before filtering, counting,
         // or paging. Redacting the join alone would still expose a protected
         // archive's existence through search, borrower names and totals.
