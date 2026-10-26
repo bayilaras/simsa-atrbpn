@@ -150,7 +150,10 @@ describe('record route unit scoping', () => {
     it('keeps admin_unit list/detail/create requests inside its assigned unit', async () => {
         Object.assign(mocks.user, { role: 'admin_unit', unitKerjaId: 'unit-a' });
         await request(app).get('/dosir').expect(200);
-        expect(mocks.dosir.getAll).toHaveBeenCalledWith(expect.objectContaining({ unitKerjaId: 'unit-a' }));
+        expect(mocks.dosir.getAll).toHaveBeenCalledWith(expect.objectContaining({
+            unitKerjaId: 'unit-a',
+            securityClassifications: ['biasa'],
+        }));
         await request(app).get('/surat-keluar/record-1?unitKerjaId=unit-b').expect(200);
         expect(mocks.suratKeluar.findById).toHaveBeenCalledWith('record-1', 'unit-a');
         await request(app).post('/dosir').send({ judul: 'Own unit', unitKerjaId: 'unit-b' }).expect(201);

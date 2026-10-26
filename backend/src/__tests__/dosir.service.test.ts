@@ -132,6 +132,16 @@ describe('DosirService', () => {
             expect(result?.suratKeluar).toHaveLength(1);
         });
 
+        it('filters linked surat keluar by class instead of skipping it for staff', async () => {
+            enqueue([{ id: 'd1', unitKerjaId: 'u1' }]);
+            enqueue([]);
+            enqueue([{ link: { addedAt: 'now', notes: null }, surat: { id: 'sk1' } }]);
+
+            const result = await dosirService.getById('d1', 'u1', ['biasa']);
+            expect(result?.suratKeluar).toHaveLength(1);
+            expect(whereCalls).toHaveLength(3);
+        });
+
         it('should return null before loading links when the dosir is inaccessible', async () => {
             enqueue([]);
             await expect(dosirService.getById('d1', 'u2')).resolves.toBeNull();
