@@ -256,7 +256,7 @@ export class OCRService {
                     pdfDoc.getPage(pageNum),
                     remainingMs(deadline, 5_000),
                     'Waktu ekstraksi teks PDF habis',
-                    () => pdfDoc?.destroy(),
+                    () => loadingTask?.destroy(),
                     signal,
                 );
                 try {
@@ -264,7 +264,7 @@ export class OCRService {
                         page.getTextContent(),
                         remainingMs(deadline, 5_000),
                         'Waktu ekstraksi teks PDF habis',
-                        () => pdfDoc?.destroy(),
+                        () => loadingTask?.destroy(),
                         signal,
                     );
                     const pageText = textContent.items
@@ -288,8 +288,9 @@ export class OCRService {
             throw error;
         } finally {
             try {
-                if (pdfDoc) await pdfDoc.destroy();
-                else if (loadingTask) await loadingTask.destroy();
+                // PDF.js 6 removed PDFDocumentProxy.destroy(); the loading
+                // task owns the document and its worker in every version.
+                await loadingTask?.destroy();
             } catch (error) {
                 log.warn({ err: error }, 'Failed to release PDF parser resources');
             }
@@ -385,7 +386,7 @@ export class OCRService {
                     pdfDoc.getPage(pageNum),
                     remainingMs(deadline, 5_000),
                     'Waktu pemrosesan PDF scan habis',
-                    () => pdfDoc?.destroy(),
+                    () => loadingTask?.destroy(),
                     signal,
                 );
                 try {
@@ -458,8 +459,7 @@ export class OCRService {
         } finally {
             await this.terminateWorker(worker);
             try {
-                if (pdfDoc) await pdfDoc.destroy();
-                else if (loadingTask) await loadingTask.destroy();
+                await loadingTask?.destroy();
             } catch (error) {
                 log.warn({ err: error }, 'Failed to release scanned PDF resources');
             }

@@ -46,11 +46,12 @@ export async function verifyPdfRuntime({ directory = projectDirectory, vercelCon
     }
 
     const pdfjs = await import(pathToFileURL(pdfEntry).href);
-    const document = await pdfjs.getDocument({ data: onePagePdf(), useWorkerFetch: false }).promise;
+    const loadingTask = pdfjs.getDocument({ data: onePagePdf(), useWorkerFetch: false });
     try {
+        const document = await loadingTask.promise;
         if (document.numPages !== 1) throw new Error('PDF runtime fixture page count did not match');
     } finally {
-        await document.destroy();
+        await loadingTask.destroy();
     }
     return { pageCount: 1, workerIncluded: true, nativeCanvasIncluded: true };
 }

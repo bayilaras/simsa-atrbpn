@@ -691,12 +691,13 @@ export function buildRegulatoryDiff(
 async function pdfPageCount(buffer: Buffer): Promise<number> {
     try {
         const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-        const document = await pdfjs.getDocument({
+        const loadingTask = pdfjs.getDocument({
             data: new Uint8Array(buffer),
             useWorkerFetch: false,
-        }).promise;
+        });
+        const document = await loadingTask.promise;
         const count = document.numPages;
-        await document.destroy();
+        await loadingTask.destroy();
         return count;
     } catch (error) {
         const name = error instanceof Error ? error.name : 'UnknownError';
