@@ -56,7 +56,8 @@ export const sessions = pgTable('sessions', {
 export const accounts = pgTable('accounts', {
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id').notNull().references(() => users.id),
-    issuer: text('issuer').notNull(),
+    // Ditulis Better Auth 1.7.0–1.7.2 dan kode akun lokal; 1.7.3+ tidak (0052).
+    issuer: text('issuer'),
     accountId: text('account_id').notNull(),
     providerId: text('provider_id').notNull(),
     accessToken: text('access_token'),
@@ -69,7 +70,7 @@ export const accounts = pgTable('accounts', {
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => [
-    uniqueIndex('accounts_issuer_account_id_unique').on(table.issuer, table.accountId),
+    uniqueIndex('accounts_provider_id_account_id_unique').on(table.providerId, table.accountId),
 ]);
 
 export const verifications = pgTable('verifications', {
