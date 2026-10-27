@@ -172,6 +172,26 @@ describe('backend application profile', () => {
         expect(vercelConfig.headers).toBeUndefined();
     });
 
+    it('keeps every API response out of the browser HTTP cache', async () => {
+        const responses = await Promise.all([
+            request(app).get('/api/surat-masuk'),
+            request(app).get('/api/arsip/00000000-0000-4000-8000-000000000001'),
+        ]);
+        for (const response of responses) {
+            expect(response.headers['cache-control']).toBe('private, no-store, max-age=0');
+            expect(response.headers.pragma).toBe('no-cache');
+        }
+        // A route with its own header keeps it; every policy in use is no-store.
+        const capabilities = await request(app).get('/api/capabilities').expect(200);
+        expect(capabilities.headers['cache-control']).toBe('no-store');
+    });
+
+    it('asks the browser to drop cached responses on sign-out', async () => {
+        const response = await request(app).post('/api/auth/sign-out');
+        expect(response.headers['clear-site-data']).toBe('"cache"');
+        expect(response.headers['cache-control']).toMatch(/no-store/);
+    });
+
     it('preserves malformed JSON as a client error and returns a traceable request ID', async () => {
         const response = await request(app).post('/api/surat-masuk')
             .set('Content-Type', 'application/json').send('{"password":"secret-input",').expect(400);
