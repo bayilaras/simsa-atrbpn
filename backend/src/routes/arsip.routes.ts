@@ -16,13 +16,17 @@ import {
 } from '../validators/arsip-search.schemas';
 import { fullTextSearchService } from '../services/fulltext-search.service';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
+import { boundedPositiveInteger } from '../utils/bounded-positive-integer.js';
 import {
     allowedSecurityClassifications,
     isAllowedForClassification,
     recordAccessService,
 } from '../services/record-access.service.js';
+import { normalizeSecurityClassification } from '../services/access/visibility-spec.js';
 
 const router = Router();
+
+const MAX_EXPIRING_DAYS = 365;
 
 router.use(authMiddleware);
 
@@ -57,7 +61,6 @@ router.get('/', validateQuery(queryArsipSchema), async (req: AuthRequest, res, n
 router.get('/expiring', async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
-        const { daysAhead } = req.query;
 
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId is required' });
@@ -65,7 +68,7 @@ router.get('/expiring', async (req: AuthRequest, res, next) => {
 
         const data = await arsipService.getExpiring(
             unitKerjaId as string,
-            daysAhead ? Number(daysAhead) : 30,
+            boundedPositiveInteger(req.query.daysAhead, 30, MAX_EXPIRING_DAYS),
             allowedSecurityClassifications(req.user),
         );
 
@@ -116,6 +119,7 @@ router.get('/search/fulltext', validateQuery(archiveFulltextQuerySchema), async 
             jenisArsip,
             tahun,
             securityClassifications: allowedSecurityClassifications(req.user),
+            user: req.user,
             page,
             limit,
         });
@@ -166,6 +170,7 @@ router.get('/search/keywords', validateQuery(archiveKeywordsQuerySchema), async 
                 limit,
                 offset: (page - 1) * limit,
                 securityClassifications: allowedSecurityClassifications(req.user),
+                user: req.user,
             }
         );
 
@@ -202,6 +207,7 @@ router.get('/:id/related', validateIdParam(), validateQuery(archiveRelatedQueryS
             unitKerjaId,
             limit,
             allowedSecurityClassifications(req.user),
+            req.user,
         );
 
         res.json({ success: true, data: related });
@@ -260,9 +266,13 @@ router.put('/:id', validateIdParam(),
             if (!access.exists || !access.mutable) {
                 return res.status(404).json({ error: 'Arsip not found' });
             }
+            // Mengirim ulang kelas yang sudah melekat bukan kenaikan; plafon peran
+            // hanya berlaku bila kelasnya berubah.
             if (
                 req.body.klasifikasiKeamanan !== undefined
                 && !isAllowedForClassification(req.user, req.body.klasifikasiKeamanan)
+                && normalizeSecurityClassification(req.body.klasifikasiKeamanan)
+                    !== normalizeSecurityClassification(existing.klasifikasiKeamanan)
             ) {
                 return res.status(403).json({ error: 'Klasifikasi keamanan melebihi kewenangan pengguna' });
             }

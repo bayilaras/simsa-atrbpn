@@ -14,6 +14,7 @@ import {
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import { allowedSecurityClassifications } from '../services/record-access.service.js';
 import { sanitizeSuratRecord } from '../utils/sanitize-surat-response.js';
+import { hasPostgresErrorCode } from '../utils/postgres-errors.js';
 
 const log = createLogger('DosirRoutes');
 
@@ -94,6 +95,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
             search: search as string,
             limit: limit ? parseInt(limit as string) : 50,
             offset: offset ? parseInt(offset as string) : 0,
+            securityClassifications: allowedSecurityClassifications(req.user),
         });
 
         res.json({ success: true, data });
@@ -469,6 +471,7 @@ router.post('/:id/surat', canWriteMiddleware(), validateBody(linkSuratToDosirSch
                 suratId,
                 notes,
                 resolveRecordUnitScope(req),
+                allowedSecurityClassifications(req.user),
                 { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
             );
         } else if (type === 'keluar') {
@@ -477,6 +480,7 @@ router.post('/:id/surat', canWriteMiddleware(), validateBody(linkSuratToDosirSch
                 suratId,
                 notes,
                 resolveRecordUnitScope(req),
+                allowedSecurityClassifications(req.user),
                 { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
             );
         } else {
@@ -491,7 +495,7 @@ router.post('/:id/surat', canWriteMiddleware(), validateBody(linkSuratToDosirSch
 
         res.status(201).json({ success: true, data: link });
     } catch (error: any) {
-        if (error.code === '23505') { // Duplicate key
+        if (hasPostgresErrorCode(error, '23505')) { // Duplicate key
             res.status(409).json({ success: false, error: 'Surat already linked to this dosir' });
             return;
         }
@@ -539,6 +543,7 @@ router.delete('/:id/surat/:type/:suratId', canWriteMiddleware(), async (req: Aut
                 id as string,
                 suratId as string,
                 resolveRecordUnitScope(req),
+                allowedSecurityClassifications(req.user),
                 { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
             );
         } else if (type === 'keluar') {
@@ -546,6 +551,7 @@ router.delete('/:id/surat/:type/:suratId', canWriteMiddleware(), async (req: Aut
                 id as string,
                 suratId as string,
                 resolveRecordUnitScope(req),
+                allowedSecurityClassifications(req.user),
                 { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
             );
         } else {

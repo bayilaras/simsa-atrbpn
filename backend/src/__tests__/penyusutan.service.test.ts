@@ -64,6 +64,7 @@ vi.mock('../services/file-attachment.service', () => ({ fileAttachmentService: {
 // Fresh DB authority is exercised independently by the PGlite integration suite.
 vi.mock('../services/penyusutan-authority', () => ({ lockDispositionActor: async (_tx: any, actor: any) => actor }));
 vi.mock('../services/arsip.service', () => ({
+    ARSIP_KOLOM_DAFTAR: {},
     arsipService: {
         getDisposalCandidates: vi.fn().mockResolvedValue({ data: [], pagination: { total: 0 } }),
         getArchiveStatus: vi.fn().mockReturnValue('kadaluarsa'),

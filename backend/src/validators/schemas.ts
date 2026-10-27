@@ -357,7 +357,8 @@ export const archiveRegistrationSchema = z.object({
     kurunWaktu: z.string().trim().min(1, 'Kurun waktu wajib diisi').max(100),
     jraKode: z.string().trim().max(50).optional(),
     jraItemId: z.coerce.number().int().positive().optional(),
-    klasifikasiKeamanan: z.enum(['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']),
+    // Tanpa nilai, server memakai kelas surat sumber; nilai di bawahnya ditolak.
+    klasifikasiKeamanan: z.enum(['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']).optional(),
     personInCharge: z.string().trim().max(255).optional(),
     keterangan: z.string().trim().max(4000).optional(),
     retentionTriggerType: retentionTriggerTypeSchema.optional(),

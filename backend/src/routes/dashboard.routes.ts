@@ -2,9 +2,13 @@ import { Router } from 'express';
 import { dashboardService } from '../services/dashboard.service.js';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware.js';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
+import { boundedPositiveInteger } from '../utils/bounded-positive-integer.js';
 import { allowedSecurityClassifications } from '../services/record-access.service.js';
 
 const router = Router();
+
+const MAX_RECENT_LIMIT = 50;
+const MAX_EXPIRING_DAYS = 365;
 
 router.use(authMiddleware);
 
@@ -30,11 +34,10 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
 router.get('/recent', async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = resolveUnitKerjaId(req);
-        const { limit } = req.query;
 
         const activity = await dashboardService.getRecentActivity(
             unitKerjaId,
-            limit ? Number(limit) : 10,
+            boundedPositiveInteger(req.query.limit, 10, MAX_RECENT_LIMIT),
             allowedSecurityClassifications(req.user),
         );
 
@@ -48,11 +51,10 @@ router.get('/recent', async (req: AuthRequest, res, next) => {
 router.get('/expiring', async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = resolveUnitKerjaId(req);
-        const { daysAhead } = req.query;
 
         const expiring = await dashboardService.getExpiringArchives(
             unitKerjaId,
-            daysAhead ? Number(daysAhead) : 30,
+            boundedPositiveInteger(req.query.daysAhead, 30, MAX_EXPIRING_DAYS),
             allowedSecurityClassifications(req.user),
         );
 

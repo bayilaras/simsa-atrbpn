@@ -178,7 +178,7 @@ export class LayananArsipService {
         return await db.query.layananArsip.findFirst({
             where: this.accessibleRequestWhere(id, access),
             with: {
-                arsip: true,
+                arsip: { columns: { extractedText: false } },
                 pemohon: true,
                 penyetuju: true,
             }

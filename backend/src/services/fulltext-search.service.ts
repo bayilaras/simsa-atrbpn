@@ -1,6 +1,8 @@
 import { db } from '../config/database';
 import { arsip } from '../db/schema';
-import { and, or, ilike, eq, desc, sql, inArray } from 'drizzle-orm';
+import { and, or, ilike, eq, desc, sql, inArray, type AnyColumn } from 'drizzle-orm';
+import { bacaArsipSql, type PenggunaVisibilitas } from './access/visibility-spec';
+import { escapeLike, LIKE_ESCAPE } from '../utils/nomor-surat';
 
 export interface FullTextSearchParams {
     query: string;
@@ -15,6 +17,8 @@ export interface FullTextSearchParams {
     sortBy?: 'relevance' | 'date' | 'nomor';
     /** null means all classes (super_admin); [] fails closed. */
     securityClassifications?: string[] | null;
+    /** OCR content is matched and quoted only where check('arsip') would allow reading. */
+    user?: PenggunaVisibilitas;
 }
 
 export interface FullTextSearchResult {
@@ -48,6 +52,10 @@ class FullTextSearchService {
             sql<string>`lower(coalesce(${arsip.klasifikasiKeamanan}, 'biasa'))`,
             classes,
         );
+    }
+
+    private contains(column: AnyColumn, value: string) {
+        return sql`${column} ILIKE ${`%${escapeLike(value)}%`} ${LIKE_ESCAPE}`;
     }
 
     // Extract and clean search terms from query
@@ -92,19 +100,19 @@ class FullTextSearchService {
 
         // Extract search terms
         const searchTerms = this.extractSearchTerms(query);
-        const searchPattern = `%${query}%`;
+        const bacaIsi = bacaArsipSql(params.user, 'arsip');
 
         // Build search conditions for multiple fields
         const searchConditions = or(
-            ilike(arsip.nomorBerkas, searchPattern),
-            ilike(arsip.uraianBerkas, searchPattern),
-            ilike(arsip.nomorSuratOriginal, searchPattern),
-            ilike(arsip.perihalOriginal, searchPattern),
-            ilike(arsip.extractedText, searchPattern),
-            ilike(arsip.keterangan, searchPattern),
+            this.contains(arsip.nomorBerkas, query),
+            this.contains(arsip.uraianBerkas, query),
+            this.contains(arsip.nomorSuratOriginal, query),
+            this.contains(arsip.perihalOriginal, query),
+            and(this.contains(arsip.extractedText, query), bacaIsi),
+            this.contains(arsip.keterangan, query),
             // Search in JRA fields
-            ilike(arsip.jraKode, searchPattern),
-            ilike(arsip.jraUraian, searchPattern)
+            this.contains(arsip.jraKode, query),
+            this.contains(arsip.jraUraian, query)
         );
 
         // Build filter conditions
@@ -142,7 +150,7 @@ class FullTextSearchService {
                 tanggalArsip: arsip.tanggalArsip,
                 tahun: arsip.tahun,
                 jenisArsip: arsip.jenisArsip,
-                extractedText: arsip.extractedText,
+                extractedText: sql<string | null>`CASE WHEN ${bacaIsi} THEN ${arsip.extractedText} END`,
                 keterangan: arsip.keterangan,
                 jraKode: arsip.jraKode,
                 jraUraian: arsip.jraUraian
@@ -390,18 +398,20 @@ class FullTextSearchService {
             limit?: number;
             offset?: number;
             securityClassifications?: string[] | null;
+            user?: PenggunaVisibilitas;
         }
     ): Promise<{ data: any[]; total: number }> {
         const { limit = 20, offset = 0 } = options || {};
 
         // Build OR conditions for each keyword
         const keywordConditions = keywords.map(keyword =>
-            ilike(arsip.extractedText, `%${keyword}%`)
+            this.contains(arsip.extractedText, keyword)
         );
 
         const filterConditions = [
             eq(arsip.unitKerjaId, unitKerjaId),
-            or(...keywordConditions)
+            or(...keywordConditions),
+            bacaArsipSql(options?.user, 'arsip'),
         ];
         const classificationCondition = this.classificationCondition(options?.securityClassifications);
         if (classificationCondition) filterConditions.push(classificationCondition);
@@ -440,8 +450,10 @@ class FullTextSearchService {
         unitKerjaId: string,
         limit: number = 5,
         securityClassifications?: string[] | null,
+        user?: PenggunaVisibilitas,
     ): Promise<any[]> {
         const classificationCondition = this.classificationCondition(securityClassifications);
+        const bacaIsi = bacaArsipSql(user, 'arsip');
         // First get the source document's text
         const sourceDoc = await db
             .select({ extractedText: arsip.extractedText })
@@ -450,6 +462,7 @@ class FullTextSearchService {
                 eq(arsip.id, arsipId),
                 eq(arsip.unitKerjaId, unitKerjaId),
                 ...(classificationCondition ? [classificationCondition] : []),
+                bacaIsi,
             ))
             .limit(1);
 
@@ -466,7 +479,7 @@ class FullTextSearchService {
 
         // Find documents with similar keywords
         const keywordConditions = topKeywords.map(keyword =>
-            ilike(arsip.extractedText, `%${keyword}%`)
+            this.contains(arsip.extractedText, keyword)
         );
 
         const results = await db
@@ -482,7 +495,8 @@ class FullTextSearchService {
                 eq(arsip.unitKerjaId, unitKerjaId),
                 ...(classificationCondition ? [classificationCondition] : []),
                 sql`${arsip.id} != ${arsipId}`, // Exclude source document
-                or(...keywordConditions)
+                or(...keywordConditions),
+                bacaIsi,
             ))
             .orderBy(desc(arsip.createdAt))
             .limit(limit);

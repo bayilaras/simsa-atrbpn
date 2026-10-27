@@ -1,6 +1,8 @@
 import { db } from '../config/database';
 import { suratMasuk, suratKeluar, arsip, dosir } from '../db/schema';
 import { sql, or, ilike, desc, and, eq, isNull, inArray } from 'drizzle-orm';
+import { bacaArsipSql, type PenggunaVisibilitas } from './access/visibility-spec';
+import { escapeLike, LIKE_ESCAPE } from '../utils/nomor-surat';
 
 export interface GlobalSearchParams {
     query: string;
@@ -161,25 +163,28 @@ class GlobalSearchService {
     }
 
     /**
-     * Search in file content (OCR extracted text)
+     * Search in file content (OCR extracted text). Content is document data, so
+     * only archives the user may read under check('arsip') are matched.
      */
     async searchByContent(
         query: string,
         unitKerjaId?: string,
         securityClassifications?: string[] | null,
+        user?: PenggunaVisibilitas,
     ): Promise<GlobalSearchResult[]> {
         const searchTerms = this.extractSearchTerms(query);
         if (searchTerms.length === 0) return [];
 
-        const likePattern = `%${searchTerms.join('%')}%`;
+        const likePattern = `%${searchTerms.map(escapeLike).join('%')}%`;
 
         const arsipResults = await db
             .select()
             .from(arsip)
             .where(and(
-                ilike(arsip.extractedText, likePattern),
+                sql`${arsip.extractedText} ILIKE ${likePattern} ${LIKE_ESCAPE}`,
                 unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined,
                 this.arsipClassificationCondition(securityClassifications),
+                bacaArsipSql(user, 'arsip'),
             ))
             .limit(50);
 

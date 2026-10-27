@@ -1,6 +1,7 @@
 import { db } from '../config/database';
 import { dosir, dosirSuratMasuk, dosirSuratKeluar, suratMasuk, suratKeluar, Dosir } from '../db/schema';
-import { eq, and, desc, asc, ilike, or, sql, inArray } from 'drizzle-orm';
+import { eq, and, desc, asc, ilike, or, sql, inArray, exists } from 'drizzle-orm';
+import { klasifikasiInSql } from './access/visibility-spec.js';
 import {
     scopedRecordByIdWhere,
     type RecordUnitScope,
@@ -35,22 +36,25 @@ interface DosirFilters {
     search?: string;
     limit?: number;
     offset?: number;
+    securityClassifications?: string[] | null;
 }
 
-function incomingSecurityCondition(classes: string[] | null | undefined) {
-    if (classes === undefined || classes === null) return undefined;
-    if (classes.length === 0) return sql`false`;
-    const normalized = sql<string>`CASE
-        WHEN lower(coalesce(${suratMasuk.sifatSurat}, 'biasa'))
-            IN ('biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting')
-        THEN 'biasa'
-        ELSE replace(replace(lower(coalesce(${suratMasuk.sifatSurat}, 'biasa')), ' ', '_'), '-', '_')
-    END`;
-    return inArray(normalized, classes);
+// Linked surat that is soft-deleted or outside the caller's classes is never
+// read, counted, linked, or unlinked through a dosir. Omitted classes fail
+// closed; null (super_admin) means every recognized class.
+function suratMasukTerlihat(classes: string[] | null | undefined) {
+    return and(
+        sql`${suratMasuk.isDeleted} IS NOT TRUE`,
+        klasifikasiInSql(suratMasuk.sifatSurat, classes === undefined ? [] : classes),
+    );
 }
 
-function canReadLegacyOutgoing(classes: string[] | null | undefined) {
-    return classes === undefined || classes === null || classes.includes('terbatas');
+// Legacy surat keluar without a classification is treated as terbatas.
+function suratKeluarTerlihat(classes: string[] | null | undefined) {
+    return and(
+        sql`${suratKeluar.isDeleted} IS NOT TRUE`,
+        klasifikasiInSql(sql`coalesce(${suratKeluar.klasifikasiKeamanan}, 'terbatas')`, classes === undefined ? [] : classes),
+    );
 }
 
 async function findAccessibleDosir(
@@ -198,11 +202,11 @@ export const dosirService = {
             .where(and(
                 eq(dosirSuratMasuk.dosirId, id),
                 eq(suratMasuk.unitKerjaId, result.unitKerjaId),
-                incomingSecurityCondition(securityClassifications),
+                suratMasukTerlihat(securityClassifications),
             ));
 
         // Get linked surat keluar
-        const linkedKeluar = canReadLegacyOutgoing(securityClassifications) ? await db
+        const linkedKeluar = await db
             .select({
                 link: dosirSuratKeluar,
                 surat: suratKeluar,
@@ -212,7 +216,8 @@ export const dosirService = {
             .where(and(
                 eq(dosirSuratKeluar.dosirId, id),
                 eq(suratKeluar.unitKerjaId, result.unitKerjaId),
-            )) : [];
+                suratKeluarTerlihat(securityClassifications),
+            ));
 
         return {
             ...result,
@@ -247,7 +252,7 @@ export const dosirService = {
      * Get all dosir with filters
      */
     async getAll(filters: DosirFilters = {}) {
-        const { unitKerjaId, status, kategori, search, limit = 50, offset = 0 } = filters;
+        const { unitKerjaId, status, kategori, search, limit = 50, offset = 0, securityClassifications } = filters;
 
         let query = db.select().from(dosir);
         const conditions = [];
@@ -276,7 +281,7 @@ export const dosirService = {
             .limit(limit)
             .offset(offset);
 
-        // Get surat counts for each dosir
+        // Get surat counts for each dosir, using the same predicate as getById
         const dosirIds = results.map(d => d.id);
 
         const masukCounts = dosirIds.length > 0 ? await db
@@ -285,7 +290,13 @@ export const dosirService = {
                 count: sql<number>`count(*)::int`.as('count'),
             })
             .from(dosirSuratMasuk)
-            .where(inArray(dosirSuratMasuk.dosirId, dosirIds))
+            .innerJoin(dosir, eq(dosirSuratMasuk.dosirId, dosir.id))
+            .innerJoin(suratMasuk, eq(dosirSuratMasuk.suratMasukId, suratMasuk.id))
+            .where(and(
+                inArray(dosirSuratMasuk.dosirId, dosirIds),
+                eq(suratMasuk.unitKerjaId, dosir.unitKerjaId),
+                suratMasukTerlihat(securityClassifications),
+            ))
             .groupBy(dosirSuratMasuk.dosirId) : [];
 
         const keluarCounts = dosirIds.length > 0 ? await db
@@ -294,7 +305,13 @@ export const dosirService = {
                 count: sql<number>`count(*)::int`.as('count'),
             })
             .from(dosirSuratKeluar)
-            .where(inArray(dosirSuratKeluar.dosirId, dosirIds))
+            .innerJoin(dosir, eq(dosirSuratKeluar.dosirId, dosir.id))
+            .innerJoin(suratKeluar, eq(dosirSuratKeluar.suratKeluarId, suratKeluar.id))
+            .where(and(
+                inArray(dosirSuratKeluar.dosirId, dosirIds),
+                eq(suratKeluar.unitKerjaId, dosir.unitKerjaId),
+                suratKeluarTerlihat(securityClassifications),
+            ))
             .groupBy(dosirSuratKeluar.dosirId) : [];
 
         const masukMap = new Map(masukCounts.map(c => [c.dosirId, c.count]));
@@ -336,11 +353,11 @@ export const dosirService = {
             .where(and(
                 eq(dosirSuratMasuk.dosirId, dosirId),
                 eq(suratMasuk.unitKerjaId, accessibleDosir.unitKerjaId),
-                incomingSecurityCondition(securityClassifications),
+                suratMasukTerlihat(securityClassifications),
             ));
 
         // Get surat keluar
-        const keluarList = canReadLegacyOutgoing(securityClassifications) ? await db
+        const keluarList = await db
             .select({
                 id: suratKeluar.id,
                 type: sql<string>`'keluar'`.as('type'),
@@ -356,7 +373,8 @@ export const dosirService = {
             .where(and(
                 eq(dosirSuratKeluar.dosirId, dosirId),
                 eq(suratKeluar.unitKerjaId, accessibleDosir.unitKerjaId),
-            )) : [];
+                suratKeluarTerlihat(securityClassifications),
+            ));
 
         // Combine and sort by tanggal (chronologically)
         const timeline = [...masukList, ...keluarList].sort((a, b) => {
@@ -376,6 +394,7 @@ export const dosirService = {
         suratMasukId: string,
         notes: string | undefined,
         unitScope: RecordUnitScope,
+        securityClassifications?: string[] | null,
         auditContext?: CriticalAuditContext,
     ) {
         return db.transaction(async (tx) => {
@@ -388,6 +407,7 @@ export const dosirService = {
             .where(and(
                 eq(suratMasuk.id, suratMasukId),
                 eq(suratMasuk.unitKerjaId, accessibleDosir.unitKerjaId),
+                suratMasukTerlihat(securityClassifications),
             ))
             .limit(1);
 
@@ -419,6 +439,7 @@ export const dosirService = {
         suratKeluarId: string,
         notes: string | undefined,
         unitScope: RecordUnitScope,
+        securityClassifications?: string[] | null,
         auditContext?: CriticalAuditContext,
     ) {
         return db.transaction(async (tx) => {
@@ -431,6 +452,7 @@ export const dosirService = {
             .where(and(
                 eq(suratKeluar.id, suratKeluarId),
                 eq(suratKeluar.unitKerjaId, accessibleDosir.unitKerjaId),
+                suratKeluarTerlihat(securityClassifications),
             ))
             .limit(1);
 
@@ -461,16 +483,26 @@ export const dosirService = {
         dosirId: string,
         suratMasukId: string,
         unitScope: RecordUnitScope,
+        securityClassifications?: string[] | null,
         auditContext?: CriticalAuditContext,
     ) {
         return db.transaction(async (tx) => {
         const accessibleDosir = await findAccessibleDosir(dosirId, unitScope, tx);
         if (!accessibleDosir) return null;
 
+        // A link to surat the caller cannot see answers exactly like "not linked".
         const [deleted] = await tx.delete(dosirSuratMasuk).where(
             and(
                 eq(dosirSuratMasuk.dosirId, dosirId),
-                eq(dosirSuratMasuk.suratMasukId, suratMasukId)
+                eq(dosirSuratMasuk.suratMasukId, suratMasukId),
+                exists(tx
+                    .select({ id: suratMasuk.id })
+                    .from(suratMasuk)
+                    .where(and(
+                        eq(suratMasuk.id, suratMasukId),
+                        eq(suratMasuk.unitKerjaId, accessibleDosir.unitKerjaId),
+                        suratMasukTerlihat(securityClassifications),
+                    ))),
             )
         ).returning({ dosirId: dosirSuratMasuk.dosirId });
         if (!deleted) return null;
@@ -494,16 +526,26 @@ export const dosirService = {
         dosirId: string,
         suratKeluarId: string,
         unitScope: RecordUnitScope,
+        securityClassifications?: string[] | null,
         auditContext?: CriticalAuditContext,
     ) {
         return db.transaction(async (tx) => {
         const accessibleDosir = await findAccessibleDosir(dosirId, unitScope, tx);
         if (!accessibleDosir) return null;
 
+        // A link to surat the caller cannot see answers exactly like "not linked".
         const [deleted] = await tx.delete(dosirSuratKeluar).where(
             and(
                 eq(dosirSuratKeluar.dosirId, dosirId),
-                eq(dosirSuratKeluar.suratKeluarId, suratKeluarId)
+                eq(dosirSuratKeluar.suratKeluarId, suratKeluarId),
+                exists(tx
+                    .select({ id: suratKeluar.id })
+                    .from(suratKeluar)
+                    .where(and(
+                        eq(suratKeluar.id, suratKeluarId),
+                        eq(suratKeluar.unitKerjaId, accessibleDosir.unitKerjaId),
+                        suratKeluarTerlihat(securityClassifications),
+                    ))),
             )
         ).returning({ dosirId: dosirSuratKeluar.dosirId });
         if (!deleted) return null;

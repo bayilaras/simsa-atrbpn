@@ -302,6 +302,37 @@ export function kelasBolehDibacaLintasUnit(
     return false;
 }
 
+/** Peringkat kelas keamanan: biasa < terbatas < rahasia < sangat_rahasia. */
+export const RANK_KELAS: Readonly<Record<(typeof SECURITY_CLASSES)[number], number>> = Object.freeze({
+    biasa: 0,
+    terbatas: 1,
+    rahasia: 2,
+    sangat_rahasia: 3,
+});
+const RANK_KELAS_MAP: ReadonlyMap<string, number> = new Map(Object.entries(RANK_KELAS));
+
+/**
+ * Peringkat kelas setelah dinormalisasi; null bila kelas tidak dikenal.
+ * Pemanggil WAJIB gagal-tertutup untuk null, bukan menganggapnya 'biasa'.
+ */
+export function rankKelas(kelas: string | null | undefined): number | null {
+    return RANK_KELAS_MAP.get(normalizeSecurityClassification(kelas)) ?? null;
+}
+
+/**
+ * Kelas keamanan ternormalisasi surat sumber, padanan TS klasifikasiRekamanSql:
+ * surat masuk dari sifat_surat, surat keluar dari klasifikasi_keamanan
+ * (NULL lama = terbatas). Hasil bisa berupa kelas tak dikenal; cek rankKelas.
+ */
+export function kelasSumberSurat(
+    type: JenisRekamanRangkaian,
+    row: { sifatSurat?: string | null; klasifikasiKeamanan?: string | null },
+): string {
+    return normalizeSecurityClassification(
+        type === 'surat_masuk' ? row.sifatSurat : row.klasifikasiKeamanan ?? 'terbatas',
+    );
+}
+
 /** Nilai klasifikasi mentah rekaman; surat keluar lama (NULL) = terbatas. */
 export function klasifikasiRekamanSql(type: JenisRekamanRangkaian, alias: string): SQL {
     const a = aliasAman(alias);
@@ -349,7 +380,7 @@ export function jangkauanRekamanSql(ctx: KonteksBaca, type: JenisRekamanRangkaia
  */
 export function grantAktifSql(
     ctx: KonteksBaca,
-    type: JenisRekamanRangkaian,
+    type: JenisRekamanRangkaian | 'arsip',
     idCol: SQLWrapper,
     unitCol: SQLWrapper,
     kelasNorm: SQLWrapper,
@@ -398,6 +429,23 @@ export function visibleSql(ctx: KonteksBaca, target: TargetVisibilitas, mode: 'r
         : sql`(${unitSendiri} AND (${kelasList} OR ${kelasBaca}))`;
     const lintas = sql`(${jangkauanRekamanSql(ctx, target.type, a)} AND ${kelasBaca})`;
     return sql`(${sql.raw(`${a}.is_deleted IS NOT TRUE`)} AND (${pemilik} OR ${lintas}))`;
+}
+
+/**
+ * Padanan SQL `recordAccessService.check(user, 'arsip', id).allowed` (property
+ * test): unit sendiri DAN (kelas biasa yang diizinkan role ATAU kelas
+ * terkendali dengan grant aktif). Arsip tidak punya jangkauan lintas unit dan
+ * tidak memakai kebijakan list lama; dipakai untuk isi berkas (teks OCR).
+ */
+export function bacaArsipSql(user: PenggunaVisibilitas | undefined, alias: string): SQL {
+    const a = aliasAman(alias);
+    const unit = sql.raw(`${a}.unit_kerja_id`);
+    const kelas = klasifikasiNormSql(sql.raw(`${a}.klasifikasi_keamanan`));
+    const ctx: KonteksBaca = { user, unitJangkauan: null, pengawas: false, disposisiLamaRead: false };
+    const grant = grantAktifSql(ctx, 'arsip', sql.raw(`${a}.id`), unit, kelas);
+    const biasa = kelasUntukRole(user?.role).includes('biasa') ? sql`true` : sql`false`;
+    const kelasBaca = sql`((${kelas} = 'biasa' AND ${biasa}) OR (${kelas} IN ('terbatas', 'rahasia', 'sangat_rahasia') AND ${grant}))`;
+    return sql`(${cocokUnitRekamanSql(kecocokanUnitRekaman(user), unit)} AND ${kelasBaca})`;
 }
 
 export async function resolveKonteksBaca(

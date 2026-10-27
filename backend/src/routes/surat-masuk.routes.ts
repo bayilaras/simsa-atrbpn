@@ -25,6 +25,7 @@ import {
 import {
     allowedSecurityClassifications,
     isAllowedForClassification,
+    normalizeSecurityClassification,
     recordAccessService,
 } from '../services/record-access.service.js';
 import auditLogService from '../services/audit-log.service.js';
@@ -525,7 +526,13 @@ router.post('/:id/archive-full', validateIdParam(), canWriteMiddleware(), async 
                 })),
             });
         }
-        if (!isAllowedForClassification(req.user, parsed.data.klasifikasiKeamanan)) {
+        // Kelas arsip >= kelas sumber ditegakkan ArsipService di bawah kunci
+        // baris. Plafon peran tidak berlaku bagi kelas yang sama dengan kelas
+        // sumber: pemegang grant kelola (access.mutable) mempertahankan kelas
+        // sumber walau melampaui plafonnya, alih-alih dipaksa menurunkannya.
+        const kelasSumber = normalizeSecurityClassification(access.classification);
+        const kelasArsip = parsed.data.klasifikasiKeamanan ?? kelasSumber;
+        if (!isAllowedForClassification(req.user, kelasArsip) && kelasArsip !== kelasSumber) {
             return res.status(403).json({ error: 'Klasifikasi keamanan melebihi kewenangan pengguna' });
         }
 
