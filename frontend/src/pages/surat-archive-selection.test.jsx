@@ -133,3 +133,15 @@ describe.each([{ kind: 'masuk', Component: TambahSuratMasuk }, { kind: 'keluar',
         expect(fixtures[kind].update.mock.calls[0][1]).toMatchObject({ klasifikasiItemId: 82, jraItemId: 97 })
     })
 })
+
+it('menyunting surat keluar balasan tidak mengirim balasanUntuk; relasinya dikelola server', async () => {
+    fixtures.keluar.getById.mockResolvedValue({ ...record, balasanUntuk: 'sm-induk' })
+    fixtures.masuk.getById.mockResolvedValue({ id: 'sm-induk', nomorSurat: 'SM-1/2026', perihal: 'Surat induk' })
+    router = createMemoryRouter([{ path: '/edit/:id', element: <TambahSuratKeluar /> }], { initialEntries: ['/edit/surat-id'] })
+    const view = render(<RouterProvider router={router} />)
+    await screen.findByDisplayValue('Surat integrasi')
+    fireEvent.submit(view.container.querySelector('form'))
+    await waitFor(() => expect(fixtures.keluar.update).toHaveBeenCalled())
+    expect(fixtures.keluar.update.mock.calls[0][1]).toMatchObject({ perihal: 'Surat integrasi' })
+    expect(fixtures.keluar.update.mock.calls[0][1]).not.toHaveProperty('balasanUntuk')
+})

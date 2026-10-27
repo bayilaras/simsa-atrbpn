@@ -378,12 +378,14 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
                 sifatSurat: formData.sifatSurat || undefined,
             };
 
+            // balasanUntuk dikelola server lewat relasi tindak lanjut; form tidak
+            // pernah mengirimnya, baik saat membuat maupun menyunting.
+            const { balasanUntuk: _balasanLama, ...tanpaBalasan } = dataToSubmit;
             if (isEditMode) {
                 // Tahun tidak dikirim saat edit agar tahun asli surat tidak tertimpa
-                await suratKeluarService.update(id, dataToSubmit, filesEnabled ? selectedFile : null);
+                await suratKeluarService.update(id, tanpaBalasan, filesEnabled ? selectedFile : null);
             } else {
                 // Create new surat
-                const { balasanUntuk: _balasanLama, ...tanpaBalasan } = dataToSubmit;
                 await suratKeluarService.create({
                     ...tanpaBalasan,
                     ...buildOutgoingNumberingPayload(formData.nomorSurat),

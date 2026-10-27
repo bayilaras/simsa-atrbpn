@@ -289,8 +289,11 @@ export const createSuratKeluarSchema = suratKeluarBaseSchema
         return { ...value, tindakLanjut, asalNaskah: tindakLanjut ? 'tindak_lanjut' as const : value.asalNaskah };
     });
 
+// balasan_untuk is owned by the follow-up (tindak lanjut) service and is
+// cleared only when its relation is cancelled, so an edit never changes it;
+// older clients that still send the field have it stripped.
 export const updateSuratKeluarSchema = suratKeluarBaseSchema
-    .omit({ unitKerjaId: true, numberingMode: true, asalNaskah: true, tindakLanjut: true })
+    .omit({ unitKerjaId: true, numberingMode: true, asalNaskah: true, tindakLanjut: true, balasanUntuk: true })
     .partial();
 
 export const querySuratKeluarSchema = paginationSchema.extend({

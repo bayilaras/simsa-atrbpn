@@ -22,7 +22,6 @@ const mocks = vi.hoisted(() => ({
         getStats: vi.fn(),
         getSourceSuratMasuk: vi.fn(),
         findByIdWithLinks: vi.fn(),
-        replyTargetExistsInUnit: vi.fn(),
     },
     suratMasuk: {
         findAll: vi.fn(),
@@ -525,24 +524,22 @@ describe('surat and attachment route security policy', () => {
         expect(mocks.blobDelete).not.toHaveBeenCalledWith(expect.stringContaining('/old.pdf'));
     });
 
-    it('requires an update reply target to exist in the outgoing letter unit', async () => {
+    it('never passes a client reply target to an outgoing letter update', async () => {
         mocks.suratKeluar.findById.mockResolvedValue({
             id: '550e8400-e29b-41d4-a716-446655440010',
             unitKerjaId: 'sesditjen',
             approvalStatus: 'draft',
         });
-        mocks.suratKeluar.replyTargetExistsInUnit.mockResolvedValue(false);
+        mocks.suratKeluar.update.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440010' });
 
-        const response = await request(app)
+        await request(app)
             .put('/api/surat-keluar/550e8400-e29b-41d4-a716-446655440010')
-            .send({ balasanUntuk: '550e8400-e29b-41d4-a716-446655440020' });
+            .send({ perihal: 'Revisi', balasanUntuk: '550e8400-e29b-41d4-a716-446655440020' })
+            .expect(200);
 
-        expect(response.status).toBe(400);
-        expect(mocks.suratKeluar.replyTargetExistsInUnit).toHaveBeenCalledWith(
-            '550e8400-e29b-41d4-a716-446655440020',
-            'sesditjen',
-        );
-        expect(mocks.suratKeluar.update).not.toHaveBeenCalled();
+        const [, data] = mocks.suratKeluar.update.mock.calls[0];
+        expect(data).toMatchObject({ perihal: 'Revisi' });
+        expect(data).not.toHaveProperty('balasanUntuk');
     });
 
     it('conceals a controlled record from mutation without manage access', async () => {

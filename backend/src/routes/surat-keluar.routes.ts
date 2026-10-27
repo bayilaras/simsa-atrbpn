@@ -65,6 +65,14 @@ function sendValidationFailure(res: Response, issues: Array<{ path: PropertyKey[
     });
 }
 
+// UUID surat masuk sumber hanya untuk pengguna yang boleh membaca surat itu;
+// detail sumber yang tidak terbaca memberi 404, jadi id-nya ikut disembunyikan.
+async function balasanUntukTerbaca(req: AuthRequest, suratMasukId: string | null | undefined) {
+    if (!suratMasukId) return null;
+    const access = await recordAccessService.checkRead(req.user, 'surat_masuk', suratMasukId);
+    return access.exists && access.allowed ? suratMasukId : null;
+}
+
 router.use(authMiddleware);
 
 // GET /api/surat-keluar - List with pagination
@@ -176,9 +184,10 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
 
         // P3 (§7): aksiDiizinkan/statusAlur dari server; hanya membaca.
         const aksi = await suratAksiPayload(req.user!, 'surat_keluar', id, access);
+        const balasanUntuk = await balasanUntukTerbaca(req, result.balasanUntuk);
         res.json({
             success: true,
-            data: { ...sanitizeSuratRecord(result, 'surat_keluar'), aksesMelalui: access.via, ...aksi },
+            data: { ...sanitizeSuratRecord(result, 'surat_keluar'), balasanUntuk, aksesMelalui: access.via, ...aksi },
         });
     } catch (error) {
         next(error);
@@ -332,30 +341,6 @@ router.put('/:id', validateIdParam(),
 
             if (!bodyValidation.success) {
                 return sendValidationFailure(res, bodyValidation.error.issues);
-            }
-
-            if (bodyValidation.data.balasanUntuk) {
-                const sourceAccess = await recordAccessService.check(
-                    req.user,
-                    'surat_masuk',
-                    bodyValidation.data.balasanUntuk,
-                );
-                if (
-                    !sourceAccess.exists
-                    || !sourceAccess.mutable
-                    || sourceAccess.unitKerjaId !== existing.unitKerjaId
-                ) {
-                    return res.status(404).json({ error: 'Surat masuk balasan not found' });
-                }
-                if (!(await suratKeluarService.replyTargetExistsInUnit(
-                    bodyValidation.data.balasanUntuk,
-                    existing.unitKerjaId,
-                ))) {
-                    return res.status(400).json({
-                        success: false,
-                        error: 'Surat masuk balasan tidak ditemukan pada unit kerja yang sama.',
-                    });
-                }
             }
 
             if (file && bodyValidation.data.filePath) {
@@ -620,11 +605,11 @@ router.get('/:id/with-links', validateIdParam(), async (req: AuthRequest, res, n
                 ? recordAccessService.check(req.user, 'arsip', result.arsipEntry.id)
                 : Promise.resolve(null),
         ]);
+        const sourceVisible = Boolean(sourceAccess?.exists && sourceAccess.allowed);
         const sanitized = sanitizeSuratKeluarWithLinks({
             ...result,
-            sourceSuratMasuk: sourceAccess?.exists && sourceAccess.allowed
-                ? result.sourceSuratMasuk
-                : null,
+            balasanUntuk: sourceVisible ? result.balasanUntuk : null,
+            sourceSuratMasuk: sourceVisible ? result.sourceSuratMasuk : null,
             arsipEntry: archiveAccess?.exists && archiveAccess.allowed ? result.arsipEntry : null,
         });
         res.json({ success: true, data: sanitized });
