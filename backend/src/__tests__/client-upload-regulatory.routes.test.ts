@@ -16,10 +16,24 @@ const state = vi.hoisted(() => ({
     cleanupExpired: vi.fn(),
     getReadiness: vi.fn(),
     authenticated: true,
+    routeLogInfo: vi.fn(),
     authCalls: 0,
     limiterCalls: 0,
     rejectLimiter: false,
 }));
+
+vi.mock('../utils/logger.js', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../utils/logger.js')>();
+    return {
+        ...actual,
+        createLogger: (name: string) => {
+            const logger = actual.createLogger(name);
+            return name === 'ClientUploadRoutes'
+                ? Object.assign(Object.create(logger), { info: state.routeLogInfo })
+                : logger;
+        },
+    };
+});
 
 vi.mock('../middlewares/auth.middleware.js', () => ({
     authMiddleware: (req: any, res: any, next: any) => {
@@ -130,6 +144,12 @@ describe('rule-set-bound direct Blob upload tokens', () => {
     it('issues letter upload tokens only for PDF and at most 10 MiB', async () => {
         await request(app).post('/client-upload').send(uploadBody({ pathname: 'surat-masuk/letter.pdf', clientPayload: null })).expect(200);
         expect(state.tokenOptions).toMatchObject({ allowedContentTypes: ['application/pdf'], maximumSizeInBytes: 10_485_760 });
+        // The uploaded file name often carries a letter's number or subject.
+        expect(state.routeLogInfo).toHaveBeenCalledWith(
+            { userId: state.user.id, folder: 'surat-masuk' },
+            'Generating client upload token',
+        );
+        expect(JSON.stringify(state.routeLogInfo.mock.calls)).not.toContain('letter');
         await request(app).post('/client-upload').send(uploadBody({ pathname: 'surat-masuk/letter.docx', clientPayload: null })).expect(400);
     });
     beforeEach(() => {
