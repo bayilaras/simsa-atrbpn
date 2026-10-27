@@ -54,3 +54,18 @@ it('menandai sifat selain biasa dan penerima yang belum tercatat pada daftar', a
     expect(screen.getAllByText(/./, { selector: '[data-badge="sifat-surat"]' }).map(badge => badge.textContent)).toEqual(['Sangat Segera'])
     expect(screen.getByTitle('Penerima belum tercatat')).toHaveTextContent('Kepada: -')
 })
+
+it('badge Balasan memakai isBalasan karena UUID sumber bisa disamarkan server', async () => {
+    mocks.getAll.mockResolvedValue({ success: true, pagination: { total: 3, totalPages: 1 }, data: [
+        { id: 'f', nomorSurat: '006/2026', perihal: 'Balasan sumber tersamar', kepada: 'V', unitKerjaId: 'dir_bppt', approvalStatus: 'draft', isBalasan: true, balasanUntuk: null },
+        { id: 'g', nomorSurat: '007/2026', perihal: 'Balasan dari server lama', kepada: 'U', unitKerjaId: 'dir_bppt', approvalStatus: 'draft', balasanUntuk: 'sm-1' },
+        { id: 'h', nomorSurat: '008/2026', perihal: 'Bukan balasan', kepada: 'T', unitKerjaId: 'dir_bppt', approvalStatus: 'draft', isBalasan: false, balasanUntuk: null },
+    ] })
+    router = createMemoryRouter([{ path: '/surat/keluar', element: <SuratKeluar /> }], { initialEntries: ['/surat/keluar'] })
+    render(<RouterProvider router={router} />)
+    await screen.findByText('Balasan sumber tersamar')
+    const baris = (perihal) => screen.getByText(perihal).closest('tr')
+    expect(baris('Balasan sumber tersamar').querySelector('[data-badge="balasan"]')).not.toBeNull()
+    expect(baris('Balasan dari server lama').querySelector('[data-badge="balasan"]')).not.toBeNull()
+    expect(baris('Bukan balasan').querySelector('[data-badge="balasan"]')).toBeNull()
+})
