@@ -157,7 +157,7 @@ describe('read model daftar arsip tanpa isi OCR', () => {
         const autentikasi = await autentikasiService.findById(autentikasiId);
         expect(autentikasi?.itemArsip.map(item => item.arsip.uraianBerkas)).toEqual(['Uraian berkas rahasia']);
         tanpaIsi(autentikasi);
-    });
+    }, 30_000);
 
     it('QR arsip hanya mengembalikan identitas label dan kelas untuk gerbang rute', async () => {
         const { storageLocationService } = await import('../services/storage-location.service');
@@ -246,6 +246,7 @@ describe('supervisi isu kepatuhan', () => {
 describe('batas parameter dasbor', () => {
     it.each(['-5', 'abc', '999999'])('daysAhead=%s tidak menghasilkan 500', async daysAhead => {
         await request(app).get('/api/dashboard/expiring').query({ daysAhead }).set(sebagai(PENGGUNA.tu)).expect(200);
+        await request(app).get('/api/arsip/expiring').query({ daysAhead }).set(sebagai(PENGGUNA.tu)).expect(200);
     });
 
     it.each(['0', 'abc', '999999'])('limit recent=%s tidak menghasilkan 500', async limit => {

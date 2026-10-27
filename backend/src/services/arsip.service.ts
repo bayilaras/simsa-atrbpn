@@ -596,7 +596,12 @@ export class ArsipService {
                     }
                 };
                 assertGrantCurrent();
-                if (data.klasifikasiKeamanan !== undefined && !isAllowedForClassification(actor, data.klasifikasiKeamanan)) {
+                if (
+                    data.klasifikasiKeamanan !== undefined
+                    && !isAllowedForClassification(actor, data.klasifikasiKeamanan)
+                    && normalizeSecurityClassification(data.klasifikasiKeamanan)
+                        !== normalizeSecurityClassification(existing.klasifikasiKeamanan)
+                ) {
                     throw new ForbiddenError('Klasifikasi keamanan melebihi kewenangan pengguna.');
                 }
                 actorAudit = { ...auditContext, userId: actor.id, userEmail: actor.email };

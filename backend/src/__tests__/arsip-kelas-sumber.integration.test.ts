@@ -219,4 +219,18 @@ describe('PUT /api/arsip/:id pada arsip tertaut', () => {
             .send({ keterangan: 'Koreksi lokasi fisik' }).expect(200);
         expect(response.body.data).toMatchObject({ keterangan: 'Koreksi lokasi fisik', klasifikasiKeamanan: 'rahasia' });
     });
+
+    it('admin_unit ber-grant boleh mengirim ulang kelas rahasia yang sudah melekat', async () => {
+        const id = await arsipRahasiaTertaut();
+        const response = await request(app).put(`/api/arsip/${id}`).set(sebagai(PENGGUNA.tu))
+            .send({ klasifikasiKeamanan: 'rahasia', keterangan: 'Kelas tetap' }).expect(200);
+        expect(response.body.data).toMatchObject({ keterangan: 'Kelas tetap', klasifikasiKeamanan: 'rahasia' });
+    });
+
+    it('menaikkan di atas plafon peran tetap 403, kelas tetap', async () => {
+        const id = await arsipRahasiaTertaut();
+        await request(app).put(`/api/arsip/${id}`).set(sebagai(PENGGUNA.tu))
+            .send({ klasifikasiKeamanan: 'sangat_rahasia' }).expect(403);
+        expect((await arsipDari(SURAT.smRahasia))[0].klasifikasi_keamanan).toBe('rahasia');
+    });
 });
