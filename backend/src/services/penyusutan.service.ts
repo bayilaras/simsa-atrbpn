@@ -55,6 +55,7 @@ interface CreatePenyusutanData {
     createdBy?: string;
     securityClassifications?: string[] | null;
     auditContext?: CriticalAuditContext;
+    actor?: DispositionActor;
 }
 
 const RULE_SNAPSHOT_EVIDENCE_SELECT = {
@@ -354,6 +355,7 @@ class PenyusutanService {
         unitKerjaId: string,
         jenisPenyusutan: string,
         securityClassifications?: string[] | null,
+        actor?: DispositionActor,
     ) {
         const rows = await tx.select({
             id: arsip.id,
@@ -394,17 +396,24 @@ class PenyusutanService {
             .where(inArray(arsip.id, arsipIds))
             .for('update', { of: arsip });
 
-        const foundIds = new Set(rows.map((r: any) => r.id));
-        const missing = arsipIds.filter(id => !foundIds.has(id));
-        if (missing.length > 0) {
-            throw new ValidationError(`Arsip tidak ditemukan: ${missing.join(', ')}`);
+        // Missing, other-unit, and out-of-class archives share one message
+        // without ids, so a batch request cannot probe records the caller
+        // cannot read. Status details below only concern readable rows.
+        const tidakTerjangkau = rows.length !== arsipIds.length || rows.some((r: any) =>
+            r.unitKerjaId !== unitKerjaId
+            || !isAllowedArchiveClass(r.klasifikasiKeamanan, securityClassifications)
+        );
+        if (tidakTerjangkau) {
+            throw new ValidationError('Sebagian arsip tidak ditemukan atau tidak dapat diakses.');
         }
 
-        const luarUnit = rows.filter((r: any) => r.unitKerjaId !== unitKerjaId);
-        if (luarUnit.length > 0) {
-            throw new ValidationError(
-                `Arsip di luar unit kerja batch tidak dapat disusutkan: ${luarUnit.map((r: any) => r.id).join(', ')}`
-            );
+        // Adding an archive to a batch changes its disposal state, so a
+        // controlled archive needs the same manage grant as the later
+        // workflow transitions.
+        if (actor) {
+            await assertManageGrants(tx, rows, actor);
+        } else if (rows.some((r: any) => requiresExplicitAccessGrant(r.klasifikasiKeamanan))) {
+            throw new ForbiddenError('Akses kelola per arsip yang masih berlaku diperlukan.');
         }
 
         const sudahDiproses = rows.filter((r: any) => r.disposalStatus !== 'active' || r.disposalBatchId);
@@ -412,13 +421,6 @@ class PenyusutanService {
             throw new ValidationError(
                 `Arsip sudah termasuk dalam proses penyusutan lain: ${sudahDiproses.map((r: any) => r.id).join(', ')}`
             );
-        }
-
-        const diLuarKewenangan = rows.filter((r: any) =>
-            !isAllowedArchiveClass(r.klasifikasiKeamanan, securityClassifications)
-        );
-        if (diLuarKewenangan.length > 0) {
-            throw new ValidationError('Sebagian arsip tidak ditemukan atau tidak dapat diakses.');
         }
 
         const ditahan = rows.filter((r: any) => r.legalHold);
@@ -560,7 +562,7 @@ class PenyusutanService {
      */
     async create(data: CreatePenyusutanData) {
         assertLegacyPermanentTransferMutationAllowed(data.jenisPenyusutan);
-        const { arsipIds, securityClassifications, auditContext, ...batchData } = data;
+        const { arsipIds, securityClassifications, auditContext, actor, ...batchData } = data;
         assertArchiveIdList(arsipIds);
 
         // Generate nomor BA
@@ -576,6 +578,7 @@ class PenyusutanService {
                     batchData.unitKerjaId,
                     batchData.jenisPenyusutan,
                     securityClassifications,
+                    actor,
                 );
             }
 
@@ -999,6 +1002,7 @@ class PenyusutanService {
         unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
         securityClassifications?: string[] | null,
         auditContext?: CriticalAuditContext,
+        actor?: DispositionActor,
     ) {
         assertArchiveIdList(arsipIds);
         return await db.transaction(async (tx: any) => {
@@ -1021,6 +1025,7 @@ class PenyusutanService {
                 batch[0].unitKerjaId,
                 batch[0].jenisPenyusutan,
                 securityClassifications,
+                actor,
             );
 
             // Get current max nomorUrut

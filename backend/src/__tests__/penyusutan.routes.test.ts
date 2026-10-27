@@ -127,6 +127,7 @@ describe('penyusutan batch unit scoping', () => {
         });
         expect(mocks.service.addItems).toHaveBeenCalledWith(
             'batch-1', ['arsip-1'], 'unit-a', ['biasa'], auditContext,
+            expect.objectContaining({ id: 'user-1', role: 'staff', unitKerjaId: 'unit-a' }),
         );
         expect(mocks.service.removeItems).toHaveBeenCalledWith(
             'batch-1', ['arsip-1'], 'unit-a', ['biasa'], auditContext,
@@ -244,6 +245,7 @@ describe('penyusutan batch unit scoping', () => {
         }));
         expect(mocks.service.create).toHaveBeenCalledWith(expect.objectContaining({
             unitKerjaId: expectedScope,
+            actor: expect.objectContaining({ id: mocks.user.id, role: mocks.user.role }),
         }));
     });
 

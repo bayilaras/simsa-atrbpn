@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => ({
     arsipVital: {
         findById: vi.fn(),
         create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
     },
     arsipTerjaga: {
         findById: vi.fn(),
@@ -295,5 +297,36 @@ describe('record route unit scoping', () => {
         }).expect(404);
 
         expect(mocks.arsipVital.create).not.toHaveBeenCalled();
+    });
+
+    it('requires manage access to the parent archive before changing a vital designation', async () => {
+        Object.assign(mocks.user, { role: 'admin_unit', unitKerjaId: 'unit-a' });
+        mocks.arsipVital.findById.mockResolvedValue({ id: 'vital-1', arsipId: 'arsip-1' });
+        mocks.recordAccess.check.mockResolvedValue({
+            exists: true,
+            allowed: true,
+            mutable: false,
+            unitKerjaId: 'unit-a',
+            classification: 'terbatas',
+        });
+
+        const notFound = await request(app).put('/arsip-vital/vital-1').send({ statusProteksi: 'aktif' }).expect(404);
+        const unknown = await request(app).delete('/arsip-vital/vital-1').expect(404);
+        expect(unknown.body).toEqual(notFound.body);
+        expect(mocks.recordAccess.check).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1' }), 'arsip', 'arsip-1');
+        expect(mocks.arsipVital.update).not.toHaveBeenCalled();
+        expect(mocks.arsipVital.delete).not.toHaveBeenCalled();
+
+        mocks.recordAccess.check.mockResolvedValue({
+            exists: true,
+            allowed: true,
+            mutable: true,
+            unitKerjaId: 'unit-a',
+            classification: 'terbatas',
+        });
+        mocks.arsipVital.update.mockResolvedValue({ id: 'vital-1' });
+        mocks.arsipVital.delete.mockResolvedValue(true);
+        await request(app).put('/arsip-vital/vital-1').send({ statusProteksi: 'aktif' }).expect(200);
+        await request(app).delete('/arsip-vital/vital-1').expect(200);
     });
 });

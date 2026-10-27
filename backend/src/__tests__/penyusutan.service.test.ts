@@ -229,7 +229,52 @@ describe('PenyusutanService', () => {
                 unitKerjaId: 'u1',
                 jenisPenyusutan: 'pemusnahan',
                 arsipIds: ['a1'],
-            })).rejects.toThrow(/luar unit kerja/);
+            })).rejects.toThrow(/tidak ditemukan atau tidak dapat diakses/);
+        });
+
+        it('gives missing, other-unit, and reserved out-of-class archives the same id-free message', async () => {
+            const messages: string[] = [];
+            const cases = [
+                [],
+                [{ id: 'a1', unitKerjaId: 'lain', disposalStatus: 'active', disposalBatchId: null }],
+                [{ id: 'a1', unitKerjaId: 'u1', disposalStatus: 'proposed_musnah', disposalBatchId: 'p-lain', klasifikasiKeamanan: 'rahasia' }],
+            ];
+            for (const rows of cases) {
+                enqueue(rows);
+                const error = await penyusutanService.create({
+                    unitKerjaId: 'u1',
+                    jenisPenyusutan: 'pemusnahan',
+                    arsipIds: ['a1'],
+                    securityClassifications: ['biasa', 'terbatas'],
+                }).catch((err: Error) => err);
+                messages.push((error as Error).message);
+            }
+            expect(new Set(messages)).toEqual(new Set(['Sebagian arsip tidak ditemukan atau tidak dapat diakses.']));
+            expect(chainCalls.some(call => call.method === 'insert')).toBe(false);
+        });
+
+        it('requires a current manage grant before a controlled archive joins a batch', async () => {
+            const terbatas = { id: 'a1', unitKerjaId: 'u1', disposalStatus: 'active', disposalBatchId: null, retentionTriggerDate: '2020-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', hasilAkhir: 'Musnah', legalHold: false, klasifikasiKeamanan: 'terbatas', ...validJraProvenance };
+            const actor = { id: 'admin-1', role: 'admin_unit', unitKerjaId: 'u1' };
+
+            enqueue([terbatas]);
+            await expect(penyusutanService.create({
+                unitKerjaId: 'u1', jenisPenyusutan: 'pemusnahan', arsipIds: ['a1'],
+                securityClassifications: ['biasa', 'terbatas'],
+            })).rejects.toThrow(/Akses kelola/);
+
+            enqueue([terbatas], []);
+            await expect(penyusutanService.create({
+                unitKerjaId: 'u1', jenisPenyusutan: 'pemusnahan', arsipIds: ['a1'],
+                securityClassifications: ['biasa', 'terbatas'], actor,
+            })).rejects.toThrow(/Akses kelola/);
+            expect(chainCalls.some(call => call.method === 'insert')).toBe(false);
+
+            enqueue([terbatas], [{ id: 'grant-1' }], [{ id: 'p-new', status: 'draft' }], [], []);
+            await expect(penyusutanService.create({
+                unitKerjaId: 'u1', jenisPenyusutan: 'pemusnahan', arsipIds: ['a1'],
+                securityClassifications: ['biasa', 'terbatas'], actor,
+            })).resolves.toMatchObject({ id: 'p-new' });
         });
 
         it('should reject arsip above the actor security classification', async () => {
@@ -682,6 +727,15 @@ describe('PenyusutanService', () => {
         it('should throw for non-draft batch', async () => {
             enqueue([{ id: 'p1', status: 'proposed' }]);
             await expect(penyusutanService.addItems('p1', ['a1'], 'u1')).rejects.toThrow('Can only add items to draft batches');
+        });
+
+        it('requires a manage grant before adding a controlled archive', async () => {
+            enqueue([{ id: 'p1', status: 'draft', jenisPenyusutan: 'pemusnahan', unitKerjaId: 'u1' }]);
+            enqueue([{ id: 'a-new', unitKerjaId: 'u1', disposalStatus: 'active', disposalBatchId: null, legalHold: false, klasifikasiKeamanan: 'rahasia', ...validJraProvenance }]);
+            enqueue([]);
+            await expect(penyusutanService.addItems('p1', ['a-new'], 'u1', null, undefined,
+                { id: 'super-1', role: 'super_admin', unitKerjaId: '' })).rejects.toThrow(/Akses kelola/);
+            expect(chainCalls.some(call => call.method === 'insert')).toBe(false);
         });
     });
 

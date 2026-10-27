@@ -137,6 +137,13 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
     }
 });
 
+// Changing or removing a designation is a mutation of the parent archive, so
+// it needs the same manage access as designating it.
+async function canManageParentArchive(req: AuthRequest, arsipId: string) {
+    const access = await recordAccessService.check(req.user, 'arsip', arsipId);
+    return access.exists && access.mutable;
+}
+
 // POST /api/arsip-vital - Designate archive as vital
 router.post('/',
     canWriteMiddleware(),
@@ -177,7 +184,7 @@ router.put('/:id',
                 allowedSecurityClassifications(req.user),
             );
 
-            if (!existing) {
+            if (!existing || !(await canManageParentArchive(req, existing.arsipId))) {
                 return res.status(404).json({ error: 'Arsip vital not found' });
             }
 
@@ -209,7 +216,7 @@ router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res, next) 
             allowedSecurityClassifications(req.user),
         );
 
-        if (!existing) {
+        if (!existing || !(await canManageParentArchive(req, existing.arsipId))) {
             return res.status(404).json({ error: 'Arsip vital not found' });
         }
 

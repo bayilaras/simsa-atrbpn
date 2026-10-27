@@ -9,8 +9,10 @@ const state = vi.hoisted(() => ({
         findById: vi.fn(),
         create: vi.fn(),
         getPdfStream: vi.fn(),
+        findParentArsipIds: vi.fn(),
     },
     verifyUploadedBuffer: vi.fn(),
+    check: vi.fn(),
 }));
 
 vi.mock('../middlewares/auth.middleware.js', () => ({
@@ -27,6 +29,11 @@ vi.mock('../middlewares/auth.middleware.js', () => ({
 vi.mock('../services/autentikasi.service.js', () => ({ autentikasiService: state.service }));
 vi.mock('../services/hash-verification.service.js', () => ({
     HashVerificationService: { verifyUploadedBuffer: state.verifyUploadedBuffer },
+}));
+vi.mock('../services/record-access.service.js', () => ({
+    recordAccessService: { check: state.check },
+    requiresExplicitAccessGrant: (value?: string | null) =>
+        ['terbatas', 'rahasia', 'sangat_rahasia'].includes(String(value ?? 'biasa').toLowerCase()),
 }));
 
 const { default: autentikasiRouter } = await import('../routes/autentikasi.routes.js');
@@ -112,6 +119,32 @@ describe('autentikasi PDF route', () => {
             .expect(400, { message: 'Signature PDF tidak valid' });
 
         expect(state.verifyUploadedBuffer).not.toHaveBeenCalled();
+    });
+
+    it('requires a manage grant on each controlled parent archive before authenticating', async () => {
+        const body = {
+            nomorBeritaAcara: 'BA-AUT/001',
+            tanggalAutentikasi: '2026-10-27',
+            kegiatan: 'Autentikasi alih media',
+            itemArsipIds: ['30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000002'],
+        };
+        state.service.findParentArsipIds.mockResolvedValue(['arsip-biasa', 'arsip-terbatas']);
+        state.service.create.mockResolvedValue({ id: 'aut-1' });
+        const access = (classification: string, grantAccessMode: string | null) => ({
+            exists: true, allowed: true, mutable: false, classification, grantAccessMode,
+        });
+
+        state.check.mockImplementation(async (_user: unknown, _type: string, id: string) =>
+            id === 'arsip-biasa' ? access('biasa', null) : access('terbatas', 'view'));
+        await request(app).post('/autentikasi').send(body)
+            .expect(404, { error: 'Sebagian item arsip tidak ditemukan atau tidak dapat diakses' });
+        expect(state.service.findParentArsipIds).toHaveBeenCalledWith(body.itemArsipIds);
+        expect(state.service.create).not.toHaveBeenCalled();
+
+        state.check.mockImplementation(async (_user: unknown, _type: string, id: string) =>
+            id === 'arsip-biasa' ? access('biasa', null) : access('terbatas', 'manage'));
+        await request(app).post('/autentikasi').send(body).expect(201);
+        expect(state.service.create).toHaveBeenCalledTimes(1);
     });
 
     it('does not leak verification errors', async () => {
