@@ -358,20 +358,6 @@ export class SuratKeluarService {
         }
     }
 
-    async replyTargetExistsInUnit(suratMasukId: string, unitKerjaId: string) {
-        const [target] = await db
-            .select({ id: suratMasuk.id })
-            .from(suratMasuk)
-            .where(and(
-                eq(suratMasuk.id, suratMasukId),
-                eq(suratMasuk.unitKerjaId, unitKerjaId),
-                or(eq(suratMasuk.isDeleted, false), isNull(suratMasuk.isDeleted)),
-            ))
-            .limit(1);
-
-        return Boolean(target);
-    }
-
     async update(
         id: string,
         data: Partial<SuratKeluar>,
