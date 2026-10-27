@@ -24,6 +24,8 @@ function requireUuid(value: string | null | undefined, field: string) {
     }
 }
 
+const MAX_REFERENCES_PER_ENTITY = 500;
+
 function requirePagination(page: number, limit: number) {
     if (!Number.isInteger(page) || page < 1 ||
         !Number.isInteger(limit) || limit < 1 || limit > 100) {
@@ -188,20 +190,16 @@ class TunjukSilangService {
     }
 
     /**
-     * Find all cross-references for a given entity (both as source and target)
+     * Find all active cross-references for a given entity (both as source and
+     * target), newest first and capped at MAX_REFERENCES_PER_ENTITY. Callers
+     * filter by access before paginating, so hidden relations never shift
+     * page boundaries.
      */
-    async findByEntity(
-        entityType: string,
-        entityId: string,
-        pagination: { page?: number; limit?: number } = {},
-    ) {
+    async findByEntity(entityType: string, entityId: string) {
         if (!VALID_ENTITY_TYPES.includes(entityType as typeof VALID_ENTITY_TYPES[number])) {
             throw new ValidationError(`Invalid entityType: ${entityType}`);
         }
         requireUuid(entityId, 'entityId');
-        const { page = 1, limit = 100 } = pagination;
-        requirePagination(page, limit);
-        const offset = (page - 1) * limit;
 
         const results = await db.select()
             .from(tunjukSilang)
@@ -221,8 +219,7 @@ class TunjukSilangService {
                 ),
             )
             .orderBy(desc(tunjukSilang.createdAt))
-            .limit(limit)
-            .offset(offset);
+            .limit(MAX_REFERENCES_PER_ENTITY);
 
         // Normalize: for each result, determine direction relative to the queried entity
         return results.map((ref: any) => {

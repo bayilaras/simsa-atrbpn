@@ -938,7 +938,11 @@ export class DistributionService {
     /**
      * Get statistics for dashboard
      */
-    async getStats(unitKerjaId: string) {
+    async getStats(unitKerjaId: string, securityClassifications?: string[] | null) {
+        // Counts follow the same row predicates as findInbox/findOutbox, so the
+        // difference between a count and its list never reveals hidden rows.
+        const suratAktif = sql`${suratMasuk.isDeleted} IS NOT TRUE`;
+
         // Inbox stats (as target)
         const inboxStats = await db
             .select({
@@ -949,7 +953,8 @@ export class DistributionService {
                 rejected: sql<number>`count(*) filter (where ${suratDistributions.status} = 'rejected')::int`,
             })
             .from(suratDistributions)
-            .where(eq(suratDistributions.targetUnitId, unitKerjaId));
+            .innerJoin(suratMasuk, eq(suratDistributions.suratMasukId, suratMasuk.id))
+            .where(and(eq(suratDistributions.targetUnitId, unitKerjaId), suratAktif));
 
         // Outbox stats (as source)
         const outboxStats = await db
@@ -960,7 +965,12 @@ export class DistributionService {
                 rejected: sql<number>`count(*) filter (where ${suratDistributions.status} = 'rejected')::int`,
             })
             .from(suratDistributions)
-            .where(eq(suratDistributions.sourceUnitId, unitKerjaId));
+            .innerJoin(suratMasuk, eq(suratDistributions.suratMasukId, suratMasuk.id))
+            .where(and(
+                eq(suratDistributions.sourceUnitId, unitKerjaId),
+                suratAktif,
+                incomingSecurityCondition(securityClassifications),
+            ));
 
         return {
             inbox: inboxStats[0],

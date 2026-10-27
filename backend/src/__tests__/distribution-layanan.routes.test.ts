@@ -132,7 +132,7 @@ describe('distribution route unit scoping', () => {
 
         expect(mocks.distribution.findInbox).toHaveBeenCalledWith('unit-a', expect.objectContaining({ lewatBatas: false }), expect.objectContaining({ id: 'user-1' }));
         expect(mocks.distribution.findOutbox).toHaveBeenCalledWith('unit-a', expect.any(Object), ['biasa']);
-        expect(mocks.distribution.getStats).toHaveBeenCalledWith('unit-a');
+        expect(mocks.distribution.getStats).toHaveBeenCalledWith('unit-a', ['biasa']);
     });
 
     it('passes participant scope to detail, history, and every target-unit write', async () => {

@@ -162,7 +162,9 @@ router.get('/:type/:id', async (req: AuthRequest, res: Response, next: NextFunct
         if (!sourceAccess.exists || !sourceAccess.allowed) {
             return res.status(404).json({ error: 'Cross-reference not found' });
         }
-        const references = await tunjukSilangService.findByEntity(entityType, entityId, { page, limit });
+        // Filter before paginating: pages and the total count only reflect
+        // relations whose related record the caller may open.
+        const references = await tunjukSilangService.findByEntity(entityType, entityId);
         const relatedAccess = await checkEntityAccessMany(req, references.map((reference) => ({
             entityType: reference.relatedType,
             entityId: reference.relatedId,
@@ -171,7 +173,11 @@ router.get('/:type/:id', async (req: AuthRequest, res: Response, next: NextFunct
             const access = relatedAccess.get(entityAccessKey(reference.relatedType, reference.relatedId));
             return access?.exists === true && access.allowed === true;
         });
-        res.json({ data: filtered, pagination: { page, limit } });
+        const offset = (page - 1) * limit;
+        res.json({
+            data: filtered.slice(offset, offset + limit),
+            pagination: { page, limit, total: filtered.length },
+        });
     } catch (error) {
         next(error);
     }

@@ -185,6 +185,19 @@ describe('POST /api/surat-keluar/:id/archive-full', () => {
             .set(sebagai(PENGGUNA.tu)).send(registrasi({ klasifikasiKeamanan: 'biasa' })).expect(422);
         expect(await arsipDari(SURAT.skNull)).toEqual([]);
     });
+
+    it('surat rahasia berstatus draft tanpa grant: 404 seperti id acak, bukan 409 status persetujuan', async () => {
+        const skDraftRahasia = '64000000-0000-4000-8000-000000000004';
+        await database.exec(`
+            INSERT INTO surat_keluar (id, unit_kerja_id, no_urut, tahun, klasifikasi_keamanan, nomor_surat, perihal, kepada, naskah_dinas, tanggal_surat, approval_status)
+            VALUES ('${skDraftRahasia}','sesditjen',12,2026,'rahasia','SK-R/2026','Draft rahasia','Kanwil R','Nota Dinas','2026-09-13','draft');
+        `);
+        const draft = await request(app).post(`/api/surat-keluar/${skDraftRahasia}/archive-full`)
+            .set(sebagai(PENGGUNA.tu)).send(registrasi()).expect(404);
+        const acak = await request(app).post('/api/surat-keluar/64000000-0000-4000-8000-0000000000ff/archive-full')
+            .set(sebagai(PENGGUNA.tu)).send(registrasi()).expect(404);
+        expect(draft.body).toEqual(acak.body);
+    });
 });
 
 describe('PUT /api/arsip/:id pada arsip tertaut', () => {

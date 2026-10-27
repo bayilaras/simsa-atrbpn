@@ -97,4 +97,15 @@ describe('kotak disposisi: baris terkendali disamarkan, bukan disembunyikan', ()
         const result = await service.findOutbox('ditjen', { limit: 50 }, ['biasa']);
         expect(suratIds(result.data)).toEqual(lettersN(1, 2, 3, 4, 5));
     });
+
+    it('statistik menghitung baris yang sama dengan kotak masuk dan kotak keluar', async () => {
+        const inbox = await service.findInbox('dir_bppt', { limit: 50 }, USER);
+        for (const kelas of [['biasa'], ['biasa', 'terbatas'], ['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']]) {
+            const outbox = await service.findOutbox('ditjen', { limit: 50 }, kelas);
+            const stats = await service.getStats('ditjen', kelas);
+            expect(stats.outbox.total).toBe(outbox.pagination.total);
+        }
+        const statsTarget = await service.getStats('dir_bppt', ['biasa']);
+        expect(statsTarget.inbox.total).toBe(inbox.pagination.total);
+    });
 });
