@@ -27,6 +27,13 @@ function withoutPrivateLocator<T extends Record<string, any>>(record: T) {
 }
 
 export class AutentikasiService {
+    async findParentArsipIds(itemArsipIds: string[]): Promise<string[]> {
+        const rows = await db.selectDistinct({ arsipId: arsipElektronik.arsipId })
+            .from(arsipElektronik)
+            .where(inArray(arsipElektronik.id, itemArsipIds));
+        return rows.map((row: { arsipId: string }) => row.arsipId);
+    }
+
     async create(
         data: CreateAutentikasi & { userId: string },
         auditContext: CriticalAuditContext,

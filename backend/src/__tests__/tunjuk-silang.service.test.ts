@@ -8,6 +8,7 @@ const USER_ID = '550e8400-e29b-41d4-a716-446655440010';
 
 // ─── Chainable DB Mock ───
 const resultQueue: any[] = [];
+const chainCalls: Array<{ method: string; args: any[] }> = [];
 function enqueue(...results: any[]) { resultQueue.push(...results); }
 
 const mockChain: any = new Proxy({}, {
@@ -16,7 +17,10 @@ const mockChain: any = new Proxy({}, {
             const val = resultQueue.shift() ?? [];
             return (resolve: any, reject: any) => val instanceof Error ? reject(val) : resolve(val);
         }
-        return (..._args: any[]) => mockChain;
+        return (...args: any[]) => {
+            chainCalls.push({ method: String(prop), args });
+            return mockChain;
+        };
     },
 });
 
@@ -45,7 +49,7 @@ function mutableEndpoint(id: string, unitKerjaId = 'unit-a') {
 }
 
 describe('TunjukSilangService', () => {
-    beforeEach(() => { resultQueue.length = 0; });
+    beforeEach(() => { resultQueue.length = 0; chainCalls.length = 0; });
 
     // ==================== Validation ====================
 
@@ -122,6 +126,8 @@ describe('TunjukSilangService', () => {
 
             const result = await tunjukSilangService.findByEntity('arsip', SOURCE_ID);
             expect(result[0].direction).toBe('outgoing');
+            expect(chainCalls.some(call => call.method === 'offset')).toBe(false);
+            expect(chainCalls.find(call => call.method === 'limit')?.args).toEqual([500]);
             expect(result[0].relatedType).toBe('surat_masuk');
             expect(result[0].relatedId).toBe(TARGET_ID);
         });
@@ -244,11 +250,6 @@ describe('TunjukSilangService', () => {
         });
 
         it('rejects invalid service-level pagination', async () => {
-            await expect(tunjukSilangService.findByEntity(
-                'arsip',
-                SOURCE_ID,
-                { page: 0, limit: 101 },
-            )).rejects.toMatchObject({ statusCode: 400 });
             await expect(tunjukSilangService.findAll({ page: Number.NaN, limit: 20 }))
                 .rejects.toMatchObject({ statusCode: 400 });
         });

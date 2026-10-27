@@ -234,13 +234,31 @@ describe('tunjuk silang route policy', () => {
             .get(`/tunjuk-silang/arsip/${SOURCE_ID}?page=2&limit=25`)
             .expect(200);
 
-        expect(mocks.service.findByEntity).toHaveBeenCalledWith(
-            'arsip',
-            SOURCE_ID,
-            { page: 2, limit: 25 },
-        );
+        expect(mocks.service.findByEntity).toHaveBeenCalledWith('arsip', SOURCE_ID);
         // One check for the source and one for the deduplicated related record.
         expect(mocks.recordAccess.check).toHaveBeenCalledTimes(2);
+    });
+
+    it('paginates after filtering so hidden relations do not shift pages or totals', async () => {
+        const HIDDEN_ID = '33333333-3333-4333-8333-333333333333';
+        mocks.service.findByEntity.mockResolvedValue([
+            { id: 'ref-baru', relatedType: 'surat_masuk', relatedId: HIDDEN_ID },
+            { id: 'ref-lama', relatedType: 'arsip', relatedId: TARGET_ID },
+        ]);
+        mocks.recordAccess.check.mockImplementation(async (_user: unknown, _type: string, id: string) =>
+            id === HIDDEN_ID ? access('ditjen', true, false) : access());
+
+        const first = await request(app)
+            .get(`/tunjuk-silang/arsip/${SOURCE_ID}?page=1&limit=1`)
+            .expect(200);
+        expect(first.body.data.map((reference: any) => reference.id)).toEqual(['ref-lama']);
+        expect(first.body.pagination).toEqual({ page: 1, limit: 1, total: 1 });
+
+        const second = await request(app)
+            .get(`/tunjuk-silang/arsip/${SOURCE_ID}?page=2&limit=1`)
+            .expect(200);
+        expect(second.body.data).toEqual([]);
+        expect(second.body.pagination.total).toBe(1);
     });
 
     it('requires a reason and records a traceable cancellation', async () => {

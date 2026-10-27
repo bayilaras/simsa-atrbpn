@@ -5,6 +5,7 @@ import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { canAccessUnit, Role } from '../config/permissions';
 import { penyusutanService } from '../services/penyusutan.service';
+import type { DispositionActor } from '../services/penyusutan-authority';
 import { validateBody, uuidParamValidator } from '../middlewares/validate.middleware';
 import { createPenyusutanSchema, removePenyusutanItemsSchema } from '../validators/schemas';
 import { advancePenyusutanSchema, recoverInactiveTransferSchema } from '../validators/penyusutan-evidence.schemas';
@@ -31,6 +32,20 @@ function requireConcreteUnitScope(req: AuthRequest, res: Response): string | nul
         return null;
     }
     return unitKerjaId;
+}
+
+function dispositionActor(req: AuthRequest): DispositionActor | undefined {
+    if (!req.user) return undefined;
+    return {
+        id: req.user.id,
+        email: req.user.email,
+        role: req.user.role,
+        unitKerjaId: resolveEffectiveUnitKerjaId(
+            req.user.role as Role,
+            req.user.unitKerjaId,
+        ) || '',
+        ipAddress: req.ip,
+    };
 }
 
 // ==================== PRINT TEMPLATES ====================
@@ -171,6 +186,7 @@ router.post('/', canWriteMiddleware(), sensitiveLimiter, validateBody(createPeny
                 userEmail: req.user?.email,
                 ipAddress: req.ip,
             },
+            actor: dispositionActor(req),
         });
         res.status(201).json({ success: true, data: result });
     } catch (error) {
@@ -187,16 +203,7 @@ router.put('/:id/status', canWriteMiddleware(), sensitiveLimiter, validateBody(a
         const result = await penyusutanService.updateStatus(String(req.params.id), {
             catatan,
             executionEvidence,
-            user: req.user ? {
-                id: req.user.id,
-                email: req.user.email,
-                role: req.user.role,
-                unitKerjaId: resolveEffectiveUnitKerjaId(
-                    req.user.role as Role,
-                    req.user.unitKerjaId,
-                ) || '',
-                ipAddress: req.ip,
-            } : undefined,
+            user: dispositionActor(req),
         }, unitKerjaId, allowedSecurityClassifications(req.user));
         res.json({ success: true, data: result });
     } catch (error) {
@@ -272,6 +279,7 @@ router.post('/:id/items', canWriteMiddleware(), async (req: AuthRequest, res, ne
             unitKerjaId,
             allowedSecurityClassifications(req.user),
             { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
+            dispositionActor(req),
         );
         res.json({ success: true, ...result });
     } catch (error) {

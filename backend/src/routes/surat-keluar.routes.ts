@@ -505,14 +505,16 @@ router.post('/:id/archive-full', validateIdParam(), canWriteMiddleware(), async 
         if (!existing) {
             return res.status(404).json({ error: 'Surat keluar not found' });
         }
+        // Access first, so the approval status of a letter the caller cannot
+        // open is not revealed through a 409.
+        const access = await recordAccessService.check(req.user, 'surat_keluar', id);
+        if (!access.exists || !access.mutable) {
+            return res.status(404).json({ error: 'Surat keluar not found' });
+        }
         if (existing.approvalStatus !== 'approved') {
             return res.status(409).json({
                 error: 'Surat keluar harus memperoleh persetujuan final sebelum dapat diregistrasikan sebagai arsip.',
             });
-        }
-        const access = await recordAccessService.check(req.user, 'surat_keluar', id);
-        if (!access.exists || !access.mutable) {
-            return res.status(404).json({ error: 'Surat keluar not found' });
         }
         const parsed = archiveRegistrationSchema.safeParse(req.body);
         if (!parsed.success) {

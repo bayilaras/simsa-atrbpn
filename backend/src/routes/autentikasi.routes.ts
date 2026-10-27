@@ -6,6 +6,7 @@ import { HashVerificationService } from '../services/hash-verification.service.j
 import { canWriteMiddleware, roleMiddleware } from '../middlewares/role.middleware.js';
 import { validateBody, validateQuery, uuidParamValidator } from '../middlewares/validate.middleware.js';
 import { createAutentikasiSchema, queryAutentikasiSchema } from '../validators/schemas.js';
+import { recordAccessService, requiresExplicitAccessGrant } from '../services/record-access.service.js';
 
 const router = Router();
 const VERIFY_PDF_LIMIT_BYTES = 10 * 1024 * 1024;
@@ -74,6 +75,21 @@ router.post('/',
     validateBody(createAutentikasiSchema),
     async (req: AuthRequest, res, next) => {
         try {
+            // Authenticating an item writes to its parent archive, so a
+            // controlled parent needs a manage grant like other archive
+            // mutations. Disposal or hold state does not block authentication.
+            const parentIds = await autentikasiService.findParentArsipIds(req.body.itemArsipIds);
+            for (const arsipId of parentIds) {
+                const access = await recordAccessService.check(req.user, 'arsip', arsipId);
+                const canManage = access.allowed && (
+                    !requiresExplicitAccessGrant(access.classification)
+                    || access.grantAccessMode === 'manage'
+                );
+                if (!canManage) {
+                    return res.status(404).json({ error: 'Sebagian item arsip tidak ditemukan atau tidak dapat diakses' });
+                }
+            }
+
             const result = await autentikasiService.create({
                 ...req.body,
                 userId: req.user!.id,

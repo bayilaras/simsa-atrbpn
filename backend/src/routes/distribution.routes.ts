@@ -123,7 +123,10 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
 
         if (!unitKerjaId) return;
 
-        const stats = await distributionService.getStats(unitKerjaId as string);
+        const stats = await distributionService.getStats(
+            unitKerjaId as string,
+            allowedSecurityClassifications(req.user),
+        );
         res.json({ success: true, data: stats });
     } catch (error) {
         next(error);
