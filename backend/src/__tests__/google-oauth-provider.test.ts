@@ -55,6 +55,14 @@ describe('Better Auth password-only provider registration', () => {
         expect(await response.json()).toMatchObject({ code: 'PROVIDER_NOT_FOUND' });
     });
 
+    it('passes the startup schema check that gates every auth endpoint', async () => {
+        for (const auth of [passwordOnly, withGoogle]) {
+            const context = await auth.$context;
+            expect(context.checkSchema).toBeTypeOf('function');
+            await expect(Promise.resolve(context.checkSchema?.())).resolves.toBeUndefined();
+        }
+    });
+
     it('retains invitation-only Google and disables public credential signup when opted in', async () => {
         const auth = withGoogle;
         expect(auth.options.socialProviders?.google).toMatchObject({
