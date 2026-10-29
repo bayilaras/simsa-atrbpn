@@ -3,7 +3,8 @@ import { parseUserInput, parseUserOutput } from 'better-auth/db';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import * as schema from '../db/schema';
 
-vi.mock('../config/database', () => ({ db: {} }));
+// Better Auth checks the Drizzle schema at startup; the real client carries it.
+vi.mock('../config/database', async () => ({ db: { _: { fullSchema: await import('../db/schema') } } }));
 // Provider registration tests do not run a PostgreSQL store; separate suites
 // exercise shared admission, outages and concurrency against the real schema.
 vi.mock('../config/rate-limits.js', async importOriginal => ({
@@ -52,6 +53,14 @@ describe('Better Auth password-only provider registration', () => {
         }));
         expect(response.status).toBe(404);
         expect(await response.json()).toMatchObject({ code: 'PROVIDER_NOT_FOUND' });
+    });
+
+    it('passes the startup schema check that gates every auth endpoint', async () => {
+        for (const auth of [passwordOnly, withGoogle]) {
+            const context = await auth.$context;
+            expect(context.checkSchema).toBeTypeOf('function');
+            await expect(Promise.resolve(context.checkSchema?.())).resolves.toBeUndefined();
+        }
     });
 
     it('retains invitation-only Google and disables public credential signup when opted in', async () => {

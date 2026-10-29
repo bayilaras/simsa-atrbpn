@@ -19,24 +19,36 @@ describe('Better Auth account schema contract', () => {
         }
     });
 
-    it('uniquely identifies accounts by issuer and accountId', () => {
+    it('uniquely identifies accounts by providerId and accountId', () => {
+        // Better Auth 1.7.3+ no longer writes issuer; a required column it never
+        // writes fails every account insert and its startup schema check.
         const betterAuthAccount = getAuthTables({}).account;
-        expect(betterAuthAccount.indexes).toContainEqual({
-            fields: ['issuer', 'accountId'],
-            unique: true,
-        });
+        expect(betterAuthAccount.fields).not.toHaveProperty('issuer');
+        expect(accounts.issuer.notNull).toBe(false);
 
         const table = getTableConfig(accounts);
+        expect(table.indexes.map((index) => index.config.name)).not.toContain('accounts_issuer_account_id_unique');
         const identityIndex = table.indexes.find(
-            (index) => index.config.name === 'accounts_issuer_account_id_unique',
+            (index) => index.config.name === 'accounts_provider_id_account_id_unique',
         );
-
-        expect(accounts.issuer.notNull).toBe(true);
         expect(identityIndex?.config.unique).toBe(true);
         expect(identityIndex?.config.columns.map((column) => column.name)).toEqual([
-            accounts.issuer.name,
+            accounts.providerId.name,
             accounts.accountId.name,
         ]);
+    });
+
+    it('moves the identity key to the provider pair fail-closed', () => {
+        const migration = readFileSync(fileURLToPath(new URL(
+            '../db/migrations/0052_better_auth_account_provider_identity.sql',
+            import.meta.url,
+        )), 'utf8');
+
+        expect(migration).toContain('GROUP BY provider_id, account_id');
+        expect(migration).toContain('ALTER COLUMN "issuer" DROP NOT NULL');
+        expect(migration).toContain('DROP INDEX IF EXISTS "accounts_issuer_account_id_unique"');
+        expect(migration).toContain('CREATE UNIQUE INDEX "accounts_provider_id_account_id_unique"');
+        expect(migration).not.toMatch(/DROP COLUMN/i);
     });
 
     it('migrates legacy credential and Google identities fail-closed', () => {

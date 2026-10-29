@@ -216,9 +216,10 @@ router.post('/', authorizeTokenGeneration, limitTokenGeneration, async (req: Aut
                 ) {
                     throw new Error('Upload pathname is not permitted');
                 }
-                // User is already authenticated via authMiddleware
+                // User is already authenticated via authMiddleware. The pathname
+                // starts with the user's file name, so only its folder is logged.
                 log.info(
-                    { userId: req.user?.id, pathname },
+                    { userId: req.user?.id, folder: pathname.split('/')[0] },
                     'Generating client upload token'
                 );
 
