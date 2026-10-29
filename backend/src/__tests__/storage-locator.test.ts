@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    describeLocatorForLog,
     isVercelBlobLocator,
     normalizeStoredObjectLocator,
     parseGcsLocator,
@@ -108,5 +109,26 @@ describe('object storage locators', () => {
         expect(requireImmutableObjectGeneration(vercel, null)).toBeNull();
         expect(() => requireImmutableObjectGeneration(vercel, '123'))
             .toThrow(/non-GCS.*generation/i);
+    });
+
+    it('describes a locator for logs without the uploaded file name', () => {
+        const suffix = 'oYnXSVczoLoBVtX8eKXbRvJ3dFHKyz';
+        const blob = `https://store.private.blob.vercel-storage.com/surat-masuk/ND%20Rahasia%20Sengketa%2012-${suffix}.pdf`;
+        const described = describeLocatorForLog(blob);
+
+        expect(described).toEqual({
+            host: 'store.private.blob.vercel-storage.com',
+            folder: 'surat-masuk',
+            suffix,
+            sha256: expect.stringMatching(/^[0-9a-f]{16}$/),
+        });
+        expect(JSON.stringify(described)).not.toMatch(/Rahasia|Sengketa/);
+        expect(describeLocatorForLog(blob)?.sha256).toBe(described?.sha256);
+
+        const gcs = describeLocatorForLog(toGcsLocator('simsa-private', 'arsip/Perihal rahasia.pdf'));
+        expect(gcs).toMatchObject({ host: 'simsa-private', folder: 'arsip', suffix: null });
+        expect(JSON.stringify(gcs)).not.toMatch(/Perihal/);
+        expect(describeLocatorForLog('not a url')).toEqual({ sha256: expect.stringMatching(/^[0-9a-f]{16}$/) });
+        expect(describeLocatorForLog(null)).toBeNull();
     });
 });

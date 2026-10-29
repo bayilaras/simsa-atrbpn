@@ -3,7 +3,7 @@ import { Readable } from 'node:stream';
 import { Storage } from '@google-cloud/storage';
 import { buildCloudPlatformConfig } from '../config/cloud-platform.js';
 import { createLogger } from '../utils/logger.js';
-import { parseGcsLocator, toGcsLocator, assertReservedBulkObjectName } from './locator.js';
+import { parseGcsLocator, toGcsLocator, assertReservedBulkObjectName, describeLocatorForLog } from './locator.js';
 import type {
     CopyFileOptions,
     DownloadFileOptions,
@@ -635,7 +635,7 @@ export class GcsStorageAdapter implements ObjectStorageAdapter {
             return this.storedFile(parsed.bucket, parsed.objectName, metadata);
         } catch (error) {
             if (isNotFound(error)) return null;
-            log.error({ err: error, locator }, 'Failed to read Cloud Storage metadata');
+            log.error({ err: error, object: describeLocatorForLog(locator) }, 'Failed to read Cloud Storage metadata');
             return null;
         }
     }
@@ -646,7 +646,7 @@ export class GcsStorageAdapter implements ObjectStorageAdapter {
             await this.storage.bucket(parsed.bucket).file(parsed.objectName).delete({ ignoreNotFound: true });
             return true;
         } catch (error) {
-            log.error({ err: error, locator }, 'Failed to delete Cloud Storage object');
+            log.error({ err: error, object: describeLocatorForLog(locator) }, 'Failed to delete Cloud Storage object');
             return false;
         }
     }
@@ -666,7 +666,7 @@ export class GcsStorageAdapter implements ObjectStorageAdapter {
                 .delete({ ignoreNotFound: true });
             return true;
         } catch (error) {
-            log.error({ err: error, locator, generation }, 'Failed to delete Cloud Storage generation');
+            log.error({ err: error, object: describeLocatorForLog(locator), generation }, 'Failed to delete Cloud Storage generation');
             return false;
         }
     }
@@ -712,7 +712,7 @@ export class GcsStorageAdapter implements ObjectStorageAdapter {
             };
         } catch (error) {
             if (isNotFound(error)) return null;
-            log.error({ err: error, locator }, 'Failed to download Cloud Storage object');
+            log.error({ err: error, object: describeLocatorForLog(locator) }, 'Failed to download Cloud Storage object');
             if (options.throwOnError) throw error;
             return null;
         }

@@ -293,6 +293,9 @@ export class ApiClient {
             ...options,
             signal: scope.signal,
             credentials: 'include', // Important for cookies/sessions
+            // Record data must not stay in the browser's HTTP cache after
+            // logout on a shared workstation (the API also sends no-store).
+            cache: 'no-store',
             headers: {
                 'Content-Type': 'application/json',
                 ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),

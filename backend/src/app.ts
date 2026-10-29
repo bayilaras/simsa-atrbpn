@@ -184,6 +184,14 @@ app.use(cookieParser());
 // CSRF cookie setter — set token cookie on all /api responses (must be before route handlers)
 app.use('/api', csrfCookieSetter);
 
+// Record data must not stay in the browser's HTTP cache after logout on a
+// shared workstation. A route that needs another policy sets its own header.
+app.use('/api', (_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    next();
+});
+
 // Liveness deliberately answers only whether this process can serve HTTP. It
 // must not be coupled to a dependency outage or the orchestrator would restart
 // a healthy API in a loop. Readiness below performs live dependency probes.
@@ -273,6 +281,13 @@ const wrappedAuthHandler = async (req: Request, res: Response, next: NextFunctio
         });
     }
 };
+
+// Sign-out also drops HTTP cache entries an earlier client version or another
+// session left for this origin. Auth handlers keep headers already set here.
+app.post('/api/auth/sign-out', (_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('Clear-Site-Data', '"cache"');
+    next();
+});
 
 if (cloudPlatformConfig.authProvider === 'firebase') {
     app.use('/api/auth', firebaseAuthRoutes);

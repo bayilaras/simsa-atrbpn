@@ -37,6 +37,16 @@ describe('ApiClient transport contracts', () => {
         await result.blob();
     });
 
+    it('never lets record responses into the browser HTTP cache', async () => {
+        const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ data: [] }) });
+        vi.stubGlobal('fetch', fetchMock);
+
+        await api.get('/api/surat-masuk', {});
+        await api.get('/api/surat-masuk', {}, { cache: 'force-cache' });
+
+        expect(fetchMock.mock.calls.map(([, config]) => config.cache)).toEqual(['no-store', 'no-store']);
+    });
+
     it('still rejects private-file errors when a raw response is requested', async () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
             ok: false, status: 403, headers: new Headers(),
