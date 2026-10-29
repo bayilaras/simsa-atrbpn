@@ -1511,6 +1511,49 @@ describe('PostgreSQL migration chain', () => {
         expect(units.rows.map(row => row.id)).toEqual(['dir_bppt', 'dir_ktpp', 'dir_ptep']);
     }, PGLITE_MIGRATION_TIMEOUT_MS);
 
+    it('0052 memindahkan kunci identitas akun ke (provider_id, account_id), fail-closed bila ganda', async () => {
+        const database = await createDatabase();
+        const index0052 = journal.entries.findIndex(({ tag }) => tag === '0052_better_auth_account_provider_identity');
+        expect(index0052).toBeGreaterThan(0);
+        for (const entry of journal.entries.slice(0, index0052)) {
+            await applyMigration(database, entry);
+        }
+        // Token Google dapat membawa iss dengan atau tanpa skema; 0015 hanya
+        // menormalkan baris lama, jadi subject yang sama bisa tertaut dua kali.
+        await database.exec(`
+            INSERT INTO users (id, email) VALUES
+                ('10000000-0000-4000-8000-000000000521', 'akun-a@example.test'),
+                ('10000000-0000-4000-8000-000000000522', 'akun-b@example.test');
+            INSERT INTO accounts (user_id, issuer, account_id, provider_id) VALUES
+                ('10000000-0000-4000-8000-000000000521', 'https://accounts.google.com', 'google-subject', 'google'),
+                ('10000000-0000-4000-8000-000000000522', 'accounts.google.com', 'google-subject', 'google'),
+                ('10000000-0000-4000-8000-000000000521', 'local:credential', '10000000-0000-4000-8000-000000000521', 'credential');
+        `);
+        await expect(applyMigration(database, journal.entries[index0052]))
+            .rejects.toThrow(/0052: identitas \(provider_id, account_id\) ganda/);
+
+        await database.exec(`DELETE FROM accounts WHERE issuer = 'accounts.google.com'`);
+        await applyMigration(database, journal.entries[index0052]);
+
+        // Better Auth 1.7.3+ tidak menulis issuer; nilai lama tetap tersimpan.
+        await database.exec(`
+            INSERT INTO accounts (user_id, account_id, provider_id)
+            VALUES ('10000000-0000-4000-8000-000000000522', '10000000-0000-4000-8000-000000000522', 'credential');
+        `);
+        const issuers = await database.query<{ provider_id: string; issuer: string | null }>(`
+            SELECT provider_id, issuer FROM accounts ORDER BY user_id, provider_id
+        `);
+        expect(issuers.rows).toEqual([
+            { provider_id: 'credential', issuer: 'local:credential' },
+            { provider_id: 'google', issuer: 'https://accounts.google.com' },
+            { provider_id: 'credential', issuer: null },
+        ]);
+        await expect(database.exec(`
+            INSERT INTO accounts (user_id, account_id, provider_id)
+            VALUES ('10000000-0000-4000-8000-000000000522', 'google-subject', 'google');
+        `)).rejects.toThrow(/accounts_provider_id_account_id_unique/);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
+
     it('memodelkan setiap kolom integrasi rangkaian di skema Drizzle', async () => {
         const database = await createDatabase();
         for (const entry of journal.entries) {
