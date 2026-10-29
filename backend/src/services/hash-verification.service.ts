@@ -24,7 +24,7 @@ export class HashVerificationService {
                 eq(arsipElektronik.immutable, true),
             ),
             with: {
-                arsip: true,
+                arsip: { columns: { nomorBerkas: true, uraianBerkas: true } },
                 autentikasi: true,
                 fileAttachment: true,
             },
