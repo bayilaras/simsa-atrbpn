@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { suratKeluar, NewSuratKeluar, SuratKeluar, suratMasuk } from '../db/schema';
-import { eq, and, desc, sql, gte, lte, like, or, ilike, isNull, inArray } from 'drizzle-orm';
+import { eq, and, desc, sql, gte, lte, like, or, ilike, isNull, inArray, getTableColumns } from 'drizzle-orm';
 import { ConflictError, DatabaseError, ValidationError } from '../utils/errors';
 import {
     scopedRecordByIdWhere,
@@ -31,6 +31,7 @@ import { denganRetryDeadlock } from '../utils/deadlock-retry.js';
 import type { TindakLanjutInput } from '../validators/schemas.js';
 import { afterSuratKeluarChanged, afterSuratKeluarInsert } from './rangkaian/tindak-lanjut.hook.js';
 import type { RecordUser } from './record-access.service.js';
+import { resolveKonteksBaca, visibleSql, type KonteksBaca } from './access/visibility-spec.js';
 
 export interface SuratKeluarFilters {
     unitKerjaId?: string | null;
@@ -45,6 +46,21 @@ export interface SuratKeluarFilters {
     limit?: number;
     /** Legacy outgoing rows are treated as Terbatas until reclassified. */
     securityClassifications?: string[] | null;
+    /** Bila diisi, balasanUntuk hanya dikirim bila pembaca boleh membaca surat sumber. */
+    pembaca?: RecordUser;
+}
+
+// UUID surat masuk sumber hanya untuk pembaca surat itu, sama dengan detail.
+// isBalasan menjaga badge "Balasan" di daftar tanpa membuka UUID.
+function kolomDaftarPembaca(ctx: KonteksBaca) {
+    const sumberTerbaca = visibleSql(ctx, { type: 'surat_masuk', alias: 'bsm' }, 'read');
+    return {
+        ...getTableColumns(suratKeluar),
+        balasanUntuk: sql<string | null>`CASE WHEN EXISTS (
+            SELECT 1 FROM surat_masuk bsm WHERE bsm.id = ${suratKeluar.balasanUntuk} AND ${sumberTerbaca}
+        ) THEN ${suratKeluar.balasanUntuk} END`,
+        isBalasan: sql<boolean>`${suratKeluar.balasanUntuk} IS NOT NULL`,
+    };
 }
 
 type CreateSuratKeluarInput = Omit<NewSuratKeluar, 'noUrut' | 'tahun'> & {
@@ -56,7 +72,7 @@ type CreateSuratKeluarInput = Omit<NewSuratKeluar, 'noUrut' | 'tahun'> & {
 
 export class SuratKeluarService {
     async findAll(filters: SuratKeluarFilters) {
-        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif, search, page = 1, limit = 20, securityClassifications } = filters;
+        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif, search, page = 1, limit = 20, securityClassifications, pembaca } = filters;
         const offset = (page - 1) * limit;
 
         const conditions = [
@@ -114,8 +130,9 @@ export class SuratKeluarService {
 
         const count = countResult?.[0]?.count ?? 0;
 
+        const kolom = pembaca ? kolomDaftarPembaca(await resolveKonteksBaca(pembaca, db)) : getTableColumns(suratKeluar);
         const data = await db
-            .select()
+            .select(kolom)
             .from(suratKeluar)
             .where(and(...conditions))
             .orderBy(desc(suratKeluar.createdAt))
