@@ -111,3 +111,52 @@ describe('balasanUntuk hanya untuk pembaca surat sumber', () => {
         expect(links.body.data.balasanUntuk).toBe(SURAT.smTerbatas);
     });
 });
+
+describe('daftar surat keluar: balasanUntuk mengikuti akses baca surat sumber', () => {
+    const cari = (body: any, id: string) => body.data.find((row: any) => row.id === id);
+
+    it('admin tanpa grant atas sumber terbatas menerima isBalasan tanpa UUID', async () => {
+        const response = await request(app).get('/api/surat-keluar').query({ limit: 100 })
+            .set(sebagai(PENGGUNA.tu)).expect(200);
+        expect(cari(response.body, BALASAN.keTerbatas)).toMatchObject({ balasanUntuk: null, isBalasan: true });
+        expect(cari(response.body, BALASAN.keBiasa)).toMatchObject({ balasanUntuk: SURAT.smTunggal, isBalasan: true });
+        expect(JSON.stringify(response.body)).not.toContain(SURAT.smTerbatas);
+    });
+
+    it('surat keluar tanpa sumber: isBalasan false', async () => {
+        const response = await request(app).get('/api/surat-keluar').query({ limit: 100 })
+            .set(sebagai(PENGGUNA.superAdmin)).expect(200);
+        expect(cari(response.body, SURAT.skBpptBiasa)).toMatchObject({ balasanUntuk: null, isBalasan: false });
+    });
+
+    it('staff membaca sumber biasa; grant baca membuka sumber terbatas', async () => {
+        const staff = await request(app).get('/api/surat-keluar').query({ limit: 100 })
+            .set(sebagai(PENGGUNA.staffSes)).expect(200);
+        expect(cari(staff.body, BALASAN.keBiasa)).toMatchObject({ balasanUntuk: SURAT.smTunggal, isBalasan: true });
+        expect(cari(staff.body, BALASAN.keTerbatas)).toMatchObject({ balasanUntuk: null, isBalasan: true });
+
+        await database.query(
+            `UPDATE record_access_grants SET expires_at = '2099-01-01T00:00:00Z'
+             WHERE target_user_id = $1 AND entity_type = 'surat_masuk' AND entity_id = $2`,
+            [USER_ID.tu, SURAT.smTerbatas],
+        );
+        const tu = await request(app).get('/api/surat-keluar').query({ limit: 100 })
+            .set(sebagai(PENGGUNA.tu)).expect(200);
+        expect(cari(tu.body, BALASAN.keTerbatas)).toMatchObject({ balasanUntuk: SURAT.smTerbatas, isBalasan: true });
+    });
+
+    it('sumber yang terhapus tidak lagi dirujuk lewat UUID', async () => {
+        await database.query(`UPDATE surat_masuk SET is_deleted = true WHERE id = $1`, [SURAT.smTunggal]);
+        const response = await request(app).get('/api/surat-keluar').query({ limit: 100 })
+            .set(sebagai(PENGGUNA.tu)).expect(200);
+        expect(cari(response.body, BALASAN.keBiasa)).toMatchObject({ balasanUntuk: null, isBalasan: true });
+    });
+
+    it('pemanggil layanan tanpa pembaca (ekspor) tetap menerima kolom mentah', async () => {
+        const { suratKeluarService } = await import('../services/surat-keluar.service');
+        const result = await suratKeluarService.findAll({ unitKerjaId: 'sesditjen', limit: 100 });
+        const row = result.data.find((item: any) => item.id === BALASAN.keTerbatas) as any;
+        expect(row.balasanUntuk).toBe(SURAT.smTerbatas);
+        expect(row).not.toHaveProperty('isBalasan');
+    });
+});
