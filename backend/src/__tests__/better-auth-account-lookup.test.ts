@@ -6,20 +6,23 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import * as schema from '../db/schema';
 
 describe('Better Auth account identity lookup', () => {
-    it('compiles the issuer-scoped account lookup against the application schema', async () => {
+    it('compiles the provider-scoped account lookup against the application schema', async () => {
         const dialect = new PgDialect();
         let compiledQuery: ReturnType<PgDialect['sqlToQuery']> | undefined;
 
         const fakeDb = {
             _: { fullSchema: schema },
-            select: vi.fn(() => ({
-                from: vi.fn(() => ({
+            select: vi.fn(() => {
+                // findAccountByKey reads at most two rows to detect duplicates.
+                const builder = {
+                    limit: vi.fn(() => builder),
                     where: vi.fn((...clauses: SQL[]) => {
                         compiledQuery = dialect.sqlToQuery(clauses[0].getSQL());
                         return Promise.resolve([]);
                     }),
-                })),
-            })),
+                };
+                return { from: vi.fn(() => builder) };
+            }),
         };
 
         const testAuth = betterAuth({
@@ -34,13 +37,13 @@ describe('Better Auth account identity lookup', () => {
 
         const context = await testAuth.$context;
         await expect(context.internalAdapter.findAccountByKey({
-            issuer: 'https://accounts.google.com',
+            providerId: 'google',
             accountId: 'google-subject',
         })).resolves.toBeNull();
 
         expect(compiledQuery).toMatchObject({
-            sql: '("accounts"."issuer" = $1 and "accounts"."account_id" = $2)',
-            params: ['https://accounts.google.com', 'google-subject'],
+            sql: '("accounts"."provider_id" = $1 and "accounts"."account_id" = $2)',
+            params: ['google', 'google-subject'],
         });
     });
 });

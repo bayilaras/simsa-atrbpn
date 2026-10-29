@@ -2,7 +2,7 @@ import { copy, del, get, head, list, put } from '@vercel/blob';
 import { Readable } from 'node:stream';
 import { buildBlobStorageConfig } from '../config/blob-storage.js';
 import { createLogger } from '../utils/logger.js';
-import { isVercelBlobLocator, assertReservedBulkObjectName, assertBulkObjectLocator } from './locator.js';
+import { isVercelBlobLocator, assertReservedBulkObjectName, assertBulkObjectLocator, describeLocatorForLog } from './locator.js';
 import type {
     CopyFileOptions,
     DownloadFileOptions,
@@ -105,7 +105,7 @@ export class VercelBlobAdapter implements ObjectStorageAdapter {
             };
         } catch (error) {
             if ((error as { name?: string }).name === 'BlobNotFoundError') return null;
-            log.error({ err: error, locator }, 'Failed to read Vercel Blob metadata');
+            log.error({ err: error, object: describeLocatorForLog(locator) }, 'Failed to read Vercel Blob metadata');
             return null;
         }
     }
@@ -117,7 +117,7 @@ export class VercelBlobAdapter implements ObjectStorageAdapter {
             await del(locator);
             return true;
         } catch (error) {
-            log.error({ err: error, locator }, 'Failed to delete Vercel Blob object');
+            log.error({ err: error, object: describeLocatorForLog(locator) }, 'Failed to delete Vercel Blob object');
             return false;
         }
     }
@@ -149,7 +149,7 @@ export class VercelBlobAdapter implements ObjectStorageAdapter {
             };
         } catch (error) {
             if ((error as { name?: string }).name === 'BlobNotFoundError') return null;
-            log.error({ err: error, locator }, 'Failed to download Vercel Blob object');
+            log.error({ err: error, object: describeLocatorForLog(locator) }, 'Failed to download Vercel Blob object');
             if (options.throwOnError) throw error;
             return null;
         }

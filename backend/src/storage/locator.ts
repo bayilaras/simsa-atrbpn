@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 export interface GcsLocator {
     bucket: string;
     objectName: string;
@@ -141,4 +143,24 @@ export function assertBulkObjectLocator(locator: string, objectName: string): vo
         ? parseGcsLocator(normalized).objectName
         : normalized ? decodeURIComponent(new URL(normalized).pathname.slice(1)) : null;
     if (actualName !== objectName) throw new Error('Provider object is outside the reserved bulk namespace');
+}
+
+/**
+ * Log-safe description of a stored object locator. Object names begin with the
+ * uploader's file name, which often carries a letter number or subject, so a
+ * log keeps only the host, the top-level folder, the random suffix Vercel Blob
+ * appends, and a digest of the full locator. The suffix or the digest is
+ * enough to find the object in a store listing during reconciliation.
+ */
+export function describeLocatorForLog(locator: string | null | undefined) {
+    if (!locator) return null;
+    const sha256 = createHash('sha256').update(locator).digest('hex').slice(0, 16);
+    try {
+        const url = new URL(locator);
+        const segments = url.pathname.split('/').filter(Boolean);
+        const suffix = /-([A-Za-z0-9]{16,64})\.[A-Za-z0-9]{1,8}$/.exec(segments.at(-1) ?? '')?.[1] ?? null;
+        return { host: url.host, folder: segments.length > 1 ? segments[0] : null, suffix, sha256 };
+    } catch {
+        return { sha256 };
+    }
 }
