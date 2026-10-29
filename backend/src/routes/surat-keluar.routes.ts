@@ -97,6 +97,7 @@ router.get('/', validateQuery(querySuratKeluarSchema), async (req: AuthRequest, 
             page,
             limit,
             securityClassifications: allowedSecurityClassifications(req.user),
+            pembaca: req.user,
         });
 
         res.json({

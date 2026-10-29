@@ -669,8 +669,8 @@ export default function SuratKeluar() {
                                                                 File
                                                             </Badge>
                                                         )}
-                                                        {row.balasanUntuk && (
-                                                            <Badge variant="outline" className="gap-1 border-orange-200 text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-500/15">
+                                                        {(row.isBalasan || row.balasanUntuk) && (
+                                                            <Badge data-badge="balasan" variant="outline" className="gap-1 border-orange-200 text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-500/15">
                                                                 <MailOpen className="h-3 w-3" />
                                                                 Balasan
                                                             </Badge>

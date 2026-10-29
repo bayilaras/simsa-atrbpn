@@ -262,7 +262,7 @@ export class AutentikasiService {
                 petugas: true,
                 itemArsip: {
                     with: {
-                        arsip: true
+                        arsip: { columns: { nomorBerkas: true, uraianBerkas: true, tahun: true } }
                     }
                 }
             }

@@ -18,6 +18,7 @@ import { hasPermission, type Role } from '../config/permissions';
 import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-lock';
 import { isAllowedForClassification, recordAccessService } from './record-access.service';
 import { kelasSumberSurat, normalizeSecurityClassification, rankKelas } from './access/visibility-spec';
+import { ARSIP_KOLOM_DAFTAR } from './access/kolom-rekaman';
 import {
     archiveRuleAssignmentService,
     CURRENT_APPRAISAL_CASE_JOIN,
@@ -105,10 +106,10 @@ const SYSTEM_MANAGED_RETENTION_FIELDS = new Set([
     'tanggalKadaluarsa',
 ]);
 
-// extractedText is document content (OCR text), not metadata. List read models
-// never carry it; only the detail read that passed check() returns it.
-const { extractedText: _extractedText, ...kolomDaftar } = getTableColumns(arsip);
-export const ARSIP_KOLOM_DAFTAR = kolomDaftar;
+// List read models never carry document content (OCR text); only the detail
+// read that passed check() returns it. The projection comes from the column
+// registry so new content columns stay out of lists by default.
+export { ARSIP_KOLOM_DAFTAR };
 export type ArsipDaftar = Omit<Arsip, 'extractedText'>;
 type ArsipBaris = ArsipDaftar & Partial<Pick<Arsip, 'extractedText'>>;
 
