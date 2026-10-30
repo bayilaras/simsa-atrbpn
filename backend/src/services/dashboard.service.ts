@@ -76,7 +76,6 @@ interface DashboardStats {
     totalArsip: number;
     arsipMasuk: number;
     arsipKeluar: number;
-    segmenKadaluarsa: number;
     masukBulanIni: number;
     keluarBulanIni: number;
     monthlyTrend: MonthlyStats[];
@@ -106,7 +105,6 @@ export const dashboardService = {
             [totalMasukResult],
             [totalKeluarResult],
             [archiveCounts],
-            expiringArchives,
             masukMonthlyRaw,
             keluarMonthlyRaw,
             masukStatusBreakdown,
@@ -135,9 +133,6 @@ export const dashboardService = {
                     unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined,
                     archiveClass,
                 )),
-
-            // Expiring archives (next 30 days), verified from canonical snapshots.
-            arsipService.getExpiring(unitKerjaId, 30, securityClassifications),
 
             // Monthly trend: 1 aggregated query per table instead of 24 sequential queries
             db.select({
@@ -205,7 +200,6 @@ export const dashboardService = {
             totalArsip: archiveCounts?.total || 0,
             arsipMasuk: archiveCounts?.masuk || 0,
             arsipKeluar: archiveCounts?.keluar || 0,
-            segmenKadaluarsa: expiringArchives.length,
             // Reuse the calendar-month buckets instead of rescanning each table.
             // A local Date converted to UTC used to omit the month's final day.
             masukBulanIni: (masukByMonth.get(currentMonth) || 0) as number,

@@ -81,8 +81,10 @@ describe('DashboardService', () => {
             const result = await dashboardService.getStats();
             expect(result).toMatchObject({ totalMasuk: 50, totalKeluar: 30,
                 totalArsip: 25, arsipMasuk: 15, arsipKeluar: 10,
-                masukBulanIni: 8, keluarBulanIni: 4, segmenKadaluarsa: 0 });
+                masukBulanIni: 8, keluarBulanIni: 4 });
             expect(result).toHaveProperty('monthlyTrend');
+            expect(result).not.toHaveProperty('segmenKadaluarsa');
+            expect(arsipService.getExpiring).not.toHaveBeenCalled();
         });
 
         it('should accept optional unitKerjaId filter', async () => {
