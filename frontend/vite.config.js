@@ -144,6 +144,9 @@ export default defineConfig(({ command, mode }) => {
   resolve: {
     alias: {
       "@": path.resolve(currentDirectory, "./src"),
+      // Keeps jose and the OIDC token verifier out of the upload chunk; see
+      // src/lib/vercel-oidc-browser.js.
+      "@vercel/oidc": path.resolve(currentDirectory, "./src/lib/vercel-oidc-browser.js"),
     },
   },
   server: {
