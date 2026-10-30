@@ -6,11 +6,9 @@ import {
     createDistributionSchema,
     rejectDistributionSchema,
     createPenyusutanSchema,
-    updatePenyusutanStatusSchema,
     removePenyusutanItemsSchema,
     legalHoldActionSchema,
     updateArsipSchema,
-    calculateRetentionDatesSchema,
     createStorageLocationSchema,
     updateStorageLocationSchema,
     borrowArchiveSchema,
@@ -20,6 +18,7 @@ import {
     markAllReadSchema,
     createSuratKeluarSchema,
     updateSuratKeluarSchema,
+    dateSchema,
 } from '../validators/schemas';
 
 const validUUID = '550e8400-e29b-41d4-a716-446655440000';
@@ -288,18 +287,6 @@ describe('createPenyusutanSchema', () => {
     });
 });
 
-describe('updatePenyusutanStatusSchema', () => {
-    it('accepts empty catatan', () => {
-        const result = updatePenyusutanStatusSchema.safeParse({});
-        expect(result.success).toBe(true);
-    });
-
-    it('accepts catatan', () => {
-        const result = updatePenyusutanStatusSchema.safeParse({ catatan: 'OK' });
-        expect(result.success).toBe(true);
-    });
-});
-
 describe('removePenyusutanItemsSchema', () => {
     it('accepts valid arsipIds', () => {
         const result = removePenyusutanItemsSchema.safeParse({ arsipIds: [validUUID] });
@@ -356,25 +343,9 @@ describe('retention and legal hold schemas', () => {
         }).success).toBe(false);
     });
 
-    it('requires an explicit trigger date for retention calculations', () => {
-        expect(calculateRetentionDatesSchema.safeParse({
-            retentionTriggerDate: '2026-08-20',
-            retensiAktif: '2 tahun',
-            retensiInaktif: '3 tahun',
-        }).success).toBe(true);
-        expect(calculateRetentionDatesSchema.safeParse({
-            tanggalArsip: '2026-08-20',
-            retensiAktif: '2 tahun',
-            retensiInaktif: '3 tahun',
-        }).success).toBe(false);
-    });
-
     it('rejects impossible calendar dates instead of relying on database coercion', () => {
-        expect(calculateRetentionDatesSchema.safeParse({
-            retentionTriggerDate: '2026-02-31',
-            retensiAktif: '2 tahun',
-            retensiInaktif: '3 tahun',
-        }).success).toBe(false);
+        expect(dateSchema.safeParse('2026-02-28').success).toBe(true);
+        expect(dateSchema.safeParse('2026-02-31').success).toBe(false);
     });
 
     it('rejects every raw retention trigger on generic archive updates', () => {
