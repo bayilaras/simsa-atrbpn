@@ -1,7 +1,7 @@
 # Pengujian lokal tanpa resource cloud
 
-Pengujian lokal tidak mengaktifkan billing, mengubah paket Firebase, melakukan
-deployment, atau membuktikan kesiapan Production. Gunakan data sintetis dan
+Pengujian lokal tidak mengaktifkan billing, melakukan deployment, atau
+membuktikan kesiapan Production. Gunakan data sintetis dan
 database terpisah; jangan memakai credential atau salinan arsip Production.
 
 ## Pemeriksaan kode
@@ -64,8 +64,7 @@ Jalankan hanya pada database disposable, bukan target yang dipakai pengguna.
 Tanpa private object storage yang benar-benar dikonfigurasi, pengujian surat
 dengan link placeholder hanya membuktikan metadata, bukan preservasi berkas.
 Jangan membuat lease/hasil scan palsu atau menurunkan pemeriksaan keamanan agar
-upload terlihat berhasil. Build dengan nilai Firebase dummy hanya membuktikan
-kompilasi, bukan login/App Check/GCS live.
+upload terlihat berhasil.
 
 ClamAV native dapat menguji protokol INSTREAM (clean, EICAR, unavailable, dan
 restart). Worker nyata harus membuktikan heartbeat `running -> degraded ->

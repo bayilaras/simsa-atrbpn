@@ -31,7 +31,6 @@ jobs:
           cache-dependency-path: |
             backend/package-lock.json
             frontend/package-lock.json
-            docs-site/package-lock.json
 
       - name: Install backend dependencies
         run: npm ci
@@ -64,10 +63,6 @@ jobs:
         run: npm ci
         working-directory: frontend
 
-      - name: Install documentation dependencies
-        run: npm ci
-        working-directory: docs-site
-
       - name: Test repository scripts, deployment and release tooling contracts
         # Only the focused root test scripts run here; the complete frontend
         # and backend suites remain in their existing required jobs below.
@@ -89,21 +84,6 @@ jobs:
         run: npx vite build
         working-directory: frontend
 
-      - name: Build Firebase and Cloud Storage frontend profile
-        run: npx vite build
-        working-directory: frontend
-        env:
-          VITE_AUTH_PROVIDER: firebase
-          VITE_STORAGE_PROVIDER: gcs
-          # Public Firebase Web identifiers are compile-time configuration,
-          # not credentials. CI uses inert values so the provider-specific
-          # modules and environment guards are compiled on every change.
-          VITE_FIREBASE_API_KEY: ci-public-api-key
-          VITE_FIREBASE_AUTH_DOMAIN: simsa-ci.firebaseapp.com
-          VITE_FIREBASE_PROJECT_ID: simsa-ci
-          VITE_FIREBASE_APP_ID: 1:123456789:web:ci
-          VITE_FIREBASE_APP_CHECK_SITE_KEY: ci-public-site-key
-
       - name: Verify production uses the same-origin API proxy
         run: |
           if VITE_API_URL=https://simsa-backend.vercel.app npm run build > api-proxy-guard.log 2>&1; then
@@ -119,6 +99,27 @@ jobs:
           rm -f api-proxy-guard.log
           rm -f api-proxy-guard-staging.log
         working-directory: frontend
+
+  # Situs dokumentasi (proyek Vercel simsa-atrbpn) dibangun paralel tanpa
+  # menahan job tes. Job ini selalu berjalan; bukan required check.
+  docs-build:
+    name: Documentation Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+
+      - name: Install documentation dependencies
+        run: npm ci
+        working-directory: docs-site
 
       - name: Build documentation
         run: npm run build
