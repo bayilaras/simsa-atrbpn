@@ -92,8 +92,8 @@ describe('versioned PostgreSQL role policy', () => {
 
     it('memasang pg_trgm hanya lewat langkah privileged 0003 administrator grant, tidak pernah di 0001 atau migrasi', () => {
         const baca = (relatif: string) => readFileSync(fileURLToPath(new URL(relatif, import.meta.url)), 'utf8');
-        // Review I-1: drill restore Cloud SQL menjalankan ulang 0001 setelah pg_restore lalu
-        // membandingkan bukti (termasuk baris extension) secara persis; arsip pre_migration /
+        // Review I-1: restore yang menjalankan ulang 0001 setelah pg_restore membandingkan
+        // bukti (termasuk baris extension) secara persis; arsip pre_migration /
         // pre_upgrade_0038 tidak memuat pg_trgm. 0001 karena itu tidak boleh menyentuhnya.
         expect(bootstrapSql).not.toMatch(/pg_trgm/);
         const trgm = baca('../db/grants/0003_optional_pg_trgm.sql');
@@ -105,15 +105,11 @@ describe('versioned PostgreSQL role policy', () => {
         expect(trgm).toContain('extension_record.owner_name <> current_user');
         expect(trgm).toContain("pg_catalog.pg_has_role(current_user, 'simsa_migrator', 'USAGE')");
         expect(trgm.indexOf('$trgm_actor$')).toBeLessThan(trgm.indexOf('CREATE EXTENSION'));
-        // GCP maintenance/preview: db:roles:bootstrap = 0001 lalu 0003, identitas yang sama,
-        // sebelum fase migrate. Drill restore Cloud SQL memanggil psql 0001 langsung.
+        // db:roles:bootstrap = 0001 lalu 0003, identitas yang sama, sebelum fase migrate.
         expect(bootstrapRunner.indexOf("'../src/db/grants/0001_bootstrap_cloud_sql_roles.sql'"))
             .toBeLessThan(bootstrapRunner.indexOf("'../src/db/grants/0003_optional_pg_trgm.sql'"));
         expect(bootstrapRunner).toContain("'--set', 'ON_ERROR_STOP=on', '--file', trgmFile");
         const akar = (relatif: string) => baca(`../../../${relatif}`);
-        const restoreDrill = akar('.github/workflows/backup-cloud-sql.yml');
-        expect(restoreDrill).toContain('--file /grants/0001_bootstrap_cloud_sql_roles.sql');
-        expect(restoreDrill).not.toMatch(/0003_optional_pg_trgm|db:roles:bootstrap/);
         // CI PG16/17/18: 0003 sebagai administrator grant setelah 0001, sebelum db:migrate.
         const ci = akar('.github/workflows/ci.yml');
         const bootstrapCi = ci.indexOf('--file /grants/0001_bootstrap_cloud_sql_roles.sql');
@@ -126,8 +122,7 @@ describe('versioned PostgreSQL role policy', () => {
         expect(upgrade).toContain("psql('migrator cannot run the privileged pg_trgm step', trgmStep, { role: principals[5], rejected: true })");
         expect(upgrade.indexOf("psql('privileged pg_trgm step before 0049', trgmStep)"))
             .toBeLessThan(upgrade.indexOf('await migrateDatabase(upgrade)'));
-        // Drill backup lokal (sumber) dan harness Postgres memakai berkas 0003 yang sama.
-        expect(akar('scripts/local-backup-drill.mjs')).toContain("'backend/src/db/grants/0003_optional_pg_trgm.sql'");
+        // Harness Postgres memakai berkas 0003 yang sama.
         expect(baca('../../integration/helpers/rangkaian-db.ts')).toContain("'../../src/db/grants/0003_optional_pg_trgm.sql'");
         const migration = baca('../db/migrations/0049_lacak_trgm.sql');
         expect(migration).not.toMatch(/CREATE\s+EXTENSION/i);
