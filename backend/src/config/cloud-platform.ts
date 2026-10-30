@@ -1,4 +1,4 @@
-export type SimsaCloudPlatform = 'local' | 'gcp';
+export type SimsaCloudPlatform = 'local';
 export type SimsaAuthProvider = 'better-auth' | 'firebase';
 export type SimsaStorageProvider = 'vercel-blob' | 'gcs' | 'disabled';
 
@@ -92,25 +92,24 @@ export function buildCloudPlatformConfig(
     source: NodeJS.ProcessEnv = process.env,
 ): CloudPlatformConfig {
     const errors: string[] = [];
-    const inferredPlatform: SimsaCloudPlatform = source.K_SERVICE ? 'gcp' : 'local';
     const platform = choice(
         source.SIMSA_CLOUD_PLATFORM,
-        ['local', 'gcp'] as const,
-        inferredPlatform,
+        ['local'] as const,
+        'local',
         'SIMSA_CLOUD_PLATFORM',
         errors,
     );
     const authProvider = choice(
         source.AUTH_PROVIDER,
         ['better-auth', 'firebase'] as const,
-        platform === 'gcp' ? 'firebase' : 'better-auth',
+        'better-auth',
         'AUTH_PROVIDER',
         errors,
     );
     const storageProvider = choice(
         source.OBJECT_STORAGE_PROVIDER,
         ['vercel-blob', 'gcs', 'disabled'] as const,
-        platform === 'gcp' ? 'gcs' : 'vercel-blob',
+        'vercel-blob',
         'OBJECT_STORAGE_PROVIDER',
         errors,
     );
@@ -126,8 +125,7 @@ export function buildCloudPlatformConfig(
     const gcsBucket = source.GCS_BUCKET?.trim() || '';
     const gcsUploadBucket = source.GCS_UPLOAD_BUCKET?.trim() || gcsBucket;
     const production = source.NODE_ENV === 'production';
-    const cloudRunRuntime = Boolean(source.K_SERVICE);
-    const deployedRuntime = production || cloudRunRuntime || Boolean(source.VERCEL);
+    const deployedRuntime = production || Boolean(source.VERCEL);
     const firebaseCheckRevoked = booleanValue(
         source.FIREBASE_CHECK_REVOKED,
         deployedRuntime && authProvider === 'firebase',
@@ -147,8 +145,7 @@ export function buildCloudPlatformConfig(
 
     // A stale Firebase or gcloud project variable must never silently move
     // authentication into another environment while data remains in this
-    // Cloud SQL/GCS project. Preview, Staging, and Production are hard project
-    // boundaries in the target architecture.
+    // GCS project.
     if (distinctProjectAuthorities.length > 1) {
         errors.push('Cloud project authority variables must identify the same project');
     }
@@ -163,16 +160,6 @@ export function buildCloudPlatformConfig(
         errors.push('GOOGLE_APPLICATION_CREDENTIALS must not be set in a deployed runtime; use attached ADC/WIF');
     }
 
-    // K_SERVICE is injected by Cloud Run and is therefore a stronger runtime
-    // authority than mutable provider environment variables. A typo or stale
-    // rollback variable must not silently start the public API against the
-    // legacy auth/storage control planes.
-    if (cloudRunRuntime && platform !== 'gcp') {
-        errors.push('Cloud Run requires SIMSA_CLOUD_PLATFORM=gcp');
-    }
-    if (platform === 'gcp' && authProvider !== 'firebase') {
-        errors.push('The GCP platform requires AUTH_PROVIDER=firebase');
-    }
     // The metadata-demo mode was removed; a stale value must not be ignored.
     const appMode = source.SIMSA_APP_MODE?.trim().toLowerCase();
     if (appMode && appMode !== 'full') {
@@ -181,13 +168,6 @@ export function buildCloudPlatformConfig(
     const internalProfile = (source.APP_PROFILE || 'internal').trim().toLowerCase() === 'internal';
     if (storageProvider === 'disabled' && !internalProfile) {
         errors.push('Disabled storage is only permitted in full internal mode');
-    }
-    if (platform === 'gcp' && storageProvider !== 'gcs') {
-        errors.push('The GCP platform requires OBJECT_STORAGE_PROVIDER=gcs');
-    }
-
-    if (platform === 'gcp' && !projectId) {
-        errors.push('GOOGLE_CLOUD_PROJECT (or FIREBASE_PROJECT_ID) is required on GCP');
     }
     if (authProvider === 'firebase') {
         if (!firebaseProjectId) {
@@ -261,35 +241,4 @@ export function assertValidCloudPlatformEnvironment(
         throw new Error(`Invalid cloud platform configuration: ${relevantErrors.join('; ')}`);
     }
     return config;
-}
-
-/** Enforce keyless, environment-bound Cloud SQL Auth Proxy connectivity. */
-export function assertGcpIamDatabaseRuntimeEnvironment(
-    source: NodeJS.ProcessEnv,
-    projectId: string,
-): void {
-    if (!projectId) throw new Error('GCP database boundary requires a project ID');
-    if (source.DATABASE_URL?.trim()) {
-        throw new Error('GCP runtimes must use the local Cloud SQL Auth Proxy, not DATABASE_URL');
-    }
-    const host = source.DB_HOST?.trim();
-    const socket = source.CLOUD_SQL_UNIX_SOCKET?.trim();
-    if (host && host !== '127.0.0.1') {
-        throw new Error('GCP DB_HOST must be the loopback Cloud SQL Auth Proxy');
-    }
-    if (socket && !socket.startsWith(`/cloudsql/${projectId}:`)) {
-        throw new Error('CLOUD_SQL_UNIX_SOCKET must belong to this environment project');
-    }
-    if (!host && !socket) {
-        throw new Error('GCP runtimes require a loopback or project-bound Cloud SQL Auth Proxy');
-    }
-    if (source.DB_PASSWORD !== '') {
-        throw new Error('GCP runtime DB_PASSWORD must be empty when automatic IAM auth is enabled');
-    }
-    if (!source.DB_USER?.trim().endsWith(`@${projectId}.iam`)) {
-        throw new Error('GCP DB_USER must be the environment service-account IAM database principal');
-    }
-    if (source.DB_SSL?.trim().toLowerCase() === 'true') {
-        throw new Error('GCP runtime DB_SSL must be false between the process and local Auth Proxy');
-    }
 }

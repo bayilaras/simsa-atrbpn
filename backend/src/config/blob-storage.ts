@@ -157,7 +157,7 @@ export function getObjectStorageConfigurationStatus(source: NodeJS.ProcessEnv = 
     );
     return {
         provider: 'google-cloud-storage-private' as const,
-        required: source.NODE_ENV === 'production' || cloud.platform === 'gcp',
+        required: source.NODE_ENV === 'production',
         configured: Boolean(cloud.projectId && cloud.gcsBucket),
         callbackRequired: false,
         callbackConfigured: true,

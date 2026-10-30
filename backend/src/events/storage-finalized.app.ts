@@ -1,7 +1,6 @@
 import express, { type Express, type Request } from 'express';
 import { z } from 'zod';
 import {
-    assertGcpIamDatabaseRuntimeEnvironment,
     assertValidCloudPlatformEnvironment,
 } from '../config/cloud-platform.js';
 import { pool } from '../config/database.js';
@@ -231,7 +230,6 @@ function defaultDependencies(): StorageEventDependencies {
     if (config.storageProvider !== 'gcs' || !config.gcsUploadBucket) {
         throw new Error('The storage event service requires OBJECT_STORAGE_PROVIDER=gcs');
     }
-    assertGcpIamDatabaseRuntimeEnvironment(process.env, config.projectId);
     const storage = GcsStorageAdapter.uploadFromEnvironment();
     return {
         uploadBucket: config.gcsUploadBucket,

@@ -4,9 +4,10 @@ import {
     buildCloudPlatformConfig,
 } from '../config/cloud-platform.js';
 
-const productionGcp = {
+const productionFirebaseGcs = {
     NODE_ENV: 'production',
-    K_SERVICE: 'simsa-api',
+    AUTH_PROVIDER: 'firebase',
+    OBJECT_STORAGE_PROVIDER: 'gcs',
     GOOGLE_CLOUD_PROJECT: 'simsa-production',
     FIREBASE_APP_CHECK_APP_IDS: '1:123456789012:web:abcdef123456',
     FIREBASE_SESSION_CSRF_SECRET: 's'.repeat(32),
@@ -15,7 +16,7 @@ const productionGcp = {
 } satisfies NodeJS.ProcessEnv;
 
 describe('cloud platform configuration', () => {
-    it('keeps local Better Auth and Vercel Blob as the non-Cloud-Run defaults', () => {
+    it('keeps local Better Auth and Vercel Blob as the defaults', () => {
         expect(buildCloudPlatformConfig({})).toMatchObject({
             platform: 'local',
             authProvider: 'better-auth',
@@ -33,9 +34,27 @@ describe('cloud platform configuration', () => {
         });
     });
 
-    it('infers the fail-closed Firebase and GCS profile on production Cloud Run', () => {
-        expect(buildCloudPlatformConfig(productionGcp)).toMatchObject({
-            platform: 'gcp',
+    it('does not infer a provider from a Cloud Run service marker', () => {
+        expect(buildCloudPlatformConfig({ NODE_ENV: 'production', K_SERVICE: 'simsa-api' })).toMatchObject({
+            platform: 'local',
+            authProvider: 'better-auth',
+            storageProvider: 'vercel-blob',
+            validationErrors: [],
+        });
+    });
+
+    it('rejects the removed GCP platform value', () => {
+        const source = { SIMSA_CLOUD_PLATFORM: 'gcp' };
+        expect(buildCloudPlatformConfig(source)).toMatchObject({ platform: 'local' });
+        expect(() => assertValidCloudPlatformEnvironment(source, {
+            requireAuth: false,
+            requireStorage: false,
+        })).toThrow(/SIMSA_CLOUD_PLATFORM must be one of: local/);
+    });
+
+    it('keeps the explicit Firebase and GCS profile fail-closed in production', () => {
+        expect(buildCloudPlatformConfig(productionFirebaseGcs)).toMatchObject({
+            platform: 'local',
             authProvider: 'firebase',
             storageProvider: 'gcs',
             projectId: 'simsa-production',
@@ -51,9 +70,8 @@ describe('cloud platform configuration', () => {
 
     it('honours explicit provider choices and bounded session duration', () => {
         const config = buildCloudPlatformConfig({
-            ...productionGcp,
+            ...productionFirebaseGcs,
             NODE_ENV: 'development',
-            K_SERVICE: '',
             SIMSA_CLOUD_PLATFORM: ' LOCAL ',
             AUTH_PROVIDER: ' BETTER-AUTH ',
             OBJECT_STORAGE_PROVIDER: ' VERCEL-BLOB ',
@@ -73,10 +91,11 @@ describe('cloud platform configuration', () => {
         });
     });
 
-    it('reports missing GCP authorities and invalid bucket or duration values', () => {
+    it('reports missing Firebase authorities and invalid bucket or duration values', () => {
         const config = buildCloudPlatformConfig({
             NODE_ENV: 'production',
-            K_SERVICE: 'simsa-api',
+            AUTH_PROVIDER: 'firebase',
+            OBJECT_STORAGE_PROVIDER: 'gcs',
             GCS_BUCKET: 'invalid..bucket',
             GCS_UPLOAD_BUCKET: '192.168.1.1',
             FIREBASE_SESSION_MAX_AGE_HOURS: '337',
@@ -84,7 +103,6 @@ describe('cloud platform configuration', () => {
 
         expect(config.firebaseSessionMaxAgeMs).toBe(24 * 60 * 60 * 1000);
         expect(config.validationErrors).toEqual(expect.arrayContaining([
-            'GOOGLE_CLOUD_PROJECT (or FIREBASE_PROJECT_ID) is required on GCP',
             'FIREBASE_PROJECT_ID is required when AUTH_PROVIDER=firebase',
             'FIREBASE_SESSION_CSRF_SECRET must be at least 32 characters in a deployed runtime',
             'FIREBASE_APP_CHECK_APP_IDS is required in a deployed Firebase runtime',
@@ -96,7 +114,7 @@ describe('cloud platform configuration', () => {
 
     it('does not silently disable security checks for misspelled booleans', () => {
         const source = {
-            ...productionGcp,
+            ...productionFirebaseGcs,
             FIREBASE_CHECK_REVOKED: 'ture',
             FIREBASE_APP_CHECK_REQUIRED: 'yes',
         };
@@ -115,16 +133,16 @@ describe('cloud platform configuration', () => {
 
     it('rejects malformed or duplicate Firebase App Check app allowlists', () => {
         const malformed = buildCloudPlatformConfig({
-            ...productionGcp,
+            ...productionFirebaseGcs,
             FIREBASE_APP_CHECK_APP_IDS: 'not-an-app-id',
         });
         expect(malformed.validationErrors).toContain(
             'FIREBASE_APP_CHECK_APP_IDS must contain canonical Firebase Web App IDs',
         );
 
-        const duplicate = productionGcp.FIREBASE_APP_CHECK_APP_IDS;
+        const duplicate = productionFirebaseGcs.FIREBASE_APP_CHECK_APP_IDS;
         expect(buildCloudPlatformConfig({
-            ...productionGcp,
+            ...productionFirebaseGcs,
             FIREBASE_APP_CHECK_APP_IDS: `${duplicate},${duplicate}`,
         }).validationErrors).toContain(
             'FIREBASE_APP_CHECK_APP_IDS must not contain duplicate app IDs',
@@ -132,12 +150,10 @@ describe('cloud platform configuration', () => {
     });
 
     it.each([
-        ['production', { ...productionGcp, FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9099' }],
-        ['Cloud Run', { ...productionGcp, NODE_ENV: 'development', FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9099' }],
+        ['production', { ...productionFirebaseGcs, FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9099' }],
         ['Vercel', {
-            ...productionGcp,
+            ...productionFirebaseGcs,
             NODE_ENV: 'development',
-            K_SERVICE: '',
             VERCEL: '1',
             FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9099',
         }],
@@ -153,7 +169,7 @@ describe('cloud platform configuration', () => {
 
     it('rejects a downloaded ADC credential file in every deployed runtime', () => {
         const source = {
-            ...productionGcp,
+            ...productionFirebaseGcs,
             GOOGLE_APPLICATION_CREDENTIALS: '/secrets/service-account.json',
         };
 
@@ -168,8 +184,8 @@ describe('cloud platform configuration', () => {
 
     it('requires a dedicated GCS quarantine bucket', () => {
         const source = {
-            ...productionGcp,
-            GCS_UPLOAD_BUCKET: productionGcp.GCS_BUCKET,
+            ...productionFirebaseGcs,
+            GCS_UPLOAD_BUCKET: productionFirebaseGcs.GCS_BUCKET,
         };
         expect(buildCloudPlatformConfig(source).validationErrors).toContain(
             'GCS_UPLOAD_BUCKET must be configured and differ from GCS_BUCKET',
@@ -178,8 +194,8 @@ describe('cloud platform configuration', () => {
             /GCS_UPLOAD_BUCKET must be configured and differ from GCS_BUCKET/,
         );
 
-        const omitted = { ...productionGcp };
-        delete (omitted as Partial<typeof productionGcp>).GCS_UPLOAD_BUCKET;
+        const omitted = { ...productionFirebaseGcs };
+        delete (omitted as Partial<typeof productionFirebaseGcs>).GCS_UPLOAD_BUCKET;
         expect(() => assertValidCloudPlatformEnvironment(omitted)).toThrow(
             /GCS_UPLOAD_BUCKET must be configured and differ from GCS_BUCKET/,
         );
@@ -187,7 +203,7 @@ describe('cloud platform configuration', () => {
 
     it('rejects cross-environment Firebase and Google Cloud project authorities', () => {
         const source = {
-            ...productionGcp,
+            ...productionFirebaseGcs,
             FIREBASE_PROJECT_ID: 'simsa-preview',
             GCLOUD_PROJECT: 'simsa-staging',
         };
@@ -202,65 +218,6 @@ describe('cloud platform configuration', () => {
             requireAuth: false,
             requireStorage: false,
         })).toThrow(/must identify the same project/);
-    });
-
-    it('treats Cloud Run as a hardened Firebase runtime even when NODE_ENV is stale', () => {
-        const source = {
-            NODE_ENV: 'development',
-            K_SERVICE: 'simsa-api',
-            GOOGLE_CLOUD_PROJECT: 'simsa-production',
-            FIREBASE_SESSION_CSRF_SECRET: 'short',
-            FIREBASE_CHECK_REVOKED: 'false',
-            FIREBASE_APP_CHECK_REQUIRED: 'false',
-            GCS_BUCKET: 'simsa-final-records',
-            GCS_UPLOAD_BUCKET: 'simsa-upload-quarantine',
-        };
-
-        expect(buildCloudPlatformConfig(source)).toMatchObject({
-            platform: 'gcp',
-            authProvider: 'firebase',
-            storageProvider: 'gcs',
-            firebaseCheckRevoked: false,
-            firebaseAppCheckRequired: false,
-        });
-        expect(() => assertValidCloudPlatformEnvironment(source)).toThrow(
-            /FIREBASE_SESSION_CSRF_SECRET must be at least 32 characters in a deployed runtime/,
-        );
-        expect(buildCloudPlatformConfig(source).validationErrors).toEqual(expect.arrayContaining([
-            'FIREBASE_CHECK_REVOKED must remain true in a deployed Firebase runtime',
-            'FIREBASE_APP_CHECK_REQUIRED must remain true in a deployed Firebase runtime',
-        ]));
-    });
-
-    it('rejects legacy provider drift inside a Cloud Run service', () => {
-        const source = {
-            ...productionGcp,
-            SIMSA_CLOUD_PLATFORM: 'local',
-            AUTH_PROVIDER: 'better-auth',
-            OBJECT_STORAGE_PROVIDER: 'vercel-blob',
-        };
-
-        expect(buildCloudPlatformConfig(source).validationErrors).toEqual(expect.arrayContaining([
-            'Cloud Run requires SIMSA_CLOUD_PLATFORM=gcp',
-        ]));
-        expect(() => assertValidCloudPlatformEnvironment(source)).toThrow(
-            /Cloud Run requires SIMSA_CLOUD_PLATFORM=gcp/,
-        );
-    });
-
-    it('keeps Firebase and GCS inseparable from the explicit GCP platform', () => {
-        const source = {
-            ...productionGcp,
-            K_SERVICE: '',
-            SIMSA_CLOUD_PLATFORM: 'gcp',
-            AUTH_PROVIDER: 'better-auth',
-            OBJECT_STORAGE_PROVIDER: 'vercel-blob',
-        };
-
-        expect(buildCloudPlatformConfig(source).validationErrors).toEqual(expect.arrayContaining([
-            'The GCP platform requires AUTH_PROVIDER=firebase',
-            'The GCP platform requires OBJECT_STORAGE_PROVIDER=gcs',
-        ]));
     });
 
     it('can validate a local worker without unrelated auth and storage authorities', () => {

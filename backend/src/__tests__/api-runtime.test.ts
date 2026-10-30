@@ -25,7 +25,6 @@ describe('validated API runtime lifecycle', () => {
     function setup(runtime: 'embedded' | 'external') {
         vi.stubEnv('NODE_ENV', 'test');
         vi.stubEnv('AUTH_PROVIDER', 'better-auth');
-        vi.stubEnv('K_SERVICE', '');
         vi.stubEnv('VERCEL', '');
         const server = { close: vi.fn() };
         const listen = vi.fn((_options, callback) => { callback(); return server; });

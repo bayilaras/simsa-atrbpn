@@ -14,9 +14,8 @@ export function buildGoogleOAuthConfig(source: NodeJS.ProcessEnv = process.env) 
     if (raw && raw !== 'true' && raw !== 'false') {
         validationErrors.push('GOOGLE_OAUTH_ENABLED must be true or false');
     }
-    if (!enabled && (loadAppProfile(source) !== 'internal'
-        || cloud.authProvider !== 'better-auth' || cloud.platform !== 'local')) {
-        validationErrors.push('GOOGLE_OAUTH_ENABLED=false requires the internal profile with Better Auth on a non-GCP platform');
+    if (!enabled && (loadAppProfile(source) !== 'internal' || cloud.authProvider !== 'better-auth')) {
+        validationErrors.push('GOOGLE_OAUTH_ENABLED=false requires the internal profile with Better Auth');
     }
 
     const hasClientId = Boolean(source.GOOGLE_CLIENT_ID?.trim());
@@ -25,7 +24,7 @@ export function buildGoogleOAuthConfig(source: NodeJS.ProcessEnv = process.env) 
         if (hasClientId !== hasClientSecret) {
             validationErrors.push('GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be configured together or both omitted');
         } else if (enabled && !hasClientId
-            && (source.NODE_ENV === 'production' || source.K_SERVICE || source.VERCEL)) {
+            && (source.NODE_ENV === 'production' || source.VERCEL)) {
             validationErrors.push('Missing Google OAuth credentials in production: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET');
         }
     }

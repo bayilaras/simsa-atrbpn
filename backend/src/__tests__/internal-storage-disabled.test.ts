@@ -22,8 +22,8 @@ describe('full internal operation without digital storage', () => {
         expect(getPublicCapabilities(source)).toMatchObject({ mode: 'full', syntheticDataOnly: false,
             capabilities: { metadata: true, files: false, fileUploads: false, externalIntegrations: true } });
     });
-    it.each([{ APP_PROFILE: 'integrated' }, { SIMSA_CLOUD_PLATFORM: 'gcp' }, { K_SERVICE: 'simsa-api' }])(
-        'retains integrated and GCP storage requirements: %j', override => {
+    it.each([{ APP_PROFILE: 'integrated' }, { SIMSA_CLOUD_PLATFORM: 'gcp' }])(
+        'retains integrated storage requirements and rejects the removed GCP platform: %j', override => {
             expect(() => assertValidCloudPlatformEnvironment({ ...source, ...override })).toThrow();
         },
     );

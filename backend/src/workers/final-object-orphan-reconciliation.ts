@@ -1,9 +1,6 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import {
-    assertGcpIamDatabaseRuntimeEnvironment,
-    assertValidCloudPlatformEnvironment,
-} from '../config/cloud-platform.js';
+import { assertValidCloudPlatformEnvironment } from '../config/cloud-platform.js';
 import { buildDatabasePoolConfig, pool } from '../config/database.js';
 import { loadFinalObjectRetentionPolicy } from '../config/final-object-retention.js';
 import {
@@ -25,8 +22,7 @@ function boundedInteger(name: string, fallback: number, min: number, max: number
 
 export async function runFinalObjectOrphanCleanup() {
     buildDatabasePoolConfig(process.env);
-    const cloud = assertValidCloudPlatformEnvironment(process.env, { requireAuth: false });
-    assertGcpIamDatabaseRuntimeEnvironment(process.env, cloud.projectId);
+    assertValidCloudPlatformEnvironment(process.env, { requireAuth: false });
     if (process.env.OBJECT_STORAGE_PROVIDER !== 'gcs') {
         throw new Error('Final object orphan cleanup requires OBJECT_STORAGE_PROVIDER=gcs');
     }

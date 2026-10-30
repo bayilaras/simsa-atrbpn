@@ -3,7 +3,7 @@ import { createRateLimiterStore, usesSharedRateLimits } from '../config/rate-lim
 import { PostgresRateLimitStore } from '../services/postgres-rate-limit.store.js';
 
 describe('shared rate limit runtime selection', () => {
-    it.each([{ NODE_ENV: 'production' }, { VERCEL: '1' }, { K_SERVICE: 'simsa-api' }])(
+    it.each([{ NODE_ENV: 'production' }, { VERCEL: '1' }])(
         'requires a shared store in every deployed runtime', source => {
             expect(usesSharedRateLimits(source)).toBe(true);
             expect(createRateLimiterStore('auth', { ...source, BETTER_AUTH_SECRET: 'synthetic-test-secret-'.repeat(3) }))

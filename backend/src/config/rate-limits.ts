@@ -1,7 +1,7 @@
 import { PostgresRateLimitStore } from '../services/postgres-rate-limit.store.js';
 
 export function usesSharedRateLimits(source: NodeJS.ProcessEnv = process.env): boolean {
-    return source.NODE_ENV === 'production' || Boolean(source.VERCEL) || Boolean(source.K_SERVICE);
+    return source.NODE_ENV === 'production' || Boolean(source.VERCEL);
 }
 
 export function createRateLimiterStore(bucket: string, source: NodeJS.ProcessEnv = process.env) {

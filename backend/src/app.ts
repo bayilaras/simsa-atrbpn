@@ -80,7 +80,6 @@ import operationsRoutes from './routes/operations.routes.js';
 // production environment during module cold-start as well, while unit tests
 // and local development retain their existing lightweight import behavior.
 const deployedRuntime = env.NODE_ENV === 'production'
-    || Boolean(process.env.K_SERVICE)
     || Boolean(process.env.VERCEL);
 if (deployedRuntime) {
     validateEnv();

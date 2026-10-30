@@ -52,13 +52,9 @@ describe('explicit internal password-only Google OAuth configuration', () => {
             APP_PROFILE: 'integrated', GOOGLE_OAUTH_ENABLED: 'false' })).toThrow(/GOOGLE_OAUTH_ENABLED=false.*internal/);
     });
 
-    it.each([
-        { AUTH_PROVIDER: 'firebase' },
-        { SIMSA_CLOUD_PLATFORM: 'gcp' },
-        { SIMSA_CLOUD_PLATFORM: 'gcp', AUTH_PROVIDER: 'better-auth' },
-    ])('keeps the opt-out outside Firebase/GCP semantics (%j)', (target) => {
-        expect(buildGoogleOAuthConfig({ ...deployedInternal, ...target, GOOGLE_OAUTH_ENABLED: 'false' }).validationErrors)
-            .toContain('GOOGLE_OAUTH_ENABLED=false requires the internal profile with Better Auth on a non-GCP platform');
+    it('keeps the opt-out outside Firebase semantics', () => {
+        expect(buildGoogleOAuthConfig({ ...deployedInternal, AUTH_PROVIDER: 'firebase', GOOGLE_OAUTH_ENABLED: 'false' }).validationErrors)
+            .toContain('GOOGLE_OAUTH_ENABLED=false requires the internal profile with Better Auth');
     });
 
     it('keeps Firebase Google capability controlled by Firebase rather than Better Auth credentials', () => {

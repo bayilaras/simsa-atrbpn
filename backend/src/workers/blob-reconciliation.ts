@@ -1,6 +1,5 @@
 import { assertValidBlobStorageEnvironment } from '../config/blob-storage.js';
 import {
-    assertGcpIamDatabaseRuntimeEnvironment,
     assertValidCloudPlatformEnvironment,
     buildCloudPlatformConfig,
 } from '../config/cloud-platform.js';
@@ -17,8 +16,7 @@ export async function runBlobReconciliation() {
     buildDatabasePoolConfig(process.env);
     const cloud = buildCloudPlatformConfig(process.env);
     if (cloud.storageProvider === 'gcs') {
-        const validated = assertValidCloudPlatformEnvironment(process.env, { requireAuth: false });
-        assertGcpIamDatabaseRuntimeEnvironment(process.env, validated.projectId);
+        assertValidCloudPlatformEnvironment(process.env, { requireAuth: false });
     } else {
         assertValidBlobStorageEnvironment({
             ...process.env,
