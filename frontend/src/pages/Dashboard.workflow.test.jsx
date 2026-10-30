@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import Dashboard from './Dashboard'
 import dashboardService from '@/services/dashboard.service'
+import settingsService from '@/services/settings.service'
 
 const mocks = vi.hoisted(() => ({ user: {}, navigate: vi.fn(), widgets: {}, motionChanged: null }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: mocks.user,
@@ -52,6 +53,13 @@ describe('dashboard daily workflow', () => {
         const priority = screen.getByRole('region', { name: 'Perlu ditindaklanjuti' })
         expect(priority).toHaveTextContent('Semua unit kerja')
         expect(within(priority).getByRole('link', { name: 'Pilih unit dan tinjau keterlambatan' })).toHaveAttribute('href', '/archive-lending?status=overdue')
+    })
+    it('loads all-unit totals for a super administrator without waiting for the unit list', async () => {
+        mocks.user.role = 'super_admin'
+        settingsService.getAllUnitKerja.mockImplementationOnce(() => new Promise(() => {}))
+        await show()
+        expect(dashboardService.getStats).toHaveBeenCalledWith(null)
+        expect(screen.getByRole('region', { name: 'Perlu ditindaklanjuti' })).toHaveTextContent('Semua unit kerja')
     })
     it('distinguishes no overdue loans from unavailable lending data', async () => {
         mocks.user.role = 'admin_unit'

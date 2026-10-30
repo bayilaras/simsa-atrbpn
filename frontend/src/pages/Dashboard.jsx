@@ -119,7 +119,9 @@ export default function Dashboard() {
     const [unitKerjaStats, setUnitKerjaStats] = useState([]);
     const [widgetData, setWidgetData] = useState(null);
     const [unitKerjaList, setUnitKerjaList] = useState([]);
-    const [selectedUnitKerja, setSelectedUnitKerja] = useState(undefined); // undefined = uninitialized
+    // undefined = uninitialized. A super admin starts on "Semua Unit Kerja"
+    // right away, so the dashboard requests do not wait for the unit list.
+    const [selectedUnitKerja, setSelectedUnitKerja] = useState(() => (user?.role === 'super_admin' ? 'all' : undefined));
     const isInitializedRef = useRef(false);
     const lastLocationKeyRef = useRef(location.key);
 
@@ -134,16 +136,13 @@ export default function Dashboard() {
     const scopeKey = user && requestedUnit !== undefined
         ? JSON.stringify([user.id, user.role, requestedUnit]) : null;
 
+    // Only fills the unit selector; it loads in parallel with the dashboard.
     const loadUnitKerjaList = useCallback(async () => {
         try {
             const result = await settingsService.getAllUnitKerja();
-            const list = result.data || result || [];
-            setUnitKerjaList(list);
-            // Default to "Semua Unit Kerja"
-            setSelectedUnitKerja('all');
+            setUnitKerjaList(result.data || result || []);
         } catch (err) {
             console.error('Failed to load unit kerja list:', err);
-            setSelectedUnitKerja('all');
         }
     }, []);
 
@@ -221,6 +220,8 @@ export default function Dashboard() {
         if (!user) return;
 
         if (isSuperAdmin) {
+            // Default to "Semua Unit Kerja"
+            setSelectedUnitKerja('all');
             loadUnitKerjaList();
         } else {
             // Regular user: lock to their unit (use 'none' if no unitKerjaId)
