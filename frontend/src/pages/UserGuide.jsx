@@ -85,7 +85,7 @@ const GUIDE_SECTIONS = [
         roles: ALL_ROLES,
         keywords: ['login', 'google', 'dashboard', 'sidebar', 'menu', 'navigasi', 'pencarian'],
         steps: [
-            'Buka alamat SIMSA yang diberikan operator dan masuk dengan email serta kata sandi akun pribadi. Login Google digunakan hanya jika telah diaktifkan administrator.',
+            'Buka SIMSA di https://simsa-frontend.vercel.app dan masuk dengan email serta kata sandi akun pribadi. Login Google digunakan hanya jika telah diaktifkan administrator.',
             'Gunakan Dashboard untuk melihat ringkasan pekerjaan sesuai unit kerja dan kewenangan Anda.',
             'Buka sidebar untuk berpindah fitur. Di layar kecil, gunakan tombol menu pada bagian atas.',
             'Gunakan breadcrumb di atas halaman untuk mengetahui posisi dan kembali ke bagian sebelumnya.',
@@ -272,7 +272,7 @@ const GLOSSARY = [
 const TROUBLESHOOTING = [
     {
         problem: 'Tidak dapat login dengan email dan kata sandi',
-        answer: 'Gunakan alamat aplikasi dari operator dan akun yang aktif. Periksa ejaan email serta kata sandi. Jika tertulis Origin tidak diizinkan, gunakan alamat lokal yang dibuka Mulai-SIMSA.cmd atau laporkan alamat halaman kepada operator; mengganti kata sandi tidak memperbaiki kesalahan alamat tersebut.',
+        answer: 'Buka SIMSA dari alamat resmi https://simsa-frontend.vercel.app dan gunakan akun yang aktif. Periksa ejaan email serta kata sandi. Jika tertulis Origin tidak diizinkan, pastikan alamat di peramban persis https://simsa-frontend.vercel.app atau laporkan alamat halaman kepada operator; mengganti kata sandi tidak memperbaiki kesalahan alamat tersebut.',
     },
     {
         problem: 'Tidak dapat login dengan Google',
