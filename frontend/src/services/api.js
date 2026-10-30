@@ -62,8 +62,8 @@ function createRequestScope(timeoutMs, parentSignal, unknownOutcome = () => fals
         dispose,
         run(operation) {
             controller.signal.throwIfAborted();
-            // SDK token providers and response parsers may not honor a signal.
-            // Racing every awaited stage also bounds those promises, while fetch
+            // Response parsers may not honor a signal. Racing every awaited
+            // stage also bounds those promises, while fetch
             // receives the signal to terminate the actual network operation.
             return new Promise((resolve, reject) => {
                 const abort = () => reject(controller.signal.reason);
