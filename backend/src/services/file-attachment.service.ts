@@ -22,7 +22,6 @@ import {
 import { requireImmutableObjectGeneration } from '../storage/locator.js';
 import { inspectBitstream } from './bitstream-integrity.js';
 import { ARCHIVE_UPLOAD_MAX_BYTES, assertPdfUpload } from '../config/archive-upload.js';
-import { isLetterAttachmentType } from './file-release-policy.js';
 
 export const ATTACHMENT_PREFLIGHT_MAX_BYTES = ARCHIVE_UPLOAD_MAX_BYTES;
 export const ATTACHMENT_PREFLIGHT_TIMEOUT_MS = 30_000;
@@ -240,22 +239,6 @@ export class FileAttachmentService {
         }).returning();
 
         return attachment;
-    }
-
-    /**
-     * Compatibility helper for non-transactional callers. Transactional
-     * workflows must call prepareExisting before opening their transaction and
-     * insertPrepared from inside it.
-     */
-    async registerExisting(
-        data: RegisterExistingAttachmentData,
-        executor: Pick<typeof db, 'insert'> = db,
-    ): Promise<FileAttachment> {
-        const { entityId, entityType, ...source } = data;
-        const prepared = await this.prepareExisting(source, {
-            expectedPurpose: isLetterAttachmentType(entityType) ? entityType : undefined,
-        });
-        return this.insertPrepared({ ...prepared, entityId, entityType }, executor);
     }
 
     // Upload file and create attachment record

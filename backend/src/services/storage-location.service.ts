@@ -408,22 +408,6 @@ export class StorageLocationService {
         return result.count;
     }
 
-    async updateArsipCounts(unitKerjaId: string, auditContext: CriticalAuditContext) {
-        // Update current_count for all box-level locations
-        const boxes = await db
-            .select()
-            .from(storageLocations)
-            .where(and(
-                eq(storageLocations.unitKerjaId, unitKerjaId),
-                eq(storageLocations.level, 'box')
-            ));
-
-        for (const box of boxes) {
-            const count = await this.getArsipCount(box.id, unitKerjaId);
-            await this.update(box.id, { currentCount: count }, unitKerjaId, auditContext);
-        }
-    }
-
     private async generateCode(
         unitKerjaId: string,
         level: string,

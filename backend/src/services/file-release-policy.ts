@@ -16,11 +16,6 @@ export function isFileReleased(metadata: FileReleaseMetadata): boolean {
         && metadata.integrityStatus === 'verified';
 }
 
-/** Letter attachment entity types. They follow the same release rule as every other bitstream. */
-export function isLetterAttachmentType(entityType?: string | null): entityType is 'surat_masuk' | 'surat_keluar' {
-    return entityType === 'surat_masuk' || entityType === 'surat_keluar';
-}
-
 /** Public guidance after record ACL checks; never exposes a lease or locator. */
 export function quarantinedFileScanState(metadata?: FileReleaseMetadata | null): 'pending' | 'blocked' | 'unavailable' {
     if (!metadata) return 'unavailable';

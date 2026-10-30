@@ -623,25 +623,4 @@ export const dosirService = {
 
         return `${prefix}-${nextNumber.toString().padStart(3, '0')}`;
     },
-
-    /**
-     * Get dosir IDs that a specific surat belongs to
-     */
-    async getDosirForSurat(suratId: string, type: 'masuk' | 'keluar') {
-        if (type === 'masuk') {
-            const links = await db
-                .select({ dosir })
-                .from(dosirSuratMasuk)
-                .innerJoin(dosir, eq(dosirSuratMasuk.dosirId, dosir.id))
-                .where(eq(dosirSuratMasuk.suratMasukId, suratId));
-            return links.map(l => l.dosir);
-        } else {
-            const links = await db
-                .select({ dosir })
-                .from(dosirSuratKeluar)
-                .innerJoin(dosir, eq(dosirSuratKeluar.dosirId, dosir.id))
-                .where(eq(dosirSuratKeluar.suratKeluarId, suratId));
-            return links.map(l => l.dosir);
-        }
-    },
 };

@@ -23,6 +23,20 @@ async function buildPdf(
     return Buffer.concat(chunks);
 }
 
+async function buildScannedPdf(): Promise<Buffer> {
+    const image = createCanvas(1200, 500);
+    const context = image.getContext('2d');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, image.width, image.height);
+    context.fillStyle = '#000000';
+    context.font = '36px sans-serif';
+    context.fillText('Dokumen hasil pemindaian tanpa text layer', 50, 150);
+    const png = image.toBuffer('image/png');
+    return buildPdf(document => {
+        document.image(png, 40, 100, { fit: [515, 250] });
+    });
+}
+
 describe('OCRService PDF processing', () => {
     it('keeps a real PDF text layer on the extraction path without invoking scan OCR', async () => {
         const service = new OCRService();
@@ -49,18 +63,7 @@ describe('OCRService PDF processing', () => {
         const recognize = vi.fn().mockResolvedValue({ data: { text: recognizedText } });
         const terminate = vi.fn().mockResolvedValue({});
         vi.spyOn(service as any, 'createWorker').mockResolvedValue({ recognize, terminate });
-
-        const image = createCanvas(1200, 500);
-        const context = image.getContext('2d');
-        context.fillStyle = '#ffffff';
-        context.fillRect(0, 0, image.width, image.height);
-        context.fillStyle = '#000000';
-        context.font = '36px sans-serif';
-        context.fillText('Dokumen hasil pemindaian tanpa text layer', 50, 150);
-        const png = image.toBuffer('image/png');
-        const pdf = await buildPdf(document => {
-            document.image(png, 40, 100, { fit: [515, 250] });
-        });
+        const pdf = await buildScannedPdf();
 
         const result = await service.processPDF(pdf);
 
@@ -100,11 +103,12 @@ describe('OCRService PDF processing', () => {
     });
 
     it('fails closed in production when controlled language data is not configured', async () => {
+        const pdf = await buildScannedPdf();
         vi.stubEnv('NODE_ENV', 'production');
         vi.stubEnv('OCR_TESSDATA_PATH', '');
         const service = new OCRService();
 
-        await expect(service.performOCR(Buffer.from('valid-image-bytes')))
+        await expect(service.extractTextFromScannedPDF(pdf))
             .rejects.toThrow('Data bahasa OCR belum dikonfigurasi pada server');
     });
 
@@ -122,11 +126,9 @@ describe('OCRService PDF processing', () => {
         });
         const terminate = vi.fn().mockResolvedValue(undefined);
         vi.spyOn(service as any, 'createWorker').mockResolvedValue({ recognize, terminate });
+        const pdf = await buildScannedPdf();
 
-        const processing = service.performOCR(
-            Buffer.from('valid-image-bytes'),
-            controller.signal,
-        );
+        const processing = service.extractTextFromScannedPDF(pdf, controller.signal);
         await recognitionStarted;
         controller.abort(ownershipLost);
 

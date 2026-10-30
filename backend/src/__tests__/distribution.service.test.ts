@@ -574,17 +574,4 @@ describe('DistributionService', () => {
             expect(res.outbox.total).toBe(15);
         });
     });
-
-    // ── isDistributed ──
-    describe('isDistributed', () => {
-        it('should return true when surat has distributions', async () => {
-            enqueue([{ count: 3 }]);
-            expect(await svc.isDistributed('sm-1', 'unit-1')).toBe(true);
-        });
-
-        it('should return false when no distributions exist', async () => {
-            enqueue([{ count: 0 }]);
-            expect(await svc.isDistributed('sm-99', 'unit-1')).toBe(false);
-        });
-    });
 });

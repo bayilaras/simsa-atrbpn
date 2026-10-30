@@ -68,16 +68,6 @@ class FullTextSearchService {
             .filter(term => !STOPWORDS.has(term));
     }
 
-    // Generate fuzzy pattern for a term (simple Levenshtein-like approach)
-    private generateFuzzyPattern(term: string): string {
-        // For short terms, use exact match
-        if (term.length <= 3) return `%${term}%`;
-
-        // For longer terms, allow partial matches
-        // This creates a pattern that matches if most characters are present
-        return `%${term}%`;
-    }
-
     // Search arsip with enhanced full-text search capability
     async search(params: FullTextSearchParams): Promise<{
         data: FullTextSearchResult[];
