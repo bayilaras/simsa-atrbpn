@@ -19,30 +19,37 @@ frontend/dev-dist/
 logs/
 adapter-debug.log
 
-# Debug files
-debug-*.ts
-check_*.ts
-cleanup-*.ts
-dump_*.ts
-inspect-*.ts
-reproduce_*.ts
-run_sql.ts
-seed-via-api.ts
-verify-*.ts
-verify_*.ts
-*-debug.log
-login-debug*.log
-server*.log
-debug-seed.log
+# Ad-hoc debug scripts in the backend package root (logs are covered by *.log)
+/backend/debug-*.ts
+/backend/check_*.ts
+/backend/cleanup-*.ts
+/backend/dump_*.ts
+/backend/inspect-*.ts
+/backend/reproduce_*.ts
+/backend/run_sql.ts
+/backend/seed-via-api.ts
+/backend/verify-*.ts
+/backend/verify_*.ts
 
 # Test output
 output/
+outputs/
 .playwright-cli/
 test-output*.txt
 tsc_errors*.txt
+tsc_check*.txt
+tap-output*.txt
 reproduction_error*.txt
 schema-output.txt
 verify_output.txt
+*-results.csv
+*test-results*.txt
+**/test-results.json
+cors_test*.txt
+**/testsprite_tests/tmp/
+
+# Local agent scratch
+.superpowers/
 
 # IDE
 .idea/
