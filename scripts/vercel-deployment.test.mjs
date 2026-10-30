@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { initializeSimsaVercelHandler } from '../backend/lib/vercel-runtime.mjs';
 import { cloudMetadataEnvironment } from './cloud-metadata-config.mjs';
 
@@ -36,6 +36,10 @@ test('Vercel routes explicitly use the gated Node function and Fluid Compute', (
     assert.equal(config.framework, null);
     assert.equal(config.fluid, true);
     assert.equal(config.buildCommand, 'node scripts/build-vercel.mjs');
+    // Without an output directory the 'Other' preset publishes the project root
+    // (package.json, src/, dist-vercel/) as static files ahead of the rewrite.
+    assert.equal(config.outputDirectory, 'public');
+    assert.equal(existsSync(new URL('../backend/public/index.html', import.meta.url)), true);
     // Neon runs in aws-ap-southeast-1. Every function (API, malware scan,
     // crons) runs beside it: from the iad1 default each SQL round trip crossed
     // the Pacific (~0.2 s), so a Sheets import spent ~1.4 s per row.
