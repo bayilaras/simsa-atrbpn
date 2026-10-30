@@ -51,6 +51,9 @@ cors_test*.txt
 # Local agent scratch
 .superpowers/
 
+# Regulation PDFs are linked from docs/PROFIL_APLIKASI_INTERNAL.md, not committed
+/*.pdf
+
 # IDE
 .idea/
 .vscode/
