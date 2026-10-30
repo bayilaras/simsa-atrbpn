@@ -20,21 +20,19 @@ export const distributionService = {
     },
 
     /**
-     * Get inbox (incoming distributions)
+     * Get one page of the inbox (incoming distributions): `{ data, pagination }`
      */
     async getInbox(unitKerjaId, filters = {}) {
         requireUnitKerjaId(unitKerjaId);
-        const response = await api.get('/api/distributions/inbox', { unitKerjaId, ...filters });
-        return response.data || [];
+        return api.get('/api/distributions/inbox', { unitKerjaId, ...filters });
     },
 
     /**
-     * Get outbox (sent distributions)
+     * Get one page of the outbox (sent distributions): `{ data, pagination }`
      */
     async getOutbox(unitKerjaId, filters = {}) {
         requireUnitKerjaId(unitKerjaId);
-        const response = await api.get('/api/distributions/outbox', { unitKerjaId, ...filters });
-        return response.data || [];
+        return api.get('/api/distributions/outbox', { unitKerjaId, ...filters });
     },
 
     /**

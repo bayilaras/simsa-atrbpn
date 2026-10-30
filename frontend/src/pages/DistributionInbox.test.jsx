@@ -17,6 +17,8 @@ const terbuka = { id: 'd1', status: 'received', masked: false, instruction: 'Moh
 const tersamar = { id: 'd2', status: 'sent', masked: true, instruction: null, batasWaktu: null, sentAt: '2026-09-21T01:00:00Z',
     surat: { id: null, nomorSurat: null, perihal: null, label: 'Dikecualikan' }, sourceUnit: { id: 'sesditjen', name: 'Sesditjen' }, rangkaian: null }
 
+const halaman = (rows, total = rows.length) => ({ success: true, data: rows, pagination: { page: 1, limit: 20, total, totalPages: Math.ceil(total / 20) } })
+
 function tampil(entry = '/distribusi') {
     render(<MemoryRouter initialEntries={[entry]}><Routes>
         <Route path="/distribusi" element={<DistributionInbox />} />
@@ -26,8 +28,8 @@ function tampil(entry = '/distribusi') {
 
 beforeEach(() => {
     vi.clearAllMocks()
-    mocks.svc.getInbox.mockResolvedValue([terbuka, tersamar])
-    mocks.svc.getOutbox.mockResolvedValue([])
+    mocks.svc.getInbox.mockResolvedValue(halaman([terbuka, tersamar]))
+    mocks.svc.getOutbox.mockResolvedValue(halaman([]))
     mocks.svc.getStats.mockResolvedValue({ inbox: { total: 2, pending: 1, received: 1, processed: 0, rejected: 0 }, outbox: { total: 0, pending: 0, processed: 0, rejected: 0 } })
     mocks.svc.getKandidatPenyelesaian.mockResolvedValue([{ id: 'sk-1', nomorSurat: 'ND-1/2026', perihal: 'Tindak lanjut', tanggalSurat: '2026-09-22' }])
     mocks.svc.process.mockResolvedValue({ id: 'd1', status: 'processed' })
@@ -76,7 +78,39 @@ describe('Kotak Disposisi', () => {
         tampil()
         await screen.findByRole('link', { name: 'SM-1/2026' })
         fireEvent.click(screen.getByRole('checkbox', { name: 'Lewat batas waktu' }))
-        await waitFor(() => expect(mocks.svc.getInbox).toHaveBeenLastCalledWith('dir_bppt', { lewatBatas: true }))
+        await waitFor(() => expect(mocks.svc.getInbox).toHaveBeenLastCalledWith('dir_bppt', { lewatBatas: true, page: 1, limit: 20 }))
+        // Only the inbox depends on the filter.
+        expect(mocks.svc.getOutbox).toHaveBeenCalledOnce()
+        expect(mocks.svc.getStats).toHaveBeenCalledOnce()
+    })
+
+    it('kotak masuk dapat dibuka sampai halaman berikutnya tanpa memuat ulang kotak keluar', async () => {
+        const kedua = { ...terbuka, id: 'd21', surat: { ...terbuka.surat, id: 's21', nomorSurat: 'SM-21/2026' } }
+        mocks.svc.getInbox.mockImplementation(async (_unit, { page }) => (page === 2
+            ? { ...halaman([kedua], 21), pagination: { page: 2, limit: 20, total: 21, totalPages: 2 } }
+            : halaman([terbuka, tersamar], 21)))
+        tampil()
+        await screen.findByRole('link', { name: 'SM-1/2026' })
+        expect(mocks.svc.getInbox).toHaveBeenLastCalledWith('dir_bppt', { page: 1, limit: 20 })
+        const navigasi = screen.getByRole('navigation', { name: 'Halaman kotak masuk' })
+        expect(within(navigasi).getByText('21 data · Halaman 1 dari 2')).toBeInTheDocument()
+        fireEvent.click(within(navigasi).getByRole('button', { name: 'Berikutnya' }))
+        expect(await screen.findByRole('link', { name: 'SM-21/2026' })).toBeInTheDocument()
+        expect(mocks.svc.getInbox).toHaveBeenLastCalledWith('dir_bppt', { page: 2, limit: 20 })
+        expect(within(screen.getByRole('link', { name: 'SM-21/2026' }).closest('tr')).getByText('21')).toBeInTheDocument()
+        expect(mocks.svc.getOutbox).toHaveBeenCalledOnce()
+        expect(mocks.svc.getStats).toHaveBeenCalledOnce()
+    })
+
+    it('menerima surat memuat ulang kotak masuk dan ringkasan, bukan kotak keluar', async () => {
+        mocks.svc.receive.mockResolvedValue({ id: 'd1', status: 'received' })
+        mocks.svc.getInbox.mockResolvedValue(halaman([{ ...terbuka, status: 'sent' }]))
+        tampil()
+        const baris = (await screen.findByRole('link', { name: 'SM-1/2026' })).closest('tr')
+        fireEvent.click(within(baris).getByRole('button', { name: 'Terima Surat' }))
+        await waitFor(() => expect(mocks.svc.getInbox).toHaveBeenCalledTimes(2))
+        await waitFor(() => expect(mocks.svc.getStats).toHaveBeenCalledTimes(2))
+        expect(mocks.svc.getOutbox).toHaveBeenCalledOnce()
     })
 
     it('?penyelesaian=<id> dari detail surat langsung membuka dialog penyelesaian', async () => {
@@ -94,7 +128,7 @@ describe('Kotak Disposisi', () => {
     })
 
     it('?penyelesaian=<id> kotak kosong / disposisi selesai: tidak ada dialog, pengguna diberi tahu', async () => {
-        mocks.svc.getInbox.mockResolvedValue([])
+        mocks.svc.getInbox.mockResolvedValue(halaman([]))
         mocks.svc.getById.mockResolvedValue({ id: 'd9', status: 'processed', masked: false })
         tampil('/distribusi?penyelesaian=d9')
         await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Disposisi tidak dapat diselesaikan', variant: 'destructive' })))
@@ -119,5 +153,12 @@ describe('Kotak Disposisi', () => {
         await screen.findByRole('link', { name: 'SM-1/2026' })
         fireEvent.change(screen.getByPlaceholderText(/Cari surat di kotak masuk/), { target: { value: 'Undangan' } })
         expect(screen.queryByText('Dikecualikan')).toBeNull()
+    })
+
+    it('pencarian diberi keterangan bahwa hanya halaman ini yang disaring', async () => {
+        tampil()
+        await screen.findByRole('link', { name: 'SM-1/2026' })
+        expect(screen.getByPlaceholderText(/Cari surat di kotak masuk/))
+            .toHaveAccessibleDescription('Pencarian hanya menyaring halaman yang sedang ditampilkan.')
     })
 })
