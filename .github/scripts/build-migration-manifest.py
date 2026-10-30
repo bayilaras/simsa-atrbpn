@@ -136,62 +136,16 @@ def manifest_json() -> str:
     return json.dumps(manifest, separators=(",", ":"), ensure_ascii=True)
 
 
-def manifest_sha256() -> str:
-    """Match the CLI's exact bytes consumed by sha256sum in release workflows."""
-    return hashlib.sha256((manifest_json() + "\n").encode("utf-8")).hexdigest()
-
-
-def verify_journal_summary(summary: dict) -> None:
-    """Compare captured evidence with this checkout, never a second release number."""
-    if not isinstance(summary, dict):
-        raise ValueError("database evidence must be an object")
-    journal = summary.get("database_journal", summary.get("journal"))
-    if (not isinstance(journal, dict)
-            or type(journal.get("count")) is not int
-            or journal["count"] != len(manifest)
-            or journal.get("latest_created_at") != manifest[-1]["created_at"]
-            or summary.get("migration_manifest_verified") is not True):
-        raise ValueError("database journal differs from the reviewed migration manifest")
-    if ("migration_manifest_sha256" in summary
-            and summary["migration_manifest_sha256"] != manifest_sha256()):
-        raise ValueError("database evidence is bound to a different migration manifest")
-
-
-def validate_gate_binding(source: str, evidence_path: str) -> None:
-    command = ("python3 .github/scripts/build-migration-manifest.py "
-               f"--verify-journal-summary {evidence_path}")
-    if re.search(r"^\s*" + re.escape(command) + r"\s*$", source, re.MULTILINE) is None:
-        raise ValueError(f"missing reviewed migration verification for {evidence_path}")
-    if re.search(r"\.(?:database_)?journal\.(?:count|latest_created_at)\s*(?:==|!=|>=|<=|>|<)\s*[0-9]", source):
-        raise ValueError("hardcoded release journal gate can drift from the reviewed manifest")
-
-
-def check_gate_bindings() -> None:
-    for file, evidence in (
-        (".github/workflows/database-maintenance-gcp.yml", "maintenance-evidence/maintenance-summary.json"),
-        (".github/workflows/database-bootstrap-gcp-preview.yml", "preview-database-evidence/preview-database-summary.json"),
-        (".github/scripts/run-gcp-database-maintenance.sh", '"$EVIDENCE_DIR/database-evidence.json"'),
-    ):
-        validate_gate_binding((repository_root / file).read_text(encoding="utf-8"), evidence)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     operation = parser.add_mutually_exclusive_group()
     operation.add_argument("--emit-profile-sql", choices=PROFILES)
     operation.add_argument("--emit-profile-manifest", choices=PROFILES)
-    operation.add_argument("--verify-journal-summary", type=Path)
-    operation.add_argument("--check-bindings", action="store_true")
     arguments = parser.parse_args()
     if arguments.emit_profile_sql:
         emit_fixture_sql(arguments.emit_profile_sql)
     elif arguments.emit_profile_manifest:
         print(json.dumps(profile_manifest(arguments.emit_profile_manifest), separators=(",", ":")))
-    elif arguments.verify_journal_summary:
-        verify_journal_summary(json.loads(arguments.verify_journal_summary.read_text(encoding="utf-8")))
-    elif arguments.check_bindings:
-        check_gate_bindings()
-        print("Migration journal workflow bindings: ok")
     else:
         print(manifest_json())
 

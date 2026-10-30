@@ -1,10 +1,8 @@
 # Ringkasan Implementasi dan Verifikasi SIMSA
 
-> **Ringkasan historis.** Dokumen ini merekam baseline sebelum migrasi backend
-> Firebase/Google Cloud. Gunakan `docs/infra/firebase-gcp/README.md` dan runbook
-> GCP di root repository sebagai sumber operasional terbaru; referensi private
-> Vercel Blob atau hitungan migrasi/test di bawah bukan instruksi deployment
-> aktif.
+> **Ringkasan historis.** Hitungan migrasi/test di bawah bukan instruksi
+> deployment aktif. Sumber operasional terbaru: `docs/DEPLOY_VERCEL_NEON.md`,
+> `docs/RUNBOOK_KREDENSIAL_DATABASE.md`, dan `docs/OPERATIONS_RECOVERY.md`.
 
 ## Status
 

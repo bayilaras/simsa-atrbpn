@@ -113,11 +113,12 @@ Perintah `npm start`/`npm run build` di akar repositori adalah launcher **demo
 metadata** yang memerlukan konfigurasi eksplisit; perintah itu bukan startup
 default versi lengkap. Seed tester hanya untuk database uji.
 
-## Menuju operasional
+## Operasional produksi
 
-Untuk target Firebase/Google Cloud, ikuti [arsitektur dan infrastruktur](docs/infra/firebase-gcp/README.md),
-[pemeliharaan database](GCP_DATABASE_MAINTENANCE.md),
-[backup dan pemulihan](CLOUD_SQL_BACKUP_RECOVERY.md), serta
-[prosedur rilis](GCP_BACKEND_RELEASE.md).
+Produksi berjalan di Vercel (`simsa-frontend` dan `simsa-backend`), database
+Neon PostgreSQL, dan Vercel Blob privat. Ikuti
+[deployment Vercel dan Neon](docs/DEPLOY_VERCEL_NEON.md),
+[runbook kredensial database](docs/RUNBOOK_KREDENSIAL_DATABASE.md), serta
+[cadangan dan pemulihan](docs/OPERATIONS_RECOVERY.md).
 Hasil pengujian lokal perlu dilengkapi uji layanan penyimpanan, antivirus,
 backup/restore, akun, domain, dan penerimaan pengguna pada lingkungan tujuan.

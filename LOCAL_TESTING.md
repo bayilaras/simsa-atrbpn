@@ -35,7 +35,9 @@ Jalankan hanya pada database disposable, bukan target yang dipakai pengguna.
    kosong milik pengujian. Verifikasi host, port, database, serta data directory
    sebelum bootstrap. Jangan memodifikasi layanan database existing.
 2. Ikuti pemisahan grant-admin, migrator, maintenance, runtime, dan backup-reader
-   dalam `GCP_DATABASE_MAINTENANCE.md`, dengan identitas lokal tersendiri.
+   pada langkah bootstrap job Backend Tests di `.github/workflows/ci.yml`
+   (`backend/src/db/grants/0001_bootstrap_cloud_sql_roles.sql`, lalu
+   `npm run db:roles:bootstrap`), dengan identitas lokal tersendiri.
    Bootstrap schema/role sebelum `npm run db:migrate`; jangan memakai `db:push`.
    Setelah bootstrap final dan grant convergence, jalankan migrasi lagi: harus
    `0 applied`, dengan database `CREATE` migrator tetap ditolak.

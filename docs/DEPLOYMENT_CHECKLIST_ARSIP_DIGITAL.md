@@ -1,12 +1,10 @@
 # Checklist Deployment Profil Internal SIMSA
 
-> **Target platform aktif:** backend baru menggunakan Firebase/Google Cloud.
-> Untuk provisioning, backup, maintenance database, dan promosi gunakan
-> [blueprint Firebase/GCP](infra/firebase-gcp/README.md),
-> [runbook backup Cloud SQL](../CLOUD_SQL_BACKUP_RECOVERY.md), dan
-> [runbook rilis backend GCP](../GCP_BACKEND_RELEASE.md). Butir Vercel, Neon,
-> dan Vercel Blob di bawah dipertahankan sementara hanya sebagai bukti/rollback
-> sistem lama selama cutover; jangan menerapkannya pada lingkungan GCP baru.
+> **Target platform aktif:** Vercel (`simsa-frontend`, `simsa-backend`), Neon
+> PostgreSQL, dan Vercel Blob privat. Untuk deployment, kredensial database,
+> serta backup dan pemulihan gunakan [deployment Vercel dan Neon](DEPLOY_VERCEL_NEON.md),
+> [runbook kredensial database](RUNBOOK_KREDENSIAL_DATABASE.md), dan
+> [cadangan dan pemulihan](OPERATIONS_RECOVERY.md).
 
 ## 1. Prinsip rilis
 

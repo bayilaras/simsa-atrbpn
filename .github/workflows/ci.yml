@@ -81,63 +81,6 @@ jobs:
         run: npm run build
         working-directory: backend
 
-      - name: Build isolated API and maintenance container targets
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker build --check --file backend/Dockerfile backend
-          docker build --target runtime --tag simsa-api:${{ github.sha }} --file backend/Dockerfile backend
-          docker build --target maintenance --tag simsa-maintenance:${{ github.sha }} --file backend/Dockerfile backend
-          docker run --rm --entrypoint node simsa-api:${{ github.sha }} --check dist/index.js
-          docker run --rm --entrypoint node simsa-api:${{ github.sha }} --input-type=module -e \
-            "await import('better-auth'); await import('better-auth/adapters/drizzle'); await import('better-auth/crypto')"
-          docker run --rm --entrypoint sh simsa-api:${{ github.sha }} -c '
-            for forbidden in \
-              src drizzle.config.ts \
-              node_modules/drizzle-kit node_modules/vitest node_modules/@vitest \
-              node_modules/vite node_modules/vite-node node_modules/tsx \
-              node_modules/.bin/drizzle-kit node_modules/.bin/vitest \
-              node_modules/.bin/vite node_modules/.bin/vite-node node_modules/.bin/tsx
-            do
-              if [ -e "$forbidden" ] || [ -L "$forbidden" ]; then
-                echo "Forbidden maintenance/test path in API image: $forbidden" >&2
-                exit 1
-              fi
-            done
-          '
-          docker run --rm --entrypoint sh simsa-maintenance:${{ github.sha }} -c '
-            for required in \
-              drizzle.config.ts \
-              src/db/migrations/0033_final_object_orphan_queue.sql \
-              src/db/migrations/0034_scheduled_file_fixity.sql \
-              src/db/migrations/0035_disposition_lifecycle_evidence.sql \
-              src/db/migrations/0036_terjaga_reporting_evidence.sql \
-              src/db/migrations/0037_preservation_activity_evidence.sql \
-              src/db/migrations/0038_arsip_direct_upload.sql \
-              src/db/migrations/0039_shared_rate_limits.sql \
-              src/db/grants/0001_bootstrap_cloud_sql_roles.sql \
-              src/db/grants/0002_converge_application_grants.sql \
-              src/db/grants/0003_optional_pg_trgm.sql \
-              scripts/apply-database-grant-convergence.mjs
-            do
-              if [ ! -f "$required" ]; then
-                echo "Required maintenance path is missing: $required" >&2
-                exit 1
-              fi
-            done
-            for executable in node_modules/.bin/drizzle-kit node_modules/.bin/tsx
-            do
-              if [ ! -x "$executable" ]; then
-                echo "Required maintenance executable is missing: $executable" >&2
-                exit 1
-              fi
-            done
-            command -v psql >/dev/null || {
-              echo "Required maintenance executable is missing: psql" >&2
-              exit 1
-            }
-          '
-
       - name: Build and inspect metadata-only demo image
         shell: bash
         run: |
@@ -281,10 +224,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Validate GCP release and Cloud SQL backup safety gates
+      - name: Self-test release gate and Cloud SQL backup safety gates
         run: |
-          python3 .github/scripts/validate-gcp-backend-release-workflow.py
-          python3 .github/scripts/validate-gcp-database-maintenance-workflow.py
+          python3 .github/scripts/check-gcp-backend-production-gate.py --self-test
           python3 .github/scripts/validate-cloud-sql-backup-workflow.py
 
       - name: Setup Node.js
