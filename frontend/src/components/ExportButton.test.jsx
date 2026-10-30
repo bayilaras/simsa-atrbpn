@@ -2,12 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import ExportButton from './ExportButton'
 
-vi.mock('@/lib/cloud-provider-config', () => ({ USE_FIREBASE_AUTH: true }))
-vi.mock('@/lib/firebase-client', () => ({
-    getFirebaseAppCheckToken: vi.fn().mockResolvedValue('test-app-check'),
-    getFirebaseLimitedUseAppCheckToken: vi.fn(),
-}))
-
 describe('ExportButton authenticated download', () => {
     afterEach(() => {
         vi.restoreAllMocks()
@@ -30,7 +24,7 @@ describe('ExportButton authenticated download', () => {
         expect(screen.getByRole('button', { name: 'Export' })).toBeEnabled()
     })
 
-    it('sends App Check, keeps filters, and preserves the server-provided filename', async () => {
+    it('keeps filters and preserves the server-provided filename', async () => {
         const blob = new Blob(['pdf'], { type: 'application/pdf' })
         const fetchMock = vi.fn().mockResolvedValue({
             ok: true,
@@ -62,7 +56,6 @@ describe('ExportButton authenticated download', () => {
         expect(options).toMatchObject({
             method: 'GET',
             credentials: 'include',
-            headers: { 'X-Firebase-AppCheck': 'test-app-check' },
         })
         expect(createObjectURL).toHaveBeenCalledWith(blob)
         expect(revokeObjectURL).toHaveBeenCalledWith('blob:local-export')

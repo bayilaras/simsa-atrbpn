@@ -14,14 +14,9 @@ import appConfig from './lib/app-config'
 
 document.title = appConfig.name
 
-// Register Service Worker for PWA
-const updateSW = registerSW({
-  onNeedRefresh() {
-    // Show a prompt to the user asking if they want to update
-    if (confirm('Versi baru tersedia. Muat ulang untuk memperbarui?')) {
-      updateSW(true)
-    }
-  },
+// Register the PWA service worker. registerType 'autoUpdate' activates a new
+// version and reloads the page on its own; there is no update prompt.
+registerSW({
   onRegisterError(error) {
     console.error('Service Worker registration error:', error)
   }

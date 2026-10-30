@@ -27,7 +27,7 @@ beforeEach(() => {
 afterEach(cleanup)
 describe('destruction evidence workflow', () => {
     it('disables uploads and completion without storage even with historical evidence options', async () => {
-        render(<AppConfigContext.Provider value={{ mode: 'full', capabilities: { files: false, fileUploads: false } }}>
+        render(<AppConfigContext.Provider value={{ capabilities: { files: false, fileUploads: false } }}>
             <PenyusutanExecutionForm batch={batch} unitKerjaId="unit-1" onComplete={vi.fn()} />
         </AppConfigContext.Provider>)
         await waitFor(() => expect(screen.getByLabelText('Berita acara selesai')).not.toBeDisabled())

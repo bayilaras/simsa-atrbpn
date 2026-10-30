@@ -324,7 +324,7 @@ describe('frontend response security policy', () => {
   ]
 
   it.each(environments)('secures HTML, SPA routes, and workers while preserving backend PDF policy: %j', (options) => {
-    const result = createVercelConfig({ ...options, firebaseAuthDomain: 'auth.example.go.id' })
+    const result = createVercelConfig(options)
     // Use Vercel's own path/schema compiler, including the transform route format.
     const normalized = getTransformedRoutes(result)
     expect(normalized.error).toBeNull()
@@ -366,21 +366,19 @@ describe('frontend response security policy', () => {
     }
   })
 
-  it('allows the installed Firebase/App Check, Blob and GCS transports, inline PDF and PWA without inline scripts', () => {
-    const result = createVercelConfig({ deploymentEnvironment: 'production', firebaseAuthDomain: 'AUTH.EXAMPLE.GO.ID' })
+  it('allows only same-origin scripts, the Blob transport, inline PDF and PWA', () => {
+    const result = createVercelConfig({ deploymentEnvironment: 'production' })
     const csp = Object.fromEntries(result.headers[0].headers.map(({ key, value }) => [key, value]))['Content-Security-Policy']
     const directives = Object.fromEntries(csp.split('; ').map(directive => {
       const [name, ...sources] = directive.split(' ')
       return [name, sources]
     }))
-    expect(directives['script-src']).toEqual(["'self'", 'https://apis.google.com', 'https://www.google.com/recaptcha/', 'https://www.gstatic.com/recaptcha/'])
-    expect(directives['connect-src']).toEqual(expect.arrayContaining([
-      "'self'", 'https://identitytoolkit.googleapis.com', 'https://securetoken.googleapis.com',
-      'https://content-firebaseappcheck.googleapis.com', 'https://www.google.com/recaptcha/',
-      'https://vercel.com/api/blob', 'https://vercel.com/api/blob/', 'https://*.blob.vercel-storage.com',
-      'https://storage.googleapis.com', 'https://www.googleapis.com', 'https://auth.example.go.id',
-    ]))
-    expect(directives['frame-src']).toEqual(expect.arrayContaining(["'self'", 'blob:', 'https://auth.example.go.id', 'https://www.google.com/recaptcha/', 'https://recaptcha.google.com/recaptcha/']))
+    expect(directives['script-src']).toEqual(["'self'"])
+    expect(directives['connect-src']).toEqual([
+      "'self'", 'https://vercel.com/api/blob', 'https://vercel.com/api/blob/', 'https://*.blob.vercel-storage.com',
+    ])
+    expect(directives['frame-src']).toEqual(["'self'", 'blob:'])
+    expect(csp).not.toMatch(/google|gstatic|firebase/)
     expect(directives['worker-src']).toEqual(["'self'", 'blob:'])
     expect(directives['object-src']).toEqual(["'none'"])
     expect(directives['frame-ancestors']).toEqual(["'none'"])
@@ -402,12 +400,6 @@ describe('frontend response security policy', () => {
     expect(connections).not.toContain('https:')
     expect(connections).not.toContain('*')
   })
-
-  it.each(['https://auth.example.go.id', "auth.example.go.id; script-src *", 'auth.example.go.id/path', 'auth.example.go.id:443', '*.firebaseapp.com'])(
-    'rejects malformed auth domains without interpolating policy directives: %s', firebaseAuthDomain => {
-      expect(() => createVercelConfig({ deploymentEnvironment: 'production', firebaseAuthDomain })).toThrow('must be a hostname')
-    },
-  )
 
   it('permits only the exact maintenance cache-cleaning inline script by hash', () => {
     const html = readFileSync(path.join(frontendRoot, 'public/preview-unavailable.html'), 'utf8').replaceAll('\r\n', '\n')

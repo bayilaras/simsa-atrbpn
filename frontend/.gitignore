@@ -26,6 +26,3 @@ dist-vercel-production-check
 
 .vercel
 .env*.local
-
-# TestSprite generates this file with runtime credentials. Never track it.
-testsprite_tests/tmp/config.json

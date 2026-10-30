@@ -28,33 +28,6 @@ function validateClientApiTarget(command, mode) {
   throw new Error('Deployment builds must leave VITE_API_URL unset and use a same-origin API proxy; cross-origin client API URLs break cookie-authenticated uploads.')
 }
 
-function validateFirebaseBuildTarget(command, mode) {
-  if (command !== 'build') return
-
-  const loadedEnvironment = loadEnv(mode, currentDirectory, '')
-  const value = (name) => (process.env[name] ?? loadedEnvironment[name] ?? '').trim()
-  if ((value('VITE_AUTH_PROVIDER') || 'better-auth').toLowerCase() !== 'firebase') return
-
-  const required = [
-    'VITE_FIREBASE_API_KEY',
-    'VITE_FIREBASE_AUTH_DOMAIN',
-    'VITE_FIREBASE_PROJECT_ID',
-    'VITE_FIREBASE_APP_ID',
-    'VITE_FIREBASE_APP_CHECK_SITE_KEY',
-  ]
-  const missing = required.filter((name) => !value(name))
-  if (missing.length) {
-    throw new Error(`Firebase deployment build is missing public configuration: ${missing.join(', ')}.`)
-  }
-  if (!/^[A-Za-z0-9.-]+$/.test(value('VITE_FIREBASE_AUTH_DOMAIN'))
-      || value('VITE_FIREBASE_AUTH_DOMAIN').includes('..')) {
-    throw new Error('VITE_FIREBASE_AUTH_DOMAIN must be one canonical hostname.')
-  }
-  if (value('VITE_FIREBASE_APP_CHECK_DEBUG_TOKEN')) {
-    throw new Error('Firebase App Check debug tokens are forbidden in deployment builds.')
-  }
-}
-
 function buildEnvironment(mode) {
   return {
     ...loadEnv(mode, currentDirectory, ''),
@@ -68,60 +41,27 @@ export function createSimsaBuildManifest(source = {}) {
   const authProvider = (value('VITE_AUTH_PROVIDER') || 'better-auth').toLowerCase()
   const storageProvider = (value('VITE_STORAGE_PROVIDER') || 'vercel-blob').toLowerCase()
 
-  if (!['full', 'metadata-demo'].includes(appMode)) {
-    throw new Error('VITE_APP_MODE must be full or metadata-demo for deployment builds.')
+  if (appMode !== 'full') {
+    throw new Error('VITE_APP_MODE must be full (or unset) for deployment builds.')
   }
-  if (!['better-auth', 'firebase'].includes(authProvider)) {
-    throw new Error('VITE_AUTH_PROVIDER must be better-auth or firebase for deployment builds.')
+  if (authProvider !== 'better-auth') {
+    throw new Error('VITE_AUTH_PROVIDER must be better-auth for deployment builds.')
   }
-  if (!['vercel-blob', 'gcs', 'disabled'].includes(storageProvider)) {
+  if (!['vercel-blob', 'disabled'].includes(storageProvider)) {
     throw new Error('VITE_STORAGE_PROVIDER has an unsupported deployment value.')
   }
-  if (appMode === 'full' && storageProvider === 'disabled'
+  if (storageProvider === 'disabled'
       && value('VITE_APP_PROFILE').toLowerCase() !== 'internal') {
     throw new Error('Full builds with disabled storage require explicit VITE_APP_PROFILE=internal.')
   }
 
-  if (appMode === 'metadata-demo') {
-    if ((value('VITE_APP_PROFILE') || 'internal').toLowerCase() !== 'internal') {
-      throw new Error('Metadata demo builds require VITE_APP_PROFILE=internal.')
-    }
-    if (value('VITE_API_URL')) {
-      throw new Error('Metadata demo builds require a same-origin API and an empty VITE_API_URL.')
-    }
-    if (storageProvider !== 'disabled') {
-      throw new Error('Metadata demo builds require VITE_STORAGE_PROVIDER=disabled.')
-    }
-    if (value('VITE_FEATURE_SRIKANDI').toLowerCase() === 'true') {
-      throw new Error('Metadata demo builds cannot enable SRIKANDI.')
-    }
-
-    if (authProvider === 'better-auth') {
-      const localBuild = value('SIMSA_DEMO_LOCAL_BUILD') === 'true'
-      const nonDeployed = !value('K_SERVICE')
-        && !value('VERCEL')
-      if (!localBuild || !nonDeployed) {
-        throw new Error('Better Auth metadata demo builds are allowed only by the explicit local build gate.')
-      }
-    }
-  }
-
-  const firebase = authProvider === 'firebase'
-    ? {
-        projectId: value('VITE_FIREBASE_PROJECT_ID'),
-        authDomain: value('VITE_FIREBASE_AUTH_DOMAIN'),
-        appId: value('VITE_FIREBASE_APP_ID'),
-      }
-    : null
-
   return {
     schemaVersion: 1,
-    mode: appMode,
-    syntheticDataOnly: appMode === 'metadata-demo',
+    mode: 'full',
+    syntheticDataOnly: false,
     api: 'same-origin',
     authProvider,
     storageProvider,
-    firebase,
   }
 }
 
@@ -141,7 +81,6 @@ function buildManifestPlugin(manifest) {
 // https://vite.dev/config/
 export default defineConfig(({ command, mode }) => {
   validateClientApiTarget(command, mode)
-  validateFirebaseBuildTarget(command, mode)
   const manifest = command === 'build'
     ? createSimsaBuildManifest(buildEnvironment(mode))
     : null
@@ -153,53 +92,11 @@ export default defineConfig(({ command, mode }) => {
     ...(manifest ? [buildManifestPlugin(manifest)] : []),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'icons/*.png', 'robots.txt'],
       manifest: false, // Use external manifest.json
       workbox: {
-        // Cache the Google Fonts
+        // Fonts are bundled locally and the CSP allows no font or script CDN,
+        // so only API and image rules are needed here.
         runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-cache',
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365 // 1 year
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          },
-          {
-            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'gstatic-fonts-cache',
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365 // 1 year
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          },
-          {
-            urlPattern: /^https:\/\/cdnjs\.cloudflare\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'cdn-cache',
-              expiration: {
-                maxEntries: 20,
-                maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          },
           {
             // Auth/session responses must never be cached — a cached session would
             // keep a signed-out user "authenticated" whenever the network fails.

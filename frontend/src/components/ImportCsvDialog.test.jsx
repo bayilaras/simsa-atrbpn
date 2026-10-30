@@ -4,7 +4,6 @@ import ImportCsvDialog from './ImportCsvDialog'
 
 const mocks = vi.hoisted(() => ({ post: vi.fn() }))
 vi.mock('@/services/api', () => ({ default: { post: mocks.post } }))
-vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ mode: 'full' }) }))
 const preview = { success: true, dryRun: true, valid: 1, imported: 0, skipped: 0, duplicates: 0, errors: [], rows: [
     { row: 2, status: 'valid', sourceDate: '29/02/2024', normalizedDate: '2024-02-29' },
 ] }

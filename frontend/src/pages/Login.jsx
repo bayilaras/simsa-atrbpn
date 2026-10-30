@@ -25,10 +25,9 @@ export default function Login() {
     const [password, setPassword] = useState('')
     const [showPassword, setShowPassword] = useState(false)
     const [localError, setLocalError] = useState('')
-    const localDemo = appConfig.mode === 'metadata-demo' && AUTH_PROVIDER === 'better-auth'
     const runtime = useAppConfig()
     const googleAvailable = !runtime.loading && runtime.authentication?.googleSignIn === true
-        && runtime.authentication?.provider === AUTH_PROVIDER && !localDemo
+        && runtime.authentication?.provider === AUTH_PROVIDER
 
     if (signingOut) {
         return <main className="flex min-h-svh items-center justify-center bg-background p-6" role="status" aria-live="polite">
@@ -66,10 +65,9 @@ export default function Login() {
                                 <p className="mt-0.5 text-sm text-muted-foreground">Ditjen PTPP</p>
                             </div>
                         </div>
-                        <CardDescription className="sr-only">{localDemo
-                            ? 'Masukkan email dan kata sandi akun uji lokal.'
-                            : googleAvailable ? 'Masukkan email dan kata sandi, atau gunakan akun Google.'
-                                : 'Masukkan email dan kata sandi yang diberikan administrator.'}</CardDescription>
+                        <CardDescription className="sr-only">{googleAvailable
+                            ? 'Masukkan email dan kata sandi, atau gunakan akun Google.'
+                            : 'Masukkan email dan kata sandi yang diberikan administrator.'}</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-5 px-6 sm:px-8">
                         {displayError && (

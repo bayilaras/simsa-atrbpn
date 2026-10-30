@@ -15,8 +15,6 @@ const PROFILE_BRANDING = Object.freeze({
     }),
 })
 
-export const APP_MODES = Object.freeze(['full', 'metadata-demo'])
-
 const FULL_CAPABILITIES = Object.freeze({
     metadata: true,
     files: true,
@@ -27,7 +25,7 @@ const FULL_CAPABILITIES = Object.freeze({
     advancedArchiveWorkflows: true,
 })
 
-export const RESTRICTED_CAPABILITIES = Object.freeze({
+const RESTRICTED_CAPABILITIES = Object.freeze({
     metadata: false,
     files: false,
     fileUploads: false,
@@ -58,22 +56,12 @@ export function createAppConfig(env = {}) {
         ? requestedProfile
         : 'internal'
     const branding = PROFILE_BRANDING[profile]
-    const requestedMode = typeof env.VITE_APP_MODE === 'string'
-        ? env.VITE_APP_MODE.trim().toLowerCase()
-        : ''
-    // The legacy/full build remains the default. Deployment validation owns
-    // rejecting an unknown value; only the exact metadata-demo value enables
-    // the restrictive UI and its mandatory backend capability handshake.
-    const mode = requestedMode === 'metadata-demo' ? 'metadata-demo' : 'full'
     const providers = resolveCloudProviderConfig(env)
-    const capabilities = mode === 'metadata-demo'
-        ? Object.freeze({ ...RESTRICTED_CAPABILITIES })
-        : providers.storageProvider === 'disabled'
-            ? Object.freeze({ ...FULL_CAPABILITIES, files: false, fileUploads: false, letterFileUploads: false })
-            : FULL_CAPABILITIES
+    const capabilities = providers.storageProvider === 'disabled'
+        ? Object.freeze({ ...FULL_CAPABILITIES, files: false, fileUploads: false, letterFileUploads: false })
+        : FULL_CAPABILITIES
 
     return Object.freeze({
-        mode,
         authProvider: providers.authProvider,
         storageProvider: providers.storageProvider,
         profile,
@@ -81,11 +69,9 @@ export function createAppConfig(env = {}) {
         shortName: branding.shortName,
         organization: 'Direktorat Jenderal Pengadaan Tanah dan Pengembangan Pertanahan',
         usageBadge: branding.usageBadge,
-        syntheticDataOnly: mode === 'metadata-demo',
         capabilities,
         features: Object.freeze({
-            srikandi: mode === 'full'
-                && profile === 'integrated'
+            srikandi: profile === 'integrated'
                 && parseBooleanFlag(env.VITE_FEATURE_SRIKANDI, false),
         }),
     })
@@ -95,74 +81,35 @@ export function resolveRuntimeCapabilities(buildConfig, payload) {
     const backendCapabilities = payload?.capabilities
     const providerMatches = !payload?.authentication?.provider
         || payload.authentication.provider === buildConfig?.authProvider
-    if (buildConfig?.mode !== 'metadata-demo') {
-        const compatible = payload?.mode === 'full' && payload?.syntheticDataOnly === false
-            && providerMatches
-            && backendCapabilities?.metadata === true
-            && typeof backendCapabilities?.files === 'boolean'
-            && typeof backendCapabilities?.fileUploads === 'boolean'
-            && (backendCapabilities?.letterFileUploads === undefined || typeof backendCapabilities.letterFileUploads === 'boolean')
-            && typeof backendCapabilities?.externalIntegrations === 'boolean'
-            && !(backendCapabilities.fileUploads && !backendCapabilities.files)
-            && !(backendCapabilities.letterFileUploads && !backendCapabilities.files)
-            && !(buildConfig.storageProvider === 'disabled' && backendCapabilities.files)
-        return Object.freeze({
-            compatible: Boolean(compatible), mode: 'full', syntheticDataOnly: false,
-            capabilities: Object.freeze(compatible ? { ...backendCapabilities,
-                // Letter attachments can be available while inspection services
-                // required by archival preservation are unavailable.
-                letterFileUploads: backendCapabilities.letterFileUploads ?? backendCapabilities.fileUploads,
-                // Older full backends predate these switches. Explicit values
-                // are authoritative; malformed values never enable a module.
-                bulkOcr: backendCapabilities.bulkOcr === undefined || backendCapabilities.bulkOcr === true,
-                advancedArchiveWorkflows: backendCapabilities.advancedArchiveWorkflows === undefined || backendCapabilities.advancedArchiveWorkflows === true,
-            }
-                : { ...RESTRICTED_CAPABILITIES, metadata: payload == null }),
-            authentication: Object.freeze(compatible ? {
-                provider: payload?.authentication?.provider,
-                googleSignIn: payload?.authentication?.googleSignIn === true,
-                pendingGoogleSignup: payload?.authentication?.googleSignIn === true && payload?.authentication?.pendingGoogleSignup === true,
-            } : { googleSignIn: false }),
-        })
-    }
-    const compatible = Boolean(
-        buildConfig?.mode === 'metadata-demo'
-        && payload?.mode === 'metadata-demo'
-        && payload?.syntheticDataOnly === true
+    // The backend must confirm the full, real-data mode it reports today; any
+    // other mode or a provider mismatch keeps the application blocked.
+    const compatible = payload?.mode === 'full' && payload?.syntheticDataOnly === false
         && providerMatches
         && backendCapabilities?.metadata === true
-        && backendCapabilities?.files === false
-        && backendCapabilities?.fileUploads !== true
-        && (backendCapabilities?.letterFileUploads === undefined || backendCapabilities.letterFileUploads === false)
-        && backendCapabilities?.externalIntegrations === false
-    )
-
-    if (!compatible) {
-        return Object.freeze({
-            compatible: false,
-            mode: 'metadata-demo',
-            syntheticDataOnly: true,
-            capabilities: RESTRICTED_CAPABILITIES,
-            authentication: Object.freeze({ googleSignIn: false }),
-        })
-    }
-
+        && typeof backendCapabilities?.files === 'boolean'
+        && typeof backendCapabilities?.fileUploads === 'boolean'
+        && (backendCapabilities?.letterFileUploads === undefined || typeof backendCapabilities.letterFileUploads === 'boolean')
+        && typeof backendCapabilities?.externalIntegrations === 'boolean'
+        && !(backendCapabilities.fileUploads && !backendCapabilities.files)
+        && !(backendCapabilities.letterFileUploads && !backendCapabilities.files)
+        && !(buildConfig.storageProvider === 'disabled' && backendCapabilities.files)
     return Object.freeze({
-        compatible: true,
-        mode: 'metadata-demo',
-        syntheticDataOnly: true,
-        capabilities: Object.freeze({
-            ...RESTRICTED_CAPABILITIES,
-            metadata: true,
-            files: false,
-            fileUploads: false,
-            externalIntegrations: false,
-        }),
-        authentication: Object.freeze({
+        compatible: Boolean(compatible),
+        capabilities: Object.freeze(compatible ? { ...backendCapabilities,
+            // Letter attachments can be available while inspection services
+            // required by archival preservation are unavailable.
+            letterFileUploads: backendCapabilities.letterFileUploads ?? backendCapabilities.fileUploads,
+            // Older full backends predate these switches. Explicit values
+            // are authoritative; malformed values never enable a module.
+            bulkOcr: backendCapabilities.bulkOcr === undefined || backendCapabilities.bulkOcr === true,
+            advancedArchiveWorkflows: backendCapabilities.advancedArchiveWorkflows === undefined || backendCapabilities.advancedArchiveWorkflows === true,
+        }
+            : { ...RESTRICTED_CAPABILITIES, metadata: payload == null }),
+        authentication: Object.freeze(compatible ? {
             provider: payload?.authentication?.provider,
-            googleSignIn: payload?.authentication?.provider === 'firebase' && payload?.authentication?.googleSignIn === true,
-            pendingGoogleSignup: payload?.authentication?.provider === 'firebase' && payload?.authentication?.googleSignIn === true && payload?.authentication?.pendingGoogleSignup === true,
-        }),
+            googleSignIn: payload?.authentication?.googleSignIn === true,
+            pendingGoogleSignup: payload?.authentication?.googleSignIn === true && payload?.authentication?.pendingGoogleSignup === true,
+        } : { googleSignIn: false }),
     })
 }
 
@@ -173,8 +120,7 @@ export function resolveRuntimeFeatures(buildConfig, applicationMetadata) {
         // Build-time opt-in alone is insufficient. The backend must report the
         // matching integrated profile and an actually enabled connector.
         srikandi: Boolean(
-            buildConfig?.mode !== 'metadata-demo'
-            && buildConfig?.capabilities?.externalIntegrations !== false
+            buildConfig?.capabilities?.externalIntegrations !== false
             && buildConfig?.profile === 'integrated'
             && buildConfig?.features?.srikandi
             && applicationMetadata?.profile === 'integrated'

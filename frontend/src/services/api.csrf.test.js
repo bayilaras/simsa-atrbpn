@@ -1,36 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-const authConfig = vi.hoisted(() => ({ firebase: false }));
-vi.mock('../lib/cloud-provider-config', () => ({
-    get USE_FIREBASE_AUTH() { return authConfig.firebase; },
-}));
-vi.mock('../lib/firebase-client', () => ({
-    getFirebaseAppCheckToken: vi.fn().mockResolvedValue('app-check-token'),
-    getFirebaseLimitedUseAppCheckToken: vi.fn().mockResolvedValue('limited-use-app-check-token'),
-}));
-
-import api, { ApiClient, DEFAULT_API_TIMEOUT_MS } from './api';
-import { getFirebaseAppCheckToken, getFirebaseLimitedUseAppCheckToken } from '../lib/firebase-client';
-import {
-    clearFirebaseSessionCsrfToken,
-    setFirebaseSessionCsrfToken,
-} from '../lib/firebase-session-security';
+import api from './api';
 
 const COOKIE_TOKEN = 'a1'.repeat(32);
-const FIREBASE_TOKEN = 'aB_-'.repeat(11);
 const success = () => ({ ok: true, status: 200, json: async () => ({ success: true }) });
 
 describe('ApiClient CSRF token boundaries', () => {
     beforeEach(() => {
-        authConfig.firebase = false;
         document.cookie = 'csrf-token=; Max-Age=0; path=/';
-        clearFirebaseSessionCsrfToken();
     });
 
     afterEach(() => {
         vi.unstubAllGlobals();
         document.cookie = 'csrf-token=; Max-Age=0; path=/';
-        clearFirebaseSessionCsrfToken();
     });
 
     it.each([
@@ -116,90 +97,5 @@ describe('ApiClient CSRF token boundaries', () => {
         for (const [, config] of fetchMock.mock.calls.slice(1)) {
             expect(config.headers['X-CSRF-Token']).toBe(COOKIE_TOKEN);
         }
-    });
-
-    it('preserves a Firebase session token and App Check despite a malformed legacy cookie', async () => {
-        authConfig.firebase = true;
-        document.cookie = 'csrf-token=%; path=/';
-        setFirebaseSessionCsrfToken(FIREBASE_TOKEN);
-        const fetchMock = vi.fn().mockResolvedValue(success());
-        vi.stubGlobal('fetch', fetchMock);
-
-        await api.post('/api/object-uploads', {});
-
-        expect(fetchMock).toHaveBeenCalledOnce();
-        expect(fetchMock.mock.calls[0][1].headers).toMatchObject({
-            'X-CSRF-Token': FIREBASE_TOKEN,
-            'X-Firebase-AppCheck': 'limited-use-app-check-token',
-        });
-    });
-
-    it('bootstraps Firebase through get-session while retaining its non-hex token format', async () => {
-        authConfig.firebase = true;
-        document.cookie = 'csrf-token=%; path=/';
-        const fetchMock = vi.fn()
-            .mockResolvedValueOnce({ ok: true, json: async () => ({ csrfToken: FIREBASE_TOKEN }) })
-            .mockResolvedValueOnce(success());
-        vi.stubGlobal('fetch', fetchMock);
-
-        await api.post('/api/example', {});
-
-        expect(fetchMock).toHaveBeenCalledTimes(2);
-        expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/auth\/get-session$/);
-        expect(fetchMock.mock.calls[0][1].headers['X-Firebase-AppCheck']).toBe('app-check-token');
-        expect(fetchMock.mock.calls[1][1].headers).toMatchObject({
-            'X-CSRF-Token': FIREBASE_TOKEN,
-            'X-Firebase-AppCheck': 'app-check-token',
-        });
-    });
-});
-
-describe('ApiClient Firebase operation deadlines', () => {
-    beforeEach(() => {
-        vi.useFakeTimers();
-        authConfig.firebase = true;
-        clearFirebaseSessionCsrfToken();
-        vi.mocked(getFirebaseAppCheckToken).mockResolvedValue('app-check-token');
-        vi.mocked(getFirebaseLimitedUseAppCheckToken).mockResolvedValue('limited-use-app-check-token');
-    });
-    afterEach(() => {
-        vi.clearAllTimers();
-        vi.useRealTimers();
-        vi.unstubAllGlobals();
-        authConfig.firebase = false;
-        clearFirebaseSessionCsrfToken();
-        vi.mocked(getFirebaseAppCheckToken).mockResolvedValue('app-check-token');
-        vi.mocked(getFirebaseLimitedUseAppCheckToken).mockResolvedValue('limited-use-app-check-token');
-    });
-
-    it.each([
-        ['/api/example', getFirebaseAppCheckToken],
-        ['/api/object-uploads', getFirebaseLimitedUseAppCheckToken],
-    ])('bounds the App Check provider before dispatching %s', async (endpoint, provider) => {
-        setFirebaseSessionCsrfToken(FIREBASE_TOKEN);
-        vi.mocked(provider).mockReturnValueOnce(new Promise(() => {}));
-        const fetchMock = vi.fn();
-        vi.stubGlobal('fetch', fetchMock);
-        const client = new ApiClient('https://example.test');
-        const rejection = expect(client.post(endpoint, {}, { timeoutMs: 500 }))
-            .rejects.toMatchObject({ code: 'REQUEST_TIMEOUT', mutationOutcomeUnknown: false });
-        await vi.advanceTimersByTimeAsync(500);
-        await rejection;
-        expect(fetchMock).not.toHaveBeenCalled();
-        expect(vi.getTimerCount()).toBe(0);
-    });
-
-    it('bounds Firebase session bootstrap response parsing and releases its shared promise', async () => {
-        const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => new Promise(() => {}) });
-        vi.stubGlobal('fetch', fetchMock);
-        const client = new ApiClient('https://example.test');
-        const rejection = expect(client.post('/api/example', {}))
-            .rejects.toMatchObject({ code: 'REQUEST_TIMEOUT', mutationOutcomeUnknown: false });
-        await vi.advanceTimersByTimeAsync(DEFAULT_API_TIMEOUT_MS);
-        await rejection;
-        expect(fetchMock).toHaveBeenCalledOnce();
-        expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/auth\/get-session$/);
-        expect(client._csrfFetchPromise).toBeNull();
-        expect(vi.getTimerCount()).toBe(0);
     });
 });

@@ -21,7 +21,7 @@ describe('full runtime capability verification', () => {
         render(<AppConfigProvider><Probe /></AppConfigProvider>)
         await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/capabilities'), expect.any(Object)))
         await waitFor(() => expect(current().loading).toBe(false))
-        expect(current()).toMatchObject({ mode: 'full', compatible: true,
+        expect(current()).toMatchObject({ compatible: true,
             capabilities: { metadata: true, files: false, fileUploads: false }, authentication: { googleSignIn: false } })
     })
     it('fails optional features closed before and after an unavailable backend', async () => {
@@ -29,7 +29,7 @@ describe('full runtime capability verification', () => {
         render(<AppConfigProvider><Probe /></AppConfigProvider>)
         expect(current().capabilities.files).toBe(false)
         await waitFor(() => expect(current().loading).toBe(false))
-        expect(current()).toMatchObject({ mode: 'full', capabilities: { metadata: true, files: false, fileUploads: false },
+        expect(current()).toMatchObject({ capabilities: { metadata: true, files: false, fileUploads: false },
             authentication: { googleSignIn: false } })
         expect(current().configurationError).toBeTruthy()
     })

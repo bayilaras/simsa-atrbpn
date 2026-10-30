@@ -57,7 +57,7 @@ import {
 } from "@/components/ui/pagination"
 import { arsipService } from '@/services/arsip.service'
 import settingsService from '@/services/settings.service'
-import { TableSkeleton } from '@/components/LoadingSkeletons'
+import { TableSkeleton } from '@/components/skeletons'
 
 const VALID_TABS = ['keluar', 'masuk', 'retensi']
 

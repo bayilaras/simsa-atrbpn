@@ -29,7 +29,6 @@ import appConfig from '@/lib/app-config'
 import settingsService from '@/services/settings.service'
 import { notificationRoute } from '@/lib/notification-routing'
 import { useNotificationUnitScope } from '@/hooks/use-notification-unit-scope'
-import { DemoModeBadge } from '@/components/DemoModeBadge'
 
 // Role label mapping for display in Indonesian
 const ROLE_LABELS = {
@@ -125,8 +124,7 @@ export function AppHeader() {
                 <SidebarTrigger className="-ml-1" />
                 <Separator orientation="vertical" className="hidden h-5 sm:block" />
 
-                <DemoModeBadge mode={appConfig.mode} />
-                <div className={appConfig.mode === 'metadata-demo' ? 'hidden' : 'hidden items-center gap-2 xl:flex'}>
+                <div className="hidden items-center gap-2 xl:flex">
                     <span className="text-sm font-semibold tracking-tight">{appConfig.shortName}</span>
                     <Badge variant="outline" className="text-[10px] font-medium">
                         {appConfig.usageBadge}
