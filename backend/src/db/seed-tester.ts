@@ -1,7 +1,6 @@
 import { db } from '../config/database';
 import { users, accounts } from './schema/users';
 import { and, eq } from 'drizzle-orm';
-import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import { hashCredentialPassword } from '../config/password-hashing.js';
 
@@ -61,7 +60,7 @@ async function seedTester() {
 
     } else {
         console.log('🆕 Creating new tester user...');
-        const userId = uuidv4();
+        const userId = crypto.randomUUID();
 
         // Create user
         await db.insert(users).values({

@@ -15,7 +15,6 @@ import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from 'd
 import type { ExtractedMetadata } from './ocr.service.js';
 import { ocrProcessService } from './ocr-process.service.js';
 import { blobStorageService } from './blob-storage.service.js';
-import { v4 as uuidv4 } from 'uuid';
 import { createLogger } from '../utils/logger.js';
 import { auditLogService, type CriticalAuditContext } from './audit-log.service.js';
 import {
@@ -221,7 +220,7 @@ export class BulkUploadService {
             );
         }
 
-        const batchId = uuidv4();
+        const batchId = crypto.randomUUID();
         const createdAt = new Date();
         const expiresAt = new Date(createdAt.getTime() + this.BATCH_TTL_MS);
         const storedItems: Array<{
@@ -243,7 +242,7 @@ export class BulkUploadService {
             // Persist every source bitstream before returning a batch ID. OCR is
             // subsequently recoverable from Blob even if this process exits.
             for (const [index, file] of files.entries()) {
-                const itemId = uuidv4();
+                const itemId = crypto.randomUUID();
                 const stored = await blobStorageService.uploadUntrustedFile({
                     fileName: `${itemId}-${safeBlobFileName(file.fileName)}`,
                     mimeType: file.mimeType,
