@@ -177,7 +177,9 @@ export class ApiClient {
     /**
      * Ensure a CSRF cookie exists before state-changing requests.
      * Auth routes bypass the CSRF cookie setter, so the cookie may not exist
-     * if the user has only made auth calls so far.
+     * if the user has only made auth calls so far. Every other /api response
+     * sets it; /api/capabilities is static, unlike the readiness probe at
+     * /api/health, which checks the database and Blob storage.
      */
     async _ensureCsrfToken() {
         if (getCsrfCookieToken()) return;
@@ -185,7 +187,7 @@ export class ApiClient {
         // Avoid duplicate fetches if multiple requests happen concurrently
         if (!this._csrfFetchPromise) {
             const bootstrap = createRequestScope(DEFAULT_API_TIMEOUT_MS);
-            this._csrfFetchPromise = bootstrap.run(() => fetch(`${this.baseUrl}/api/health`, {
+            this._csrfFetchPromise = bootstrap.run(() => fetch(`${this.baseUrl}/api/capabilities`, {
                 method: 'GET',
                 credentials: 'include',
                 signal: bootstrap.signal,
