@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, jsonb, index } from 'drizzle-orm/pg-core';
 import { users } from './users';
 
 export const auditLog = pgTable('audit_log', {
@@ -11,7 +11,11 @@ export const auditLog = pgTable('audit_log', {
     changes: jsonb('changes'),
     ipAddress: varchar('ip_address', { length: 45 }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (table) => [
+    // 0053: riwayat entitas dan daftar audit, terbaru dahulu.
+    index('audit_log_entity_created_at_idx').on(table.entityType, table.entityId, table.createdAt.desc()),
+    index('idx_audit_log_created_at').on(table.createdAt.desc()),
+]);
 
 export type AuditLog = typeof auditLog.$inferSelect;
 export type NewAuditLog = typeof auditLog.$inferInsert;

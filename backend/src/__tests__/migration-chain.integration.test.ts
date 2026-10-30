@@ -1554,6 +1554,48 @@ describe('PostgreSQL migration chain', () => {
         `)).rejects.toThrow(/accounts_provider_id_account_id_unique/);
     }, PGLITE_MIGRATION_TIMEOUT_MS);
 
+    it('0053 membuat index daftar, audit, dan lampiran tanpa menggandakan index manual lama', async () => {
+        const database = await createDatabase();
+        const index0053 = journal.entries.findIndex(({ tag }) => tag === '0053_list_audit_attachment_indexes');
+        expect(index0053).toBeGreaterThan(0);
+        for (const entry of journal.entries.slice(0, index0053)) {
+            await applyMigration(database, entry);
+        }
+        // Lingkungan yang pernah menjalankan add_soft_delete_and_indexes.sql secara manual.
+        await database.exec(`
+            CREATE INDEX idx_audit_log_created_at ON audit_log(created_at DESC);
+            CREATE INDEX idx_file_attachments_entity ON file_attachments(entity_type, entity_id);
+        `);
+        await applyMigration(database, journal.entries[index0053]);
+        // IF NOT EXISTS: menjalankan ulang tidak gagal dan tidak menambah index.
+        await applyMigration(database, journal.entries[index0053]);
+
+        const { rows } = await database.query<{ indexname: string; indexdef: string }>(`
+            SELECT indexname, indexdef FROM pg_indexes
+             WHERE schemaname = 'public' AND tablename IN ('audit_log', 'file_attachments', 'surat_masuk', 'surat_keluar')`);
+        const definisi = (nama: string) => rows.find(row => row.indexname === nama)?.indexdef;
+        expect(definisi('audit_log_entity_created_at_idx'))
+            .toBe('CREATE INDEX audit_log_entity_created_at_idx ON public.audit_log USING btree (entity_type, entity_id, created_at DESC)');
+        expect(definisi('idx_audit_log_created_at'))
+            .toBe('CREATE INDEX idx_audit_log_created_at ON public.audit_log USING btree (created_at DESC)');
+        expect(definisi('idx_file_attachments_entity'))
+            .toBe('CREATE INDEX idx_file_attachments_entity ON public.file_attachments USING btree (entity_type, entity_id)');
+        expect(definisi('surat_masuk_unit_created_at_idx'))
+            .toBe('CREATE INDEX surat_masuk_unit_created_at_idx ON public.surat_masuk USING btree (unit_kerja_id, created_at DESC)');
+        expect(definisi('surat_keluar_unit_created_at_idx'))
+            .toBe('CREATE INDEX surat_keluar_unit_created_at_idx ON public.surat_keluar USING btree (unit_kerja_id, created_at DESC)');
+        // Tidak ada dua index dengan definisi yang sama pada tabel-tabel ini.
+        const tanpaNama = rows.map(row => row.indexdef.replace(/ INDEX \S+ ON /, ' INDEX ON '));
+        expect(new Set(tanpaNama).size).toBe(tanpaNama.length);
+
+        // Daftar surat per unit dengan LIMIT memakai index baru, bukan seq scan + sort.
+        await database.exec(`SET enable_seqscan = off`);
+        const rencana = await database.query<{ 'QUERY PLAN': string }>(`
+            EXPLAIN SELECT id FROM surat_masuk WHERE unit_kerja_id = 'unit-a' ORDER BY created_at DESC LIMIT 20`);
+        expect(rencana.rows.map(row => row['QUERY PLAN']).join(' ')).toContain('surat_masuk_unit_created_at_idx');
+        await database.exec(`RESET enable_seqscan`);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
+
     it('memodelkan setiap kolom integrasi rangkaian di skema Drizzle', async () => {
         const database = await createDatabase();
         for (const entry of journal.entries) {
