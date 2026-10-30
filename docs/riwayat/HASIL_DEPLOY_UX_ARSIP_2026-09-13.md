@@ -11,7 +11,7 @@ Pembaruan frontend aktif di https://simsa-frontend.vercel.app sejak **09:29:09 W
 | Frontend sebelumnya / rollback | `dpl_aw3g2Dsrh73KEFCuUKzsCux9ctyy` |
 | Backend yang dipertahankan | `dpl_4FWzGVK2UgJmsXjMAJ7kzZ7k1vbd` |
 
-Rilis membawa query pencarian/filter/paginasi di URL, filter tersimpan per pengguna di browser, panel pratinjau dokumen sumber, status pemuatan/kegagalan dan retry, serta penyesuaian tabel dan tampilan ponsel. Rincian implementasi tercatat dalam `docs/PENERAPAN_UX_ARSIP_2026-09-13.md`.
+Rilis membawa query pencarian/filter/paginasi di URL, filter tersimpan per pengguna di browser, panel pratinjau dokumen sumber, status pemuatan/kegagalan dan retry, serta penyesuaian tabel dan tampilan ponsel. Rincian implementasi tercatat dalam `docs/riwayat/PENERAPAN_UX_ARSIP_2026-09-13.md`.
 
 Sumber dibuat dari snapshot frontend produksi sebelumnya dengan 12 berkas delta yang dipilih secara eksplisit. Seluruh **1.301 hash berkas** cocok sebelum promosi. Pekerjaan lokal lain tidak dimasukkan. Konfigurasi proxy identik dengan produksi sebelumnya, menggunakan backend tetap yang sama. Tidak ada deployment backend, migrasi database, unggahan baru, atau perubahan arsip dalam kegiatan ini.
 

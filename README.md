@@ -50,7 +50,7 @@ serta cadangan dan uji pemulihan harian terhadap produksi.
 | `backend/` | API Express dan PostgreSQL (Drizzle); proyek Vercel `simsa-backend`. |
 | `docs-site/` | Situs panduan Docusaurus; `vercel.json` di akar membangunnya. |
 | `scripts/` | Skrip operasional Neon, cadangan dan pemulihan, rilis (`scripts/ops/`), serta pemeriksaan deployment. |
-| `docs/` | Runbook operasional dan panduan pengguna versi Markdown. |
+| `docs/` | Runbook operasional dan panduan pengguna versi Markdown; laporan rilis di `docs/rilis/`, snapshot lama di `docs/riwayat/`. |
 | `deploy/neon/` | Template environment untuk menyiapkan database Neon baru. |
 
 ## Pengembangan
@@ -105,6 +105,8 @@ Seed tester hanya untuk database uji.
 | Verifikasi akses setelah deploy | [VERIFIKASI_AKSES_CLOUD.md](docs/VERIFIKASI_AKSES_CLOUD.md) |
 | Impor dan ekspor data | [IMPOR_CSV_DAN_EKSPOR.md](docs/IMPOR_CSV_DAN_EKSPOR.md) |
 | Integrasi surat masuk dan keluar | [RILIS_INTEGRASI_SURAT_P0_P5.md](docs/RILIS_INTEGRASI_SURAT_P0_P5.md), [RUNBOOK_INTEGRASI_SURAT_P5.md](docs/RUNBOOK_INTEGRASI_SURAT_P5.md) |
+| Laporan rilis produksi | [docs/rilis/](docs/rilis/README.md) |
+| Laporan dan catatan bertanggal (tidak diperbarui) | [docs/riwayat/](docs/riwayat/README.md) |
 
 Hasil pengujian lokal perlu dilengkapi uji layanan penyimpanan, antivirus,
 backup/restore, akun, domain, dan penerimaan pengguna pada lingkungan tujuan.

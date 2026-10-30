@@ -51,5 +51,5 @@ Promosi dilakukan setelah pengguna menerima laporan kandidat dan menginstruksika
 
 - Tampilan PDF inline belum terverifikasi secara visual; pada pemeriksaan kandidat area iframe kosong dan alat browser menolak membuka tautan Blob. Pengiriman byte PDF serta unduhan sudah lulus, tetapi penyebab visual belum dipastikan dan pembatasan alat tidak dilewati.
 - Callback Google sampai sesi aplikasi, semua kombinasi peran/unit, serta impor Google Sheets dari sumber nyata belum diuji end-to-end pada promosi ini.
-- Backup Neon terenkripsi belum memiliki bukti restore sumber sebenarnya dan salinan offsite; backup database tidak mencakup byte PDF privat. Lihat [backup Neon](BACKUP_NEON.md).
+- Backup Neon terenkripsi belum memiliki bukti restore sumber sebenarnya dan salinan offsite; backup database tidak mencakup byte PDF privat. Lihat [backup Neon](../BACKUP_NEON.md).
 - Pemeriksaan sesaat setelah promosi bukan pengukuran stabilitas jangka panjang atau uji beban.

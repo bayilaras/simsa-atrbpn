@@ -1,5 +1,7 @@
 # Tombol impor, laporan per baris, dan mode sinkron (2026-10-21)
 
+> **Snapshot, tidak diperbarui.** Catatan ini merekam keadaan pada tanggal penulisannya. Kondisi produksi terkini ada di [README](../../README.md) dan runbook di `docs/`. Fitur ini dirilis sebagai C57/C54 ([laporan rilis](../rilis/HASIL_RILIS_C57_C54_2026-10-22.md)).
+
 Catatan desain untuk branch `feat/impor-ux-laporan-sinkron` (dari `main` 1f125b0,
 rilis C56/C53). Tiga perbaikan UX impor surat masuk/keluar (Google Sheets dan
 CSV/XLSX), berurutan per commit.

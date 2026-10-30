@@ -1,5 +1,7 @@
 # Impor Google Sheets/CSV yang cepat dan dapat dilanjutkan (2026-10-21)
 
+> **Snapshot, tidak diperbarui.** Catatan ini merekam keadaan pada tanggal penulisannya. Kondisi produksi terkini ada di [README](../../README.md) dan runbook di `docs/`. Fitur ini dirilis sebagai backend C56 ([laporan rilis](../rilis/HASIL_RILIS_C56_C53_2026-10-21.md)).
+
 Catatan desain untuk branch `perf/import-cepat`. Tujuan: tab register surat keluar
 2025 (797 baris), 2024 (758) dan 2023 (642) dapat diimpor dalam satu kali klik.
 Belum ada perubahan produksi; rilis mengikuti urutan di bawah.

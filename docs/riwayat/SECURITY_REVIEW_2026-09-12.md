@@ -87,7 +87,7 @@ Perbaikan suite ini penting sebelum rilis berikutnya; kegagalan tes tidak dengan
 
 ## Risiko operasional dan cakupan yang belum terbukti
 
-Menurut `docs/STATUS_PRODUKSI.md:24`, bukti cadangan terakhir yang tercatat masih mempunyai `restore_verified=false` dan belum memiliki salinan di luar workstation. Jadwalkan salinan terenkripsi di lokasi terpisah serta uji pemulihan database dan berkas, dengan kunci terpisah. Keberhasilan backup terbaru di akun cloud belum diverifikasi ulang dalam audit ini. Ini risiko pemulihan/kehilangan data, bukan exploit yang telah dibuktikan.
+Menurut `docs/riwayat/STATUS_PRODUKSI.md`, bukti cadangan terakhir yang tercatat masih mempunyai `restore_verified=false` dan belum memiliki salinan di luar workstation. Jadwalkan salinan terenkripsi di lokasi terpisah serta uji pemulihan database dan berkas, dengan kunci terpisah. Keberhasilan backup terbaru di akun cloud belum diverifikasi ulang dalam audit ini. Ini risiko pemulihan/kehilangan data, bukan exploit yang telah dibuktikan.
 
 Belum dilakukan: pentest staging end-to-end dengan dua akun lintas unit, stress/load testing, penyuntikan malware di Production, audit IAM/dashboard cloud lengkap, pemeriksaan seluruh riwayat Git, pemeriksaan semua isi PDF, inspeksi objek pada storage publik lama, uji pemulihan backup nyata, maupun audit seluruh jalur Firebase/GCP/Spark yang tidak dipakai deployment ini. Status 2FA akun Google pengguna juga belum diperiksa.
 

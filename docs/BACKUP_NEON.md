@@ -1,6 +1,6 @@
 # Backup Neon terenkripsi dan uji pemulihan
 
-**Status 12 September 2026:** database aktif sudah dimigrasikan menjadi 40 entri. Backup 39 sebelum upgrade dan backup 40 sesudahnya tersimpan dengan helper masing-masing. Gunakan helper sumber yang cocok dengan manifest; jangan memakai helper39 untuk backup database40. Detail snapshot, pengujian, dan bukti ada pada [laporan migrasi 0039](MIGRASI_0039_2026-09-12.md).
+**Status 12 September 2026:** database aktif sudah dimigrasikan menjadi 40 entri. Backup 39 sebelum upgrade dan backup 40 sesudahnya tersimpan dengan helper masing-masing. Gunakan helper sumber yang cocok dengan manifest; jangan memakai helper39 untuk backup database40. Detail snapshot, pengujian, dan bukti ada pada [laporan migrasi 0039](riwayat/MIGRASI_0039_2026-09-12.md).
 
 Perintah ini membuat **backup database sesuai permintaan operator**. Tidak ada jadwal otomatis, unggahan ke object storage, secret GitHub, atau perubahan layanan hosting. Komputer cukup hidup selama perintah berjalan; hal ini belum memenuhi kebutuhan backup cloud otomatis tanpa operator.
 

@@ -1,5 +1,7 @@
 # Status penggunaan SIMSA di cloud
 
+> **Snapshot, tidak diperbarui.** Catatan ini merekam keadaan pada tanggal penulisannya. Kondisi produksi terkini ada di [README](../../README.md) dan runbook di `docs/`.
+
 Diperiksa pada 12 September 2026. Target adalah 1–3 pengguna aplikasi arsip internal, PDF maksimum 10 MiB (10.485.760 byte), anggaran Rp0 dan tanpa komputer operator yang menyala sepanjang hari.
 
 **Production sudah aktif dan alur utama surat/PDF telah lulus pengujian langsung.** Login, pencatatan surat, unggah PDF sintetis 10 MiB ke penyimpanan privat, pemindaian antivirus, serta pengiriman pratinjau dan unduhan berhasil. Berkas yang diterima memiliki ukuran dan SHA-256 yang cocok. Akses tanpa login ditolak. Penerimaan ini mencakup alur administrator yang diuji; penerapan seluruh peran dan siklus retensi masih memerlukan konfigurasi operasional di bawah.
@@ -71,4 +73,4 @@ Laporan tersanitasi tersedia pada workspace operator dan tidak dilacak Git:
 
 PDF sintetis berukuran 10.485.760 byte memiliki SHA-256 `ca87828927753d05a7f5e522544a4a066ba0d600e15f3b9b163df513f29bfa62`. Percobaan sebelumnya yang gagal tetap disimpan sebagai riwayat diagnosis. Pengujian pratinjau memverifikasi respons HTTP dan byte PDF; tampilan PDF bawaan bergantung pada dukungan browser.
 
-Panduan pelaksanaan: [Vercel dan Neon](DEPLOY_VERCEL_NEON.md), [verifikasi akses cloud](VERIFIKASI_AKSES_CLOUD.md), [backup Neon](BACKUP_NEON.md), dan [operasi antivirus](OPERASI_ANTIVIRUS_BITSTREAM.md).
+Panduan pelaksanaan: [Vercel dan Neon](../DEPLOY_VERCEL_NEON.md), [verifikasi akses cloud](../VERIFIKASI_AKSES_CLOUD.md), [backup Neon](../BACKUP_NEON.md), dan [operasi antivirus](../OPERASI_ANTIVIRUS_BITSTREAM.md).

@@ -64,7 +64,7 @@ Jangan menentukan hak admin dari alamat email atau domain saja. Identitas dan ke
 
 Tes PGlite memverifikasi SQL/migrasi terisolasi, bukan bukti locking dua koneksi PostgreSQL produksi. Dokumen sumber menyebut60 FR, tetapi255 skenario workbook lengkap belum tersedia pada UAT sebelumnya. Integrasi eksternal dan alur yang sebelumnya EXCLUDED tidak otomatis berubah menjadi lulus.
 
-Catatan teknis migrasi: [QA backend](../backend/QA-BACKEND-REMEDIATION.md). Baseline live historis: laporan UAT `simsa-qa/QA_REPORT.md` (di luar repositori).
+Catatan teknis migrasi: [QA backend](../../backend/QA-BACKEND-REMEDIATION.md). Baseline live historis: laporan UAT `simsa-qa/QA_REPORT.md` (di luar repositori).
 
 ## Reproduksi dan bukti
 

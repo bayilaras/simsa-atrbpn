@@ -105,6 +105,6 @@ belum diuji di workstation ini, karena fasilitas berkas belum dikonfigurasi.
 Pengaktifan SRIKANDI dan pengesahan instrumen instansi tidak dilakukan atau
 dinyatakan selesai oleh perubahan teknis ini.
 
-Panduan: [operasional backend](OPERASIONAL_BACKEND.md) dan
-[antivirus bitstream](OPERASI_ANTIVIRUS_BITSTREAM.md). Panduan operasional lokal
+Panduan: [operasional backend](../OPERASIONAL_BACKEND.md) dan
+[antivirus bitstream](../OPERASI_ANTIVIRUS_BITSTREAM.md). Panduan operasional lokal
 saat itu sudah dihapus bersama mode lokal Windows.

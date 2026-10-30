@@ -1,5 +1,7 @@
 # Impor berkas CSV/XLSX dengan pemetaan Google Sheets (2026-10-21)
 
+> **Snapshot, tidak diperbarui.** Catatan ini merekam keadaan pada tanggal penulisannya. Kondisi produksi terkini ada di [README](../../README.md) dan runbook di `docs/`. Fitur ini dirilis sebagai C56/C53 ([laporan rilis](../rilis/HASIL_RILIS_C56_C53_2026-10-21.md)).
+
 Catatan desain untuk branch `feat/impor-berkas-csv-xlsx`, dibangun di atas
 `perf/import-cepat` (belum di-merge). Tujuan: register surat yang diunduh sebagai
 `.xlsx` atau disimpan sebagai `.csv` dapat diimpor persis seperti tab Google Sheets

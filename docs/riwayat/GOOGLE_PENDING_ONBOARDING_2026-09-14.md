@@ -29,9 +29,9 @@ Capability publik `authentication.pendingGoogleSignup` hanya bernilai `true` jik
 
 ## Berkas utama
 
-- [Better Auth](../backend/src/config/auth.ts), [konfigurasi Google](../backend/src/config/google-oauth.ts), dan [capability publik](../backend/src/config/public-capabilities.ts).
-- [Pendaftaran Firebase pending](../backend/src/services/pending-google-user.service.ts), [sesi Firebase](../backend/src/routes/firebase-auth.routes.ts), dan [identitas request](../backend/src/services/request-identity.service.ts).
-- [Persetujuan pengguna](../backend/src/services/user-management.service.ts). [Middleware bisnis](../backend/src/middlewares/auth.middleware.ts) tetap menjadi penegak batas akses server.
+- [Better Auth](../../backend/src/config/auth.ts), [konfigurasi Google](../../backend/src/config/google-oauth.ts), dan [capability publik](../../backend/src/config/public-capabilities.ts).
+- [Pendaftaran Firebase pending](../../backend/src/services/pending-google-user.service.ts), [sesi Firebase](../../backend/src/routes/firebase-auth.routes.ts), dan [identitas request](../../backend/src/services/request-identity.service.ts).
+- [Persetujuan pengguna](../../backend/src/services/user-management.service.ts). [Middleware bisnis](../../backend/src/middlewares/auth.middleware.ts) tetap menjadi penegak batas akses server.
 
 ## Verifikasi dan batas bukti
 

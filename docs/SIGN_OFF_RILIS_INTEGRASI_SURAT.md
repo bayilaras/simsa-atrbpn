@@ -8,11 +8,11 @@ Produksi saat persetujuan: backend C53 `dpl_6xHiuwE46hNrqLMMnvYFTibBzC67`, front
 
 | Hal | Bukti |
 |---|---|
-| Rilis P0–P5 di produksi | `HASIL_RILIS_INTEGRASI_SURAT_TAHAP_AB_2026-10-03.md`, `HASIL_RILIS_INTEGRASI_SURAT_TAHAP_C_2026-10-03.md`, `HASIL_RILIS_C49_2026-10-04.md` s.d. `HASIL_RILIS_C53_2026-10-07.md` |
-| Uji asap data sintetis dan uji akun direktorat lulus | `HASIL_UJI_ASAP_INTEGRASI_SURAT_2026-10-04.md` |
+| Rilis P0–P5 di produksi | `rilis/HASIL_RILIS_INTEGRASI_SURAT_TAHAP_AB_2026-10-03.md`, `rilis/HASIL_RILIS_INTEGRASI_SURAT_TAHAP_C_2026-10-03.md`, `rilis/HASIL_RILIS_C49_2026-10-04.md` s.d. `rilis/HASIL_RILIS_C53_2026-10-07.md` |
+| Uji asap data sintetis dan uji akun direktorat lulus | `rilis/HASIL_UJI_ASAP_INTEGRASI_SURAT_2026-10-04.md` |
 | CI 9/9 hijau pada setiap PR yang di-merge | PR #23 dan PR #27–#39 |
-| Lampiran hanya di penyimpanan privat; pemindaian malware otomatis | `HASIL_RILIS_C52_2026-10-05.md`, `HASIL_RILIS_C53_2026-10-07.md` |
-| Unit pengawas hanya `ditjen` dan `sesditjen`; admin unit direktorat dibuat | `HASIL_RILIS_C50_C51_2026-10-04.md` |
+| Lampiran hanya di penyimpanan privat; pemindaian malware otomatis | `rilis/HASIL_RILIS_C52_2026-10-05.md`, `rilis/HASIL_RILIS_C53_2026-10-07.md` |
+| Unit pengawas hanya `ditjen` dan `sesditjen`; admin unit direktorat dibuat | `rilis/HASIL_RILIS_C50_C51_2026-10-04.md` |
 | Tidak ada data lama, sehingga Tahap D tidak berlaku | Gerbang (e): `surat_masuk.created_by IS NULL` = 0 |
 
 ## Yang tetap berlaku tanpa keputusan baru

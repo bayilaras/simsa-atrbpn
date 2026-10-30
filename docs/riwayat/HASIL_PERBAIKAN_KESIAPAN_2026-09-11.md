@@ -46,8 +46,8 @@ Bukti restore drill: `D:\SIMSA-Local-Drills\simsa-local-drill-RItH4r\result.json
 2. **Pemulihan menyeluruh:** tetapkan backup database **bersama byte dokumen**, inventaris generation/hash/ukuran, retensi salinan dan sasaran waktu pemulihan. Buktikan restore dan unduh berizin pada lingkungan tujuan.
 3. **Pengesahan proses:** Unit Kearsipan/arsiparis memeriksa dan mengesahkan instrumen, JRA, klasifikasi, tata naskah, mandat pejabat/saksi, hak akses dan SOP. Tinjau data lama yang ditandai belum diverifikasi; jangan mengesahkannya secara massal hanya untuk membuka workflow.
 4. **SRIKANDI/TTE:** penggunaan dan integrasi resmi mengikuti keputusan instansi, kontrak/akses layanan, sandbox dan bukti penerimaan. Konektor tidak diaktifkan tanpa konfigurasi tersebut; verifikasi bukti internal SIMSA bukan verifikasi oleh ANRI.
-5. **UAT:** jalankan [uji penerimaan pengguna](UAT_PENGGUNA.md) dengan petugas yang ditunjuk. Rekam hasil pada server tujuan sebelum memasukkan arsip resmi.
+5. **UAT:** jalankan [uji penerimaan pengguna](../UAT_PENGGUNA.md) dengan petugas yang ditunjuk. Rekam hasil pada server tujuan sebelum memasukkan arsip resmi.
 
 Pencatatan pelaksanaan pemusnahan tidak menghapus otomatis objek storage, replika atau backup. Penanganan salinan tetap bagian dari pelaksanaan dan bukti petugas. Uji integritas/bukti otomatis memakai storage tiruan; ketersediaan storage dan scanner sungguhan masih memerlukan pengujian lingkungan tujuan.
 
-Panduan: [akun](administrasi/user-management.md), [penyusutan](PENYUSUTAN_TERKENDALI.md), [pelaporan terjaga](PELAPORAN_TERJAGA_BERBUKTI.md), dan [integritas berkala](OPERASI_PEMERIKSAAN_INTEGRITAS.md).
+Panduan: [akun](../administrasi/user-management.md), [penyusutan](../PENYUSUTAN_TERKENDALI.md), [pelaporan terjaga](../PELAPORAN_TERJAGA_BERBUKTI.md), dan [integritas berkala](../OPERASI_PEMERIKSAAN_INTEGRITAS.md).

@@ -18,13 +18,13 @@ Dokumen ini membedakan kebijakan yang sudah ada, satu perbaikan implementasi yan
 
 Dasar source:
 
-- [Konfigurasi Better Auth](../backend/src/config/auth.ts), baris 81–143: signup kredensial produksi ditutup; Google `disableImplicitSignUp` dan `disableSignUp` bernilai `true`; role default `user`; input role/unit/aktivasi dari klien tidak diterima.
-- [Pemeriksaan identitas aplikasi](../backend/src/services/identity-user.service.ts), baris 17–31, dan [middleware autentikasi](../backend/src/middlewares/auth.middleware.ts), baris 50–80: role arsip harus dikenal, akun aktif, dan unit wajib tersedia untuk akun berscope unit.
-- [Sesi Firebase](../backend/src/routes/firebase-auth.routes.ts), baris 59–62 dan 96–119: identitas yang belum lengkap tidak menerima sesi aplikasi.
-- [Pembatasan frontend](../frontend/src/components/ProvisionedAccessGate.jsx) dan [aturan provisioning](../frontend/src/lib/provisioning-access.js): komponen halaman data tidak dimuat untuk akun yang belum berhak.
-- [Ekspor](../backend/src/routes/export.routes.ts), baris 17–18, memakai pemeriksaan autentikasi dan izin ekspor; [profil](../backend/src/routes/settings.routes.ts), baris 59–100, juga berada di belakang middleware akses aplikasi saat ini.
+- [Konfigurasi Better Auth](../../backend/src/config/auth.ts), baris 81–143: signup kredensial produksi ditutup; Google `disableImplicitSignUp` dan `disableSignUp` bernilai `true`; role default `user`; input role/unit/aktivasi dari klien tidak diterima.
+- [Pemeriksaan identitas aplikasi](../../backend/src/services/identity-user.service.ts), baris 17–31, dan [middleware autentikasi](../../backend/src/middlewares/auth.middleware.ts), baris 50–80: role arsip harus dikenal, akun aktif, dan unit wajib tersedia untuk akun berscope unit.
+- [Sesi Firebase](../../backend/src/routes/firebase-auth.routes.ts), baris 59–62 dan 96–119: identitas yang belum lengkap tidak menerima sesi aplikasi.
+- [Pembatasan frontend](../../frontend/src/components/ProvisionedAccessGate.jsx) dan [aturan provisioning](../../frontend/src/lib/provisioning-access.js): komponen halaman data tidak dimuat untuk akun yang belum berhak.
+- [Ekspor](../../backend/src/routes/export.routes.ts), baris 17–18, memakai pemeriksaan autentikasi dan izin ekspor; [profil](../../backend/src/routes/settings.routes.ts), baris 59–100, juga berada di belakang middleware akses aplikasi saat ini.
 
-Dokumentasi [role dan hak akses](tutorial-dasar/role-hak-akses.md) menetapkan Super Admin sebagai pengelola akun. UI penetapan baru saat ini hanya menawarkan Super Admin dan Admin Unit Kerja; role Staff/Auditor lama dipertahankan untuk kompatibilitas. Karena Admin Unit mempunyai kewenangan operasional menulis, role ini tidak tepat diberikan otomatis kepada setiap email Google.
+Dokumentasi [role dan hak akses](../tutorial-dasar/role-hak-akses.md) menetapkan Super Admin sebagai pengelola akun. UI penetapan baru saat ini hanya menawarkan Super Admin dan Admin Unit Kerja; role Staff/Auditor lama dipertahankan untuk kompatibilitas. Karena Admin Unit mempunyai kewenangan operasional menulis, role ini tidak tepat diberikan otomatis kepada setiap email Google.
 
 ## Perbaikan yang sudah diimplementasikan
 
