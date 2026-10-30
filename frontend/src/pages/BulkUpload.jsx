@@ -5,7 +5,6 @@ import { useOCRUpload } from '@/hooks/useOCRUpload';
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
 import { PageHeader } from '@/components/PageHeader';
-import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import {
     Card,
     CardContent,
@@ -42,10 +41,8 @@ import {
     Trash2,
     FileType
 } from 'lucide-react';
-import { motion as Motion, AnimatePresence } from 'framer-motion';
 
 export default function BulkUpload() {
-    const reducedMotion = useReducedMotion();
     const { user } = useAuth();
     const navigate = useNavigate();
     const fileInputRef = useRef(null);
@@ -180,15 +177,15 @@ export default function BulkUpload() {
                 </Alert>
             )}
 
-            <AnimatePresence mode="wait">
+            {/* Phase panels animate in with tw-animate-css; the motion-safe variant
+                and the global reduced-motion rule in index.css keep them static
+                when the user prefers reduced motion. */}
+            <>
                 {/* Upload Phase */}
                 {!batch && !isProcessing && !isResuming && !isUploading && (
-                    <Motion.div
+                    <div
                         key="upload"
-                        initial={reducedMotion ? false : { opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={reducedMotion ? { opacity: 1 } : { opacity: 0, y: -20 }}
-                        transition={reducedMotion ? { duration: 0 } : undefined}
+                        className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-5 motion-safe:duration-300"
                     >
                         <Card className="border-2 border-dashed border-border dark:border-gray-800 shadow-sm hover:border-blue-400 dark:hover:border-blue-500 transition-colors bg-card/50 dark:bg-foreground/50 backdrop-blur-sm">
                             <CardContent className="p-4 sm:p-10">
@@ -294,18 +291,14 @@ export default function BulkUpload() {
                                 )}
                             </CardContent>
                         </Card>
-                    </Motion.div>
+                    </div>
                 )}
 
                 {/* Processing Phase */}
                 {(isProcessing || isUploading || isResuming) && (
-                    <Motion.div
+                    <div
                         key="processing"
-                        initial={reducedMotion ? false : { opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={reducedMotion ? { opacity: 1 } : { opacity: 0, scale: 0.95 }}
-                        transition={reducedMotion ? { duration: 0 } : undefined}
-                        className="max-w-xl mx-auto mt-12"
+                        className="max-w-xl mx-auto mt-12 motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 motion-safe:duration-300"
                     >
                         <Card className="shadow-lg border-blue-100 dark:border-blue-900">
                             <CardContent className="p-8 text-center space-y-6">
@@ -341,17 +334,14 @@ export default function BulkUpload() {
                                 </div>}
                             </CardContent>
                         </Card>
-                    </Motion.div>
+                    </div>
                 )}
 
                 {/* Results Phase */}
                 {batch && !isProcessing && !isUploading && !isResuming && (
-                    <Motion.div
+                    <div
                         key="results"
-                        initial={reducedMotion ? false : { opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={reducedMotion ? { duration: 0 } : undefined}
-                        className="space-y-6"
+                        className="space-y-6 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-5 motion-safe:duration-300"
                     >
                         <Card className="border-none shadow-md bg-card/50 dark:bg-foreground/50 backdrop-blur-sm">
                             <CardHeader className="flex flex-row items-center justify-between">
@@ -380,11 +370,8 @@ export default function BulkUpload() {
                             <CardContent>
                                 <div className="grid grid-cols-1 gap-4">
                                     {batch.items.map((item) => (
-                                        <Motion.div
+                                        <div
                                             key={item.id}
-                                            layout
-                                            initial={{ opacity: 0 }}
-                                            animate={{ opacity: 1 }}
                                             className={`
                                                 relative border rounded-lg overflow-hidden transition-all
                                                 ${editingItem === item.id
@@ -493,7 +480,7 @@ export default function BulkUpload() {
                                                     </div>
                                                 </div>
                                             )}
-                                        </Motion.div>
+                                        </div>
                                     ))}
                                 </div>
                             </CardContent>
@@ -513,9 +500,9 @@ export default function BulkUpload() {
                                 </Button>
                             </CardFooter>
                         </Card>
-                    </Motion.div>
+                    </div>
                 )}
-            </AnimatePresence>
+            </>
         </div>
     );
 }
