@@ -39,12 +39,6 @@ describe('archive attachment upload transport', () => {
         await expect(uploadArsipAttachment(id, file())).rejects.toBe(failure)
         expect(state.post).toHaveBeenCalledOnce()
     })
-    it('preserves GCS multipart and never starts a Vercel upload', async () => {
-        state.provider = 'gcs'; const pdf = file(); await uploadArsipAttachment(id, pdf)
-        expect(state.upload).not.toHaveBeenCalled()
-        const body = state.post.mock.calls[0][1]; expect(body).toBeInstanceOf(FormData); expect(body.get('file')).toEqual(pdf)
-        expect(state.post).toHaveBeenCalledWith(`/api/upload/arsip/${id}`, body)
-    })
     it('does not repeat registration when a timeout leaves the mutation outcome unknown', async () => {
         const failure = Object.assign(new Error('Periksa catatan sebelum menyimpan kembali.'), { code: 'REQUEST_TIMEOUT', mutationOutcomeUnknown: true })
         state.post.mockRejectedValueOnce(failure)
@@ -57,7 +51,7 @@ describe('archive attachment upload transport', () => {
         expect(state.upload).toHaveBeenCalledOnce()
         expect(sleep).not.toHaveBeenCalled()
     })
-    it.each(['disabled', 'unknown'])('fails closed for %s storage', async provider => {
+    it.each(['disabled', 'gcs', 'unknown'])('fails closed for %s storage', async provider => {
         state.provider = provider
         await expect(uploadArsipAttachment(id, file())).rejects.toThrow()
         expect(state.upload).not.toHaveBeenCalled(); expect(state.post).not.toHaveBeenCalled()

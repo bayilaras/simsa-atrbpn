@@ -35,6 +35,10 @@ describe('SIMSA public build manifest', () => {
         expect(() => createSimsaBuildManifest({ VITE_AUTH_PROVIDER: 'firebase' })).toThrow(/VITE_AUTH_PROVIDER must be better-auth/)
     })
 
+    it('rejects storage providers other than Vercel Blob or disabled', () => {
+        expect(() => createSimsaBuildManifest({ VITE_STORAGE_PROVIDER: 'gcs' })).toThrow(/VITE_STORAGE_PROVIDER/)
+    })
+
     it.each([
         [{ ...localDemo, VITE_APP_MODE: 'preview' }, /VITE_APP_MODE/],
         [{ ...localDemo, VITE_APP_PROFILE: 'integrated' }, /VITE_APP_PROFILE/],

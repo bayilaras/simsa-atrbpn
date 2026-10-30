@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    assertTrustedGcsSessionUrl,
-    resolveGcsUploadPurpose,
-    uploadFileToGcs,
     uploadFileToBlob,
-    waitForPendingUpload,
     waitForVercelBlobReady,
 } from './blob-upload.service';
 
@@ -19,90 +15,19 @@ beforeEach(() => {
     blobSdk.getStatus.mockResolvedValue({ status: 'ready', expiresAt: '2040-01-01T00:00:00.000Z' });
 });
 
-describe('GCS direct upload bridge', () => {
+describe('direct upload validation', () => {
+    beforeEach(() => {
+        blobSdk.upload.mockReset();
+    });
+
     it.each([
         { name: 'arsip.pdf', type: 'application/pdf', size: 10_485_761 },
         { name: 'arsip.exe', type: 'application/pdf', size: 10 },
         { name: 'arsip.pdf', type: 'image/png', size: 10 },
         { name: 'arsip.pdf', type: 'application/pdf', size: 0 },
     ])('does not request storage authorization for an invalid PDF: %j', async file => {
-        const apiClient = { post: vi.fn() };
-        const uploadTransport = vi.fn();
-        await expect(uploadFileToGcs(file, { purpose: 'surat_masuk', apiClient, uploadTransport })).rejects.toThrow();
-        expect(apiClient.post).not.toHaveBeenCalled();
-        expect(uploadTransport).not.toHaveBeenCalled();
-    });
-    it('maps existing business folders to backend upload purposes', () => {
-        expect(resolveGcsUploadPurpose({ folder: 'surat-masuk' })).toBe('surat_masuk');
-        expect(resolveGcsUploadPurpose({ folder: 'surat-keluar' })).toBe('surat_keluar');
-        expect(resolveGcsUploadPurpose({ purpose: 'regulatory_source' })).toBe('regulatory_source');
-        expect(() => resolveGcsUploadPurpose({ folder: 'misc' })).toThrow(/tidak didukung/);
-    });
-
-    it('accepts only HTTPS Google Storage resumable session hosts', () => {
-        expect(assertTrustedGcsSessionUrl('https://storage.googleapis.com/upload/storage/v1/b/x'))
-            .toMatch(/^https:\/\/storage\.googleapis\.com/);
-        expect(() => assertTrustedGcsSessionUrl('https://storage.googleapis.com.evil.example/upload'))
-            .toThrow(/tidak dipercaya/);
-        expect(() => assertTrustedGcsSessionUrl('http://storage.googleapis.com/upload'))
-            .toThrow(/tidak dipercaya/);
-    });
-
-    it('creates an intent, uploads directly, and returns only a pending lease', async () => {
-        const apiClient = {
-            post: vi.fn().mockResolvedValue({
-                uploadId: 'upload-id',
-                locator: 'gcs://private-bucket/object.pdf#1',
-                resumableSessionUri: 'https://storage.googleapis.com/upload/storage/v1/b/private-bucket',
-                requiredHeaders: { 'Content-Type': 'application/pdf' },
-            }),
-        };
-        const uploadTransport = vi.fn().mockResolvedValue(undefined);
-        const waitForPending = vi.fn().mockResolvedValue({ status: 'pending' });
-        const file = new File(['pdf'], 'source.pdf', { type: 'application/pdf' });
-
-        await expect(uploadFileToGcs(file, {
-            purpose: 'regulatory_source',
-            ruleSetId,
-            apiClient,
-            uploadTransport,
-            waitForPending,
-        })).resolves.toEqual({
-            url: 'gcs://private-bucket/object.pdf#1',
-            downloadUrl: 'gcs://private-bucket/object.pdf#1',
-            pathname: 'gcs://private-bucket/object.pdf#1',
-            uploadId: 'upload-id',
-            status: 'pending',
-        });
-        expect(apiClient.post).toHaveBeenCalledWith('/api/object-uploads', {
-            purpose: 'regulatory_source',
-            fileName: 'source.pdf',
-            contentType: 'application/pdf',
-            sizeBytes: file.size,
-            ruleSetId,
-        }, { signal: undefined });
-        expect(uploadTransport).toHaveBeenCalledOnce();
-        expect(waitForPending).toHaveBeenCalledWith('upload-id', {
-            apiClient,
-            signal: undefined,
-        });
-    });
-
-    it('polls until Eventarc marks an authorized upload pending', async () => {
-        const apiClient = {
-            get: vi.fn()
-                .mockResolvedValueOnce({ status: 'authorized' })
-                .mockResolvedValueOnce({ status: 'pending' }),
-        };
-        const sleepFn = vi.fn().mockResolvedValue(undefined);
-
-        await expect(waitForPendingUpload('upload-id', {
-            apiClient,
-            sleepFn,
-            now: () => 1,
-        })).resolves.toEqual({ status: 'pending' });
-        expect(apiClient.get).toHaveBeenCalledTimes(2);
-        expect(sleepFn).toHaveBeenCalledOnce();
+        await expect(uploadFileToBlob(file, { folder: 'surat-masuk' })).rejects.toThrow();
+        expect(blobSdk.upload).not.toHaveBeenCalled();
     });
 });
 
@@ -144,24 +69,6 @@ describe('regulatory source direct-upload scope', () => {
             expect(blobSdk.upload).not.toHaveBeenCalled();
         },
     );
-
-    it('accepts 50 MiB only as a bound GCS regulatory intent', async () => {
-        const apiClient = { post: vi.fn().mockResolvedValue({ uploadId: 'upload-id', locator: 'private-locator', resumableSessionUri: 'https://storage.googleapis.com/upload' }) };
-        const uploadTransport = vi.fn().mockResolvedValue(undefined);
-        const waitForPending = vi.fn().mockResolvedValue({ status: 'pending' });
-        const file = { name: 'peraturan.pdf', type: 'application/pdf', size: 52_428_800 };
-        await uploadFileToGcs(file, { purpose: 'regulatory_source', ruleSetId, apiClient, uploadTransport, waitForPending });
-        expect(apiClient.post).toHaveBeenCalledWith('/api/object-uploads', expect.objectContaining({ purpose: 'regulatory_source', ruleSetId, sizeBytes: 52_428_800 }), { signal: undefined });
-        expect(uploadTransport).toHaveBeenCalledOnce();
-    });
-
-    it('rejects one byte above 50 MiB before asking for a GCS intent', async () => {
-        const apiClient = { post: vi.fn() };
-        await expect(uploadFileToGcs({ name: 'peraturan.pdf', type: 'application/pdf', size: 52_428_801 }, {
-            purpose: 'regulatory_source', ruleSetId, apiClient,
-        })).rejects.toThrow('50 MiB');
-        expect(apiClient.post).not.toHaveBeenCalled();
-    });
 });
 
 describe('bounded upload cancellation and failure recovery', () => {
@@ -292,25 +199,6 @@ describe('bounded upload cancellation and failure recovery', () => {
         const denied = new Error('Vercel Blob: This token does not have access to this store.');
         blobSdk.upload.mockRejectedValueOnce(denied);
         await expect(uploadFileToBlob(file, { folder: 'surat-masuk' })).rejects.toBe(denied);
-    });
-
-    it('forwards cancellation to GCS intent and lease polling before any storage transfer', async () => {
-        const controller = new AbortController();
-        const apiClient = { post: vi.fn().mockImplementation(async () => {
-            controller.abort();
-            return { uploadId: 'lease', locator: 'private-locator', resumableSessionUri: 'https://storage.googleapis.com/upload' };
-        }), get: vi.fn() };
-        const uploadTransport = vi.fn();
-        await expect(uploadFileToGcs(file, { folder: 'surat-masuk', signal: controller.signal, apiClient, uploadTransport }))
-            .rejects.toMatchObject({ name: 'AbortError' });
-        expect(apiClient.post).toHaveBeenCalledWith('/api/object-uploads', expect.any(Object), { signal: controller.signal });
-        expect(uploadTransport).not.toHaveBeenCalled();
-
-        const pollController = new AbortController();
-        apiClient.get.mockImplementation(async () => { pollController.abort(); return { status: 'pending' }; });
-        await expect(waitForPendingUpload('lease', { apiClient, signal: pollController.signal }))
-            .rejects.toMatchObject({ name: 'AbortError' });
-        expect(apiClient.get).toHaveBeenCalledWith('/api/object-uploads/lease', undefined, { signal: pollController.signal });
     });
 });
 

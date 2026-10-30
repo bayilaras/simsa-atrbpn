@@ -30,6 +30,8 @@ describe('cloud provider configuration', () => {
             .toThrow(/VITE_AUTH_PROVIDER tidak valid/);
         expect(() => resolveCloudProviderConfig({ VITE_AUTH_PROVIDER: 'firebase' }))
             .toThrow(/VITE_AUTH_PROVIDER tidak valid/);
+        expect(() => resolveCloudProviderConfig({ VITE_STORAGE_PROVIDER: 'gcs' }))
+            .toThrow(/VITE_STORAGE_PROVIDER tidak valid/);
         expect(() => resolveCloudProviderConfig({ VITE_STORAGE_PROVIDER: 'public-bucket' }))
             .toThrow(/VITE_STORAGE_PROVIDER tidak valid/);
     });

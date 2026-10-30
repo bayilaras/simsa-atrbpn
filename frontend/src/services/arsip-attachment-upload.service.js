@@ -13,10 +13,6 @@ export async function uploadArsipAttachment(arsipId, file, { sleep = delay } = {
         throw new Error('Pilih arsip induk yang valid sebelum mengunggah lampiran.')
     }
     const endpoint = `/api/upload/arsip/${arsipId}`
-    if (STORAGE_PROVIDER === 'gcs') {
-        const body = new FormData(); body.append('file', file)
-        return api.post(endpoint, body)
-    }
     if (STORAGE_PROVIDER !== 'vercel-blob') throw new Error('Penyimpanan lampiran belum tersedia.')
     const blob = await uploadFileToBlob(file, { folder: `arsip-attachments/${arsipId}` })
     const metadata = { blobUrl: blob.url, fileName: file.name }

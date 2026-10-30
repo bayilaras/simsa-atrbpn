@@ -5,20 +5,14 @@ import AuthContext from '@/context/AuthContext';
 import { AppConfigContext, DISABLED_FEATURES } from '@/context/app-config-context';
 vi.mock('@/context/AuthContext', async () => ({ default: (await import('react')).createContext(null) }));
 
-const storageState = vi.hoisted(() => ({ provider: 'vercel-blob' }));
-vi.mock('@/lib/cloud-provider-config', async (importOriginal) => ({
-    ...await importOriginal(),
-    get STORAGE_PROVIDER() { return storageState.provider; },
-}));
 
-const surat = { id: 'surat/a', filePath: 'gcs://private-bucket/file.pdf', fileOriginalName: 'arsip.pdf' };
+const surat = { id: 'surat/a', filePath: 'https://store.private.blob.vercel-storage.com/surat-masuk/file.pdf', fileOriginalName: 'arsip.pdf' };
 
 describe('private file preview', () => {
     let createObjectURL;
     let revokeObjectURL;
 
     beforeEach(() => {
-        storageState.provider = 'vercel-blob';
         createObjectURL = vi.fn().mockReturnValue('blob:http://localhost:3000/private-preview');
         revokeObjectURL = vi.fn();
         vi.stubGlobal('URL', class extends URL {
@@ -142,11 +136,9 @@ describe('private file preview', () => {
     });
 
     it.each([
-        ['vercel-blob', 'surat_masuk', 'Muat dokumen'], ['vercel-blob', 'surat_masuk', 'Download'],
-        ['vercel-blob', 'surat_keluar', 'Muat dokumen'], ['vercel-blob', 'surat_keluar', 'Download'],
-        ['gcs', 'surat_masuk', 'Muat dokumen'], ['gcs', 'surat_keluar', 'Muat dokumen'],
-    ])('offers %s %s quarantine recovery after %s until the private object is released', async (provider, entityType, action) => {
-        storageState.provider = provider;
+        ['surat_masuk', 'Muat dokumen'], ['surat_masuk', 'Download'],
+        ['surat_keluar', 'Muat dokumen'], ['surat_keluar', 'Download'],
+    ])('offers %s quarantine recovery after %s until the private object is released', async (entityType, action) => {
         const fetchMock = vi.fn().mockResolvedValue({
             ok: false, status: 423, headers: new Headers(),
             json: async () => ({ error: 'File quarantined', message: 'Dokumen menunggu pemeriksaan.', scanState: 'pending' }),

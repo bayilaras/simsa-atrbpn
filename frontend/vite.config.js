@@ -47,7 +47,7 @@ export function createSimsaBuildManifest(source = {}) {
   if (authProvider !== 'better-auth') {
     throw new Error('VITE_AUTH_PROVIDER must be better-auth for deployment builds.')
   }
-  if (!['vercel-blob', 'gcs', 'disabled'].includes(storageProvider)) {
+  if (!['vercel-blob', 'disabled'].includes(storageProvider)) {
     throw new Error('VITE_STORAGE_PROVIDER has an unsupported deployment value.')
   }
   if (appMode === 'full' && storageProvider === 'disabled'
