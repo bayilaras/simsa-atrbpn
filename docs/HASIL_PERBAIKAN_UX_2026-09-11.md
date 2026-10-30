@@ -97,5 +97,5 @@ memerlukan penyimpanan dan pemeriksaan keamanan berkas yang aktif. Pekerjaan ini
 tidak mengaktifkan integrasi resmi SRIKANDI atau mengubah pengesahan instrumen
 instansi. Tidak ada migrasi, reset, atau penggantian cluster database pada tahap ini.
 
-Cara menjalankan aplikasi tetap mengikuti
-[panduan operasional lokal](OPERASIONAL_LOKAL_2026-09-11.md).
+Cara menjalankan aplikasi saat itu mengikuti panduan operasional lokal, yang
+sudah dihapus bersama mode lokal Windows.

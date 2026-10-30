@@ -64,7 +64,7 @@ Jangan menentukan hak admin dari alamat email atau domain saja. Identitas dan ke
 
 Tes PGlite memverifikasi SQL/migrasi terisolasi, bukan bukti locking dua koneksi PostgreSQL produksi. Dokumen sumber menyebut60 FR, tetapi255 skenario workbook lengkap belum tersedia pada UAT sebelumnya. Integrasi eksternal dan alur yang sebelumnya EXCLUDED tidak otomatis berubah menjadi lulus.
 
-Catatan teknis migrasi: [QA backend](../backend/QA-BACKEND-REMEDIATION.md). Baseline live historis: [laporan UAT](../../simsa-qa/QA_REPORT.md).
+Catatan teknis migrasi: [QA backend](../backend/QA-BACKEND-REMEDIATION.md). Baseline live historis: laporan UAT `simsa-qa/QA_REPORT.md` (di luar repositori).
 
 ## Reproduksi dan bukti
 
@@ -87,4 +87,4 @@ node --test scripts/migration-manifest.test.mjs
 
 Pengaturan Vitest frontend memakai jsdom Web Storage di worker Node24. Dua ekspektasi lama untuk induk JRA disesuaikan agar memverifikasi terlihat namun disabled dan tidak dapat dipilih; leaf valid tetap dapat dipilih. Tes route opsional memakai shell ringan sementara route/guard produk tetap nyata. Run awal mencatat timeout dan kegagalan startup worker saat backend/build berjalan bersamaan. Kasus terdampak diuji ulang, interaksi dialog menunggu state yang tepat, dan budget test UI dibatasi15 detik karena alur banyak langkah dapat melebihi default5 detik pada worker sibuk. Run penuh berikutnya tidak memiliki worker error, tetapi masih mempunyai satu timeout dialog. Tes panjang tersebut dipisahkan menjadi kasus perilaku tersendiri dan diuji ulang; assertion bisnis dipertahankan. Tidak ada perubahan produk akibat pemisahan tes itu.
 
-Folder bukti [simsa-remediation-evidence-20260914](../../simsa-remediation-evidence-20260914) berisi full-suite JSON/log, bukti RED/GREEN, hasil browser, screenshot, hash source, patch review, dan backup file sebelum integrasi. `integration-result.json` merupakan sumber status integrasi yang sebenarnya; `verification-final.json` mengikat hasil validasi ke hash kandidat. Password dan sesi live tidak ditulis dalam paket perbaikan.
+Folder bukti `simsa-remediation-evidence-20260914` (di luar repositori) berisi full-suite JSON/log, bukti RED/GREEN, hasil browser, screenshot, hash source, patch review, dan backup file sebelum integrasi. `integration-result.json` merupakan sumber status integrasi yang sebenarnya; `verification-final.json` mengikat hasil validasi ke hash kandidat. Password dan sesi live tidak ditulis dalam paket perbaikan.

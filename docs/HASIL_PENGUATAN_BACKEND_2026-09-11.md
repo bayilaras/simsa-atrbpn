@@ -70,7 +70,7 @@ Backup hanya mencakup database, termasuk data akun/sesi yang sensitif. Objek
 storage eksternal dan rahasia konfigurasi tidak tercakup. Bundle dan kunci
 disimpan terpisah dengan ACL privat pada komputer ini. Salinan di media lain,
 retensi, frekuensi backup, RPO/RTO, dan uji pemulihan layanan penuh belum ditetapkan
-oleh pekerjaan ini. Ikuti [prosedur backup lokal](BACKUP_LOKAL.md).
+oleh pekerjaan ini. Prosedur backup lokal saat itu (`docs/BACKUP_LOKAL.md`) sudah dihapus bersama mode lokal Windows.
 
 ## Verifikasi kode
 
@@ -105,6 +105,6 @@ belum diuji di workstation ini, karena fasilitas berkas belum dikonfigurasi.
 Pengaktifan SRIKANDI dan pengesahan instrumen instansi tidak dilakukan atau
 dinyatakan selesai oleh perubahan teknis ini.
 
-Panduan: [operasional backend](OPERASIONAL_BACKEND.md),
-[antivirus bitstream](OPERASI_ANTIVIRUS_BITSTREAM.md), dan
-[operasional lokal](OPERASIONAL_LOKAL_2026-09-11.md).
+Panduan: [operasional backend](OPERASIONAL_BACKEND.md) dan
+[antivirus bitstream](OPERASI_ANTIVIRUS_BITSTREAM.md). Panduan operasional lokal
+saat itu sudah dihapus bersama mode lokal Windows.

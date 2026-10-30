@@ -48,12 +48,12 @@ Regression sebelum perbaikan menghasilkan 3 kegagalan frontend untuk sesi nonakt
 
 Sesudah perbaikan: **62 test lulus** dalam 6 file — frontend 28/28, backend 34/34. Cakupan meliputi anak komponen tidak terpasang, pesan/aksi gate, akun normal dan belum lengkap, role/unit, logout, penolakan role tak dikenal/unit kosong oleh backend, larangan signup Google, serta penolakan input role/unit/aktivasi dari pengguna.
 
-| Bukti | Lokasi |
+| Bukti | Lokasi (folder bukti lokal `simsa-remediation-evidence-20260914`, di luar repositori) |
 | --- | --- |
-| Regression frontend gagal sebelum fix | [auth-frontend-red.log](../../simsa-remediation-evidence-20260914/auth-frontend-red.log) |
-| Regression adapter backend gagal sebelum fix | [auth-backend-red.log](../../simsa-remediation-evidence-20260914/auth-backend-red.log) |
-| Hasil frontend sesudah fix | [auth-frontend-green.json](../../simsa-remediation-evidence-20260914/auth-frontend-green.json) |
-| Hasil backend sesudah fix | [auth-backend-green.json](../../simsa-remediation-evidence-20260914/auth-backend-green.json) |
+| Regression frontend gagal sebelum fix | `auth-frontend-red.log` |
+| Regression adapter backend gagal sebelum fix | `auth-backend-red.log` |
+| Hasil frontend sesudah fix | `auth-frontend-green.json` |
+| Hasil backend sesudah fix | `auth-backend-green.json` |
 
 `auth-backend-parser-probe.log` merupakan percobaan awal desain test yang hanya menyentuh serializer, belum mencakup transformasi adapter. Log itu disimpan sebagai catatan investigasi, bukan kegagalan aplikasi tambahan atau bagian dari hitungan regression final.
 
@@ -65,4 +65,4 @@ Dashboard operasional, daftar dan detail surat/arsip, pencarian, preview/unduhan
 
 Alur ini **belum dibuat atau diaktifkan**. Ia memerlukan endpoint identitas terbatas dan penyimpanan permohonan terpisah; jangan melonggarkan `authMiddleware` seluruh aplikasi hanya agar akun pending bisa membuka profil. Signup provider tetap ditutup sampai alur tersebut mempunyai kebijakan, implementasi, dan test akses negatif yang disetujui.
 
-Laporan UAT deployment sebelumnya tetap menjadi [baseline historis](../../simsa-qa/QA_REPORT.md). Perubahan lokal ini harus menjalani pemeriksaan rilis dan pengujian ulang pada build deployment sebelum dianggap menyelesaikan temuan di website live.
+Laporan UAT deployment sebelumnya tetap menjadi baseline historis (`simsa-qa/QA_REPORT.md`, di luar repositori). Perubahan lokal ini harus menjalani pemeriksaan rilis dan pengujian ulang pada build deployment sebelum dianggap menyelesaikan temuan di website live.
