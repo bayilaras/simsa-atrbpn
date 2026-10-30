@@ -9,7 +9,7 @@ Hanya pengguna aktif dengan peran **Super Admin** dapat membuka **Manajemen Peng
 3. Untuk akun email/kata sandi, isi kata sandi minimal 8 karakter. Berikan kata sandi awal melalui saluran internal yang disetujui.
 4. Simpan, lalu uji login serta akses menggunakan akun tersebut.
 
-Metode login mengikuti penyedia autentikasi yang dikonfigurasi operator. Akun Better Auth dapat memakai email/kata sandi jika dibuat dengan kata sandi. Google hanya dapat digunakan jika integrasinya aktif dan identitas email sesuai. Pembuatan akun Firebase melalui administrator memerlukan kata sandi. Jangan menganggap setiap akun baru otomatis dapat masuk melalui Google.
+Metode login mengikuti penyedia autentikasi yang dikonfigurasi operator. Akun Better Auth dapat memakai email/kata sandi jika dibuat dengan kata sandi. Google hanya dapat digunakan jika integrasinya aktif dan identitas email sesuai. Jangan menganggap setiap akun baru otomatis dapat masuk melalui Google.
 
 | Peran | Ruang lingkup |
 |---|---|
