@@ -1,6 +1,7 @@
 import { inflateRawSync } from 'node:zlib';
-import ExcelJS from 'exceljs';
+import type ExcelJS from 'exceljs';
 import { PayloadTooLargeError, ValidationError } from '../utils/errors.js';
+import { loadExcelJS } from '../utils/lazy-libraries.js';
 import { GOOGLE_SHEETS_LIMITS, assertSheetName, parseBoundedSheetCsv, type CsvDelimiter } from './google-sheets-source.js';
 import { isWebAddress } from './google-sheets-import-mapping.js';
 
@@ -209,7 +210,8 @@ export function unpackXlsx(buffer: Buffer): Map<string, Buffer> {
 
 async function loadWorkbook(buffer: Buffer): Promise<ExcelJS.Workbook> {
     unpackXlsx(buffer);
-    const workbook = new ExcelJS.Workbook();
+    const { Workbook } = await loadExcelJS();
+    const workbook = new Workbook();
     try {
         // exceljs expands every data-validation range cell by cell; a whole-column list would never finish.
         await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer, { ignoreNodes: ['dataValidations', 'conditionalFormatting', 'extLst'] } as ExcelJS.XlsxReadOptions);
@@ -261,16 +263,16 @@ function valueText(value: ExcelJS.CellValue): string {
 }
 
 /** The web address a cell links to, if any. */
-function cellLink(cell: ExcelJS.Cell): string | null {
-    if (cell.type === ExcelJS.ValueType.Hyperlink) {
+function cellLink(cell: ExcelJS.Cell, ValueType: typeof ExcelJS.ValueType): string | null {
+    if (cell.type === ValueType.Hyperlink) {
         const { hyperlink } = cell.value as ExcelJS.CellHyperlinkValue;
         return isWebAddress(hyperlink) ? hyperlink.trim() : null;
     }
     // cell.formula also resolves a formula shared down a column.
-    return cell.type === ExcelJS.ValueType.Formula ? hyperlinkFormulaTarget(cell.formula) : null;
+    return cell.type === ValueType.Formula ? hyperlinkFormulaTarget(cell.formula) : null;
 }
 
-function sheetRows(sheet: ExcelJS.Worksheet): Pick<ImportFileContent, 'rows' | 'links'> {
+function sheetRows(sheet: ExcelJS.Worksheet, ValueType: typeof ExcelJS.ValueType): Pick<ImportFileContent, 'rows' | 'links'> {
     const rows: string[][] = [];
     const links: ImportFileContent['links'] = [];
     sheet.eachRow(row => {
@@ -278,8 +280,8 @@ function sheetRows(sheet: ExcelJS.Worksheet): Pick<ImportFileContent, 'rows' | '
         let rowLinks: Record<number, string> | undefined;
         row.eachCell((cell, column) => {
             // A merged range keeps its value in the first cell only, as a Google Sheets CSV export does.
-            if (cell.type === ExcelJS.ValueType.Merge) return;
-            const link = cellLink(cell);
+            if (cell.type === ValueType.Merge) return;
+            const link = cellLink(cell, ValueType);
             // Like a Google Sheets CSV export, a linked cell reads as its text; an empty text shows the address.
             const text = valueText(cell.value).trim() || link || '';
             if (!text) return;
@@ -312,5 +314,6 @@ export async function readImportFile(file: ImportFileUpload, sheet?: string): Pr
     if (format === 'csv') return { format, sheets: [], sheet: null, rows: readCsvRows(file.buffer), links: [] };
     const workbook = await loadWorkbook(file.buffer);
     const worksheet = selectWorksheet(workbook, sheet);
-    return { format, sheets: sheetList(workbook), sheet: worksheet.name, ...sheetRows(worksheet) };
+    const { ValueType } = await loadExcelJS();
+    return { format, sheets: sheetList(workbook), sheet: worksheet.name, ...sheetRows(worksheet, ValueType) };
 }

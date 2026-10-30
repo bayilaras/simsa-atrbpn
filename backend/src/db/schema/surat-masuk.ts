@@ -41,6 +41,8 @@ export const suratMasuk = pgTable('surat_masuk', {
     jraRequiresClassification: check('surat_masuk_jra_requires_classification', sql`${table.jraItemId} IS NULL OR ${table.klasifikasiItemId} IS NOT NULL`),
     unitYearSequenceUnique: uniqueIndex('surat_masuk_unit_year_sequence_uidx')
         .on(table.unitKerjaId, table.tahun, table.noUrut),
+    // 0053: daftar per unit, terbaru dahulu.
+    unitCreatedAtIndex: index('surat_masuk_unit_created_at_idx').on(table.unitKerjaId, table.createdAt.desc()),
 }));
 
 export const suratMasukRelations = relations(suratMasuk, ({ one, many }) => ({

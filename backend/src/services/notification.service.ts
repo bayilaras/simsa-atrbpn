@@ -204,8 +204,6 @@ export class NotificationService {
         securityClassifications?: string[] | null,
         knownReadIds?: Set<string>,
     ): Promise<Notification[]> {
-        const readIds = knownReadIds || await this.getReadIds(userId);
-
         // Surat masuk yang belum diproses = belum diarsipkan DAN status bukan sudah_dibalas
         const pendingSurat = await db
             .select({
@@ -265,8 +263,7 @@ export class NotificationService {
             };
         });
 
-        // Filter out read notifications
-        return notifications.filter(n => !readIds.has(n.id));
+        return this.withoutRead(userId, notifications, knownReadIds);
     }
 
     /**
@@ -287,8 +284,6 @@ export class NotificationService {
             daysAhead,
             securityClassifications,
         )).slice(0, 50);
-
-        const readIds = knownReadIds || await this.getReadIds(userId);
 
         // getExpiring exposes canonical compatibility fields sourced from the
         // verified event/evaluator. Keep this final defensive filter so a
@@ -331,16 +326,35 @@ export class NotificationService {
                 };
             });
 
-        // Filter out read notifications
-        return notifications.filter(n => !readIds.has(n.id));
+        return this.withoutRead(userId, notifications, knownReadIds);
     }
 
-    private async getReadIds(userId: string): Promise<Set<string>> {
+    /**
+     * Read state for the given candidate IDs only (unique index on
+     * (user_id, notification_id)), so a poll never loads the user's whole
+     * read history.
+     */
+    private async getReadIds(userId: string, candidateIds: string[]): Promise<Set<string>> {
+        const ids = [...new Set(candidateIds)];
+        if (ids.length === 0) return new Set();
         const rows = await db
             .select({ notificationId: notificationReads.notificationId })
             .from(notificationReads)
-            .where(eq(notificationReads.userId, userId));
+            .where(and(
+                eq(notificationReads.userId, userId),
+                inArray(notificationReads.notificationId, ids),
+            ));
         return new Set(rows.map(row => row.notificationId));
+    }
+
+    /** Drops notifications the user has read; `knownReadIds` replaces the lookup. */
+    private async withoutRead(
+        userId: string,
+        notifications: Notification[],
+        knownReadIds?: Set<string>,
+    ): Promise<Notification[]> {
+        const readIds = knownReadIds ?? await this.getReadIds(userId, notifications.map(item => item.id));
+        return notifications.filter(item => !readIds.has(item.id));
     }
 
     /**
@@ -359,7 +373,6 @@ export class NotificationService {
         user?: RecordUser,
     ): Promise<Notification[]> {
         if (!ADMIN_NOTIFICATION_ROLES.has(userRole)) return [];
-        const readIds = knownReadIds || await this.getReadIds(userId);
         const rows = await db.select({
             id: suratDistributions.id,
             suratMasukId: suratDistributions.suratMasukId,
@@ -388,7 +401,7 @@ export class NotificationService {
         const bolehDibaca = (suratMasukId: string) => akses === null
             || akses.get(readRefKey({ type: 'surat_masuk', id: suratMasukId }))?.allowed === true;
 
-        return rows.map(row => {
+        return this.withoutRead(userId, rows.map(row => {
             const urgency = ageUrgency(row.updatedAt || row.sentAt, new Date(), 1, 3);
             const deadline = deadlineUrgency(row.batasWaktu);
             const type = deadline ? deadline.type : urgency.type;
@@ -412,7 +425,7 @@ export class NotificationService {
                 state,
             };
             return notification;
-        }).filter(item => !readIds.has(item.id));
+        }), knownReadIds);
     }
 
     async getRetentionVerificationNotifications(
@@ -423,7 +436,6 @@ export class NotificationService {
         userRole = 'user',
     ): Promise<Notification[]> {
         if (!RETENTION_NOTIFICATION_ROLES.has(userRole)) return [];
-        const readIds = knownReadIds || await this.getReadIds(userId);
         const rows = await db.select({
             id: retentionTriggerEvents.id,
             archiveId: retentionTriggerEvents.arsipId,
@@ -449,7 +461,7 @@ export class NotificationService {
             .orderBy(desc(retentionTriggerEvents.createdAt))
             .limit(50);
 
-        return rows.map(row => {
+        return this.withoutRead(userId, rows.map(row => {
             const urgency = ageUrgency(row.createdAt, new Date(), 2, 7);
             const state = `revision_${row.revision}_pending`;
             const notification: Notification = {
@@ -465,7 +477,7 @@ export class NotificationService {
                 state,
             };
             return notification;
-        }).filter(item => !readIds.has(item.id));
+        }), knownReadIds);
     }
 
     async getAppraisalNotifications(
@@ -476,7 +488,6 @@ export class NotificationService {
         knownReadIds?: Set<string>,
     ): Promise<Notification[]> {
         if (!RETENTION_NOTIFICATION_ROLES.has(userRole)) return [];
-        const readIds = knownReadIds || await this.getReadIds(userId);
         const reviewer = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen', 'auditor']
             .includes(userRole);
         const actionable = reviewer
@@ -507,7 +518,7 @@ export class NotificationService {
             .orderBy(desc(jraAppraisalCases.updatedAt))
             .limit(50);
 
-        return rows.map(row => {
+        return this.withoutRead(userId, rows.map(row => {
             const urgency = ageUrgency(row.updatedAt || row.createdAt, new Date(), 3, 7);
             const state = row.status === 'open' ? 'prepare_submission' : 'review_required';
             const notification: Notification = {
@@ -525,7 +536,7 @@ export class NotificationService {
                 state,
             };
             return notification;
-        }).filter(item => !readIds.has(item.id));
+        }), knownReadIds);
     }
 
     async getDispositionNotifications(
@@ -537,7 +548,6 @@ export class NotificationService {
     ): Promise<Notification[]> {
         const reviewer = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'].includes(userRole);
         if (!reviewer) return [];
-        const readIds = knownReadIds || await this.getReadIds(userId);
         const statuses = userRole === 'super_admin'
             ? ['proposed', 'reviewed', 'approved']
             : ['proposed'];
@@ -563,7 +573,7 @@ export class NotificationService {
             .orderBy(desc(penyusutanArsip.updatedAt))
             .limit(50);
 
-        return rows.filter(row => {
+        return this.withoutRead(userId, rows.filter(row => {
             const priorActors = [row.createdBy, row.proposedBy];
             if (row.status === 'reviewed') priorActors.push(row.reviewedBy);
             if (row.status === 'approved') priorActors.push(row.reviewedBy, row.approvedBy);
@@ -591,7 +601,7 @@ export class NotificationService {
                 state,
             };
             return notification;
-        }).filter(item => !readIds.has(item.id));
+        }), knownReadIds);
     }
 
     async getPermanentTransferNotifications(
@@ -602,7 +612,6 @@ export class NotificationService {
         knownReadIds?: Set<string>,
     ): Promise<Notification[]> {
         if (!['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'].includes(userRole)) return [];
-        const readIds = knownReadIds || await this.getReadIds(userId);
         const rows = await db.select({
             id: permanentTransferManifests.id,
             manifestNumber: permanentTransferManifests.manifestNumber,
@@ -635,7 +644,7 @@ export class NotificationService {
             .orderBy(desc(permanentTransferManifests.createdAt))
             .limit(50);
 
-        return rows.filter(row => !row.hasAcknowledgement).map(row => {
+        return this.withoutRead(userId, rows.filter(row => !row.hasAcknowledgement).map(row => {
             const pendingCancellation = Boolean(row.pendingCancellationRequestedBy);
             if (pendingCancellation && row.pendingCancellationRequestedBy === userId) return null;
             const state = pendingCancellation
@@ -659,7 +668,7 @@ export class NotificationService {
                 state,
             };
             return notification;
-        }).filter((item): item is Notification => Boolean(item) && !readIds.has(item!.id));
+        }).filter((item): item is Notification => Boolean(item)), knownReadIds);
     }
 
     /**
@@ -677,13 +686,10 @@ export class NotificationService {
         notifications: Notification[];
         counts: NotificationCounts;
     }> {
-        const [readIds, [preference]] = await Promise.all([
-            this.getReadIds(userId),
-            db.select({ notificationsEnabled: userPreferences.notificationsEnabled })
-                .from(userPreferences)
-                .where(eq(userPreferences.userId, userId))
-                .limit(1),
-        ]);
+        const [preference] = await db.select({ notificationsEnabled: userPreferences.notificationsEnabled })
+            .from(userPreferences)
+            .where(eq(userPreferences.userId, userId))
+            .limit(1);
         const emptyCounts: NotificationCounts = {
             total: 0, urgent: 0, warning: 0, info: 0,
             suratMasuk: 0, arsipRetensi: 0, distribusi: 0,
@@ -694,6 +700,29 @@ export class NotificationService {
             return { notifications: [], counts: emptyCounts };
         }
 
+        // Producers receive an empty read set so they return every candidate;
+        // read state is then looked up once, for the union of candidate IDs.
+        const unfiltered = new Set<string>();
+        const candidates = await Promise.all([
+            this.getPendingSuratMasuk(unitKerjaId, userId, securityClassifications, unfiltered),
+            this.getExpiringArchives(unitKerjaId, userId, 90, securityClassifications, unfiltered),
+            this.getDistributionNotifications(
+                unitKerjaId, userId, securityClassifications, unfiltered, userRole, user,
+            ),
+            this.getRetentionVerificationNotifications(
+                unitKerjaId, userId, securityClassifications, unfiltered, userRole,
+            ),
+            this.getAppraisalNotifications(
+                unitKerjaId, userId, userRole, securityClassifications, unfiltered,
+            ),
+            this.getDispositionNotifications(
+                unitKerjaId, userId, userRole, securityClassifications, unfiltered,
+            ),
+            this.getPermanentTransferNotifications(
+                unitKerjaId, userId, userRole, securityClassifications, unfiltered,
+            ),
+        ]);
+        const readIds = await this.getReadIds(userId, candidates.flat().map(item => item.id));
         const [
             pendingSurat,
             expiringArchives,
@@ -702,25 +731,7 @@ export class NotificationService {
             appraisals,
             dispositions,
             permanentTransfers,
-        ] = await Promise.all([
-            this.getPendingSuratMasuk(unitKerjaId, userId, securityClassifications, readIds),
-            this.getExpiringArchives(unitKerjaId, userId, 90, securityClassifications, readIds),
-            this.getDistributionNotifications(
-                unitKerjaId, userId, securityClassifications, readIds, userRole, user,
-            ),
-            this.getRetentionVerificationNotifications(
-                unitKerjaId, userId, securityClassifications, readIds, userRole,
-            ),
-            this.getAppraisalNotifications(
-                unitKerjaId, userId, userRole, securityClassifications, readIds,
-            ),
-            this.getDispositionNotifications(
-                unitKerjaId, userId, userRole, securityClassifications, readIds,
-            ),
-            this.getPermanentTransferNotifications(
-                unitKerjaId, userId, userRole, securityClassifications, readIds,
-            ),
-        ]);
+        ] = candidates.map(items => items.filter(item => !readIds.has(item.id)));
 
         // Combine all notifications
         const allNotifications = [

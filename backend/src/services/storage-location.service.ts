@@ -2,10 +2,10 @@ import { AppError, ValidationError, ConflictError } from '../utils/errors';
 import { db } from '../config/database';
 import { storageLocations, NewStorageLocation, StorageLocation, arsip, archiveLending } from '../db/schema';
 import { eq, and, sql, isNull, ilike, or } from 'drizzle-orm';
-import QRCode from 'qrcode';
 import type { RecordUnitScope } from '../utils/record-unit-scope.js';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 import { hasPostgresErrorCode } from '../utils/postgres-errors.js';
+import { loadQRCode } from '../utils/lazy-libraries.js';
 
 export interface StorageLocationFilters {
     unitKerjaId: RecordUnitScope;
@@ -346,6 +346,7 @@ export class StorageLocationService {
         }
 
         const qrUrl = `${baseUrl}/storage-locations/${locationId}`;
+        const QRCode = await loadQRCode();
         const qrDataUrl = await QRCode.toDataURL(qrUrl, {
             width: 300,
             margin: 2,
@@ -383,6 +384,7 @@ export class StorageLocationService {
         }
 
         const qrUrl = `${baseUrl}/arsip/detail/${arsipId}`;
+        const QRCode = await loadQRCode();
         const qrDataUrl = await QRCode.toDataURL(qrUrl, {
             width: 300,
             margin: 2,

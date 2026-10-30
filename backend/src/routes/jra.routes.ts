@@ -9,6 +9,11 @@ const log = createLogger('JraRoutes');
 
 const router = Router();
 
+// Rule catalogs are reference data, not records. Unlike the global /api
+// no-store policy, the browser may keep a copy but must revalidate it on every
+// request (Express ETag -> 304), so a newly published edition is never stale.
+const CATALOG_CACHE_CONTROL = 'private, no-cache';
+
 export function normalizeStructuredJraFields(data: Record<string, any>) {
     const calculationMode = data.calculationMode;
     if (!['duration', 'manual'].includes(calculationMode)) {
@@ -69,6 +74,7 @@ router.get('/', async (req: AuthRequest, res: Response, next) => {
 
         if (format === 'tree') {
             const tree = await jraService.getTree(tipe as string, ruleSetId as string);
+            res.setHeader('Cache-Control', CATALOG_CACHE_CONTROL);
             return res.json({ success: true, data: tree });
         }
 
@@ -78,6 +84,7 @@ router.get('/', async (req: AuthRequest, res: Response, next) => {
             ruleSetId: ruleSetId as string,
         });
 
+        res.setHeader('Cache-Control', CATALOG_CACHE_CONTROL);
         res.json({ success: true, data });
     } catch (error) {
         log.error({ err: error }, 'Error fetching JRA:');

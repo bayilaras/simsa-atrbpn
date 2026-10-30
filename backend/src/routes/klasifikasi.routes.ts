@@ -9,6 +9,11 @@ const log = createLogger('KlasifikasiRoutes');
 
 const router = Router();
 
+// Rule catalogs are reference data, not records. Unlike the global /api
+// no-store policy, the browser may keep a copy but must revalidate it on every
+// request (Express ETag -> 304), so a newly published edition is never stale.
+const CATALOG_CACHE_CONTROL = 'private, no-cache';
+
 // Apply auth middleware to all routes
 router.use(authMiddleware);
 
@@ -25,6 +30,7 @@ router.get('/', async (req: AuthRequest, res: Response, next) => {
                 ruleSetId as string,
                 organizationalScope,
             );
+            res.setHeader('Cache-Control', CATALOG_CACHE_CONTROL);
             return res.json({ success: true, data: tree });
         }
 
@@ -35,6 +41,7 @@ router.get('/', async (req: AuthRequest, res: Response, next) => {
             organizationalScope,
         });
 
+        res.setHeader('Cache-Control', CATALOG_CACHE_CONTROL);
         res.json({ success: true, data });
     } catch (error) {
         log.error({ err: error }, 'Error fetching klasifikasi:');

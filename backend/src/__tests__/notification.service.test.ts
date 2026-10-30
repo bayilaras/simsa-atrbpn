@@ -180,7 +180,7 @@ describe('NotificationService', () => {
         });
 
         it('honors the persisted application-notification opt-out', async () => {
-            enqueue([], [{ notificationsEnabled: false }]);
+            enqueue([{ notificationsEnabled: false }]); // preference, read before any producer
 
             const result = await notificationService.getAllNotifications('ditjen', 'user-1');
             expect(result.notifications).toEqual([]);

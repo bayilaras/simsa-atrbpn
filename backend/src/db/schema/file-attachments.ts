@@ -25,6 +25,8 @@ export const fileAttachments = pgTable('file_attachments', {
         table.createdAt,
         table.id,
     ),
+    // 0053: lampiran per rekaman.
+    index('idx_file_attachments_entity').on(table.entityType, table.entityId),
     check(
         'file_attachments_object_generation_check',
         sql`(

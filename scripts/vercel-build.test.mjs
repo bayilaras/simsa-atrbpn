@@ -99,7 +99,7 @@ function withFixture(action) {
         // running the exact wrappers and real npm lifecycle, including failure.
         const bundler = path.join(directory, 'backend/node_modules/esbuild'); mkdirSync(bundler, { recursive: true });
         writeFileSync(path.join(bundler, 'package.json'), '{"type":"module","exports":"./index.js"}');
-        writeFileSync(path.join(bundler, 'index.js'), `import{writeFileSync,readFileSync,mkdirSync}from'node:fs';import{dirname,join,basename}from'node:path';import assert from'node:assert/strict';export async function build(options){const root=options.outdir?join(options.outdir,'../..'):join(dirname(options.outfile),'..');assert.equal(readFileSync(join(root,'lifecycle.log'),'utf8'),'prebuild\\nbuild\\npostbuild\\n');const outputs=options.outfile?[options.outfile]:options.entryPoints.map(entry=>join(options.outdir,basename(entry).replace(/\\.ts$/,'.js')));for(const file of outputs){mkdirSync(dirname(file),{recursive:true});writeFileSync(file,'// fixture bundled after npm lifecycle');}}`);
+        writeFileSync(path.join(bundler, 'index.js'), `import{writeFileSync,readFileSync,mkdirSync,appendFileSync}from'node:fs';import{dirname,join,basename,relative,sep}from'node:path';import assert from'node:assert/strict';export async function build(options){const root=options.outdir?join(options.outdir,'../..'):join(dirname(options.outfile),'..');assert.equal(readFileSync(join(root,'lifecycle.log'),'utf8'),'prebuild\\nbuild\\npostbuild\\n');const outputs=options.outfile?[options.outfile]:options.entryPoints.map(entry=>join(options.outdir,basename(entry).replace(/\\.ts$/,'.js')));appendFileSync(join(root,'bundles.log'),JSON.stringify({outputs:outputs.map(file=>relative(root,file).split(sep).join('/')),bundle:options.bundle,external:options.external??null})+'\\n');for(const file of outputs){mkdirSync(dirname(file),{recursive:true});writeFileSync(file,'// fixture bundled after npm lifecycle');}}`);
         for (const [phase, file] of [['typecheck', 'typescript/bin/tsc'], ['tests', 'vitest/vitest.mjs']]) {
             const target = path.join(directory, 'backend/node_modules', file);
             mkdirSync(path.dirname(target), { recursive: true });
@@ -150,6 +150,15 @@ for (const [wrapper, args, projects, output] of [
         for (const artifact of ['vercel-runtime.js', 'internal-malware-scan-runtime.js',
             'workers/malware-scan-on-demand.js', 'workers/native-clamav-process.js']) {
             assert.equal(existsSync(path.join(directory, 'backend/dist-vercel', artifact)), true);
+        }
+        // app.js is re-bundled in place. Native bindings, self-locating packages
+        // and the libraries loaded on first use must stay external, or the
+        // function tracer stops shipping their files.
+        const bundles = readFileSync(path.join(directory, 'backend/bundles.log'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+        const app = bundles.find(entry => entry.outputs.includes('dist-vercel/app.js'));
+        assert.equal(app?.bundle, true);
+        for (const name of ['@napi-rs/canvas*', 'pdfjs-dist', 'tesseract.js', 'pino', 'exceljs', 'pdfkit', 'qrcode', 'nodemailer', '@vercel/functions/oidc']) {
+            assert.ok(app.external?.includes(name), `${name} must stay outside the app bundle`);
         }
         assert.equal(existsSync(path.join(directory, 'backend/native-clamav-assets')), false,
             'default build must not provision native assets');

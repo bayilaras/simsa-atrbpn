@@ -344,14 +344,15 @@ type AksesBaris = Map<string, ReadAccessResult>;
 type DapatDibuka = Map<string, boolean>;
 
 /**
- * FE-I1 / FR:35: satu `tingkatAksesRangkaian` per rangkaian berbeda pada halaman (≤ limit).
+ * FE-I1 / FR:35: satu `tingkatAksesRangkaian` per rangkaian berbeda pada halaman (≤ limit),
+ * memakai konteks baca transaksi ini (k.ctx) alih-alih menghitungnya ulang per baris.
  * Kolom rangkaian baris surat dirakit dari visibilitas list, yang tidak setara getDetail.
  */
 async function dapatDibukaHalaman(rows: BarisPerluDilengkapi[], k: KonteksPd, tx: ReadExecutor): Promise<DapatDibuka> {
     const hasil: DapatDibuka = new Map();
     for (const row of rows) {
         if (!row.rangkaian_id || hasil.has(row.rangkaian_id)) continue;
-        hasil.set(row.rangkaian_id, (await tingkatAksesRangkaian(k.user, row.rangkaian_id, tx)) !== null);
+        hasil.set(row.rangkaian_id, (await tingkatAksesRangkaian(k.user, row.rangkaian_id, tx, k.ctx)) !== null);
     }
     return hasil;
 }
@@ -361,7 +362,7 @@ async function aksesHalaman(rows: BarisPerluDilengkapi[], k: KonteksPd, tx: Read
     const refs: ReadRef[] = rows
         .filter(row => row.terbaca && !row.masked && row.surat_id !== null && row.jenis !== 'rangkaian')
         .map(row => ({ type: row.jenis as JenisSurat, id: row.surat_id as string }));
-    return refs.length ? recordAccessService.checkMany(k.user, refs, tx) : new Map();
+    return refs.length ? recordAccessService.checkMany(k.user, refs, tx, k.ctx) : new Map();
 }
 
 /**

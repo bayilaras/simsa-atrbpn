@@ -1,7 +1,7 @@
 import { AppError } from '../utils/errors';
-import PDFDocument from 'pdfkit';
 import { penyusutanService } from './penyusutan.service';
 import { NO_RECORD_UNIT_ACCESS, type RecordUnitScope } from '../utils/record-unit-scope';
+import { loadPdfKit } from '../utils/lazy-libraries.js';
 
 /**
  * Print Template Service
@@ -23,6 +23,7 @@ class PrintTemplateService {
             tahun,
             securityClassifications,
         );
+        const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
         doc.on('data', (chunk: Buffer) => buffers.push(chunk));
@@ -129,6 +130,7 @@ class PrintTemplateService {
             tahun,
             securityClassifications,
         );
+        const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
         doc.on('data', (chunk: Buffer) => buffers.push(chunk));
@@ -229,6 +231,7 @@ class PrintTemplateService {
         );
         if (!batch) throw new AppError('Batch not found', 404);
 
+        const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
         doc.on('data', (chunk: Buffer) => buffers.push(chunk));
@@ -280,6 +283,7 @@ class PrintTemplateService {
         );
         if (!batch) throw new AppError('Batch not found', 404);
 
+        const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
         doc.on('data', (chunk: Buffer) => buffers.push(chunk));
@@ -343,6 +347,7 @@ class PrintTemplateService {
         );
         if (!batch) throw new AppError('Batch not found', 404);
 
+        const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
         doc.on('data', (chunk: Buffer) => buffers.push(chunk));
@@ -406,6 +411,7 @@ class PrintTemplateService {
         );
         if (!batch) throw new AppError('Batch not found', 404);
 
+        const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
         doc.on('data', (chunk: Buffer) => buffers.push(chunk));
@@ -485,6 +491,7 @@ class PrintTemplateService {
         );
         if (!batch) throw new AppError('Batch not found', 404);
 
+        const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
         doc.on('data', (chunk: Buffer) => buffers.push(chunk));
@@ -576,6 +583,7 @@ class PrintTemplateService {
         );
         if (!batch) throw new AppError('Batch not found', 404);
 
+        const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
         doc.on('data', (chunk: Buffer) => buffers.push(chunk));
@@ -710,6 +718,7 @@ class PrintTemplateService {
         );
         if (!batch) throw new AppError('Batch not found', 404);
 
+        const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
         doc.on('data', (chunk: Buffer) => buffers.push(chunk));
@@ -829,6 +838,7 @@ class PrintTemplateService {
         );
         if (!batch) throw new AppError('Batch not found', 404);
 
+        const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
         doc.on('data', (chunk: Buffer) => buffers.push(chunk));
@@ -1036,6 +1046,7 @@ class PrintTemplateService {
             securityClassifications,
         }));
 
+        const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
         doc.on('data', (chunk: Buffer) => buffers.push(chunk));
@@ -1101,6 +1112,7 @@ class PrintTemplateService {
             securityClassifications,
         }));
 
+        const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
         const buffers: Buffer[] = [];
         doc.on('data', (chunk: Buffer) => buffers.push(chunk));

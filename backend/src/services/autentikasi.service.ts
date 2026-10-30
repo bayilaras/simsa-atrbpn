@@ -4,12 +4,12 @@ import { arsipElektronik } from '../db/schema/arsip-elektronik.js';
 import { fileAttachments } from '../db/schema/file-attachments.js';
 import { eq, desc, ilike, and, gte, lte, inArray, isNull, sql } from 'drizzle-orm';
 import { CreateAutentikasi, QueryAutentikasi } from '../validators/schemas.js';
-import PDFDocument from 'pdfkit';
 import crypto from 'node:crypto';
 import { blobStorageService } from './blob-storage.service.js';
 import { auditLogService, type CriticalAuditContext } from './audit-log.service.js';
 import { Readable } from 'node:stream';
 import { requireImmutableObjectGeneration } from '../storage/locator.js';
+import { loadPdfKit } from '../utils/lazy-libraries.js';
 import {
     durableFinalObjectService,
     type FinalObjectWrite,
@@ -265,6 +265,7 @@ export class AutentikasiService {
 
         if (!data) throw new Error('Autentikasi not found');
 
+        const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', margin: 50 });
         const chunks: Buffer[] = [];
         const completed = new Promise<Buffer>((resolve, reject) => {
