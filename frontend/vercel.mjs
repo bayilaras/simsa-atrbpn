@@ -68,7 +68,7 @@ const PROTECTED_SPA_FALLBACK = Object.freeze({
   // Low-level routes run before filesystem lookup. Exclude the rewrite
   // destination and every static path emitted/copied by Vite/PWA so assets are
   // served normally and /index.html cannot loop back through this rule.
-  src: '^/(?!index\\.html$|assets(?:/|$)|icons(?:/|$)|logo-simsa\\.png$|manifest\\.json$|vite\\.svg$|favicon\\.ico$|robots\\.txt$|registerSW\\.js$|sw\\.js$|workbox-[^/]+\\.js$)(.*)$',
+  src: '^/(?!index\\.html$|assets(?:/|$)|icons(?:/|$)|logo-simsa\\.png$|manifest\\.json$|favicon\\.ico$|robots\\.txt$|registerSW\\.js$|sw\\.js$|workbox-[^/]+\\.js$)(.*)$',
   dest: '/index.html',
 })
 
