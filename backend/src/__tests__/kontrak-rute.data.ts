@@ -42,7 +42,6 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'POST /approve': check('approvalService.approve'),
         'POST /reject': check('approvalService.reject'),
         'GET /history/:suratId': checkRead('approvalService.getHistory'),
-        'POST /sign': check('signatureService.sign'),
     },
     'archive-lending.routes.ts': {
         'GET /': proyeksi('archiveLendingService.findAll'),
@@ -126,12 +125,6 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'POST /': check('recordAccessService.check'),
         'GET /:id/pdf': checkRead('autentikasiService.getPdfStream'),
         'POST /verify': checkRead('HashVerificationService.verifyUploadedBuffer'),
-    },
-    'auth.routes.ts': {
-        'GET /me': 'bukan-rekaman',
-        'GET /users': 'bukan-rekaman',
-        'PUT /users/:userId/role': 'bukan-rekaman',
-        'ALL /{*splat}': 'bukan-rekaman',
     },
     'bulk-upload.routes.ts': {
         'POST /': 'bukan-rekaman',
@@ -376,9 +369,6 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'GET /content': proyeksi('globalSearchService.searchByContent'),
         'GET /suggestions': proyeksi('globalSearchService.search'),
     },
-    'security.routes.ts': {
-        'POST /check-password': 'bukan-rekaman',
-    },
     'settings.routes.ts': {
         'GET /profile': 'bukan-rekaman',
         'PUT /profile': 'bukan-rekaman',
@@ -480,12 +470,6 @@ export const TANPA_SESI: Record<string, Record<string, string>> = {
         'ALL /api/auth/:path': 'handler Better Auth',
         'ALL /api/auth/:path/:subpath': 'handler Better Auth',
     },
-    'auth.routes.ts': {
-        'GET /me': 'sesi diperiksa di handler; router ini tidak dipasang di app.ts',
-        'GET /users': 'sesi diperiksa di handler; router ini tidak dipasang di app.ts',
-        'PUT /users/:userId/role': 'sesi diperiksa di handler; router ini tidak dipasang di app.ts',
-        'ALL /{*splat}': 'handler Better Auth',
-    },
     'client-upload.routes.ts': {
         'POST /': 'authorizeTokenGeneration: sesi untuk token, tanda tangan Blob untuk callback',
     },
@@ -494,8 +478,5 @@ export const TANPA_SESI: Record<string, Record<string, string>> = {
         'POST /scanner-wake': 'token otomasi (Bearer), bukan sesi',
         'GET /scanner-wake': 'token otomasi (Bearer), bukan sesi',
         'POST /storage-latency': 'token otomasi (Bearer), bukan sesi',
-    },
-    'security.routes.ts': {
-        'POST /check-password': 'cek kekuatan kata sandi tanpa data pengguna',
     },
 };

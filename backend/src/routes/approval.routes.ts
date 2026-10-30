@@ -4,7 +4,6 @@ import { authMiddleware, type AuthRequest } from '../middlewares/auth.middleware
 import { canWriteMiddleware } from '../middlewares/role.middleware.js';
 import { validateBody, validateIdParam } from '../middlewares/validate.middleware.js';
 import { approvalService, type ApprovalActor } from '../services/approval.service.js';
-import { signatureService } from '../services/signature.service.js';
 import { resolveRecordUnitScope } from '../utils/record-unit-scope.js';
 
 const router = express.Router();
@@ -24,11 +23,6 @@ const actionSchema = z.object({
 const rejectSchema = z.object({
     suratId: z.string().uuid(),
     notes: z.string().min(1, 'Alasan penolakan wajib diisi').max(2000),
-});
-
-const signSchema = z.object({
-    suratId: z.string().uuid(),
-    passphrase: z.string().min(1, 'Passphrase wajib diisi').max(1024),
 });
 
 function actorFrom(req: AuthRequest): ApprovalActor {
@@ -131,20 +125,5 @@ router.get(
         }
     },
 );
-
-router.post('/sign', validateBody(signSchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
-    try {
-        const { suratId, passphrase } = req.body;
-        const result = await signatureService.sign(
-            suratId,
-            actorFrom(req),
-            resolveRecordUnitScope(req),
-            passphrase,
-        );
-        res.json({ success: true, data: result });
-    } catch (error) {
-        next(error);
-    }
-});
 
 export default router;

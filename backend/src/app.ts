@@ -59,7 +59,6 @@ import layananArsipRoutes from './routes/layanan-arsip.routes';
 import supervisionRoutes from './routes/supervision.routes';
 import mappingRoutes from './routes/mapping.routes';
 import approvalRoutes from './routes/approval.routes';
-import securityRoutes from './routes/security.routes';
 import googleDriveImportRoutes from './routes/google-drive-import.routes';
 import fileImportRoutes from './routes/file-import.routes';
 import clientUploadRoutes from './routes/client-upload.routes';
@@ -379,7 +378,6 @@ app.use('/api/autentikasi', autentikasiRoutes);
 app.use('/api/layanan-arsip', layananArsipRoutes);
 app.use('/api/supervision', supervisionRoutes);
 app.use('/api/mapping', mappingRoutes);
-app.use('/api/security', securityRoutes); // Security utilities (password check, etc.)
 app.use('/api/operations', operationsRoutes);
 app.use('/api/import/berkas', fileImportRoutes); // CSV/XLSX metadata import with the Sheets mapping
 app.use('/api/import', googleDriveImportRoutes); // Public Google Sheets metadata import
