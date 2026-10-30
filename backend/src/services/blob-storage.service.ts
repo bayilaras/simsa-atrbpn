@@ -88,5 +88,4 @@ export class BlobStorageService {
 }
 
 export const blobStorageService = new BlobStorageService();
-export const objectStorageService = blobStorageService;
 export default blobStorageService;

@@ -80,10 +80,6 @@ export const PRESERVATION_ACTIONS = [
     'integrity_check',
 ] as const;
 
-export function isPreservationAction(value: string): value is typeof PRESERVATION_ACTIONS[number] {
-    return (PRESERVATION_ACTIONS as readonly string[]).includes(value);
-}
-
 export function canDecideVerification(currentStatus: string): boolean {
     // A decision is final for that version. Rejected metadata must first be
     // corrected through update(), which deliberately returns it to pending.

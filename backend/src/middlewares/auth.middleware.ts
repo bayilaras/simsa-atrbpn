@@ -83,36 +83,3 @@ export async function authMiddleware(
         res.status(500).json({ error: 'Internal server error' });
     }
 }
-
-// Optional auth - doesn't require authentication but attaches user if present
-export async function optionalAuthMiddleware(
-    req: AuthRequest,
-    res: Response,
-    next: NextFunction
-) {
-    try {
-        const identity = await verifyRequestIdentity(req);
-
-        if (identity) {
-            const user = await findProvisionedIdentityUser(identity);
-
-            if (user) {
-                const { isActive, ...authUser } = user;
-                if (isActive !== false && archiveAccessProvisioningIssue(authUser) === null) {
-                    req.user = {
-                        ...authUser,
-                        unitKerjaId: resolveEffectiveUnitKerjaId(
-                            authUser.role as Role,
-                            authUser.unitKerjaId,
-                        ),
-                    };
-                }
-            }
-        }
-
-        next();
-    } catch (error) {
-        // Silently continue without auth
-        next();
-    }
-}

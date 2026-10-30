@@ -56,7 +56,6 @@ vi.mock('better-auth/crypto', () => ({
 const {
     userManagementService,
     VALID_ROLES,
-    ADMIN_ROLES,
     normalizeUserUnitAssignment,
 } = await import('../services/user-management.service');
 
@@ -181,12 +180,6 @@ describe('userManagementService', () => {
         it('should be an array of strings', () => {
             expect(Array.isArray(VALID_ROLES)).toBe(true);
             VALID_ROLES.forEach((role: string) => expect(typeof role).toBe('string'));
-        });
-    });
-
-    describe('ADMIN_ROLES', () => {
-        it('should contain only super_admin', () => {
-            expect(ADMIN_ROLES).toEqual(['super_admin']);
         });
     });
 

@@ -4,7 +4,7 @@ import {
     createElectronicRegistrationCode,
     evaluateScanQuality,
     identifyFileFormat,
-    isPreservationAction,
+    PRESERVATION_ACTIONS,
 } from '../services/electronic-archive-policy';
 
 describe('electronic archive policy', () => {
@@ -48,8 +48,8 @@ describe('electronic archive policy', () => {
     });
 
     it('accepts only controlled preservation actions', () => {
-        expect(isPreservationAction('encapsulation')).toBe(true);
-        expect(isPreservationAction('overwrite_original')).toBe(false);
+        expect(PRESERVATION_ACTIONS).toContain('encapsulation');
+        expect(PRESERVATION_ACTIONS).not.toContain('overwrite_original');
     });
 
     it('makes a verification decision final for each version', () => {

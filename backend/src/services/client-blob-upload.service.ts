@@ -42,11 +42,6 @@ const STALE_CLEANUP_CLAIM_MS = 15 * 60 * 1000;
 const CLEANUP_RETRY_BASE_MS = 60 * 1000;
 const CLEANUP_RETRY_MAX_MS = 60 * 60 * 1000;
 
-export function clientBlobCleanupRetryDelayMs(attempt: number): number {
-    const safeAttempt = Math.max(1, Math.min(Math.floor(attempt), 31));
-    return Math.min(CLEANUP_RETRY_BASE_MS * (2 ** (safeAttempt - 1)), CLEANUP_RETRY_MAX_MS);
-}
-
 export function clientBlobClaimTtlMs(source: NodeJS.ProcessEnv = process.env): number {
     const configured = Number(source.CLIENT_BLOB_UPLOAD_TTL_HOURS || DEFAULT_CLAIM_TTL_HOURS);
     if (
@@ -71,17 +66,6 @@ function expectedPrefix(purpose: ClientBlobPurpose): string {
         case 'surat_keluar': return 'surat-keluar/';
         case 'regulatory_source': return 'regulatory-sources/';
         case 'arsip': return 'arsip-attachments/';
-    }
-}
-
-function assertExpectedPath(purpose: ClientBlobPurpose, pathname: string): void {
-    if (
-        !pathname.startsWith(expectedPrefix(purpose))
-        || pathname.includes('..')
-        || pathname.includes('\\')
-        || pathname.startsWith('/')
-    ) {
-        throw new ValidationError('Ruang nama object upload tidak valid.');
     }
 }
 

@@ -39,7 +39,6 @@ vi.mock('../services/blob-storage.service.js', () => ({
 
 const {
     ClientBlobUploadService,
-    clientBlobCleanupRetryDelayMs,
     clientBlobClaimTtlMs,
 } = await import('../services/client-blob-upload.service.js');
 
@@ -286,9 +285,6 @@ describe('ClientBlobUploadService', () => {
         });
         expect(mocks.deleteFile).toHaveBeenNthCalledWith(1, failed.blobUrl);
         expect(mocks.deleteFile).toHaveBeenNthCalledWith(2, healthy.blobUrl);
-        expect(clientBlobCleanupRetryDelayMs(1)).toBe(60_000);
-        expect(clientBlobCleanupRetryDelayMs(2)).toBe(120_000);
-        expect(clientBlobCleanupRetryDelayMs(20)).toBe(3_600_000);
     });
 
     it('validates the configured expiry window', () => {

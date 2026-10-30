@@ -43,9 +43,6 @@ export interface CreateUserData {
 export const VALID_ROLES = KNOWN_ROLES;
 export type Role = typeof VALID_ROLES[number];
 
-// Admin roles that can access user management
-export const ADMIN_ROLES: Role[] = ['super_admin'];
-
 export function normalizeUserUnitAssignment(
     role: Role,
     unitKerjaId: string | null | undefined,

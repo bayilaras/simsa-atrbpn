@@ -8,7 +8,6 @@ import {
     ConflictError,
     GoneError,
     PayloadTooLargeError,
-    RateLimitError,
     ServiceUnavailableError,
 } from '../utils/errors';
 
@@ -66,13 +65,6 @@ describe('ConflictError', () => {
     it('should have 409 status code', () => {
         const error = new ConflictError();
         expect(error.statusCode).toBe(409);
-    });
-});
-
-describe('RateLimitError', () => {
-    it('should have 429 status code', () => {
-        const error = new RateLimitError();
-        expect(error.statusCode).toBe(429);
     });
 });
 
