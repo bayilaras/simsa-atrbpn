@@ -109,6 +109,8 @@ describe('DosirService', () => {
         it('should delete and return the unit-scoped dosir', async () => {
             enqueue(
                 [{ id: 'dosir-1', unitKerjaId: 'u1' }],
+                [],
+                [],
                 [{ id: 'dosir-1', unitKerjaId: 'u1' }],
             );
             const result = await dosirService.delete('dosir-1', 'u1');

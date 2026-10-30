@@ -155,8 +155,19 @@ export const dosirService = {
      */
     async delete(id: string, unitScope: RecordUnitScope, auditContext?: CriticalAuditContext) {
         return db.transaction(async (tx) => {
-        const before = await findAccessibleDosir(id, unitScope, tx);
+        // Kunci baris dosir agar tidak ada tautan baru di antara pencatatan dan penghapusan.
+        const before = await findAccessibleDosir(id, unitScope, tx, true);
         if (!before) return null;
+        // FK cascade ikut menghapus semua tautan, termasuk ke surat yang tidak
+        // terlihat oleh penghapus. Semuanya dicatat di audit agar bisa dipulihkan.
+        const tautanMasuk = await tx
+            .select({ suratMasukId: dosirSuratMasuk.suratMasukId, addedAt: dosirSuratMasuk.addedAt, notes: dosirSuratMasuk.notes })
+            .from(dosirSuratMasuk)
+            .where(eq(dosirSuratMasuk.dosirId, id));
+        const tautanKeluar = await tx
+            .select({ suratKeluarId: dosirSuratKeluar.suratKeluarId, addedAt: dosirSuratKeluar.addedAt, notes: dosirSuratKeluar.notes })
+            .from(dosirSuratKeluar)
+            .where(eq(dosirSuratKeluar.dosirId, id));
         const [deleted] = await tx
             .delete(dosir)
             .where(scopedRecordByIdWhere(
@@ -173,7 +184,7 @@ export const dosirService = {
                 action: 'delete',
                 entityType: 'dosir',
                 entityId: id,
-                changes: { before },
+                changes: { before, tautanTerhapus: { masuk: tautanMasuk, keluar: tautanKeluar } },
             }, tx);
         }
         return deleted || null;

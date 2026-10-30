@@ -182,6 +182,24 @@ describe('POST /api/dosir/:id/surat', () => {
     });
 });
 
+describe('DELETE /api/dosir/:id', () => {
+    it('mencatat semua tautan yang ikut terhapus, termasuk ke surat yang tidak terlihat penghapus', async () => {
+        const response = await request(app).delete(`/api/dosir/${DOSIR}`).set(sebagai(admin)).expect(200);
+        expect(JSON.stringify(response.body)).not.toContain(SK.rahasia);
+        expect(await tautanKeluar(SK.rahasia)).toBe(0);
+
+        const { rows } = await database.query<{ changes: any }>(
+            `SELECT changes FROM audit_log WHERE entity_type = 'dosir' AND entity_id = $1 AND action = 'delete'`, [DOSIR]);
+        expect(rows).toHaveLength(1);
+        const { masuk, keluar } = rows[0].changes.tautanTerhapus;
+        expect(masuk.map((t: any) => t.suratMasukId).sort()).toEqual(Object.values(SM).sort());
+        expect(keluar.map((t: any) => t.suratKeluarId).sort())
+            .toEqual([SK.biasa, SK.terbatas, SK.nul, SK.rahasia, SK.sangatRahasia, SK.terhapus, SK.lainUnit].sort());
+        expect(keluar.find((t: any) => t.suratKeluarId === SK.rahasia)).toMatchObject({ notes: 'Catatan tautan' });
+        expect(keluar.every((t: any) => typeof t.addedAt === 'string')).toBe(true);
+    });
+});
+
 describe('DELETE /api/dosir/:id/surat/:type/:suratId', () => {
     const lepas = (user: PenggunaUji, suratId: string, type = 'keluar') =>
         request(app).delete(`/api/dosir/${DOSIR}/surat/${type}/${suratId}`).set(sebagai(user));
