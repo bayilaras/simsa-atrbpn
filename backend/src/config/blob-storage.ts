@@ -149,21 +149,7 @@ export function getObjectStorageConfigurationStatus(source: NodeJS.ProcessEnv = 
             validationErrors: cloud.validationErrors,
         };
     }
-    if (cloud.storageProvider === 'vercel-blob') {
-        return getBlobStorageConfigurationStatus(buildBlobStorageConfig(source));
-    }
-    const errors = cloud.validationErrors.filter(error =>
-        error.includes('GCS_') || error.includes('GOOGLE_CLOUD_PROJECT'),
-    );
-    return {
-        provider: 'google-cloud-storage-private' as const,
-        required: source.NODE_ENV === 'production',
-        configured: Boolean(cloud.projectId && cloud.gcsBucket),
-        callbackRequired: false,
-        callbackConfigured: true,
-        ready: Boolean(cloud.projectId && cloud.gcsBucket) && errors.length === 0,
-        validationErrors: errors,
-    };
+    return getBlobStorageConfigurationStatus(buildBlobStorageConfig(source));
 }
 import { buildCloudPlatformConfig } from './cloud-platform.js';
 import { ServiceUnavailableError } from '../utils/errors.js';

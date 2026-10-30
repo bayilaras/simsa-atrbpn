@@ -195,10 +195,6 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'POST /preview': 'bukan-rekaman',
         'POST /surat-${kind}': check('fileImportService.importSurat'),
     },
-    'gcs-upload.routes.ts': {
-        'POST /': 'bukan-rekaman',
-        'GET /:uploadId': 'bukan-rekaman',
-    },
     'google-drive-import.routes.ts': {
         'GET /google-drive/sheets': 'bukan-rekaman',
         'POST /google-drive/preview': 'bukan-rekaman',

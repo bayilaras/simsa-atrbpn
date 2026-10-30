@@ -5,7 +5,6 @@ import {
     MAX_NOTIFICATION_READ_IDS,
     NOTIFICATION_ID_PATTERN,
 } from '../utils/notification-id.js';
-import { parseGcsLocator } from '../storage/locator.js';
 import { jakartaDate } from '../utils/jakarta-date.js';
 import { KATEGORI_PERLU_DILENGKAPI } from '../services/perlu-dilengkapi.constants.js';
 
@@ -33,22 +32,6 @@ export function privateObjectLocatorSchema(folder: SuratBlobFolder) {
     return z.string()
         .max(2048, 'File URL is too long')
         .superRefine((value, ctx) => {
-            if (value.startsWith('gs://')) {
-                try {
-                    const { objectName } = parseGcsLocator(value);
-                    const expectedPrefix = `${folder}/`;
-                    if (!objectName.startsWith(expectedPrefix) || objectName.length <= expectedPrefix.length) {
-                        throw new Error('Unexpected object namespace');
-                    }
-                    return;
-                } catch {
-                    ctx.addIssue({
-                        code: 'custom',
-                        message: `filePath must be a canonical private object under ${folder}/`,
-                    });
-                    return;
-                }
-            }
             try {
                 const url = new URL(value);
                 const decodedPath = decodeURIComponent(url.pathname);

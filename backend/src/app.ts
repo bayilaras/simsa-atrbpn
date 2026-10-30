@@ -69,7 +69,6 @@ import srikandiRoutes from './routes/srikandi.routes';
 import recordAccessGrantRoutes from './routes/record-access-grant.routes';
 import regulatoryRuleSetRoutes from './routes/regulatory-rule-set.routes';
 import retentionGovernanceRoutes from './routes/retention-governance.routes';
-import gcsUploadRoutes from './routes/gcs-upload.routes.js';
 import { getReadiness } from './services/readiness.service.js';
 import { createHttpObservability } from './middlewares/http-observability.middleware.js';
 import operationsRoutes from './routes/operations.routes.js';
@@ -385,11 +384,7 @@ app.use('/api/security', securityRoutes); // Security utilities (password check,
 app.use('/api/operations', operationsRoutes);
 app.use('/api/import/berkas', fileImportRoutes); // CSV/XLSX metadata import with the Sheets mapping
 app.use('/api/import', googleDriveImportRoutes); // Public Google Sheets metadata import
-if (cloudPlatformConfig.storageProvider === 'gcs') {
-    app.use('/api/object-uploads', gcsUploadRoutes);
-} else {
-    app.use('/api/client-upload', clientUploadRoutes); // Compatibility path during Vercel Blob migration
-}
+app.use('/api/client-upload', clientUploadRoutes); // Private Vercel Blob direct-upload tokens and completion callbacks
 app.use('/api/files', fileAccessRoutes); // Authenticated, unit-scoped private file streaming
 app.use('/api/integrations/srikandi', srikandiRoutes);
 app.use('/api/record-access-grants', recordAccessGrantRoutes); // Purpose-bound, time-limited need-to-know workflow

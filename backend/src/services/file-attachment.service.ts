@@ -266,8 +266,7 @@ export class FileAttachmentService {
     ): Promise<FileAttachment & { hash: string | null }> {
         assertPdfUpload(data.fileName, data.mimeType, data.buffer.length, data.buffer);
 
-        // All server-received bytes enter quarantine on GCS. The Vercel Blob
-        // compatibility provider remains immutable and unchanged.
+        // Server-received bytes stay quarantined until a clean scan is recorded.
         const blobFile = await blobStorageService.uploadUntrustedFile({
             fileName: data.fileName,
             mimeType: data.mimeType,

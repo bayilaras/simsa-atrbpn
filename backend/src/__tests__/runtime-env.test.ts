@@ -65,31 +65,6 @@ describe('runtime-specific environment validation', () => {
         expect(() => validateRuntimeEnv('api', deployedApi)).not.toThrow();
     });
 
-    it('requires the exact final-bucket retention policy on a production GCS scanner', () => {
-        const gcsWorker = {
-            ...database,
-            NODE_ENV: 'production',
-            APP_PROFILE: 'internal',
-            OBJECT_STORAGE_PROVIDER: 'gcs',
-            GOOGLE_CLOUD_PROJECT: 'simsa-preview-000',
-            GCS_UPLOAD_BUCKET: 'simsa-preview-000-upload',
-            GCS_BUCKET: 'simsa-preview-000-final',
-            MALWARE_SCANNER_MODE: 'clamav',
-            MALWARE_SCAN_WORKER_ENABLED: 'true',
-            MALWARE_SCAN_WORKER_RUNTIME: 'external',
-            CLAMAV_HOST: 'clamav',
-            CLAMAV_TRUSTED_NETWORK: 'true',
-        };
-
-        expect(() => validateRuntimeEnv('malware-worker', gcsWorker))
-            .toThrow(/FINAL_RETENTION_SECONDS is required/);
-        expect(() => validateRuntimeEnv('malware-worker', {
-            ...gcsWorker,
-            FINAL_RETENTION_SECONDS: '2592000',
-            FINAL_ORPHAN_RETENTION_MARGIN_SECONDS: '3600',
-        })).not.toThrow();
-    });
-
     it('validates a SRIKANDI worker without Blob, malware, OAuth, or API auth settings', () => {
         expect(() => validateRuntimeEnv('srikandi-worker', {
             ...database,

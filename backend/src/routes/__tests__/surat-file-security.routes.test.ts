@@ -298,25 +298,6 @@ describe('surat and attachment route security policy', () => {
         expect(mocks.blobDelete).toHaveBeenCalledWith(blobUrl);
     });
 
-    it('deletes only the exact GCS generation after a failed outgoing multipart create', async () => {
-        const locator = 'gs://simsa-upload/surat-keluar/request-created.pdf';
-        const generation = '1735689600123456';
-        mocks.blobUpload.mockResolvedValue({ url: locator, generation });
-        mocks.suratKeluar.create.mockRejectedValue(new Error('audit unavailable'));
-
-        await request(app)
-            .post('/api/surat-keluar')
-            .field(validSuratKeluar)
-            .attach('file', Buffer.from('%PDF-1.7\nrequest'), {
-                filename: 'request.pdf',
-                contentType: 'application/pdf',
-            })
-            .expect(400);
-
-        expect(mocks.blobDeleteGeneration).toHaveBeenCalledWith(locator, generation);
-        expect(mocks.blobDelete).not.toHaveBeenCalled();
-    });
-
     it('passes an outgoing multipart attachment into the canonical surat transaction', async () => {
         const blobUrl = 'https://store.private.blob.vercel-storage.com/surat-keluar/request-created.pdf';
         mocks.blobUpload.mockResolvedValue({ url: blobUrl });
@@ -452,31 +433,6 @@ describe('surat and attachment route security policy', () => {
             .expect(400);
 
         expect(mocks.blobDelete).toHaveBeenCalledWith(blobUrl);
-    });
-
-    it('carries the incoming multipart GCS generation into transaction and compensation', async () => {
-        const locator = 'gs://simsa-upload/surat-masuk/request-created.pdf';
-        const generation = '1735689600123456';
-        mocks.blobUpload.mockResolvedValue({ url: locator, generation });
-        mocks.suratMasuk.create.mockRejectedValue(new Error('outbox unavailable'));
-
-        await request(app)
-            .post('/api/surat-masuk')
-            .field(validSuratMasuk)
-            .attach('file', Buffer.from('%PDF-1.7\nrequest'), {
-                filename: 'request.pdf',
-                contentType: 'application/pdf',
-            })
-            .expect(400);
-
-        expect(mocks.suratMasuk.create).toHaveBeenCalledWith(
-            expect.objectContaining({ filePath: `blob:${locator}` }),
-            expect.any(Object),
-            undefined,
-            expect.objectContaining({ objectGeneration: generation }),
-        );
-        expect(mocks.blobDeleteGeneration).toHaveBeenCalledWith(locator, generation);
-        expect(mocks.blobDelete).not.toHaveBeenCalled();
     });
 
     it('compensates only newly uploaded multipart replacements when update fails', async () => {

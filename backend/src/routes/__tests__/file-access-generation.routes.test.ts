@@ -57,8 +57,8 @@ const { default: fileAccessRouter } = await import('../file-access.routes.js');
 const app = express();
 app.use('/api/files', fileAccessRouter);
 
-const locator = 'gs://simsa-final/surat-masuk/final.pdf';
-const generation = '1735689600999999';
+const locator = 'https://store.private.blob.vercel-storage.com/surat-masuk/final.pdf';
+const generation: string | null = null;
 const privateBlobLocator = 'https://store.private.blob.vercel-storage.com/surat/record.pdf';
 const attachment = {
     id: '20000000-0000-4000-8000-000000000001',
@@ -113,7 +113,7 @@ async function closeServer(server: Server) {
     });
 }
 
-describe('authorized GCS file access', () => {
+describe('authorized private file access', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.accessCheck.mockResolvedValue({
@@ -130,17 +130,17 @@ describe('authorized GCS file access', () => {
         mocks.accessCheckRead.mockImplementation((...args: unknown[]) => mocks.accessCheck(...args));
     });
 
-    it('pins an attachment download to attachment.objectGeneration', async () => {
+    it('downloads an attachment through its recorded private locator', async () => {
         mocks.select.mockReturnValueOnce(limitedRows([attachment]));
 
         await request(app)
             .get(`/api/files/attachment/${attachment.id}`)
             .expect(200);
 
-        expect(mocks.downloadFile).toHaveBeenCalledWith(locator, { generation, abortSignal: expect.any(AbortSignal) });
+        expect(mocks.downloadFile).toHaveBeenCalledWith(locator, { generation: undefined, abortSignal: expect.any(AbortSignal) });
     });
 
-    it('pins a surat download to the matching released registration generation', async () => {
+    it('downloads a surat file through its matching released registration', async () => {
         mocks.select
             .mockReturnValueOnce(limitedRows([{
                 filePath: `blob:${locator}`,
@@ -152,7 +152,7 @@ describe('authorized GCS file access', () => {
             .get(`/api/files/surat_masuk/${attachment.entityId}`)
             .expect(200);
 
-        expect(mocks.downloadFile).toHaveBeenCalledWith(locator, { generation, abortSignal: expect.any(AbortSignal) });
+        expect(mocks.downloadFile).toHaveBeenCalledWith(locator, { generation: undefined, abortSignal: expect.any(AbortSignal) });
     });
 
     it.each([['not_scanned', 'pending'], ['infected', 'blocked'], ['scan_error', 'blocked']])('retains archive %s quarantine guidance without reading bytes', async (malwareScanStatus, expected) => {
@@ -255,7 +255,7 @@ describe('authorized GCS file access', () => {
     it('keeps the private registration guard for the matching surat locator', async () => {
         mocks.select.mockReturnValueOnce(limitedRows([{ filePath: `blob:${privateBlobLocator}`, fileName: 'final.pdf' }]))
             .mockReturnValueOnce(unrestrictedRows([
-                { ...attachment, fileUrl: 'gs://simsa-final/another.pdf', malwareScanStatus: 'not_scanned' },
+                { ...attachment, fileUrl: 'https://store.private.blob.vercel-storage.com/surat-masuk/another.pdf', malwareScanStatus: 'not_scanned' },
                 { ...attachment, fileUrl: privateBlobLocator, objectGeneration: null, storageAccess: 'public' },
             ]));
         const response = await request(app).get(`/api/files/surat_masuk/${attachment.entityId}`).expect(423);
@@ -285,7 +285,7 @@ describe('authorized GCS file access', () => {
         expect(mocks.downloadFile).not.toHaveBeenCalled();
     });
 
-    it.each(['surat_masuk', 'surat_keluar'])('preserves GCS %s inspection before quarantined bytes can be opened', async entityType => {
+    it.each(['surat_masuk', 'surat_keluar'])('preserves %s inspection before quarantined bytes can be opened', async entityType => {
         mocks.select.mockReturnValueOnce(limitedRows([{ ...attachment, entityType, malwareScanStatus: 'not_scanned' }]));
         const response = await request(app).get(`/api/files/attachment/${attachment.id}`).expect(423);
         expect(response.body.scanState).toBe('pending');

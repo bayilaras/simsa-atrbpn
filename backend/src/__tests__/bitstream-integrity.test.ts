@@ -5,9 +5,9 @@ import { inspectBitstream } from '../services/bitstream-integrity.js';
 
 const bytes = Buffer.from('arsip asli');
 const baseline = {
-    fileUrl: 'gs://simsa-private/arsip/original.pdf',
+    fileUrl: 'https://store.private.blob.vercel-storage.com/arsip/original.pdf',
     driveFileId: null,
-    objectGeneration: '12345',
+    objectGeneration: null as string | null,
     storageAccess: 'private',
     sha256: createHash('sha256').update(bytes).digest('hex'),
     sizeBytes: bytes.length,
@@ -15,11 +15,11 @@ const baseline = {
 const response = (stream: Readable) => ({ stream, mimeType: 'application/pdf', fileName: 'original.pdf' });
 
 describe('bounded bitstream integrity inspection', () => {
-    it('verifies exact bytes and pins the stored object generation', async () => {
+    it('verifies exact bytes of the immutable Blob URL', async () => {
         const download = vi.fn().mockResolvedValue(response(Readable.from([bytes])));
         const result = await inspectBitstream(baseline, download);
         expect(result).toMatchObject({ matches: true, actualHash: baseline.sha256, bytesRead: bytes.length });
-        expect(download).toHaveBeenCalledWith(baseline.fileUrl, expect.objectContaining({ generation: '12345', throwOnError: true }));
+        expect(download).toHaveBeenCalledWith(baseline.fileUrl, expect.objectContaining({ generation: undefined, throwOnError: true }));
     });
 
     it('does not verify a different byte sequence or an inconsistent recorded size', async () => {
@@ -33,7 +33,7 @@ describe('bounded bitstream integrity inspection', () => {
         { ...baseline, storageAccess: 'public' },
         { ...baseline, sha256: null },
         { ...baseline, sizeBytes: null },
-        { ...baseline, objectGeneration: null },
+        { ...baseline, fileUrl: 'gs://simsa-private/arsip/original.pdf', objectGeneration: '12345' },
     ])('rejects an uncontrolled or incomplete baseline before reading', async (record) => {
         const download = vi.fn();
         await expect(inspectBitstream(record, download)).rejects.toThrow();

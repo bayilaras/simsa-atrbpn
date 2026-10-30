@@ -90,16 +90,6 @@ describe('FileAttachmentService Blob compensation', () => {
         expect(result).toMatchObject({ sha256: crypto.createHash('sha256').update(content).digest('hex'), integrityStatus: 'baseline_recorded', malwareScanStatus: 'not_scanned' });
     });
 
-    it.each(['masuk', 'keluar'] as const)('retains GCS %s hashing and quarantine needed for retained storage promotion', async suratType => {
-        mocks.uploadUntrustedFile.mockResolvedValueOnce({ url: 'gs://private/record.pdf', generation: '123' });
-        mocks.insert.mockReturnValue({ values: (data: any) => ({ returning: async () => [{ id: 'attachment-1', ...data }] }) });
-        const buffer = Buffer.from('%PDF-1.7');
-        const result = await new FileAttachmentService().create({ suratId: '11111111-1111-4111-8111-111111111111', suratType,
-            fileName: 'record.pdf', mimeType: 'application/pdf', buffer }, { userId: directClaim.uploadedBy });
-        expect(result).toMatchObject({ objectGeneration: '123', sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
-            integrityStatus: 'baseline_recorded', malwareScanStatus: 'not_scanned' });
-    });
-
     it('deletes the exact request-created object when attachment persistence fails', async () => {
         mocks.insert.mockReturnValue({
             values: () => ({
@@ -172,33 +162,6 @@ describe('FileAttachmentService Blob compensation', () => {
         );
     });
 
-    it('compensates only the exact GCS generation when persistence fails', async () => {
-        mocks.uploadUntrustedFile.mockResolvedValueOnce({
-            url: 'gs://simsa-upload/uploads/request-created.pdf',
-            generation: '1735689600123456',
-        });
-        mocks.insert.mockReturnValue({
-            values: () => ({
-                returning: () => Promise.reject(new Error('database unavailable')),
-            }),
-        });
-
-        const service = new FileAttachmentService();
-        await expect(service.create({
-            suratId: '11111111-1111-4111-8111-111111111111',
-            suratType: 'masuk',
-            fileName: 'request.pdf',
-            mimeType: 'application/pdf',
-            buffer: Buffer.from('%PDF-1.7'),
-        }, { userId: '22222222-2222-4222-8222-222222222222' }))
-            .rejects.toThrow('database unavailable');
-
-        expect(mocks.deleteFileGeneration).toHaveBeenCalledWith(
-            'gs://simsa-upload/uploads/request-created.pdf',
-            '1735689600123456',
-        );
-        expect(mocks.deleteFile).not.toHaveBeenCalled();
-    });
 });
 
 describe('FileAttachmentService direct Blob preflight', () => {
@@ -322,59 +285,32 @@ describe('FileAttachmentService direct Blob preflight', () => {
         })).rejects.toMatchObject({ statusCode: 503 });
     });
 
-    it('pins a direct GCS preflight to the generation owned by its lease', async () => {
-        const locator = 'gs://simsa-upload/surat-masuk/user/upload.pdf';
-        vi.spyOn(clientBlobUploadService, 'preAuthorizeClaim').mockResolvedValueOnce({
-            objectGeneration: '1735689600123456',
-        } as any);
-        mocks.downloadFile.mockResolvedValueOnce({
-            stream: Readable.from([Buffer.from('%PDF-1.7')]),
-            mimeType: 'application/pdf',
-            fileName: 'direct.pdf',
-        });
-        const service = new FileAttachmentService();
-
-        await expect(service.prepareExisting({
-            ...directAttachment,
-            locator,
-        }, {
-            clientBlobClaim: { ...directClaim, blobUrl: locator },
-            expectedPurpose: 'surat_masuk',
-        })).resolves.toMatchObject({ objectGeneration: '1735689600123456', sha256: expect.stringMatching(/^[a-f0-9]{64}$/) });
-
-        expect(mocks.downloadFile).toHaveBeenCalledWith(locator, expect.objectContaining({
-            generation: '1735689600123456',
-        }));
-    });
 });
 
-describe('FileAttachmentService exact-generation deletion', () => {
+describe('FileAttachmentService deletion and direct validation', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
         vi.clearAllMocks();
     });
 
-    it('retains metadata when GCS deletion cannot prove success', async () => {
+    it('retains metadata when Blob deletion cannot prove success', async () => {
         const attachment = {
             id: 'attachment-1',
-            fileUrl: 'gs://simsa-final/released/attachment.pdf',
+            fileUrl: 'https://store.private.blob.vercel-storage.com/released/attachment.pdf',
             driveFileId: null,
-            objectGeneration: '1735689600123456',
+            objectGeneration: null,
         };
         mocks.select.mockReturnValue({
             from: () => ({
                 where: () => ({ limit: () => ({ for: async () => [attachment] }) }),
             }),
         });
-        mocks.deleteFileGeneration.mockResolvedValueOnce(false);
+        mocks.deleteFile.mockResolvedValueOnce(false);
         mocks.deleteRow.mockReturnValue({ where: async () => [] });
         const service = new FileAttachmentService();
 
         await expect(service.delete(attachment.id)).resolves.toBe(false);
-        expect(mocks.deleteFileGeneration).toHaveBeenCalledWith(
-            attachment.fileUrl,
-            attachment.objectGeneration,
-        );
+        expect(mocks.deleteFile).toHaveBeenCalledWith(attachment.fileUrl);
         expect(mocks.rollback).toHaveBeenCalledOnce();
     });
 
@@ -411,11 +347,11 @@ describe('FileAttachmentService exact-generation deletion', () => {
         expect(mocks.uploadUntrustedFile).not.toHaveBeenCalled();
     });
     it('never deletes an evidence object when a database reference guard denies removal', async () => {
-        const attachment = { id: 'attachment-1', fileUrl: 'gs://simsa-final/released/evidence.pdf', objectGeneration: '1735689600123456' };
+        const attachment = { id: 'attachment-1', fileUrl: 'https://store.private.blob.vercel-storage.com/released/evidence.pdf', objectGeneration: null };
         mocks.select.mockReturnValue({ from: () => ({ where: () => ({ limit: () => ({ for: async () => [attachment] }) }) }) });
         mocks.deleteRow.mockReturnValue({ where: () => Promise.reject(new Error('evidence is retained')) });
-        mocks.deleteFileGeneration.mockResolvedValueOnce(true);
+        mocks.deleteFile.mockResolvedValueOnce(true);
         await expect(new FileAttachmentService().delete(attachment.id)).rejects.toThrow('evidence is retained');
-        expect(mocks.deleteFileGeneration).not.toHaveBeenCalled();
+        expect(mocks.deleteFile).not.toHaveBeenCalled();
     });
 });

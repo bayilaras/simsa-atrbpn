@@ -209,16 +209,6 @@ describe('BulkUploadService durable lifecycle', () => {
         expect(storageMocks.deleteFileGeneration).not.toHaveBeenCalled();
     });
 
-    it('pins the recovered GCS object generation and never deletes the mutable live name', async () => {
-        const intent = await interruptedBatch();
-        const url = `gs://simsa-upload/${intent.name}`;
-        blobObjects.set(url, pdfFile().buffer);
-        storageMocks.getUntrustedFileByName.mockResolvedValueOnce({ url, generation: '1735689600123456' });
-        expect((await bulkUploadService.cleanupOldBatches()).blobsDeleted).toBe(1);
-        expect(storageMocks.deleteFileGeneration).toHaveBeenCalledWith(url, '1735689600123456');
-        expect(storageMocks.deleteFile).not.toHaveBeenCalled();
-    });
-
     it('preserves a recovered object already referenced by a valid archive attachment', async () => {
         const intent = await interruptedBatch();
         blobObjects.set(intent.url, pdfFile().buffer);
@@ -438,63 +428,6 @@ describe('BulkUploadService durable lifecycle', () => {
         expect(storageMocks.deleteFile).not.toHaveBeenCalled();
     });
 
-    it('pins a GCS source generation through OCR preflight and attachment confirmation', async () => {
-        const locator = 'gs://simsa-upload/bulk-upload/pinned-record.pdf';
-        const generation = '1735689600123456';
-        storageMocks.uploadFile.mockImplementationOnce(async ({ fileName, buffer }: any) => {
-            blobObjects.set(locator, Buffer.from(buffer));
-            return {
-                url: locator,
-                generation,
-                id: locator,
-                name: fileName,
-                mimeType: 'application/pdf',
-                size: buffer.length,
-            };
-        });
-        const batch = await bulkUploadService.createBatch(
-            [pdfFile('pinned-record.pdf')],
-            'unit-durable',
-            '10000000-0000-4000-8000-000000000001',
-        );
-
-        const storedItem = await database.query<{
-            id: string;
-            blob_url: string;
-            object_generation: string | null;
-        }>(`
-            SELECT id, blob_url, object_generation
-            FROM bulk_upload_items
-            WHERE batch_id = '${batch.batchId}'
-        `);
-        expect(storedItem.rows).toEqual([expect.objectContaining({
-            blob_url: locator,
-            object_generation: generation,
-        })]);
-
-        const processed = await bulkUploadService.processBatch(batch.batchId);
-        expect(storageMocks.downloadFile).toHaveBeenCalledWith(locator, {
-            generation,
-        });
-        const confirmation = await bulkUploadService.confirmBatch(batch.batchId, [{
-            itemId: processed.items[0].id,
-            tahun: 2026,
-            jenisArsip: 'masuk',
-        }], {
-            userId: '10000000-0000-4000-8000-000000000001',
-        });
-        expect(storageMocks.getFile).toHaveBeenCalledWith(locator, { generation });
-
-        const attachment = await database.query<{
-            file_url: string;
-            object_generation: string | null;
-        }>(`
-            SELECT file_url, object_generation
-            FROM file_attachments
-            WHERE entity_id = '${confirmation.arsipIds[0]}'
-        `);
-        expect(attachment.rows).toEqual([{ file_url: locator, object_generation: generation }]);
-    });
 
     it('enforces one global OCR slot across service instances without failing the waiting item', async () => {
         const secondOwner = '10000000-0000-4000-8000-000000000002';
@@ -967,56 +900,6 @@ describe('BulkUploadService durable lifecycle', () => {
         expect(storageMocks.deleteFile).toHaveBeenCalledOnce();
         expect(blobObjects.size).toBe(0);
         transaction.mockRestore();
-    });
-
-    it('compensates only the exact GCS generation if durable batch persistence fails', async () => {
-        const locator = 'gs://simsa-upload/bulk-upload/request-created.pdf';
-        const generation = '1735689600123456';
-        storageMocks.uploadFile.mockResolvedValueOnce({
-            url: locator,
-            generation,
-            id: locator,
-            name: 'request-created.pdf',
-            mimeType: 'application/pdf',
-            size: pdfFile().buffer.length,
-        });
-        const transaction = vi.spyOn(databaseHolder.db, 'transaction')
-            .mockRejectedValueOnce(new Error('database unavailable'));
-
-        await expect(bulkUploadService.createBatch(
-            [pdfFile()],
-            'unit-durable',
-            '10000000-0000-4000-8000-000000000001',
-        )).rejects.toThrow('database unavailable');
-        expect(storageMocks.deleteFileGeneration).toHaveBeenCalledWith(locator, generation);
-        expect(storageMocks.deleteFile).not.toHaveBeenCalled();
-        transaction.mockRestore();
-    });
-
-    it('uses the exact GCS generation when cancelling an unconfirmed batch', async () => {
-        const locator = 'gs://simsa-upload/bulk-upload/cancelled.pdf';
-        const generation = '1735689600123456';
-        storageMocks.uploadFile.mockImplementationOnce(async ({ fileName, buffer }: any) => {
-            blobObjects.set(locator, Buffer.from(buffer));
-            return {
-                url: locator,
-                generation,
-                id: locator,
-                name: fileName,
-                mimeType: 'application/pdf',
-                size: buffer.length,
-            };
-        });
-        const batch = await bulkUploadService.createBatch(
-            [pdfFile('cancelled.pdf')],
-            'unit-durable',
-            '10000000-0000-4000-8000-000000000001',
-        );
-
-        await bulkUploadService.cancelBatch(batch.batchId);
-
-        expect(storageMocks.deleteFileGeneration).toHaveBeenCalledWith(locator, generation);
-        expect(storageMocks.deleteFile).not.toHaveBeenCalled();
     });
 
     it('deletes expired unconfirmed sources but never an object referenced by an archive', async () => {

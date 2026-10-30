@@ -45,7 +45,7 @@ beforeEach(async () => {
         EXECUTE FUNCTION public.protect_permanent_transfer_attachment_identity()`);
     await database.query(`INSERT INTO file_attachments
         (id,file_url,object_generation,sha256,size_bytes,storage_access,malware_scan_status,integrity_status)
-        VALUES ($1,'gs://private/record.pdf','123',$2,$3,'private','clean','verified')`, [id, hash, content.length]);
+        VALUES ($1,'https://store.private.blob.vercel-storage.com/record.pdf',NULL,$2,$3,'private','clean','verified')`, [id, hash, content.length]);
     const client = { query: (sql: string, params?: unknown[]) => database.query(sql, params), release() {} };
     pool = { query: client.query, connect: async () => client } as unknown as Pick<Pool, 'query' | 'connect'>;
     download.mockReset().mockImplementation(async () => ({ stream: Readable.from([content]), mimeType: 'application/pdf', fileName: 'record.pdf' }));
@@ -83,9 +83,9 @@ describe('scheduled file integrity checks', () => {
         expect(download).toHaveBeenCalledTimes(1);
     });
 
-    it('refuses a stale baseline after the download changed its recorded generation', async () => {
+    it('refuses a stale baseline after the download changed its recorded locator', async () => {
         download.mockImplementation(async () => {
-            await database.query("UPDATE file_attachments SET object_generation='124' WHERE id=$1", [id]);
+            await database.query("UPDATE file_attachments SET file_url='https://store.private.blob.vercel-storage.com/replaced.pdf' WHERE id=$1", [id]);
             return { stream: Readable.from([content]), mimeType: 'application/pdf', fileName: 'record.pdf' };
         });
         expect(await new FileFixityService(pool, download).run(config)).toMatchObject({ stale: 1, matched: 0 });
@@ -145,12 +145,6 @@ describe('scheduled file integrity checks', () => {
         await expect(database.query('SELECT * FROM file_fixity_jobs')).resolves.toBeDefined();
         await expect(database.query('INSERT INTO file_fixity_jobs (attachment_id) VALUES ($1)', [id])).rejects.toThrow(/permission denied/i);
         await expect(database.query('DELETE FROM file_fixity_jobs')).rejects.toThrow(/permission denied/i);
-    });
-
-    it.each(['surat_masuk', 'surat_keluar'])('preserves scheduled GCS %s integrity checks', async entityType => {
-        await database.query('UPDATE file_attachments SET entity_type=$1', [entityType]);
-        expect(await new FileFixityService(pool, download).run(config)).toMatchObject({ checked: 1, matched: 1 });
-        expect(download).toHaveBeenCalledTimes(1);
     });
 });
 

@@ -28,14 +28,10 @@ describe('public runtime capabilities', () => {
             { OBJECT_STORAGE_PROVIDER: 'typo' },
         ]) expect(getPublicCapabilities({ ...config, ...override }).capabilities.fileUploads).toBe(false);
     });
-    it('keeps GCS letter uploads dependent on the scanner required for storage promotion', () => {
-        const config = { NODE_ENV: 'test', SIMSA_CLOUD_PLATFORM: 'local', GOOGLE_CLOUD_PROJECT: 'simsa-test', OBJECT_STORAGE_PROVIDER: 'gcs', GCS_BUCKET: 'simsa-final', GCS_UPLOAD_BUCKET: 'simsa-quarantine' };
-        const capabilities = getPublicCapabilities(config).capabilities;
-        expect(capabilities.files).toBe(true);
-        expect(capabilities).toMatchObject({ letterFileUploads: false, fileUploads: false });
-        const enabled = getPublicCapabilities({ ...config, MALWARE_SCANNER_MODE: 'clamav' }).capabilities;
-        expect(enabled.fileUploads).toBe(true);
-        expect(enabled.letterFileUploads).toBe(true);
+    it('offers no file capability for the removed Cloud Storage provider', () => {
+        const config = { ...storage, OBJECT_STORAGE_PROVIDER: 'gcs', MALWARE_SCANNER_MODE: 'clamav' };
+        expect(getPublicCapabilities(config).capabilities)
+            .toMatchObject({ files: false, fileUploads: false, letterFileUploads: false });
     });
     it('does not expose OAuth values and requires both Better Auth credentials', () => {
         const oauth = { GOOGLE_CLIENT_ID: 'test-client', GOOGLE_CLIENT_SECRET: 'test-secret' };

@@ -28,7 +28,7 @@ export async function inspectBitstream(
     if (!locator || baseline.storageAccess !== 'private'
         || !baseline.sha256 || !/^[a-f\d]{64}$/i.test(baseline.sha256)
         || !Number.isSafeInteger(baseline.sizeBytes) || baseline.sizeBytes! < 0
-        || (locator.startsWith('gs://') && !/^\d+$/.test(baseline.objectGeneration || ''))) {
+        || locator.startsWith('gs://')) {
         throw new BitstreamInspectionError('BASELINE_INVALID');
     }
     if (!Number.isSafeInteger(limits.maximumBytes) || limits.maximumBytes < 1

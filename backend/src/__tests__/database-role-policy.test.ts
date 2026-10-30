@@ -26,10 +26,6 @@ const readinessSource = readFileSync(fileURLToPath(new URL(
     '../services/readiness.service.ts',
     import.meta.url,
 )), 'utf8');
-const eventReadinessSource = readFileSync(fileURLToPath(new URL(
-    '../events/storage-finalized.app.ts',
-    import.meta.url,
-)), 'utf8');
 
 describe('versioned PostgreSQL role policy', () => {
     it('keeps credentials out of SQL/argv and requires distinct injected principals', () => {
@@ -205,9 +201,6 @@ describe('versioned PostgreSQL role policy', () => {
             "NOT pg_catalog.pg_has_role(current_user, 'simsa_migrator', 'MEMBER')",
         );
         expect(readinessSource).toContain("role_name <> 'simsa_api_runtime'");
-        expect(eventReadinessSource).toContain('runtime_membership_closure(role_name)');
-        expect(eventReadinessSource).toContain("role_name <> 'simsa_event_runtime'");
-        expect(eventReadinessSource).toContain('AND NOT membership.set_option');
     });
 
     it('binds runtime logins to canonical Terraform service accounts in one project', () => {

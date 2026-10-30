@@ -32,7 +32,7 @@ export function getPublicCapabilities(source: NodeJS.ProcessEnv = process.env) {
         syntheticDataOnly: false,
         capabilities: {
             metadata: true, files, fileUploads,
-            letterFileUploads: cloud.storageProvider === 'vercel-blob' ? files : fileUploads,
+            letterFileUploads: files,
             ...getOptionalModuleCapabilities(source),
             // Public Sheets metadata imports and source links do not require
             // the separate SRIKANDI connector or its credentials.

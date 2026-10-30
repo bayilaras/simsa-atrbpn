@@ -4,34 +4,38 @@ import {
     buildCloudPlatformConfig,
 } from '../config/cloud-platform.js';
 
-const productionGcs = {
-    NODE_ENV: 'production',
-    OBJECT_STORAGE_PROVIDER: 'gcs',
-    GOOGLE_CLOUD_PROJECT: 'simsa-production',
-    GCS_BUCKET: 'simsa-final-records',
-    GCS_UPLOAD_BUCKET: 'simsa-upload-quarantine',
-} satisfies NodeJS.ProcessEnv;
-
 describe('cloud platform configuration', () => {
     it('keeps local Better Auth and Vercel Blob as the defaults', () => {
-        expect(buildCloudPlatformConfig({})).toMatchObject({
+        expect(buildCloudPlatformConfig({})).toEqual({
             platform: 'local',
             authProvider: 'better-auth',
             storageProvider: 'vercel-blob',
-            projectId: '',
-            gcsBucket: '',
-            gcsUploadBucket: '',
             validationErrors: [],
         });
     });
 
     it('does not infer a provider from a Cloud Run service marker', () => {
-        expect(buildCloudPlatformConfig({ NODE_ENV: 'production', K_SERVICE: 'simsa-api' })).toMatchObject({
+        expect(buildCloudPlatformConfig({ NODE_ENV: 'production', K_SERVICE: 'simsa-api' })).toEqual({
             platform: 'local',
             authProvider: 'better-auth',
             storageProvider: 'vercel-blob',
             validationErrors: [],
         });
+    });
+
+    it('honours explicit provider choices', () => {
+        expect(buildCloudPlatformConfig({
+            NODE_ENV: 'development',
+            SIMSA_CLOUD_PLATFORM: ' LOCAL ',
+            AUTH_PROVIDER: ' BETTER-AUTH ',
+            OBJECT_STORAGE_PROVIDER: ' VERCEL-BLOB ',
+        })).toEqual({
+            platform: 'local',
+            authProvider: 'better-auth',
+            storageProvider: 'vercel-blob',
+            validationErrors: [],
+        });
+        expect(buildCloudPlatformConfig({ OBJECT_STORAGE_PROVIDER: 'disabled' }).storageProvider).toBe('disabled');
     });
 
     it('rejects the removed GCP platform value', () => {
@@ -53,94 +57,15 @@ describe('cloud platform configuration', () => {
         })).not.toThrow();
     });
 
-    it('honours explicit provider choices', () => {
-        const config = buildCloudPlatformConfig({
-            ...productionGcs,
-            NODE_ENV: 'development',
-            SIMSA_CLOUD_PLATFORM: ' LOCAL ',
-            AUTH_PROVIDER: ' BETTER-AUTH ',
-            OBJECT_STORAGE_PROVIDER: ' VERCEL-BLOB ',
-        });
-
-        expect(config).toMatchObject({
-            platform: 'local',
-            authProvider: 'better-auth',
-            storageProvider: 'vercel-blob',
-            validationErrors: [],
-        });
-    });
-
-    it('keeps the explicit GCS profile fail-closed in production', () => {
-        expect(buildCloudPlatformConfig(productionGcs)).toMatchObject({
-            storageProvider: 'gcs',
-            projectId: 'simsa-production',
-            gcsBucket: 'simsa-final-records',
-            gcsUploadBucket: 'simsa-upload-quarantine',
-            validationErrors: [],
-        });
-    });
-
-    it('reports invalid bucket values', () => {
-        const config = buildCloudPlatformConfig({
-            NODE_ENV: 'production',
-            OBJECT_STORAGE_PROVIDER: 'gcs',
-            GCS_BUCKET: 'invalid..bucket',
-            GCS_UPLOAD_BUCKET: '192.168.1.1',
-        });
-
-        expect(config.validationErrors).toEqual(expect.arrayContaining([
-            'GCS_BUCKET is not a valid bucket name',
-            'GCS_UPLOAD_BUCKET is not a valid bucket name',
-        ]));
-    });
-
-    it('rejects a downloaded ADC credential file in every deployed runtime', () => {
-        const source = {
-            ...productionGcs,
-            GOOGLE_APPLICATION_CREDENTIALS: '/secrets/service-account.json',
-        };
-
-        expect(() => assertValidCloudPlatformEnvironment(source)).toThrow(
-            /GOOGLE_APPLICATION_CREDENTIALS must not be set/,
-        );
+    it('rejects the removed Cloud Storage provider unless storage is out of scope', () => {
+        const source = { OBJECT_STORAGE_PROVIDER: 'gcs', GCS_BUCKET: 'simsa-final-records' };
+        expect(buildCloudPlatformConfig(source)).toMatchObject({ storageProvider: 'vercel-blob' });
+        expect(() => assertValidCloudPlatformEnvironment(source))
+            .toThrow(/OBJECT_STORAGE_PROVIDER must be one of: vercel-blob, disabled/);
         expect(() => assertValidCloudPlatformEnvironment(source, {
             requireAuth: false,
             requireStorage: false,
-        })).toThrow(/use attached ADC\/WIF/);
-    });
-
-    it('requires a dedicated GCS quarantine bucket', () => {
-        const source = {
-            ...productionGcs,
-            GCS_UPLOAD_BUCKET: productionGcs.GCS_BUCKET,
-        };
-        expect(buildCloudPlatformConfig(source).validationErrors).toContain(
-            'GCS_UPLOAD_BUCKET must be configured and differ from GCS_BUCKET',
-        );
-        expect(() => assertValidCloudPlatformEnvironment(source)).toThrow(
-            /GCS_UPLOAD_BUCKET must be configured and differ from GCS_BUCKET/,
-        );
-
-        const omitted = { ...productionGcs };
-        delete (omitted as Partial<typeof productionGcs>).GCS_UPLOAD_BUCKET;
-        expect(() => assertValidCloudPlatformEnvironment(omitted)).toThrow(
-            /GCS_UPLOAD_BUCKET must be configured and differ from GCS_BUCKET/,
-        );
-    });
-
-    it('rejects cross-environment Google Cloud project authorities', () => {
-        const source = {
-            ...productionGcs,
-            GCLOUD_PROJECT: 'simsa-staging',
-        };
-
-        expect(buildCloudPlatformConfig(source).validationErrors).toContain(
-            'Cloud project authority variables must identify the same project',
-        );
-        expect(() => assertValidCloudPlatformEnvironment(source, {
-            requireAuth: false,
-            requireStorage: false,
-        })).toThrow(/must identify the same project/);
+        })).not.toThrow();
     });
 
     it('can validate a local worker without unrelated auth and storage authorities', () => {

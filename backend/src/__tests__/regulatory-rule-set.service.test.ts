@@ -21,7 +21,6 @@ const clientBlobMocks = vi.hoisted(() => ({
 }));
 const durableFinalMocks = vi.hoisted(() => ({
     copy: vi.fn(),
-    markReferenced: vi.fn(),
     compensate: vi.fn(),
 }));
 
@@ -119,26 +118,18 @@ describe('regulatory rule-set pure policy', () => {
             .toThrow(/tanpa URL akses sementara/i);
     });
 
-    it('accepts only a canonical GCS regulatory source bound to the same rule set', () => {
+    it('rejects Cloud Storage sources and any generation bound to a Blob source', () => {
         const id = '22222222-2222-4222-8222-222222222222';
-        const valid = `gs://simsa-preview-upload/regulatory-sources/${id}/upload-source.pdf`;
-
-        expect(assertRegulatorySourceBlobLocator(id, valid)).toBe(valid);
         expect(() => assertRegulatorySourceBlobLocator(
             id,
-            'gs://simsa-preview-upload/regulatory-sources/33333333-3333-4333-8333-333333333333/upload-source.pdf',
-        )).toThrow(/tidak valid|tidak terikat/i);
-        expect(() => assertRegulatorySourceBlobLocator(
-            id,
-            `gs://simsa-preview-upload/regulatory-sources/${id}/nested/upload-source.pdf`,
-        )).toThrow(/tidak valid|tidak terikat/i);
-    });
-
-    it('requires an exact numeric generation only for GCS regulatory sources', () => {
-        expect(assertRegulatorySourceObjectGeneration('gs://simsa-upload/source.pdf', '12345'))
-            .toBe('12345');
-        expect(() => assertRegulatorySourceObjectGeneration('gs://simsa-upload/source.pdf', null))
-            .toThrow(/Generasi immutable/);
+            `gs://simsa-preview-upload/regulatory-sources/${id}/upload-source.pdf`,
+        )).toThrow(/tanpa URL akses sementara/i);
+        expect(() => assertRegulatorySourceObjectGeneration('gs://simsa-upload/source.pdf', '12345'))
+            .toThrow(/tidak didukung/);
+        expect(() => assertRegulatorySourceObjectGeneration(
+            'https://store.private.blob.vercel-storage.com/source.pdf',
+            '12345',
+        )).toThrow(/Generasi objek/);
         expect(assertRegulatorySourceObjectGeneration(
             'https://store.private.blob.vercel-storage.com/source.pdf',
             null,
@@ -321,20 +312,10 @@ describe('RegulatoryRuleSetService lifecycle', () => {
         });
         durableFinalMocks.copy.mockImplementation(async (_ownerId: string, options: any) => {
             const stored = await blobStorageMocks.copyFile(options);
-            return {
-                stored,
-                candidate: String(stored.url).startsWith('gs://') ? {
-                    provider: 'gcs',
-                    ownerId: _ownerId,
-                    cleanupToken: '44444444-4444-4444-8444-444444444444',
-                    locator: stored.url,
-                    generation: stored.generation,
-                } : null,
-            };
+            return { stored };
         });
-        durableFinalMocks.markReferenced.mockResolvedValue(undefined);
         durableFinalMocks.compensate.mockImplementation(async (write: any) => {
-            if (write && !write.candidate) await blobStorageMocks.deleteFile(write.stored.url);
+            if (write) await blobStorageMocks.deleteFile(write.stored.url);
         });
         service = new RegulatoryRuleSetService();
     });
@@ -549,80 +530,6 @@ describe('RegulatoryRuleSetService lifecycle', () => {
         ));
         expect(capturedValues).toHaveLength(0);
     });
-
-    it('leaves a failed GCS source clone in the durable cleanup queue without API delete permission', async () => {
-        const sourcePdf = await onePagePdf();
-        const activeId = '10102018-1010-4010-8010-000000000010';
-        const active = {
-            id: activeId,
-            instrumentType: 'klasifikasi',
-            version: '2018.1',
-            name: 'Klasifikasi 2018',
-            legalBasis: 'Permen 10/2018',
-            regulationNumber: '10/2018',
-            sourceDocumentName: 'permen.pdf',
-            sourceDocumentSha256: 'f'.repeat(64),
-            sourceDocumentBlobUrl: `gs://simsa-final/regulatory-sources/${activeId}/permen-old.pdf`,
-            sourceDocumentObjectGeneration: '1735689600111111',
-            sourceDocumentMimeType: 'application/pdf',
-            sourceDocumentSizeBytes: sourcePdf.length,
-            sourceDocumentPageCount: 1,
-            sourceDocumentVerifiedAt: new Date('2026-01-01T00:00:00.000Z'),
-            sourceDocumentVerifiedBy: '33333333-3333-4333-8333-333333333333',
-            sourceUrl: 'https://jdih.example.go.id/permen.pdf',
-            status: 'active',
-            effectiveFrom: '2018-01-01',
-            effectiveTo: null,
-            supersedesId: null,
-            changeSummary: null,
-            metadata: {},
-            publishedAt: new Date(),
-            publishedBy: null,
-            createdBy: null,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        };
-        blobStorageMocks.copyFile.mockImplementation(async ({ folder, fileName }: any) => ({
-            url: `gs://simsa-final/${folder}/copied-${fileName}`,
-            generation: '1735689600222222',
-            name: fileName,
-            mimeType: 'application/pdf',
-            size: sourcePdf.length,
-        }));
-        blobStorageMocks.getFile.mockImplementation(async (url: string, options: any) => ({
-            url,
-            generation: options.generation,
-            name: 'copied-permen.pdf',
-            mimeType: 'application/pdf',
-            size: sourcePdf.length,
-        }));
-        blobStorageMocks.downloadFile.mockResolvedValue({
-            stream: Readable.from(sourcePdf),
-            mimeType: 'application/pdf',
-            fileName: 'copied-permen.pdf',
-        });
-        enqueue([active]);
-
-        await expect(service.cloneActive('klasifikasi', {
-            version: '2018.1-invalid-gcs-copy',
-            effectiveFrom: '2026-08-01',
-            reuseVerifiedSource: true,
-            changeSummary: 'Uji antrean kompensasi GCS.',
-        }, 'user-1')).rejects.toThrow(/salinan PDF sumber berbeda/i);
-
-        expect(durableFinalMocks.compensate).toHaveBeenCalledWith(
-            expect.objectContaining({
-                candidate: expect.objectContaining({
-                    locator: expect.stringMatching(/^gs:\/\/simsa-final\/regulatory-sources\//),
-                    generation: '1735689600222222',
-                }),
-            }),
-            expect.any(Error),
-        );
-        expect(blobStorageMocks.deleteFileGeneration).not.toHaveBeenCalled();
-        expect(blobStorageMocks.deleteFile).not.toHaveBeenCalled();
-        expect(capturedValues).toHaveLength(0);
-    }, 15_000);
 
     it.each(['draft', 'submitted', 'reviewed', 'approved'])(
         'publishes a validated %s atomically without inventing workflow evidence', async (status) => {
@@ -898,152 +805,6 @@ describe('RegulatoryRuleSetService lifecycle', () => {
         expect(blobStorageMocks.downloadFile).not.toHaveBeenCalled();
         expect(clientBlobMocks.claimWithExecutor).not.toHaveBeenCalled();
         expect(capturedValues).toEqual([]);
-    });
-
-    it('pins GCS regulatory verification to the generation recorded by its upload lease', async () => {
-        const id = '22222222-2222-4222-8222-222222222222';
-        const blobUrl = `gs://simsa-preview-upload/regulatory-sources/${id}/aturan-a.pdf`;
-        const generation = '1735689600123456';
-        const buffer = await onePagePdf();
-        const draft = { id, instrumentType: 'klasifikasi', status: 'draft', sourceDocumentBlobUrl: null };
-        const updated = {
-            ...draft,
-            sourceDocumentBlobUrl: blobUrl,
-            sourceDocumentObjectGeneration: generation,
-        };
-        clientBlobMocks.preAuthorizeClaim.mockResolvedValueOnce({
-            id: 'lease-gcs',
-            status: 'pending',
-            objectGeneration: generation,
-        });
-        blobStorageMocks.getFile.mockResolvedValueOnce({
-            url: blobUrl,
-            name: 'aturan-a.pdf',
-            mimeType: 'application/pdf',
-            size: buffer.length,
-            generation,
-        });
-        blobStorageMocks.downloadFile.mockResolvedValueOnce({
-            stream: Readable.from(buffer),
-            mimeType: 'application/pdf',
-            fileName: 'aturan-a.pdf',
-        });
-        enqueue([{ status: 'draft' }], [draft], [updated], []);
-
-        const result = await service.verifySourceDocumentFromBlob(id, {
-            blobUrl,
-            originalFileName: 'Aturan GCS.pdf',
-        }, 'user-source');
-
-        expect(clientBlobMocks.preAuthorizeClaim).toHaveBeenCalledWith({
-            blobUrl,
-            purpose: 'regulatory_source',
-            uploadedBy: 'user-source',
-        }, 10 * 60 * 1000);
-        expect(blobStorageMocks.getFile).toHaveBeenCalledWith(blobUrl, { generation });
-        expect(blobStorageMocks.downloadFile).toHaveBeenCalledWith(blobUrl, {
-            generation,
-            throwOnError: true,
-        });
-        expect(capturedSets[0]).toMatchObject({
-            sourceDocumentBlobUrl: blobUrl,
-            sourceDocumentObjectGeneration: generation,
-            sourceDocumentVerifiedAt: null,
-        });
-        expect(capturedValues).toContainEqual(expect.objectContaining({
-            entityType: 'regulatory_rule_set',
-            entityId: id,
-            fileUrl: blobUrl,
-            objectGeneration: generation,
-            malwareScanStatus: 'not_scanned',
-        }));
-        expect(result.ruleSet.sourceDocumentObjectGeneration).toBeUndefined();
-    }, 15_000);
-
-    it('puts a server-received regulatory PDF in GCS quarantine before registering its scan job', async () => {
-        const id = '22222222-2222-4222-8222-222222222222';
-        const blobUrl = `gs://simsa-preview-upload/regulatory-sources/${id}/aturan-server.pdf`;
-        const generation = '1735689600123999';
-        const buffer = await onePagePdf();
-        const draft = { id, instrumentType: 'klasifikasi', status: 'draft' };
-        const updated = {
-            ...draft,
-            sourceDocumentBlobUrl: blobUrl,
-            sourceDocumentObjectGeneration: generation,
-        };
-        blobStorageMocks.uploadUntrustedFile.mockResolvedValueOnce({
-            url: blobUrl,
-            generation,
-            mimeType: 'application/pdf',
-            name: 'aturan-server.pdf',
-            size: buffer.length,
-        });
-        enqueue([{ status: 'draft' }], [draft], [updated], []);
-
-        await service.verifySourceDocument(id, {
-            buffer,
-            originalname: 'Aturan Server.pdf',
-            mimetype: 'application/pdf',
-            size: buffer.length,
-        }, 'user-source');
-
-        expect(blobStorageMocks.uploadUntrustedFile).toHaveBeenCalledWith(expect.objectContaining({
-            folder: `regulatory-sources/${id}`,
-            mimeType: 'application/pdf',
-            buffer,
-        }));
-        expect(blobStorageMocks.uploadFile).not.toHaveBeenCalled();
-        expect(capturedValues).toContainEqual(expect.objectContaining({
-            entityType: 'regulatory_rule_set',
-            entityId: id,
-            fileUrl: blobUrl,
-            objectGeneration: generation,
-            malwareScanStatus: 'not_scanned',
-        }));
-        expect(capturedSets[0]).toMatchObject({
-            sourceDocumentBlobUrl: blobUrl,
-            sourceDocumentObjectGeneration: generation,
-            sourceDocumentVerifiedAt: null,
-        });
-    }, 15_000);
-
-    it('reads a retained GCS source only through its persisted immutable generation', async () => {
-        const id = '22222222-2222-4222-8222-222222222222';
-        const blobUrl = `gs://simsa-final/regulatory-sources/${id}/aturan-a.pdf`;
-        const generation = '1735689600123456';
-        const bytes = Buffer.from('%PDF-1.7\nprivate generation evidence');
-        enqueue([{
-            id,
-            instrumentType: 'klasifikasi',
-            version: '2026.1',
-            sourceDocumentName: 'Aturan GCS.pdf',
-            sourceDocumentSha256: 'a'.repeat(64),
-            sourceDocumentBlobUrl: blobUrl,
-            sourceDocumentObjectGeneration: generation,
-            sourceDocumentMimeType: 'application/pdf',
-            sourceDocumentSizeBytes: bytes.length,
-            sourceDocumentVerifiedAt: new Date(),
-        }]);
-        blobStorageMocks.getFile.mockResolvedValueOnce({
-            url: blobUrl,
-            name: 'aturan-a.pdf',
-            mimeType: 'application/pdf',
-            size: bytes.length,
-            generation,
-        });
-        blobStorageMocks.downloadFile.mockResolvedValueOnce({
-            stream: Readable.from(bytes),
-            mimeType: 'application/pdf',
-            fileName: 'aturan-a.pdf',
-        });
-
-        await service.getSourceDocumentStream(id);
-
-        expect(blobStorageMocks.getFile).toHaveBeenCalledWith(blobUrl, { generation });
-        expect(blobStorageMocks.downloadFile).toHaveBeenCalledWith(blobUrl, {
-            generation,
-            throwOnError: true,
-        });
     });
 
     it('returns a private PDF stream with safe metadata and keeps its locator internal', async () => {

@@ -2,7 +2,6 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { pool, buildDatabasePoolConfig } from '../config/database.js';
 import { assertValidBlobStorageEnvironment } from '../config/blob-storage.js';
-import { assertValidCloudPlatformEnvironment, buildCloudPlatformConfig } from '../config/cloud-platform.js';
 import { blobStorageService } from '../services/blob-storage.service.js';
 import { FileFixityService, loadFixityConfig } from '../services/file-fixity.service.js';
 import { createLogger } from '../utils/logger.js';
@@ -12,11 +11,7 @@ const log = createLogger('FileFixityWorker');
 export async function runFileFixity() {
     buildDatabasePoolConfig(process.env);
     const config = loadFixityConfig();
-    if (buildCloudPlatformConfig().storageProvider === 'gcs') {
-        assertValidCloudPlatformEnvironment(process.env, { requireAuth: false });
-    } else {
-        assertValidBlobStorageEnvironment({ ...process.env, NODE_ENV: 'production' }, { requireCallbackUrl: false });
-    }
+    assertValidBlobStorageEnvironment({ ...process.env, NODE_ENV: 'production' }, { requireCallbackUrl: false });
     const service = new FileFixityService(pool, (locator, options) => blobStorageService.downloadFile(locator, options));
     return service.run(config);
 }

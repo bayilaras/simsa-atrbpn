@@ -7,7 +7,6 @@ import {
     assertValidCloudPlatformEnvironment,
     buildCloudPlatformConfig,
 } from './cloud-platform.js';
-import { loadFinalObjectRetentionPolicy } from './final-object-retention.js';
 import { assertValidGoogleOAuthEnvironment } from './google-oauth.js';
 
 dotenv.config();
@@ -232,14 +231,7 @@ export function validateRuntimeEnv(
                 'The dedicated worker requires MALWARE_SCANNER_MODE=clamav and MALWARE_SCAN_WORKER_ENABLED=true',
             );
         }
-        if (cloudConfig.storageProvider === 'vercel-blob') {
-            assertValidBlobStorageEnvironment(source, { requireCallbackUrl: false });
-        } else {
-            assertValidCloudPlatformEnvironment(source, { requireAuth: false });
-            loadFinalObjectRetentionPolicy(source, {
-                requireExplicit: deployedRuntime,
-            });
-        }
+        assertValidBlobStorageEnvironment(source, { requireCallbackUrl: false });
         return;
     }
 
@@ -264,11 +256,7 @@ export function validateRuntimeEnv(
     if (cloudConfig.storageProvider === 'disabled') {
         return;
     }
-    if (cloudConfig.storageProvider === 'vercel-blob') {
-        assertValidBlobStorageEnvironment(source);
-    } else {
-        assertValidCloudPlatformEnvironment(source);
-    }
+    assertValidBlobStorageEnvironment(source);
 }
 
 // Backwards-compatible API/server validation entry point.
