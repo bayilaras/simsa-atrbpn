@@ -4,9 +4,7 @@ import {
     canAccessUnit,
     isReadOnlyRole,
     isNoAccessRole,
-    getAllowedActions,
     PERMISSIONS,
-    ROLE_HIERARCHY,
     type Role,
     type Module,
     type Action,
@@ -164,9 +162,13 @@ describe('isNoAccessRole', () => {
     });
 });
 
-describe('getAllowedActions', () => {
+describe('PERMISSIONS matrix', () => {
+    const allowedActions = (role: Role, module: Module) => (Object.entries(PERMISSIONS[module]) as [Action, Role[]][])
+        .filter(([, roles]) => roles.includes(role))
+        .map(([action]) => action);
+
     it('super_admin should have all actions on arsip', () => {
-        const actions = getAllowedActions('super_admin', 'arsip');
+        const actions = allowedActions('super_admin', 'arsip');
         expect(actions).toContain('read');
         expect(actions).toContain('create');
         expect(actions).toContain('update');
@@ -176,47 +178,25 @@ describe('getAllowedActions', () => {
     });
 
     it('staff should only have read on arsip', () => {
-        const actions = getAllowedActions('staff', 'arsip');
-        expect(actions).toEqual(['read']);
+        expect(allowedActions('staff', 'arsip')).toEqual(['read']);
     });
 
     it('user should have NO actions on arsip', () => {
-        const actions = getAllowedActions('user', 'arsip');
-        expect(actions).toEqual([]);
+        expect(allowedActions('user', 'arsip')).toEqual([]);
     });
 
     it('auditor should only have read and export on surat_masuk', () => {
-        const actions = getAllowedActions('auditor', 'surat_masuk');
+        const actions = allowedActions('auditor', 'surat_masuk');
         expect(actions).toContain('read');
         expect(actions).toContain('export');
         expect(actions).not.toContain('create');
     });
 
     it('auditor should have read and export on audit_log', () => {
-        const actions = getAllowedActions('auditor', 'audit_log');
+        const actions = allowedActions('auditor', 'audit_log');
         expect(actions).toContain('read');
         expect(actions).toContain('export');
         expect(actions).toHaveLength(2);
-    });
-
-    it('should return empty array for non-existent module', () => {
-        const actions = getAllowedActions('super_admin', 'non_existent' as Module);
-        expect(actions).toEqual([]);
-    });
-});
-
-describe('ROLE_HIERARCHY', () => {
-    it('should have correct hierarchy order', () => {
-        expect(ROLE_HIERARCHY['super_admin']).toBeGreaterThan(ROLE_HIERARCHY['admin_dirjen']);
-        expect(ROLE_HIERARCHY['admin_dirjen']).toBeGreaterThan(ROLE_HIERARCHY['admin_sesditjen']);
-        expect(ROLE_HIERARCHY['admin_sesditjen']).toBeGreaterThan(ROLE_HIERARCHY['auditor']);
-        expect(ROLE_HIERARCHY['auditor']).toBeGreaterThan(ROLE_HIERARCHY['staff']);
-        expect(ROLE_HIERARCHY['staff']).toBeGreaterThan(ROLE_HIERARCHY['user']);
-    });
-
-    it('should include the staff role', () => {
-        expect(ROLE_HIERARCHY).toHaveProperty('staff');
-        expect(typeof ROLE_HIERARCHY['staff']).toBe('number');
     });
 });
 

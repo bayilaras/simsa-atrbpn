@@ -1001,28 +1001,6 @@ export class DistributionService {
     }
 
     /**
-     * Check if surat is already distributed
-     */
-    async isDistributed(
-        suratMasukId: string,
-        unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
-    ) {
-        const conditions = [eq(suratDistributions.suratMasukId, suratMasukId)];
-        if (unitScope !== null) {
-            conditions.push(or(
-                eq(suratDistributions.sourceUnitId, unitScope),
-                eq(suratDistributions.targetUnitId, unitScope),
-            )!);
-        }
-        const [result] = await db
-            .select({ count: sql<number>`count(*)::int` })
-            .from(suratDistributions)
-            .where(and(...conditions));
-
-        return result.count > 0;
-    }
-
-    /**
      * Get distribution history for a surat
      */
     async getHistoryBySurat(

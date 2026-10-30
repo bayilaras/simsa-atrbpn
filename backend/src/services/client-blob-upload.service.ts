@@ -4,7 +4,6 @@ import { clientBlobUploads, type ClientBlobUpload } from '../db/schema/index.js'
 import { ConflictError, ValidationError } from '../utils/errors.js';
 import { createLogger } from '../utils/logger.js';
 import { blobStorageService } from './blob-storage.service.js';
-import { toGcsLocator } from '../storage/locator.js';
 
 const log = createLogger('ClientBlobUploadService');
 
@@ -36,45 +35,12 @@ export type ClientBlobUploadReadiness =
     | { status: 'waiting' | 'unavailable' }
     | { status: 'ready'; expiresAt: string };
 
-export interface AuthorizedGcsUpload {
-    id: string;
-    blobUrl: string;
-    pathname: string;
-    bucket: string;
-    purpose: ClientBlobPurpose;
-    uploadedBy: string;
-    expectedSizeBytes: number;
-    expectedContentType: string;
-}
-
-export interface FinalizedGcsUpload {
-    eventId: string;
-    uploadId: string;
-    bucket: string;
-    pathname: string;
-    generation: string;
-    sizeBytes: number;
-    contentType: string;
-    uploadedBy: string;
-    purpose: ClientBlobPurpose;
-}
-
-export interface GcsFinalizationResult {
-    upload: ClientBlobUpload;
-    disposition: 'finalized' | 'duplicate';
-}
-
 const DEFAULT_CLAIM_TTL_HOURS = 24;
 const MIN_CLAIM_TTL_HOURS = 1;
 const MAX_CLAIM_TTL_HOURS = 168;
 const STALE_CLEANUP_CLAIM_MS = 15 * 60 * 1000;
 const CLEANUP_RETRY_BASE_MS = 60 * 1000;
 const CLEANUP_RETRY_MAX_MS = 60 * 60 * 1000;
-
-export function clientBlobCleanupRetryDelayMs(attempt: number): number {
-    const safeAttempt = Math.max(1, Math.min(Math.floor(attempt), 31));
-    return Math.min(CLEANUP_RETRY_BASE_MS * (2 ** (safeAttempt - 1)), CLEANUP_RETRY_MAX_MS);
-}
 
 export function clientBlobClaimTtlMs(source: NodeJS.ProcessEnv = process.env): number {
     const configured = Number(source.CLIENT_BLOB_UPLOAD_TTL_HOURS || DEFAULT_CLAIM_TTL_HOURS);
@@ -100,17 +66,6 @@ function expectedPrefix(purpose: ClientBlobPurpose): string {
         case 'surat_keluar': return 'surat-keluar/';
         case 'regulatory_source': return 'regulatory-sources/';
         case 'arsip': return 'arsip-attachments/';
-    }
-}
-
-function assertExpectedPath(purpose: ClientBlobPurpose, pathname: string): void {
-    if (
-        !pathname.startsWith(expectedPrefix(purpose))
-        || pathname.includes('..')
-        || pathname.includes('\\')
-        || pathname.startsWith('/')
-    ) {
-        throw new ValidationError('Ruang nama object upload tidak valid.');
     }
 }
 
@@ -196,126 +151,6 @@ export class ClientBlobUploadService {
             return { status: 'unavailable' };
         }
         return { status: 'ready', expiresAt: lease.expiresAt.toISOString() };
-    }
-
-    async authorizeGcsUpload(
-        input: AuthorizedGcsUpload,
-        now = new Date(),
-    ): Promise<ClientBlobUpload> {
-        assertExpectedPath(input.purpose, input.pathname);
-        if (!input.blobUrl.startsWith(`gs://${input.bucket}/`)) {
-            throw new ValidationError('Locator Cloud Storage tidak sesuai dengan bucket upload.');
-        }
-        if (!Number.isSafeInteger(input.expectedSizeBytes) || input.expectedSizeBytes <= 0) {
-            throw new ValidationError('Ukuran upload harus berupa bilangan bulat positif.');
-        }
-        const expiresAt = new Date(now.getTime() + clientBlobClaimTtlMs());
-        const [inserted] = await db.insert(clientBlobUploads).values({
-            id: input.id,
-            blobUrl: input.blobUrl,
-            pathname: input.pathname,
-            provider: 'gcs',
-            bucket: input.bucket,
-            purpose: input.purpose,
-            uploadedBy: input.uploadedBy,
-            status: 'authorized',
-            expectedSizeBytes: input.expectedSizeBytes,
-            expectedContentType: input.expectedContentType,
-            authorizedAt: now,
-            expiresAt,
-            // Retained for compatibility with the original non-null column;
-            // finalizedAt is the authoritative GCS completion timestamp.
-            completedAt: now,
-            updatedAt: now,
-        }).returning();
-        return inserted;
-    }
-
-    async cancelGcsAuthorization(id: string, reason: string, now = new Date()): Promise<void> {
-        await db.update(clientBlobUploads).set({
-            status: 'deleted',
-            lastCleanupError: reason.slice(0, 500),
-            updatedAt: now,
-        }).where(and(
-            eq(clientBlobUploads.id, id),
-            eq(clientBlobUploads.provider, 'gcs'),
-            eq(clientBlobUploads.status, 'authorized'),
-        ));
-    }
-
-    async getOwnedUpload(id: string, uploadedBy: string): Promise<ClientBlobUpload | null> {
-        const [upload] = await db.select().from(clientBlobUploads).where(and(
-            eq(clientBlobUploads.id, id),
-            eq(clientBlobUploads.uploadedBy, uploadedBy),
-        )).limit(1);
-        return upload || null;
-    }
-
-    async recordGcsFinalized(
-        input: FinalizedGcsUpload,
-        now = new Date(),
-    ): Promise<GcsFinalizationResult> {
-        assertExpectedPath(input.purpose, input.pathname);
-        if (!/^\d+$/.test(input.generation) || !Number.isSafeInteger(input.sizeBytes)) {
-            throw new ValidationError('Metadata generasi atau ukuran Cloud Storage tidak valid.');
-        }
-        return db.transaction(async tx => {
-            const [existing] = await tx.select().from(clientBlobUploads)
-                .where(eq(clientBlobUploads.id, input.uploadId))
-                .limit(1)
-                .for('update');
-            if (!existing) throw new ValidationError('Upload intent Cloud Storage tidak ditemukan.');
-            if (
-                existing.provider !== 'gcs'
-                || existing.bucket !== input.bucket
-                || existing.pathname !== input.pathname
-                || existing.purpose !== input.purpose
-                || existing.uploadedBy !== input.uploadedBy
-                || existing.blobUrl !== toGcsLocator(input.bucket, input.pathname)
-            ) {
-                throw new ConflictError('Event Cloud Storage tidak sesuai dengan upload intent.');
-            }
-            // Eventarc is at-least-once. Once the exact generation has been
-            // accepted, every downstream state (claimed, release cleanup,
-            // cleanup in progress, and deleted included) is an idempotent
-            // duplicate. The immutable upload id + locator + generation is
-            // authoritative here: a delayed delivery must never delete bytes
-            // already accepted, even if repeated auxiliary metadata differs.
-            if (existing.objectGeneration === input.generation) {
-                return { upload: existing, disposition: 'duplicate' };
-            }
-            if (existing.objectGeneration !== null) {
-                throw new ConflictError('Upload intent sudah difinalisasi oleh object atau event lain.');
-            }
-            if (
-                existing.expectedSizeBytes !== null
-                && existing.expectedSizeBytes !== input.sizeBytes
-            ) {
-                throw new ConflictError('Ukuran object tidak sesuai dengan upload intent.');
-            }
-            if (
-                existing.expectedContentType
-                && existing.expectedContentType !== input.contentType
-            ) {
-                throw new ConflictError('Content-Type object tidak sesuai dengan upload intent.');
-            }
-            if (existing.status !== 'authorized' || existing.expiresAt <= now) {
-                throw new ConflictError('Upload intent sudah kedaluwarsa atau tidak dapat difinalisasi.');
-            }
-            const [updated] = await tx.update(clientBlobUploads).set({
-                status: 'pending',
-                objectGeneration: input.generation,
-                eventId: input.eventId,
-                finalizedAt: now,
-                completedAt: now,
-                updatedAt: now,
-            }).where(and(
-                eq(clientBlobUploads.id, existing.id),
-                eq(clientBlobUploads.status, 'authorized'),
-            )).returning();
-            if (!updated) throw new ConflictError('Upload intent berubah saat finalisasi.');
-            return { upload: updated, disposition: 'finalized' };
-        });
     }
 
     async recordCompletedUpload(
@@ -418,8 +253,7 @@ export class ClientBlobUploadService {
     }
 
     /**
-     * Atomically reserves expired/unclaimed uploads and quarantine generations
-     * that have already been promoted to the final bucket before deleting.
+     * Atomically reserves expired/unclaimed uploads before deleting them.
      * A business transaction can only claim status=pending with expiresAt>now,
      * so it can never race a deletion selected here.
      */
@@ -504,31 +338,7 @@ export class ClientBlobUploadService {
             )).returning();
             if (!reserved) continue;
 
-            if (reserved.provider === 'gcs' && !reserved.objectGeneration) {
-                // An authorized resumable session has no immutable generation
-                // until Eventarc finalizes it. Never delete the live object
-                // name: a delayed finalize could race this cleanup. Tombstone
-                // only the lease; a later event deletes its delivered exact
-                // generation and bucket lifecycle covers an event that never
-                // arrives.
-                deleted += 1;
-                await db.update(clientBlobUploads).set({
-                    status: 'deleted',
-                    cleanupStartedAt: null,
-                    cleanupPreviousStatus: null,
-                    lastCleanupError: null,
-                    updatedAt: new Date(),
-                }).where(and(
-                    eq(clientBlobUploads.id, reserved.id),
-                    eq(clientBlobUploads.status, 'cleanup_started'),
-                ));
-                continue;
-            }
-
-            const removed = await blobStorageService.deleteFileGeneration(
-                reserved.blobUrl,
-                reserved.provider === 'gcs' ? reserved.objectGeneration : null,
-            );
+            const removed = await blobStorageService.deleteFile(reserved.blobUrl);
             if (removed) {
                 deleted += 1;
                 await db.update(clientBlobUploads).set({

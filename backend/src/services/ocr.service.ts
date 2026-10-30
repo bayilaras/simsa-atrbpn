@@ -297,39 +297,6 @@ export class OCRService {
         }
     }
 
-    // Perform OCR on an image buffer using Tesseract
-    async performOCR(imageBuffer: Buffer, signal?: AbortSignal): Promise<string> {
-        throwIfAborted(signal);
-        if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) {
-            throw new OCRProcessingError('Citra OCR kosong atau tidak valid');
-        }
-        if (imageBuffer.length > OCR_LIMITS.maxRenderedImageBytes) {
-            throw new OCRProcessingError('Citra OCR melebihi batas memori');
-        }
-
-        const deadline = Date.now()
-            + OCR_LIMITS.workerStartTimeoutMs
-            + OCR_LIMITS.pageOcrTimeoutMs;
-        let worker: Awaited<ReturnType<typeof Tesseract.createWorker>> | null = null;
-
-        try {
-            worker = await this.createWorker(deadline, signal);
-            return await this.recognizeWithWorker(
-                worker,
-                imageBuffer,
-                deadline,
-                undefined,
-                signal,
-            );
-        } catch (error) {
-            if (signal?.aborted) throw abortReason(signal);
-            log.error({ err: error }, 'Image OCR failed');
-            throw error;
-        } finally {
-            await this.terminateWorker(worker);
-        }
-    }
-
     /**
      * Render a scanned PDF page-by-page and recognize it with one bounded
      * Tesseract worker. This method is public so the processing boundary can be
@@ -797,29 +764,6 @@ export class OCRService {
                     ? error.message
                     : 'Dokumen PDF tidak dapat diproses dengan aman',
             };
-        }
-    }
-
-    // Helper method to serialize metadata as JSON for storage
-    serializeMetadata(metadata: ExtractedMetadata): string {
-        return JSON.stringify({
-            penerima: metadata.penerima,
-            tembusan: metadata.tembusan,
-            lampiran: metadata.lampiran,
-            sifatSurat: metadata.sifatSurat,
-            klasifikasiKeamanan: metadata.klasifikasiKeamanan,
-            jenisSurat: metadata.jenisSurat,
-            keywords: metadata.keywords,
-            summary: metadata.summary
-        });
-    }
-
-    // Helper method to parse serialized metadata
-    parseMetadata(jsonString: string): Partial<ExtractedMetadata> {
-        try {
-            return JSON.parse(jsonString);
-        } catch {
-            return {};
         }
     }
 }

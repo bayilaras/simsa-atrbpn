@@ -34,20 +34,6 @@ export const authLimiter = createAuthAttemptLimiter({
     maximum: isDev ? 50 : 5,
 });
 
-// Rate limiter for signup - 3 attempts per hour
-export const signupLimiter = rateLimit({
-    store: createRateLimiterStore('signup'),
-    passOnStoreError: false,
-    windowMs: 60 * 60 * 1000, // 1 hour
-    max: isDev ? 50 : 3, // 50 in dev (testable); 3 per hour in production
-    message: {
-        error: 'Too Many Signups',
-        message: 'Too many signup attempts from this IP, please try again after an hour',
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
-});
-
 // Rate limiter for sensitive operations (e.g., delete, export) - 20 per 15 minutes
 export const sensitiveLimiter = rateLimit({
     store: createRateLimiterStore('sensitive'),

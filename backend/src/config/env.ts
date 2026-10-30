@@ -4,12 +4,9 @@ import { assertValidSrikandiEnvironment, buildSrikandiConfig } from './srikandi.
 import { loadMalwareScanConfig, validateMalwareScanConfig } from './malware-scanner.js';
 import { assertValidBlobStorageEnvironment } from './blob-storage.js';
 import {
-    assertGcpIamDatabaseRuntimeEnvironment,
     assertValidCloudPlatformEnvironment,
     buildCloudPlatformConfig,
 } from './cloud-platform.js';
-import { loadFinalObjectRetentionPolicy } from './final-object-retention.js';
-import { isMetadataDemo, validateDemoEnvironment } from './demo.js';
 import { assertValidGoogleOAuthEnvironment } from './google-oauth.js';
 
 dotenv.config();
@@ -71,7 +68,7 @@ function validateFrontendUrl(source: NodeJS.ProcessEnv): void {
         throw new Error('FRONTEND_URL must be an HTTP(S) origin without credentials, path, query, or fragment');
     }
     if (
-        (source.NODE_ENV === 'production' || source.K_SERVICE || source.VERCEL)
+        (source.NODE_ENV === 'production' || source.VERCEL)
         && parsed.protocol !== 'https:'
     ) {
         throw new Error('FRONTEND_URL must use HTTPS in a deployed runtime');
@@ -87,7 +84,6 @@ function validateFrontendUrl(source: NodeJS.ProcessEnv): void {
         );
     }
     const secureRuntime = source.NODE_ENV === 'production'
-        || Boolean(source.K_SERVICE)
         || Boolean(source.VERCEL);
     const canonical = new Set<string>();
     for (const entry of entries) {
@@ -122,10 +118,8 @@ export function validateRuntimeEnv(
     runtime: SimsaRuntime,
     source: NodeJS.ProcessEnv = process.env,
 ) {
-    validateDemoEnvironment(runtime, source);
     const cloudConfig = buildCloudPlatformConfig(source);
     const deployedRuntime = source.NODE_ENV === 'production'
-        || Boolean(source.K_SERVICE)
         || Boolean(source.VERCEL);
     // Enforce deployment-wide invariants (currently the Auth Emulator guard)
     // even for workers that deliberately do not require auth or object storage.
@@ -136,7 +130,7 @@ export function validateRuntimeEnv(
     const databaseConfigured = Boolean(
         source.DATABASE_URL?.trim()
         || (
-            (source.CLOUD_SQL_UNIX_SOCKET?.trim() || source.DB_HOST?.trim())
+            source.DB_HOST?.trim()
             && source.DB_USER?.trim()
             && source.DB_NAME?.trim()
             && source.DB_PASSWORD !== undefined
@@ -144,13 +138,9 @@ export function validateRuntimeEnv(
     );
     if (!databaseConfigured) {
         throw new Error(
-            'Missing database configuration: DATABASE_URL or Cloud SQL/DB host variables are required',
+            'Missing database configuration: DATABASE_URL or DB host variables are required',
         );
     }
-    if (cloudConfig.platform === 'gcp') {
-        assertGcpIamDatabaseRuntimeEnvironment(source, cloudConfig.projectId);
-    }
-
     const required = runtime === 'api' && cloudConfig.authProvider === 'better-auth'
         ? ['BETTER_AUTH_SECRET']
         : [];
@@ -241,20 +231,12 @@ export function validateRuntimeEnv(
                 'The dedicated worker requires MALWARE_SCANNER_MODE=clamav and MALWARE_SCAN_WORKER_ENABLED=true',
             );
         }
-        if (cloudConfig.storageProvider === 'vercel-blob') {
-            assertValidBlobStorageEnvironment(source, { requireCallbackUrl: false });
-        } else {
-            assertValidCloudPlatformEnvironment(source, { requireAuth: false });
-            loadFinalObjectRetentionPolicy(source, {
-                requireExplicit: deployedRuntime,
-            });
-        }
+        assertValidBlobStorageEnvironment(source, { requireCallbackUrl: false });
         return;
     }
 
     if (
         runtimeProfile === 'internal'
-        && !isMetadataDemo(source)
         && cloudConfig.storageProvider !== 'disabled'
         && runtimeMalwareConfig.mode === 'disabled'
         && deployedRuntime
@@ -274,11 +256,7 @@ export function validateRuntimeEnv(
     if (cloudConfig.storageProvider === 'disabled') {
         return;
     }
-    if (cloudConfig.storageProvider === 'vercel-blob') {
-        assertValidBlobStorageEnvironment(source);
-    } else {
-        assertValidCloudPlatformEnvironment(source);
-    }
+    assertValidBlobStorageEnvironment(source);
 }
 
 // Backwards-compatible API/server validation entry point.

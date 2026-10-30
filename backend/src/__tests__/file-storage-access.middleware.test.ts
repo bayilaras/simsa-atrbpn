@@ -113,8 +113,6 @@ describe('optional modules independently of manual PDF capabilities', () => {
             expect(getPublicCapabilities({ SIMSA_BULK_OCR_ENABLED: flag, SIMSA_ADVANCED_ARCHIVE_WORKFLOWS_ENABLED: flag }).capabilities)
                 .toMatchObject({ bulkOcr: false, advancedArchiveWorkflows: false });
         }
-        expect(getPublicCapabilities({ SIMSA_APP_MODE: 'metadata-demo' }).capabilities)
-            .toMatchObject({ bulkOcr: false, advancedArchiveWorkflows: false });
     });
 
     it('preserves real file configuration and its scanner requirement', () => {

@@ -19,8 +19,6 @@ export function nomorNormSql(column: AnyColumn | SQL): SQL<string> {
 }
 
 // ---- P3: Lacak Surat (§6) ----
-export const LACAK_Q_MIN = 3;
-export const LACAK_Q_MAX = 100;
 export const LACAK_MAX_TOKENS = 8;
 
 export type LacakJenisKueri = 'nomor' | 'perihal';

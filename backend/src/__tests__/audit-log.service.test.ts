@@ -31,71 +31,13 @@ describe('AuditLogService', () => {
         auditLogService._consecutiveFailures = 0;
     });
 
-    // ==================== Pure Functions (no DB) ====================
-
-    describe('getActionLabel', () => {
-        it('should return Indonesian labels for known actions', () => {
-            expect(auditLogService.getActionLabel('create')).toBe('Membuat');
-            expect(auditLogService.getActionLabel('update')).toBe('Mengubah');
-            expect(auditLogService.getActionLabel('delete')).toBe('Menghapus');
-            expect(auditLogService.getActionLabel('cancel')).toBe('Membatalkan');
-            expect(auditLogService.getActionLabel('archive')).toBe('Mengarsipkan');
-            expect(auditLogService.getActionLabel('restore')).toBe('Memulihkan');
-            expect(auditLogService.getActionLabel('status_change')).toBe('Mengubah Status');
-        });
-
-        it('should return distribution labels', () => {
-            expect(auditLogService.getActionLabel('distribute')).toBe('Mendistribusikan');
-            expect(auditLogService.getActionLabel('receive_distribution')).toBe('Menerima Distribusi');
-            expect(auditLogService.getActionLabel('process_distribution')).toBe('Memproses Distribusi');
-            expect(auditLogService.getActionLabel('reject_distribution')).toBe('Menolak Distribusi');
-        });
-
-        it('memberi label aksi rangkaian surat (carry-in P3)', () => {
-            expect(auditLogService.getActionLabel('view_via_rangkaian')).toBe('Melihat via Rangkaian');
-            expect(auditLogService.getActionLabel('merge')).toBe('Menggabungkan');
-            expect(auditLogService.getActionLabel('link')).toBe('Menautkan');
-        });
-
-        it('should return raw action string for unknown actions', () => {
-            expect(auditLogService.getActionLabel('unknown_action')).toBe('unknown_action');
-            expect(auditLogService.getActionLabel('')).toBe('');
-        });
-    });
-
-    describe('getEntityTypeLabel', () => {
-        it('should return Indonesian labels for known entity types', () => {
-            expect(auditLogService.getEntityTypeLabel('surat_masuk')).toBe('Surat Masuk');
-            expect(auditLogService.getEntityTypeLabel('surat_keluar')).toBe('Surat Keluar');
-            expect(auditLogService.getEntityTypeLabel('arsip')).toBe('Arsip');
-            expect(auditLogService.getEntityTypeLabel('user')).toBe('User');
-        });
-
-        it('should return label for distribution entity type', () => {
-            expect(auditLogService.getEntityTypeLabel('surat_distribution')).toBe('Distribusi Surat');
-        });
-
-        it('should return label for autentikasi type', () => {
-            expect(auditLogService.getEntityTypeLabel('autentikasi')).toBe('Autentikasi Alih Media');
-        });
-
-        it('memberi label entitas rangkaian surat (carry-in P3)', () => {
-            expect(auditLogService.getEntityTypeLabel('rangkaian_surat')).toBe('Rangkaian Surat');
-            expect(auditLogService.getEntityTypeLabel('rangkaian_relasi')).toBe('Relasi Rangkaian');
-        });
-
-        it('should return raw entity type for unknown types', () => {
-            expect(auditLogService.getEntityTypeLabel('unknown_type')).toBe('unknown_type');
-        });
-    });
-
     // ==================== DB-dependent methods ====================
 
-    describe('logAction', () => {
+    describe('logActionOrThrow', () => {
         it('should not throw on successful insert', async () => {
             enqueue(undefined); // insert returns void
             await expect(
-                auditLogService.logAction({
+                auditLogService.logActionOrThrow({
                     userId: 'user-1',
                     userEmail: 'test@x.com',
                     action: 'create',
@@ -108,7 +50,7 @@ describe('AuditLogService', () => {
         it('should reset failure counter on success', async () => {
             auditLogService._consecutiveFailures = 3;
             enqueue(undefined);
-            await auditLogService.logAction({
+            await auditLogService.logActionOrThrow({
                 action: 'update',
                 entityType: 'arsip',
             });
@@ -118,7 +60,7 @@ describe('AuditLogService', () => {
         it('should handle missing optional fields gracefully', async () => {
             enqueue(undefined);
             await expect(
-                auditLogService.logAction({
+                auditLogService.logActionOrThrow({
                     action: 'delete',
                     entityType: 'user',
                     // no userId, userEmail, entityId, changes, ipAddress

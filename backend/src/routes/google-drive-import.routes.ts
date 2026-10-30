@@ -48,13 +48,6 @@ function selectedSheet(body: { sheetName: string; gid?: string }): SheetSelector
     return body.gid ? { gid: body.gid } : body.sheetName;
 }
 
-/**
- * @swagger
- * /api/import/google-drive/sheets:
- *   get:
- *     summary: List available sheets in a public Google Spreadsheet
- *     tags: [Import]
- */
 router.get('/google-drive/sheets', importDiscoveryLimiter, validateQuery(sheetQuery), async (req: AuthRequest, res, next) => {
     try {
         const id = spreadsheetId(res.locals.validatedQuery.url);
@@ -63,13 +56,6 @@ router.get('/google-drive/sheets', importDiscoveryLimiter, validateQuery(sheetQu
     } catch (error) { next(error); }
 });
 
-/**
- * @swagger
- * /api/import/google-drive/preview:
- *   post:
- *     summary: Preview up to 100 rows of a bounded public Google Spreadsheet
- *     tags: [Import]
- */
 router.post('/google-drive/preview', importPreviewLimiter, validateBody(previewInput), async (req: AuthRequest, res, next) => {
     try {
         const { spreadsheetUrl, maxRows, type } = req.body;
@@ -79,17 +65,6 @@ router.post('/google-drive/preview', importPreviewLimiter, validateBody(previewI
     } catch (error) { next(error); }
 });
 
-/**
- * @swagger
- * /api/import/google-drive/surat-masuk:
- *   post:
- *     summary: Import up to 1000 surat masuk from a public Google Spreadsheet
- *     tags: [Import]
- * /api/import/google-drive/surat-keluar:
- *   post:
- *     summary: Import up to 1000 surat keluar from a public Google Spreadsheet
- *     tags: [Import]
- */
 for (const kind of ['masuk', 'keluar'] as const) {
     router.post(`/google-drive/surat-${kind}`, importLimiter, canWriteMiddleware(), validateBody(importInput), async (req: AuthRequest, res, next) => {
         try {

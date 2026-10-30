@@ -1025,58 +1025,6 @@ export class ArsipService {
         });
     }
 
-    // Find arsip by source surat id
-    async findBySourceSurat(sourceSuratId: string) {
-        const [result] = await db
-            .select(ARCHIVE_LIST_WITH_RULE_SNAPSHOT)
-            .from(arsip)
-            .leftJoin(arsipRuleSnapshots, and(
-                eq(arsipRuleSnapshots.id, arsip.currentRuleSnapshotId),
-                eq(arsipRuleSnapshots.arsipId, arsip.id),
-            ))
-            .leftJoin(retentionTriggerEvents, CURRENT_RETENTION_TRIGGER_JOIN)
-            .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
-            .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
-            .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
-            .where(eq(arsip.sourceSuratId, sourceSuratId))
-            .limit(1);
-
-        return result
-            ? this.toCanonicalReadModel(result as ArchiveWithRuleSnapshot)
-            : null;
-    }
-
-    // Get arsip with source surat details
-    async findByIdWithSourceSurat(id: string) {
-        const arsipEntry = await this.findById(id);
-        if (!arsipEntry || !arsipEntry.sourceSuratId) return arsipEntry;
-
-        let sourceSurat = null;
-
-        if (arsipEntry.jenisArsip === 'masuk') {
-            const { suratMasuk } = await import('../db/schema');
-            const [surat] = await db
-                .select()
-                .from(suratMasuk)
-                .where(eq(suratMasuk.id, arsipEntry.sourceSuratId))
-                .limit(1);
-            sourceSurat = surat || null;
-        } else if (arsipEntry.jenisArsip === 'keluar') {
-            const { suratKeluar } = await import('../db/schema');
-            const [surat] = await db
-                .select()
-                .from(suratKeluar)
-                .where(eq(suratKeluar.id, arsipEntry.sourceSuratId))
-                .limit(1);
-            sourceSurat = surat || null;
-        }
-
-        return {
-            ...arsipEntry,
-            sourceSurat,
-        };
-    }
-
     /** Evaluate lifecycle state from the archive's immutable current snapshot. */
     evaluateCanonicalRetention(row: Partial<ArchiveWithRuleSnapshot>): CanonicalRetentionEvaluation {
         return archiveRuleAssignmentService.evaluateCanonicalRetention(

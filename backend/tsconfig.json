@@ -15,13 +15,7 @@
         "declaration": true,
         "declarationMap": true,
         "sourceMap": true,
-        "moduleResolution": "Bundler",
-        "baseUrl": "./src",
-        "paths": {
-            "@/*": [
-                "./*"
-            ]
-        }
+        "moduleResolution": "Bundler"
     },
     "include": [
         "src/**/*"

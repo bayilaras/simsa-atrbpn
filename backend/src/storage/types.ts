@@ -11,7 +11,7 @@ export interface UploadFileOptions {
 
 export interface CopyFileOptions {
     sourceUrl: string;
-    /** Required when the source is GCS so a copy cannot follow the live name. */
+    /** Recorded object generation; always absent for immutable Blob URLs. */
     sourceGeneration?: string;
     fileName: string;
     mimeType: string;
@@ -19,7 +19,7 @@ export interface CopyFileOptions {
 }
 
 export interface GetFileOptions {
-    /** Read metadata for one immutable Cloud Storage generation. */
+    /** Recorded object generation; always absent for immutable Blob URLs. */
     generation?: string;
 }
 
@@ -32,21 +32,19 @@ export interface StoredFile {
     /** Compatibility alias. Downloads must continue through an authorized API route. */
     downloadUrl: string;
     size?: number;
+    /** Recorded object generation; Vercel Blob never returns one. */
     generation?: string;
-    /** GCS object timestamps used to respect bucket retention during cleanup. */
-    createdAt?: string;
-    retentionExpiresAt?: string;
 }
 
 export interface DownloadFileOptions {
     abortSignal?: AbortSignal;
     throwOnError?: boolean;
-    /** Read one immutable Cloud Storage generation instead of the live object name. */
+    /** Recorded object generation; always absent for immutable Blob URLs. */
     generation?: string;
 }
 
 export interface ObjectStorageAdapter {
-    readonly provider: 'vercel-blob' | 'gcs';
+    readonly provider: 'vercel-blob';
     accepts(locator: string): boolean;
     uploadFile(options: UploadFileOptions): Promise<StoredFile>;
     copyFile(options: CopyFileOptions): Promise<StoredFile>;

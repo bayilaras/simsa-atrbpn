@@ -4,7 +4,6 @@ import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDemoAccessMiddleware } from '../middlewares/demo-access.middleware.js';
 import { validateIdParam } from '../middlewares/validate.middleware.js';
 
 const ID = '550e8400-e29b-41d4-a716-446655440000';
@@ -102,7 +101,7 @@ describe('POST /api/rangkaian/surat-keluar/:suratKeluarId/tandai-inisiatif', () 
     });
 });
 
-describe('pemasangan dan allowlist demo', () => {
+describe('pemasangan router', () => {
     it('router D7 dipasang setelah router daftar dan sebelum router rangkaian utama di app.ts', () => {
         const source = fs.readFileSync(path.resolve(process.cwd(), 'src/app.ts'), 'utf8');
         const daftar = source.indexOf("app.use('/api/rangkaian', rangkaianDaftarRoutes)");
@@ -111,18 +110,5 @@ describe('pemasangan dan allowlist demo', () => {
         expect(daftar).toBeGreaterThan(-1);
         expect(d7).toBeGreaterThan(daftar);
         expect(utama).toBeGreaterThan(d7);
-    });
-
-    it('meneruskan GET daftar/ringkasan dan POST tandai-inisiatif, menolak id bukan UUID', async () => {
-        const demo = express();
-        let downstream = 0;
-        demo.use('/api', createDemoAccessMiddleware(true));
-        demo.use('/api', (_req, res) => { downstream += 1; res.json({ success: true }); });
-        await request(demo).get('/api/rangkaian/perlu-dilengkapi?tampilkanDataLama=true').expect(200);
-        await request(demo).get('/api/rangkaian/perlu-dilengkapi/ringkasan').expect(200);
-        await request(demo).post(`/api/rangkaian/surat-keluar/${ID}/tandai-inisiatif`).send({}).expect(200);
-        expect(downstream).toBe(3);
-        await request(demo).post('/api/rangkaian/surat-keluar/bukan-uuid/tandai-inisiatif').send({}).expect(403);
-        expect(downstream).toBe(3);
     });
 });

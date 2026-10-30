@@ -81,10 +81,10 @@ describe('trusted origins', () => {
         expect(isTrustedOrigin('https://unrelated-project.vercel.app')).toBe(false);
     });
 
-    it('does not trust localhost on Cloud Run when NODE_ENV is stale', async () => {
+    it('does not trust localhost on Vercel when NODE_ENV is stale', async () => {
         const { isTrustedOrigin } = await loadWith({
             NODE_ENV: 'development',
-            K_SERVICE: 'simsa-api',
+            VERCEL: '1',
         });
 
         expect(isTrustedOrigin('http://localhost:3000')).toBe(false);

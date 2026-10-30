@@ -63,34 +63,6 @@ export function normalizeStructuredJraFields(data: Record<string, any>) {
 // Apply auth middleware to all routes
 router.use(authMiddleware);
 
-/**
- * @swagger
- * /api/jra:
- *   get:
- *     summary: Get all Jadwal Retensi Arsip
- *     tags: [JRA]
- *     security:
- *       - cookieAuth: []
- *     parameters:
- *       - in: query
- *         name: tipe
- *         schema:
- *           type: string
- *           enum: [fasilitatif, substantif]
- *       - in: query
- *         name: search
- *         schema:
- *           type: string
- *       - in: query
- *         name: format
- *         schema:
- *           type: string
- *           enum: [flat, tree]
- *           default: flat
- *     responses:
- *       200:
- *         description: List of JRA
- */
 router.get('/', async (req: AuthRequest, res: Response, next) => {
     try {
         const { tipe, search, format, ruleSetId } = req.query;
@@ -113,26 +85,6 @@ router.get('/', async (req: AuthRequest, res: Response, next) => {
     }
 });
 
-/**
- * @swagger
- * /api/jra/{kode}:
- *   get:
- *     summary: Get JRA by kode
- *     tags: [JRA]
- *     security:
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: kode
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: JRA detail
- *       404:
- *         description: Not found
- */
 router.get('/:kode', async (req: AuthRequest, res: Response, next) => {
     try {
         const kode = req.params.kode as string;
@@ -149,46 +101,6 @@ router.get('/:kode', async (req: AuthRequest, res: Response, next) => {
     }
 });
 
-/**
- * @swagger
- * /api/jra:
- *   post:
- *     summary: Create new JRA
- *     tags: [JRA]
- *     security:
- *       - cookieAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - kode
- *               - uraian
- *               - tipe
- *             properties:
- *               kode:
- *                 type: string
- *               uraian:
- *                 type: string
- *               retensiAktif:
- *                 type: string
- *               retensiInaktif:
- *                 type: string
- *               keterangan:
- *                 type: string
- *               kategori:
- *                 type: string
- *               parentKode:
- *                 type: string
- *               tipe:
- *                 type: string
- *                 enum: [fasilitatif, substantif]
- *     responses:
- *       201:
- *         description: Created successfully
- */
 router.post('/', roleMiddleware(['super_admin']), async (req: AuthRequest, res: Response, next) => {
     try {
         const {
@@ -281,39 +193,6 @@ router.delete('/items/:id', roleMiddleware(['super_admin']), async (req: AuthReq
     }
 });
 
-/**
- * @swagger
- * /api/jra/{kode}:
- *   put:
- *     summary: Update JRA
- *     tags: [JRA]
- *     security:
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: kode
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               uraian:
- *                 type: string
- *               retensiAktif:
- *                 type: string
- *               retensiInaktif:
- *                 type: string
- *               keterangan:
- *                 type: string
- *     responses:
- *       200:
- *         description: Updated successfully
- */
 router.put('/:kode', roleMiddleware(['super_admin']), (_req: AuthRequest, res: Response) => {
     res.status(410).json({
         error: 'Perubahan JRA berdasarkan kode sudah dihentikan',
@@ -321,24 +200,6 @@ router.put('/:kode', roleMiddleware(['super_admin']), (_req: AuthRequest, res: R
     });
 });
 
-/**
- * @swagger
- * /api/jra/{kode}:
- *   delete:
- *     summary: Delete JRA (soft delete)
- *     tags: [JRA]
- *     security:
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: kode
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Deleted successfully
- */
 router.delete('/:kode', roleMiddleware(['super_admin']), (_req: AuthRequest, res: Response) => {
     res.status(410).json({
         error: 'Penghapusan JRA berdasarkan kode sudah dihentikan',

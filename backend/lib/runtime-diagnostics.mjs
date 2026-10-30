@@ -25,7 +25,6 @@ const packages = new Map([
     ['pdfkit', 'missing_pdfkit'], ['exceljs', 'missing_exceljs'], ['pg', 'missing_pg'],
     ['@vercel/functions', 'missing_vercel_functions'], ['@vercel/blob', 'missing_vercel_blob'],
     ['@napi-rs/canvas', 'missing_canvas'], ['@napi-rs/canvas-linux-x64-gnu', 'missing_canvas_binding'],
-    ['swagger-jsdoc', 'missing_swagger'], ['swagger-ui-express', 'missing_swagger'],
     ['better-auth', 'missing_better_auth'], ['drizzle-orm', 'missing_drizzle'],
 ]);
 const messageReasons = new Map([
@@ -52,7 +51,7 @@ const messageReasons = new Map([
 const sourceMarkers = [
     [/^app\.js$/, 'app'], [/^index\.js$/, 'index'],
     [/^api-runtime(?:-[A-Z0-9]{8})?\.js$/, 'api_runtime'],
-    [/^internal-runtime\.js$/, 'internal_runtime'], [/^vercel-runtime\.js$/, 'vercel_runtime'],
+    [/^vercel-runtime\.js$/, 'vercel_runtime'],
     [/^internal-malware-scan-runtime\.js$/, 'malware_runtime'],
     [/^(?:env-[A-Z0-9]{8}|config\/env)\.js$/, 'environment'],
     [/^config\/database\.js$/, 'database'], [/^auth-[A-Z0-9]{8}\.js$/, 'authentication'],

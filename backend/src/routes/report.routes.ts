@@ -18,31 +18,6 @@ router.use(authMiddleware);
 
 // ==================== SURAT MASUK REPORTS ====================
 
-/**
- * @swagger
- * /api/reports/surat-masuk:
- *   get:
- *     summary: Get Surat Masuk Report
- *     tags: [Reports]
- *     parameters:
- *       - in: query
- *         name: unitKerjaId
- *         required: true
- *         schema:
- *           type: string
- *       - in: query
- *         name: year
- *         schema:
- *           type: integer
- *       - in: query
- *         name: tanggalDari
- *         schema:
- *           type: string
- *       - in: query
- *         name: tanggalSampai
- *         schema:
- *           type: string
- */
 router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
     try {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
@@ -77,13 +52,6 @@ router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
 
 // ==================== SURAT KELUAR REPORTS ====================
 
-/**
- * @swagger
- * /api/reports/surat-keluar:
- *   get:
- *     summary: Get Surat Keluar Report
- *     tags: [Reports]
- */
 router.get('/surat-keluar', async (req: AuthRequest, res: Response) => {
     try {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
@@ -117,23 +85,6 @@ router.get('/surat-keluar', async (req: AuthRequest, res: Response) => {
 
 // ==================== ARSIP REPORTS ====================
 
-/**
- * @swagger
- * /api/reports/arsip:
- *   get:
- *     summary: Get Arsip Report
- *     tags: [Reports]
- *     parameters:
- *       - in: query
- *         name: type
- *         schema:
- *           type: string
- *           enum: [expiring, permanent, destroyed, all]
- *       - in: query
- *         name: mediaType
- *         schema:
- *           type: string
- */
 router.get('/arsip', async (req: AuthRequest, res: Response) => {
     try {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
@@ -167,13 +118,6 @@ router.get('/arsip', async (req: AuthRequest, res: Response) => {
 
 // ==================== LENDING REPORTS ====================
 
-/**
- * @swagger
- * /api/reports/lending:
- *   get:
- *     summary: Get Archive Lending Report
- *     tags: [Reports]
- */
 router.get('/lending', async (req: AuthRequest, res: Response) => {
     try {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
@@ -206,13 +150,6 @@ router.get('/lending', async (req: AuthRequest, res: Response) => {
 
 // ==================== SUMMARY REPORTS ====================
 
-/**
- * @swagger
- * /api/reports/summary:
- *   get:
- *     summary: Get Summary Report
- *     tags: [Reports]
- */
 router.get('/summary', async (req: AuthRequest, res: Response) => {
     try {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
@@ -239,26 +176,6 @@ router.get('/summary', async (req: AuthRequest, res: Response) => {
 
 // ==================== EXPORT REPORTS ====================
 
-/**
- * @swagger
- * /api/reports/export/{type}/{format}:
- *   get:
- *     summary: Export Report to PDF/Excel
- *     tags: [Reports]
- *     parameters:
- *       - in: path
- *         name: type
- *         required: true
- *         schema:
- *           type: string
- *           enum: [surat-masuk, surat-keluar, arsip]
- *       - in: path
- *         name: format
- *         required: true
- *         schema:
- *           type: string
- *           enum: [pdf, excel]
- */
 router.get('/export/:type/:format', exportLimiter, permissionMiddleware('reports', 'export'), async (req: AuthRequest, res: Response) => {
     try {
         const type = String(req.params.type), format = String(req.params.format);

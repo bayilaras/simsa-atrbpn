@@ -12,6 +12,16 @@ export interface BlobStorageConfigOptions {
     requireCallbackUrl?: boolean;
 }
 
+export function isObjectStorageDisabled(source: NodeJS.ProcessEnv = process.env): boolean {
+    return source.OBJECT_STORAGE_PROVIDER?.trim().toLowerCase() === 'disabled';
+}
+
+export function assertObjectStorageAvailable(source: NodeJS.ProcessEnv = process.env): void {
+    if (isObjectStorageDisabled(source)) {
+        throw new ServiceUnavailableError('Penyimpanan berkas digital dinonaktifkan pada layanan ini. Metadata arsip tetap tersedia.');
+    }
+}
+
 function isVercelRuntime(source: NodeJS.ProcessEnv): boolean {
     return source.VERCEL?.trim() === '1';
 }
@@ -139,20 +149,7 @@ export function getObjectStorageConfigurationStatus(source: NodeJS.ProcessEnv = 
             validationErrors: cloud.validationErrors,
         };
     }
-    if (cloud.storageProvider === 'vercel-blob') {
-        return getBlobStorageConfigurationStatus(buildBlobStorageConfig(source));
-    }
-    const errors = cloud.validationErrors.filter(error =>
-        error.includes('GCS_') || error.includes('GOOGLE_CLOUD_PROJECT'),
-    );
-    return {
-        provider: 'google-cloud-storage-private' as const,
-        required: source.NODE_ENV === 'production' || cloud.platform === 'gcp',
-        configured: Boolean(cloud.projectId && cloud.gcsBucket),
-        callbackRequired: false,
-        callbackConfigured: true,
-        ready: Boolean(cloud.projectId && cloud.gcsBucket) && errors.length === 0,
-        validationErrors: errors,
-    };
+    return getBlobStorageConfigurationStatus(buildBlobStorageConfig(source));
 }
 import { buildCloudPlatformConfig } from './cloud-platform.js';
+import { ServiceUnavailableError } from '../utils/errors.js';

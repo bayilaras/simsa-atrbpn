@@ -126,7 +126,7 @@ describe('checkRead: matriks unit × role × kelas × grant × jangkauan', () =>
     });
 
     // Findings F1: Postgres returns r.id::text lowercased, but validateIdParam
-    // and the demo allowlist accept uppercase UUIDs from route params. Every
+    // accepts uppercase UUIDs from route params. Every
     // constant in SURAT/RANGKAIAN/ANGGOTA is all-digits (no a-f), so this uses
     // its own id with hex letters to actually exercise the casing mismatch.
     it('id huruf besar dari pemanggil tetap ditemukan dan diizinkan untuk pemilik (F1)', async () => {

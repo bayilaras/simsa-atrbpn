@@ -1,5 +1,4 @@
 import { defineConfig } from 'vitest/config';
-import path from 'path';
 
 export default defineConfig({
     test: {
@@ -17,8 +16,5 @@ export default defineConfig({
             DATABASE_URL: 'postgresql://simsa_test:simsa_test@127.0.0.1:1/simsa_test',
         },
         include: ['src/**/*.{test,spec}.{js,ts}'],
-        alias: {
-            '@': path.resolve(__dirname, './src'),
-        },
     },
 });

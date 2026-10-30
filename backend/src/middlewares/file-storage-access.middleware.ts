@@ -20,7 +20,7 @@ export function createOptionalModuleAccessMiddleware(source: NodeJS.ProcessEnv =
     };
 }
 
-/** Mount before domain routers/Multer. Disabled storage is not a demo mode. */
+/** Mount before domain routers/Multer. */
 export function createFileStorageAccessMiddleware(disabled: boolean): RequestHandler {
     return (req, res, next) => {
         if (!disabled) { next(); return; }

@@ -161,7 +161,7 @@ describe('centralized authentication on privileged routes', () => {
         expect(response.body.message).toMatch(/bukan super admin aktif/);
     });
 
-    it('does not expose whether a create conflict came from Firebase or the database', async () => {
+    it('returns the generic identity conflict raised by the service', async () => {
         vi.mocked(userManagementService.createUser).mockRejectedValueOnce(
             new ConflictError('Identitas pengguna tersebut sudah digunakan.'),
         );
@@ -180,7 +180,7 @@ describe('centralized authentication on privileged routes', () => {
         expect(response.body).toMatchObject({ code: 'CONFLICT', message: 'Identitas pengguna tersebut sudah digunakan.' });
     });
 
-    it('returns a retryable generic response for post-commit Firebase reconciliation failure', async () => {
+    it('returns a retryable generic response when the service is temporarily unavailable', async () => {
         vi.mocked(userManagementService.updateUser).mockRejectedValueOnce(
             new ServiceUnavailableError(
                 'Perubahan pengguna tersimpan, tetapi sinkronisasi sesi belum selesai. Ulangi permintaan ini.',

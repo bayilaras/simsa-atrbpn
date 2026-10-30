@@ -23,9 +23,6 @@ const mocks = vi.hoisted(() => ({
         getPending: vi.fn(),
         listEligibleApprovers: vi.fn(),
     },
-    signature: {
-        sign: vi.fn(),
-    },
 }));
 
 vi.mock('../middlewares/auth.middleware.js', () => ({
@@ -46,9 +43,6 @@ vi.mock('../middlewares/role.middleware.js', () => ({
 
 vi.mock('../services/approval.service.js', () => ({
     approvalService: mocks.approval,
-}));
-vi.mock('../services/signature.service.js', () => ({
-    signatureService: mocks.signature,
 }));
 
 const { default: approvalRouter } = await import('../routes/approval.routes.js');
@@ -73,7 +67,6 @@ describe('approval route security', () => {
         mocks.approval.getHistory.mockResolvedValue([]);
         mocks.approval.getPending.mockResolvedValue([]);
         mocks.approval.listEligibleApprovers.mockResolvedValue([]);
-        mocks.signature.sign.mockResolvedValue({});
     });
 
     it.each(['staff', 'auditor'])('applies canWrite to every endpoint for read-only %s', async (role) => {
@@ -90,16 +83,11 @@ describe('approval route security', () => {
             suratId: ids.surat,
             notes: 'Tidak sesuai',
         }).expect(403);
-        await request(app).post('/approval/sign').send({
-            suratId: ids.surat,
-            passphrase: 'secret',
-        }).expect(403);
 
         expect(mocks.approval.submit).not.toHaveBeenCalled();
         expect(mocks.approval.approve).not.toHaveBeenCalled();
         expect(mocks.approval.reject).not.toHaveBeenCalled();
         expect(mocks.approval.getHistory).not.toHaveBeenCalled();
-        expect(mocks.signature.sign).not.toHaveBeenCalled();
     });
 
     it('passes the immutable role-derived admin unit and complete actor to submit', async () => {
@@ -124,22 +112,21 @@ describe('approval route security', () => {
         );
     });
 
-    it('passes the role-derived admin unit to history and signing services', async () => {
+    it('passes the role-derived admin unit to history', async () => {
         Object.assign(mocks.user, { role: 'admin_sesditjen', unitKerjaId: 'forged-unit' });
 
         await request(app).get(`/approval/history/${ids.surat}`).expect(200);
+
+        expect(mocks.approval.getHistory).toHaveBeenCalledWith(ids.surat, 'sesditjen');
+    });
+
+    it('does not expose a signing endpoint', async () => {
+        Object.assign(mocks.user, { role: 'admin_sesditjen', unitKerjaId: null });
+
         await request(app).post('/approval/sign').send({
             suratId: ids.surat,
             passphrase: 'secret',
-        }).expect(200);
-
-        expect(mocks.approval.getHistory).toHaveBeenCalledWith(ids.surat, 'sesditjen');
-        expect(mocks.signature.sign).toHaveBeenCalledWith(
-            ids.surat,
-            expect.objectContaining({ role: 'admin_sesditjen', unitKerjaId: 'forged-unit' }),
-            'sesditjen',
-            'secret',
-        );
+        }).expect(404);
     });
 
     it('loads only the authenticated approver queue', async () => {

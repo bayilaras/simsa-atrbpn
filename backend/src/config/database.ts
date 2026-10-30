@@ -40,21 +40,14 @@ function utcSessionOptions(configuredOptions: string | undefined): string {
 export function buildDatabasePoolConfig(
     source: NodeJS.ProcessEnv = process.env,
 ): PoolConfig {
-    const cloudRun = Boolean(source.K_SERVICE);
     const vercel = Boolean(source.VERCEL);
-    const serverless = cloudRun || vercel;
-    const defaultPoolMax = vercel ? 3 : cloudRun ? 5 : 10;
-    const applicationName = (
-        source.DB_APPLICATION_NAME
-        || source.K_REVISION
-        || source.K_SERVICE
-        || 'simsa-backend'
-    ).slice(0, 63);
+    const defaultPoolMax = vercel ? 3 : 10;
+    const applicationName = (source.DB_APPLICATION_NAME || 'simsa-backend').slice(0, 63);
     const shared: PoolConfig = {
         max: boundedInteger(source.DB_POOL_MAX, defaultPoolMax, 1, 50, 'DB_POOL_MAX'),
         idleTimeoutMillis: boundedInteger(
             source.DB_POOL_IDLE_TIMEOUT_MS,
-            serverless ? 10_000 : 30_000,
+            vercel ? 10_000 : 30_000,
             1_000,
             300_000,
             'DB_POOL_IDLE_TIMEOUT_MS',
@@ -75,7 +68,6 @@ export function buildDatabasePoolConfig(
     };
 
     const connectionString = source.DATABASE_URL?.trim();
-    const cloudSqlSocket = source.CLOUD_SQL_UNIX_SOCKET?.trim();
     const tcpHost = source.DB_HOST?.trim();
     const sslEnabled = strictBoolean(source.DB_SSL, false, 'DB_SSL');
     const rejectUnauthorized = strictBoolean(
@@ -84,13 +76,8 @@ export function buildDatabasePoolConfig(
         'DB_SSL_REJECT_UNAUTHORIZED',
     );
 
-    if (connectionString && (cloudSqlSocket || tcpHost)) {
-        throw new Error(
-            'DATABASE_URL cannot be combined with CLOUD_SQL_UNIX_SOCKET or DB_HOST',
-        );
-    }
-    if (cloudSqlSocket && tcpHost) {
-        throw new Error('Configure only one of CLOUD_SQL_UNIX_SOCKET or DB_HOST');
+    if (connectionString && tcpHost) {
+        throw new Error('DATABASE_URL cannot be combined with DB_HOST');
     }
     if (connectionString) {
         // node-postgres lets URL options override the PoolConfig options field.
@@ -107,23 +94,21 @@ export function buildDatabasePoolConfig(
         return { ...shared, connectionString };
     }
 
-    const host = cloudSqlSocket || tcpHost;
     const user = source.DB_USER?.trim();
     const database = source.DB_NAME?.trim();
-    if (!host || !user || !database || source.DB_PASSWORD === undefined) {
+    if (!tcpHost || !user || !database || source.DB_PASSWORD === undefined) {
         throw new Error(
-            'Configure DATABASE_URL or CLOUD_SQL_UNIX_SOCKET/DB_HOST with DB_USER, DB_PASSWORD, and DB_NAME',
+            'Configure DATABASE_URL or DB_HOST with DB_USER, DB_PASSWORD, and DB_NAME',
         );
     }
     return {
         ...shared,
-        host,
+        host: tcpHost,
         user,
         password: source.DB_PASSWORD,
         database,
         port: boundedInteger(source.DB_PORT, 5432, 1, 65_535, 'DB_PORT'),
-        // Cloud SQL Unix sockets are already protected by IAM at the attachment
-        // boundary. TCP callers can explicitly enable TLS below.
+        // TCP callers can explicitly enable TLS.
         ssl: sslEnabled
             ? { rejectUnauthorized }
             : undefined,

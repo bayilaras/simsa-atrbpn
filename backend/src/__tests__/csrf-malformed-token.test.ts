@@ -38,12 +38,12 @@ describe('malformed CSRF credentials', () => {
         expect(response.cookie).toHaveBeenCalledWith('csrf-token', expect.stringMatching(/^[a-f0-9]{64}$/), expect.any(Object));
     });
     it.each([
-        { NODE_ENV: 'development', VERCEL: '1', K_SERVICE: '', secure: true },
-        { NODE_ENV: 'test', VERCEL: '', K_SERVICE: 'api', secure: true },
-        { NODE_ENV: 'development', VERCEL: '', K_SERVICE: '', secure: false },
+        { NODE_ENV: 'production', VERCEL: '', secure: true },
+        { NODE_ENV: 'development', VERCEL: '1', secure: true },
+        { NODE_ENV: 'test', VERCEL: '', secure: false },
     ])('keeps deployed cookies secure while allowing local HTTP development: %j', source => {
         vi.stubEnv('AUTH_PROVIDER', 'better-auth');
-        for (const name of ['NODE_ENV', 'VERCEL', 'K_SERVICE'] as const) vi.stubEnv(name, source[name]);
+        for (const name of ['NODE_ENV', 'VERCEL'] as const) vi.stubEnv(name, source[name]);
         const response = { cookie: vi.fn() };
         csrfCookieSetter({ cookies: {} } as any, response as any, vi.fn());
         expect(response.cookie).toHaveBeenCalledWith('csrf-token', expect.any(String), expect.objectContaining({

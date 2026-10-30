@@ -23,7 +23,6 @@ test('uses only exact known package names for missing dependency markers', () =>
   for (const [name, reason] of [
     ['pdfkit', 'missing_pdfkit'], ['exceljs', 'missing_exceljs'], ['pg', 'missing_pg'],
     ['@vercel/functions', 'missing_vercel_functions'], ['@napi-rs/canvas', 'missing_canvas'],
-    ['swagger-jsdoc', 'missing_swagger'], ['swagger-ui-express', 'missing_swagger'],
   ]) {
     const error = Object.assign(new Error(`Cannot find package '${name}' imported from /private/${secret}/entry.js`), { code: 'ERR_MODULE_NOT_FOUND' });
     assert.equal(runtimeFailureDetails(error).reason, reason);

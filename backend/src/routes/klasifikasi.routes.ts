@@ -12,34 +12,6 @@ const router = Router();
 // Apply auth middleware to all routes
 router.use(authMiddleware);
 
-/**
- * @swagger
- * /api/klasifikasi:
- *   get:
- *     summary: Get all klasifikasi arsip
- *     tags: [Klasifikasi Arsip]
- *     security:
- *       - cookieAuth: []
- *     parameters:
- *       - in: query
- *         name: tipe
- *         schema:
- *           type: string
- *           enum: [fasilitatif, substantif]
- *       - in: query
- *         name: search
- *         schema:
- *           type: string
- *       - in: query
- *         name: format
- *         schema:
- *           type: string
- *           enum: [flat, tree]
- *           default: flat
- *     responses:
- *       200:
- *         description: List of klasifikasi arsip
- */
 router.get('/', async (req: AuthRequest, res: Response, next) => {
     try {
         const { tipe, search, format, ruleSetId, scope } = req.query;
@@ -70,18 +42,6 @@ router.get('/', async (req: AuthRequest, res: Response, next) => {
     }
 });
 
-/**
- * @swagger
- * /api/klasifikasi/stats:
- *   get:
- *     summary: Get klasifikasi statistics
- *     tags: [Klasifikasi Arsip]
- *     security:
- *       - cookieAuth: []
- *     responses:
- *       200:
- *         description: Statistics of klasifikasi arsip
- */
 router.get('/stats', async (req: AuthRequest, res: Response, next) => {
     try {
         const stats = await klasifikasiService.getStats(req.query.ruleSetId as string);
@@ -92,26 +52,6 @@ router.get('/stats', async (req: AuthRequest, res: Response, next) => {
     }
 });
 
-/**
- * @swagger
- * /api/klasifikasi/{kode}:
- *   get:
- *     summary: Get klasifikasi by kode
- *     tags: [Klasifikasi Arsip]
- *     security:
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: kode
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Klasifikasi detail
- *       404:
- *         description: Not found
- */
 router.get('/:kode', async (req: AuthRequest, res: Response, next) => {
     try {
         const kode = req.params.kode as string;
@@ -135,44 +75,6 @@ router.get('/:kode', async (req: AuthRequest, res: Response, next) => {
     }
 });
 
-/**
- * @swagger
- * /api/klasifikasi:
- *   post:
- *     summary: Create new klasifikasi
- *     tags: [Klasifikasi Arsip]
- *     security:
- *       - cookieAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - kode
- *               - jenis
- *               - tipe
- *             properties:
- *               kode:
- *                 type: string
- *               jenis:
- *                 type: string
- *               keterangan:
- *                 type: string
- *               kategori:
- *                 type: string
- *               parentKode:
- *                 type: string
- *               tipe:
- *                 type: string
- *                 enum: [fasilitatif, substantif]
- *               level:
- *                 type: integer
- *     responses:
- *       201:
- *         description: Created successfully
- */
 router.post('/', permissionMiddleware('klasifikasi', 'create'), async (req: AuthRequest, res: Response, next) => {
     try {
         const {
@@ -259,37 +161,6 @@ router.delete('/items/:id', permissionMiddleware('klasifikasi', 'delete'), async
     }
 });
 
-/**
- * @swagger
- * /api/klasifikasi/{kode}:
- *   put:
- *     summary: Update klasifikasi
- *     tags: [Klasifikasi Arsip]
- *     security:
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: kode
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               jenis:
- *                 type: string
- *               keterangan:
- *                 type: string
- *               kategori:
- *                 type: string
- *     responses:
- *       200:
- *         description: Updated successfully
- */
 router.put('/:kode', permissionMiddleware('klasifikasi', 'update'), (_req: AuthRequest, res: Response) => {
     res.status(410).json({
         error: 'Perubahan klasifikasi berdasarkan kode sudah dihentikan',
@@ -297,24 +168,6 @@ router.put('/:kode', permissionMiddleware('klasifikasi', 'update'), (_req: AuthR
     });
 });
 
-/**
- * @swagger
- * /api/klasifikasi/{kode}:
- *   delete:
- *     summary: Delete klasifikasi (soft delete)
- *     tags: [Klasifikasi Arsip]
- *     security:
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: kode
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Deleted successfully
- */
 router.delete('/:kode', permissionMiddleware('klasifikasi', 'delete'), (_req: AuthRequest, res: Response) => {
     res.status(410).json({
         error: 'Penghapusan klasifikasi berdasarkan kode sudah dihentikan',

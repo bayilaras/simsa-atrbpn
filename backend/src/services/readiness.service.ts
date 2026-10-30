@@ -3,9 +3,7 @@ import type { PoolClient } from 'pg';
 import { malwareScanConfig } from '../config/env.js';
 import { getObjectStorageConfigurationStatus } from '../config/blob-storage.js';
 import { buildCloudPlatformConfig } from '../config/cloud-platform.js';
-import { isMetadataDemo } from '../config/demo.js';
 import { getEmailConfigurationStatus } from '../config/email.js';
-import { getFirebaseAdminAuth } from '../config/firebase-admin.js';
 import { getSrikandiConfigurationStatus, srikandiConfig } from '../config/srikandi.js';
 import type { OperationalWorker } from '../db/schema/operational-heartbeats.js';
 import { blobStorageService } from './blob-storage.service.js';
@@ -366,7 +364,6 @@ export interface HeartbeatRow {
 export interface ReadinessDependencies {
     probeDatabase(signal: AbortSignal): Promise<void>;
     probeBlob(signal: AbortSignal): Promise<void>;
-    probeFirebaseIdentity?(signal: AbortSignal): Promise<void>;
     probeEmbeddedScanner?(signal: AbortSignal): Promise<void>;
     readHeartbeats(signal: AbortSignal): Promise<HeartbeatRow[]>;
     now(): number;
@@ -404,14 +401,6 @@ async function withAbortableDatabaseClient<T>(
 const defaultDependencies: ReadinessDependencies = {
     async probeDatabase(signal) {
         const schemaReady = await withAbortableDatabaseClient(signal, async (client) => {
-            if (isMetadataDemo()) {
-                const identity = await client.query<{ database_name: string }>(
-                    'SELECT current_database() AS database_name',
-                );
-                if (identity.rows[0]?.database_name !== process.env.SIMSA_DEMO_DATABASE) {
-                    throw new Error('Metadata demo database identity does not match its isolated target');
-                }
-            }
             // The runtime login intentionally cannot read the migration journal.
             // Validate the complete migration-0037 schema/constraint contract
             // instead of weakening least privilege for a timestamp probe.
@@ -426,21 +415,6 @@ const defaultDependencies: ReadinessDependencies = {
     },
     async probeBlob(signal) {
         await blobStorageService.probeConnectivity({ abortSignal: signal });
-    },
-    async probeFirebaseIdentity(signal) {
-        if (signal.aborted) throw new Error('Firebase identity readiness operation aborted');
-        const request = getFirebaseAdminAuth().projectConfigManager().getProjectConfig();
-        let onAbort: (() => void) | undefined;
-        const aborted = new Promise<never>((_resolve, reject) => {
-            onAbort = () => reject(new Error('Firebase identity readiness operation aborted'));
-            signal.addEventListener('abort', onAbort, { once: true });
-            if (signal.aborted) onAbort();
-        });
-        try {
-            await Promise.race([request, aborted]);
-        } finally {
-            if (onAbort) signal.removeEventListener('abort', onAbort);
-        }
     },
     async probeEmbeddedScanner() {
         const { malwareScanWorker } = await import('./malware-scan.worker.js');
@@ -460,7 +434,7 @@ const defaultDependencies: ReadinessDependencies = {
 };
 
 async function timedProbe(
-    dependency: 'database' | 'blob_storage' | 'firebase_identity' | 'malware_scanner' | 'worker_heartbeats',
+    dependency: 'database' | 'blob_storage' | 'malware_scanner' | 'worker_heartbeats',
     probe: (signal: AbortSignal) => Promise<void>,
     timeoutMs = 5_000,
 ) {
@@ -580,7 +554,6 @@ export async function collectReadiness(
     const emailConfiguration = getEmailConfigurationStatus();
     const srikandiConfiguration = getSrikandiConfigurationStatus();
     const cloud = buildCloudPlatformConfig();
-    const firebaseIdentityRequired = cloud.authProvider === 'firebase';
     const storageDisabled = cloud.storageProvider === 'disabled';
     const disabledStorageValid = !storageDisabled || (cloud.validationErrors.length === 0
         && malwareScanConfig.mode === 'disabled' && !malwareScanConfig.workerEnabled);
@@ -589,7 +562,7 @@ export async function collectReadiness(
         && malwareScanConfig.workerEnabled
         && malwareScanConfig.worker.runtime === 'embedded';
     let heartbeatRows: HeartbeatRow[] = [];
-    const [database, blobStorage, firebaseIdentity, embeddedScanner, heartbeatRuntime] = await Promise.all([
+    const [database, blobStorage, embeddedScanner, heartbeatRuntime] = await Promise.all([
         timedProbe('database', dependencies.probeDatabase),
         blobConfiguration.configured && blobConfiguration.ready
             ? timedProbe('blob_storage', dependencies.probeBlob)
@@ -600,20 +573,13 @@ export async function collectReadiness(
                     ? { reason: 'configuration_invalid' }
                     : {}),
             }),
-        firebaseIdentityRequired
-            ? timedProbe(
-                'firebase_identity',
-                dependencies.probeFirebaseIdentity
-                    || defaultDependencies.probeFirebaseIdentity!,
-            )
-            : Promise.resolve({ ready: true, skipped: true }),
         embeddedScannerRequired
             ? timedProbe(
                 'malware_scanner',
                 dependencies.probeEmbeddedScanner || defaultDependencies.probeEmbeddedScanner!,
             )
             : Promise.resolve({ ready: true, skipped: true }),
-        isMetadataDemo() || (storageDisabled && !srikandiConfig.enabled)
+        storageDisabled && !srikandiConfig.enabled
             ? Promise.resolve({ ready: true, skipped: true }) : timedProbe('worker_heartbeats', async (signal) => {
             const rows = await dependencies.readHeartbeats(signal);
             // A non-cooperative injected dependency may settle after timeout;
@@ -653,7 +619,6 @@ export async function collectReadiness(
     const requiredReady = database.ready && disabledStorageValid
         && (!blobConfiguration.required || blobConfiguration.ready)
         && blobStorage.ready
-        && firebaseIdentity.ready
         && embeddedScanner.ready
         && malwareWorker.state !== 'not_ready'
         && srikandiWorker.state !== 'not_ready';
@@ -669,10 +634,6 @@ export async function collectReadiness(
         dependencies: {
             database,
             blobStorage: { ...blobConfiguration, runtime: blobStorage },
-            firebaseIdentity: {
-                required: firebaseIdentityRequired,
-                runtime: firebaseIdentity,
-            },
             malwareScanner: malwareScanConfig.mode === 'disabled'
                 ? { state: 'disabled', runtime: embeddedScanner }
                 : malwareScanConfig.worker.runtime === 'external'

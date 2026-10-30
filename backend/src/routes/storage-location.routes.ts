@@ -34,13 +34,6 @@ function writeUnitScope(req: AuthRequest, createUnit?: unknown): string | null {
 // Validate all :id params as UUID
 router.param('id', uuidParamValidator);
 
-/**
- * @swagger
- * /api/storage-locations:
- *   get:
- *     summary: List storage locations with pagination
- *     tags: [Storage Locations]
- */
 router.get('/', async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = readUnitScope(req);
@@ -64,13 +57,6 @@ router.get('/', async (req: AuthRequest, res, next) => {
     }
 });
 
-/**
- * @swagger
- * /api/storage-locations/tree:
- *   get:
- *     summary: Get storage locations as hierarchical tree
- *     tags: [Storage Locations]
- */
 router.get('/tree', async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = readUnitScope(req);
@@ -85,13 +71,6 @@ router.get('/tree', async (req: AuthRequest, res, next) => {
     }
 });
 
-/**
- * @swagger
- * /api/storage-locations/{id}:
- *   get:
- *     summary: Get storage location by ID
- *     tags: [Storage Locations]
- */
 router.get('/:id', async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
@@ -111,13 +90,6 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
     }
 });
 
-/**
- * @swagger
- * /api/storage-locations/{id}/qr:
- *   get:
- *     summary: Generate QR code for storage location
- *     tags: [Storage Locations]
- */
 router.get('/:id/qr', async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
@@ -137,13 +109,6 @@ router.get('/:id/qr', async (req: AuthRequest, res, next) => {
     }
 });
 
-/**
- * @swagger
- * /api/storage-locations:
- *   post:
- *     summary: Create new storage location
- *     tags: [Storage Locations]
- */
 router.post('/', canWriteMiddleware(), validateBody(createStorageLocationSchema), async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = writeUnitScope(req, req.body.unitKerjaId);
@@ -166,13 +131,6 @@ router.post('/', canWriteMiddleware(), validateBody(createStorageLocationSchema)
     }
 });
 
-/**
- * @swagger
- * /api/storage-locations/{id}:
- *   put:
- *     summary: Update storage location
- *     tags: [Storage Locations]
- */
 router.put('/:id', canWriteMiddleware(), validateBody(updateStorageLocationSchema), async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
@@ -195,13 +153,6 @@ router.put('/:id', canWriteMiddleware(), validateBody(updateStorageLocationSchem
     }
 });
 
-/**
- * @swagger
- * /api/storage-locations/{id}:
- *   delete:
- *     summary: Delete storage location
- *     tags: [Storage Locations]
- */
 router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;

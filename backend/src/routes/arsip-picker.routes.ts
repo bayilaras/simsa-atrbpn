@@ -10,24 +10,6 @@ const log = createLogger('ArsipPickerRoutes');
 
 const router = Router();
 
-/**
- * @swagger
- * /api/arsip-picker/klasifikasi/tree:
- *   get:
- *     summary: Get klasifikasi tree for picker
- *     tags: [Arsip Picker]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: tipe
- *         schema:
- *           type: string
- *           enum: [fasilitatif, substantif]
- *     responses:
- *       200:
- *         description: Klasifikasi tree
- */
 router.get('/klasifikasi/tree', authMiddleware, async (req: Request, res: Response) => {
     try {
         const { tipe } = req.query;
@@ -39,25 +21,6 @@ router.get('/klasifikasi/tree', authMiddleware, async (req: Request, res: Respon
     }
 });
 
-/**
- * @swagger
- * /api/arsip-picker/jra/{kode}:
- *   get:
- *     summary: Deprecated unsafe code/prefix based JRA lookup
- *     deprecated: true
- *     tags: [Arsip Picker]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: kode
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       410:
- *         description: Use the canonical JRA picker and submit jraItemId
- */
 router.get('/jra/:kode', authMiddleware, async (req: Request, res: Response) => {
     void req.params.kode;
     res.status(410).json({
@@ -67,34 +30,6 @@ router.get('/jra/:kode', authMiddleware, async (req: Request, res: Response) => 
     });
 });
 
-/**
- * @swagger
- * /api/arsip-picker/calculate-dates:
- *   post:
- *     summary: Deprecated free-text retention calculation
- *     deprecated: true
- *     tags: [Arsip Picker]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [retentionTriggerDate]
- *             properties:
- *               retentionTriggerDate:
- *                 type: string
- *                 format: date
- *               retensiAktif:
- *                 type: string
- *               retensiInaktif:
- *                 type: string
- *     responses:
- *       410:
- *         description: Dates are calculated server-side from the archive's verified rule snapshot
- */
 router.post('/calculate-dates', authMiddleware, async (_req: Request, res: Response) => {
     res.status(410).json({
         success: false,
@@ -103,18 +38,6 @@ router.post('/calculate-dates', authMiddleware, async (_req: Request, res: Respo
     });
 });
 
-/**
- * @swagger
- * /api/arsip-picker/lifecycle:
- *   get:
- *     summary: Get archive lifecycle notifications
- *     tags: [Arsip Picker]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Lifecycle notifications by status
- */
 router.get('/lifecycle', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
         const unitKerjaId = resolveUnitKerjaId(req);

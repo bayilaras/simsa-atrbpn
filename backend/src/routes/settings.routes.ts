@@ -60,13 +60,6 @@ router.use(authMiddleware as any);
 
 // ==================== PROFILE SETTINGS ====================
 
-/**
- * @swagger
- * /api/settings/profile:
- *   get:
- *     summary: Get current user profile
- *     tags: [Settings]
- */
 router.get('/profile', async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user?.id;
@@ -90,13 +83,6 @@ router.get('/profile', async (req: Request, res: Response) => {
     }
 });
 
-/**
- * @swagger
- * /api/settings/profile:
- *   put:
- *     summary: Update user profile
- *     tags: [Settings]
- */
 router.put('/profile', async (req: Request, res: Response) => {
     try {
         const userId = (req as any).user?.id;
@@ -133,13 +119,6 @@ router.put('/profile', async (req: Request, res: Response) => {
 
 // ==================== UNIT KERJA SETTINGS ====================
 
-/**
- * @swagger
- * /api/settings/unit-kerja:
- *   get:
- *     summary: Get all unit kerja
- *     tags: [Settings]
- */
 router.get('/unit-kerja', async (req: Request, res: Response) => {
     try {
         const units = await settingsService.getAllUnitKerja();
@@ -159,13 +138,6 @@ router.get('/unit-kerja', async (req: Request, res: Response) => {
     }
 });
 
-/**
- * @swagger
- * /api/settings/unit-kerja/:id:
- *   get:
- *     summary: Get unit kerja settings by ID
- *     tags: [Settings]
- */
 router.get('/unit-kerja/:id', async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
@@ -183,13 +155,6 @@ router.get('/unit-kerja/:id', async (req: Request, res: Response) => {
     }
 });
 
-/**
- * @swagger
- * /api/settings/unit-kerja/:id:
- *   put:
- *     summary: Update unit kerja settings
- *     tags: [Settings]
- */
 router.put('/unit-kerja/:id', async (req: Request, res: Response) => {
     try {
         const userRole = (req as any).user?.role;
@@ -237,13 +202,6 @@ router.put('/unit-kerja/:id', async (req: Request, res: Response) => {
     }
 });
 
-/**
- * @swagger
- * /api/settings/unit-kerja:
- *   post:
- *     summary: Create new unit kerja
- *     tags: [Settings]
- */
 router.post('/unit-kerja', async (req: Request, res: Response) => {
     try {
         const userRole = (req as any).user?.role;
@@ -280,13 +238,6 @@ router.post('/unit-kerja', async (req: Request, res: Response) => {
 
 // ==================== SURAT TEMPLATES ====================
 
-/**
- * @swagger
- * /api/settings/surat-templates:
- *   get:
- *     summary: Get surat number templates
- *     tags: [Settings]
- */
 router.get('/surat-templates', async (req: Request, res: Response) => {
     try {
         const unitKerjaId = resolveTemplateUnit(req, res, req.query.unitKerjaId);
@@ -299,13 +250,6 @@ router.get('/surat-templates', async (req: Request, res: Response) => {
     }
 });
 
-/**
- * @swagger
- * /api/settings/surat-templates:
- *   put:
- *     summary: Update surat number templates
- *     tags: [Settings]
- */
 router.put('/surat-templates', async (req: Request, res: Response) => {
     try {
         const userRole = (req as any).user?.role;

@@ -501,15 +501,6 @@ describe('SuratMasukService', () => {
         });
     });
 
-    // ── archive ──
-    describe('archive', () => {
-        it('should set isArchived to true', async () => {
-            enqueue([{ id: '1', isArchived: true }]);
-            const res = await svc.archive('1');
-            expect(res?.isArchived).toBe(true);
-        });
-    });
-
     // ── getNextNumber ──
     describe('getNextNumber', () => {
         it('should return next sequential number', async () => {

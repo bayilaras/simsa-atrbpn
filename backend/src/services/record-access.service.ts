@@ -247,7 +247,7 @@ export type ReadExecutor = Pick<typeof db, 'select' | 'execute'>;
 
 export function readRefKey(ref: ReadRef): string {
     // Postgres always returns uuid text as lowercase (see findReadMetadata's
-    // `r.id::text`), but validateIdParam and the demo allowlist accept
+    // `r.id::text`), but validateIdParam accepts
     // uppercase UUIDs from callers (route params). Normalising the id part
     // here keeps every map/set built from this key -- the unique-ref set,
     // the metadata map, and the results map in checkMany, plus checkRead's

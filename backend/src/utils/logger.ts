@@ -7,7 +7,7 @@ const isProduction = env.NODE_ENV === 'production';
 const SAFE_ERROR_TYPES = new Set([
     'Error', 'TypeError', 'RangeError', 'SyntaxError', 'ReferenceError', 'AggregateError', 'AbortError',
     'AppError', 'ValidationError', 'NotFoundError', 'UnauthorizedError', 'ForbiddenError', 'ConflictError',
-    'GoneError', 'PayloadTooLargeError', 'RateLimitError', 'ServiceUnavailableError', 'DatabaseError',
+    'GoneError', 'PayloadTooLargeError', 'ServiceUnavailableError', 'DatabaseError',
     'DrizzleQueryError', 'ZodError', 'MulterError', 'AxiosError', 'ApiError',
     'BitstreamInspectionError', 'MalwareScannerError',
 ]);
