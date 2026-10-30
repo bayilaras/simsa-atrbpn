@@ -86,9 +86,9 @@ Konfigurasi tambahan ini hanya untuk pengembangan lokal; domain deployment
 harus dikonfigurasi secara eksplisit dengan HTTPS.
 Batasi listener backend ke loopback atau gunakan lingkungan pengembangan terisolasi.
 
-Perintah `npm start`/`npm run build` di akar repositori adalah launcher **demo
-metadata** yang memerlukan konfigurasi eksplisit; perintah itu bukan startup
-default versi lengkap. Seed tester hanya untuk database uji.
+Akar repositori tidak memiliki perintah `npm start`/`npm run build` aplikasi;
+`npm test` di akar menjalankan tes skrip operasional dan kontrak deployment.
+Seed tester hanya untuk database uji.
 
 ## Operasional produksi
 

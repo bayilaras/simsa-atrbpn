@@ -1,14 +1,13 @@
 {
-  "name": "simsa-same-origin-demo",
+  "name": "simsa",
   "private": true,
   "version": "0.0.0",
-  "description": "Build and start the SIMSA frontend and API as one same-origin service",
+  "description": "SIMSA repository root: repository-level checks and the documentation site build",
   "type": "module",
   "engines": {
     "node": "24.x"
   },
   "scripts": {
-    "build": "npm run build:demo",
     "build:full": "npm run build:frontend && npm run build:backend",
     "build:cloud-metadata": "node scripts/build-cloud-metadata.mjs",
     "start:cloud-metadata": "node scripts/start-cloud-metadata.mjs",
@@ -17,18 +16,13 @@
     "test:vercel-deployment": "node --test --test-concurrency=1 scripts/vercel-deployment.test.mjs scripts/vercel-build.test.mjs scripts/vercel-node-interop.test.mjs",
     "test:neon-backup": "node --test --test-concurrency=1 scripts/neon-backup.test.mjs scripts/neon-backup-policy.test.mjs",
     "db:neon": "node scripts/neon-database.mjs",
-    "build:demo": "node scripts/build-demo.mjs",
-    "build:demo:local": "node scripts/build-demo.mjs --local-better-auth",
     "build:frontend": "npm --prefix frontend ci && npm --prefix frontend run build",
     "build:backend": "npm --prefix backend ci --include=dev && npm --prefix backend run build",
-    "start": "node scripts/start-demo.mjs",
     "test:ops": "node --test --test-concurrency=1 scripts/ops/neon-credential.test.mjs scripts/ops/rilis-neon.test.mjs scripts/ops/neon-role-rotation.postgres.test.mjs scripts/ops/release-source.test.mjs scripts/ops/vercel-release.test.mjs scripts/ops/release-smoke.test.mjs scripts/ops/release-workflow.test.mjs",
-    "test": "npm run test:manifest && npm run test:hosting && npm run test:launcher && npm run test:demo-image && npm run test:migration-manifest && npm run test:backup-core && npm run test:cloud-metadata && npm run test:cloud-access && npm run test:vercel-deployment && npm run test:neon-backup && npm run test:ops",
+    "test": "npm run test:manifest && npm run test:hosting && npm run test:migration-manifest && npm run test:backup-core && npm run test:cloud-metadata && npm run test:cloud-access && npm run test:vercel-deployment && npm run test:neon-backup && npm run test:ops",
     "test:migration-manifest": "node --test scripts/migration-manifest.test.mjs",
     "recovery:extract": "node scripts/operations-recovery-extract.mjs",
     "test:backup-core": "node --test scripts/local-backup-drill.test.mjs scripts/local-current-backup.test.mjs",
-    "test:launcher": "node --test scripts/demo-launcher-config.test.mjs",
-    "test:demo-image": "node --test scripts/demo-image-config.test.mjs",
     "test:manifest": "npm --prefix frontend exec -- vitest run src/lib/build-manifest.test.js",
     "test:hosting": "npm --prefix backend exec -- vitest run src/__tests__/frontend-hosting.middleware.test.ts"
   }
