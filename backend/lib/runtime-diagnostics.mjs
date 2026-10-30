@@ -52,7 +52,7 @@ const messageReasons = new Map([
 const sourceMarkers = [
     [/^app\.js$/, 'app'], [/^index\.js$/, 'index'],
     [/^api-runtime(?:-[A-Z0-9]{8})?\.js$/, 'api_runtime'],
-    [/^internal-runtime\.js$/, 'internal_runtime'], [/^vercel-runtime\.js$/, 'vercel_runtime'],
+    [/^vercel-runtime\.js$/, 'vercel_runtime'],
     [/^internal-malware-scan-runtime\.js$/, 'malware_runtime'],
     [/^(?:env-[A-Z0-9]{8}|config\/env)\.js$/, 'environment'],
     [/^config\/database\.js$/, 'database'], [/^auth-[A-Z0-9]{8}\.js$/, 'authentication'],
