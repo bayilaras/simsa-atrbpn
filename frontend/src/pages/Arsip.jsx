@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/tabs"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { useArchiveList } from '@/hooks/use-archive-list'
+import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { readArchiveListQuery, writeArchiveListQuery } from '@/lib/archive-list-query'
 import { ArchivePreviewPanel } from '@/components/archives/ArchivePreviewPanel'
 import { SavedArchiveFilters } from '@/components/archives/SavedArchiveFilters'
@@ -76,6 +77,16 @@ export default function Arsip() {
         writeArchiveListQuery({ ...query, ...changes }), { replace },
     )
     const setSearchTerm = search => updateQuery({ search, page: 1 })
+    // The box keeps what the user is typing; only a settled value reaches the
+    // URL and the list request. A URL change from elsewhere (chip, saved filter,
+    // reset) replaces the draft because the draft remembers which URL value it edits.
+    const [searchDraft, setSearchDraft] = useState({ base: searchTerm, value: searchTerm })
+    const searchInput = searchDraft.base === searchTerm ? searchDraft.value : searchTerm
+    const settledSearch = useDebouncedValue(searchInput, 300)
+    useEffect(() => {
+        if (settledSearch !== searchInput || settledSearch === searchTerm) return
+        setSearchParams(previous => writeArchiveListQuery({ ...readArchiveListQuery(previous), search: settledSearch, page: 1 }), { replace: true })
+    }, [settledSearch, searchInput, searchTerm, setSearchParams])
     const setTahunFilter = tahun => updateQuery({ tahun, page: 1 })
     const setPage = useCallback((page, replace = false) => {
         setSearchParams(previous => writeArchiveListQuery({ ...readArchiveListQuery(previous), page }), { replace })
@@ -363,8 +374,11 @@ export default function Arsip() {
                                                     maxLength={255}
                                                     placeholder="Nomor berkas, nomor surat, atau perihal…"
                                                     className="pl-9 bg-background/50 border-input/60 focus:bg-background transition-colors"
-                                                    value={searchTerm}
-                                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                                    value={searchInput}
+                                                    onChange={(e) => {
+                                                        setSearchDraft({ base: searchTerm, value: e.target.value })
+                                                        setSelection(null)
+                                                    }}
                                                 />
                                             </div>
                                         </div>

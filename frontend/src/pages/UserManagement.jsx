@@ -1,7 +1,7 @@
 import { ASSIGNABLE_ROLE_OPTIONS, managedUserRoleError } from '@/lib/role-access';
 import { hasProvisionedAccess, isPendingAccess } from '@/lib/provisioning-access';
 import { UserAccessApprovalDialog } from '@/components/UserAccessApprovalDialog';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Search, Filter, Users, Edit2, UserX, MoreHorizontal, Loader2, AlertTriangle, Shield, Building2, UserPlus, Mail, CheckCircle2, Ban, Eye, EyeOff, Lock } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -127,7 +127,11 @@ export default function UserManagement() {
         }
     }, []);
 
+    // Only the newest request may update the table; an older, slower response
+    // for a previous search or page is dropped.
+    const loadGeneration = useRef(0);
     const loadUsers = useCallback(async () => {
+        const generation = ++loadGeneration.current;
         try {
             setLoading(true);
             setError(null);
@@ -144,6 +148,7 @@ export default function UserManagement() {
             if (unitKerjaFilter && unitKerjaFilter !== 'all') params.unitKerjaId = unitKerjaFilter;
 
             const response = await userManagementService.listUsers(params);
+            if (generation !== loadGeneration.current) return;
             setUsers(response.data || []);
             setPagination(prev => ({
                 ...prev,
@@ -151,10 +156,11 @@ export default function UserManagement() {
                 totalPages: response.pagination?.totalPages || 0,
             }));
         } catch (err) {
+            if (generation !== loadGeneration.current) return;
             console.error('Failed to load users:', err);
             setError('Gagal memuat data users');
         } finally {
-            setLoading(false);
+            if (generation === loadGeneration.current) setLoading(false);
         }
     }, [search, roleFilter, approvalFilter, unitKerjaFilter, pagination.page, pagination.limit]);
 
