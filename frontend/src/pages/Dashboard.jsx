@@ -97,6 +97,11 @@ const baseChartOptions = {
     },
 }
 
+// Switching back to the tab refreshes the dashboard silently at most once a
+// minute. Returning to the page by navigation and the retry buttons still
+// refresh right away.
+const FOCUS_REFRESH_MIN_INTERVAL_MS = 60_000
+
 export default function Dashboard() {
     const navigate = useNavigate();
     const location = useLocation();
@@ -113,13 +118,16 @@ export default function Dashboard() {
     const requestGeneration = useRef(0);
     const loadedScope = useRef(null);
     const inFlightLoad = useRef(null);
+    const lastLoadedAt = useRef(0);
     const [stats, setStats] = useState(null);
     const [expiring, setExpiring] = useState([]);
     const [recentActivity, setRecentActivity] = useState([]);
     const [unitKerjaStats, setUnitKerjaStats] = useState([]);
     const [widgetData, setWidgetData] = useState(null);
     const [unitKerjaList, setUnitKerjaList] = useState([]);
-    const [selectedUnitKerja, setSelectedUnitKerja] = useState(undefined); // undefined = uninitialized
+    // undefined = uninitialized. A super admin starts on "Semua Unit Kerja"
+    // right away, so the dashboard requests do not wait for the unit list.
+    const [selectedUnitKerja, setSelectedUnitKerja] = useState(() => (user?.role === 'super_admin' ? 'all' : undefined));
     const isInitializedRef = useRef(false);
     const lastLocationKeyRef = useRef(location.key);
 
@@ -134,16 +142,13 @@ export default function Dashboard() {
     const scopeKey = user && requestedUnit !== undefined
         ? JSON.stringify([user.id, user.role, requestedUnit]) : null;
 
+    // Only fills the unit selector; it loads in parallel with the dashboard.
     const loadUnitKerjaList = useCallback(async () => {
         try {
             const result = await settingsService.getAllUnitKerja();
-            const list = result.data || result || [];
-            setUnitKerjaList(list);
-            // Default to "Semua Unit Kerja"
-            setSelectedUnitKerja('all');
+            setUnitKerjaList(result.data || result || []);
         } catch (err) {
             console.error('Failed to load unit kerja list:', err);
-            setSelectedUnitKerja('all');
         }
     }, []);
 
@@ -192,6 +197,7 @@ export default function Dashboard() {
                     : 'Ringkasan tambahan belum tersedia. Muat ulang untuk melihat siklus, peminjaman, penyimpanan, dan pelaporan arsip.');
             }
             loadedScope.current = scopeKey;
+            lastLoadedAt.current = Date.now();
             setDisplayScope(scopeKey);
         } catch (err) {
             if (generation !== requestGeneration.current) return;
@@ -221,6 +227,8 @@ export default function Dashboard() {
         if (!user) return;
 
         if (isSuperAdmin) {
+            // Default to "Semua Unit Kerja"
+            setSelectedUnitKerja('all');
             loadUnitKerjaList();
         } else {
             // Regular user: lock to their unit (use 'none' if no unitKerjaId)
@@ -248,18 +256,18 @@ export default function Dashboard() {
         }
     }, [location.key, user, selectedUnitKerja, refreshData]);
 
-    // Re-fetch data when window regains focus (e.g. user switches tabs back).
+    // Re-fetch data when window regains focus (e.g. user switches tabs back),
+    // unless the last successful load is less than a minute old.
     useEffect(() => {
-        const handleFocus = () => {
-            if (isInitializedRef.current && user && selectedUnitKerja !== undefined) {
-                refreshData();
-            }
+        const refreshIfStale = () => {
+            if (!isInitializedRef.current || !user || selectedUnitKerja === undefined) return;
+            if (Date.now() - lastLoadedAt.current < FOCUS_REFRESH_MIN_INTERVAL_MS) return;
+            refreshData();
         };
+        const handleFocus = () => refreshIfStale();
 
         const handleVisibility = () => {
-            if (document.visibilityState === 'visible' && isInitializedRef.current && user && selectedUnitKerja !== undefined) {
-                refreshData();
-            }
+            if (document.visibilityState === 'visible') refreshIfStale();
         };
 
         window.addEventListener('focus', handleFocus);

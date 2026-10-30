@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, Filter, Clock, User, FileText, Edit, Trash2, Archive, Plus, RefreshCw, Loader2, AlertTriangle, ChevronDown, ChevronRight, Laptop, CalendarRange, Shield, Eye, GitMerge, Link, X, Send, Inbox, CheckCircle2, XCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -71,7 +71,11 @@ export default function AuditLog() {
         setPagination(prev => (prev.page === 1 ? prev : { ...prev, page: 1 }));
     };
 
+    // Only the newest request may update the list; an older, slower response
+    // for a previous filter or page is dropped.
+    const loadGeneration = useRef(0);
     const loadLogs = useCallback(async () => {
+        const generation = ++loadGeneration.current;
         try {
             setLoading(true);
             setError(null);
@@ -84,6 +88,7 @@ export default function AuditLog() {
             if (endDate) params.endDate = endDate;
 
             const response = await auditLogService.listLogs(params);
+            if (generation !== loadGeneration.current) return;
             setLogs(response.data || []);
             setPagination(prev => ({
                 ...prev,
@@ -91,10 +96,11 @@ export default function AuditLog() {
                 totalPages: response.pagination?.totalPages || 0,
             }));
         } catch (err) {
+            if (generation !== loadGeneration.current) return;
             console.error('Failed to load logs:', err);
             setError('Gagal memuat audit log');
         } finally {
-            setLoading(false);
+            if (generation === loadGeneration.current) setLoading(false);
         }
     }, [entityType, action, search, startDate, endDate, pagination.page, pagination.limit]);
 

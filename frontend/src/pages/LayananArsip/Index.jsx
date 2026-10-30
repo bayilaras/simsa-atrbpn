@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Plus,
@@ -34,47 +34,28 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { layananArsipService } from '@/services/layanan-arsip.service';
-import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { TableSkeleton } from '@/components/skeletons';
+import { ResourcePagination } from '@/components/ResourcePagination';
+import { usePaginatedResource } from '@/hooks/use-paginated-resource';
 import { useAuth } from '@/context/AuthContext';
 import { layananUserInitial, layananUserName } from './layanan-display';
 
 export default function LayananArsipIndex() {
     const navigate = useNavigate();
-    const { toast } = useToast();
     const { user } = useAuth();
     const canCreate = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'].includes(user?.role);
-    const [loading, setLoading] = useState(true);
-    const [data, setData] = useState([]);
     const [statusFilter, setStatusFilter] = useState('all');
     const [searchQuery, setSearchQuery] = useState('');
 
-    useEffect(() => {
-        let active = true;
-        const fetchData = async () => {
-            setLoading(true);
-            try {
-                const params = {};
-                if (statusFilter !== 'all') params.status = statusFilter;
-
-                const result = await layananArsipService.getAll(params);
-                if (active) setData(result || []);
-            } catch (error) {
-                console.error(error);
-                if (active) toast({
-                    title: "Error",
-                    description: error.message || "Gagal memuat data layanan",
-                    variant: "destructive"
-                });
-            } finally {
-                if (active) setLoading(false);
-            }
-        };
-        fetchData();
-        return () => { active = false; };
-    }, [statusFilter, toast]);
+    const fetchPage = useCallback(({ page, limit }) => layananArsipService.getAll({
+        ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
+        page,
+        limit,
+    }), [statusFilter]);
+    const resource = usePaginatedResource(fetchPage, { queryKey: statusFilter, pageSize: 20 });
+    const { rows: data, loading, error } = resource;
 
     const getStatusBadge = (status) => {
         switch (status) {
@@ -90,7 +71,8 @@ export default function LayananArsipIndex() {
         return jenis === 'legalisasi' ? <Stamp className="h-4 w-4 mr-2 text-indigo-500" /> : <Printer className="h-4 w-4 mr-2 text-orange-500" />;
     };
 
-    // Filter data client-side for search
+    // The endpoint has no search parameter, so the box filters the rows of the
+    // page on screen; the hint under it says so.
     const filteredData = data.filter(item => {
         if (!searchQuery) return true;
         const query = searchQuery.toLowerCase();
@@ -138,14 +120,20 @@ export default function LayananArsipIndex() {
                             </TabsList>
                         </Tabs>
 
-                        <div className="relative w-full sm:w-72 sm:max-w-full">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                            <Input
-                                placeholder="Cari nomor berkas, uraian, pemohon..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-9 bg-background focus:bg-background"
-                            />
+                        <div className="w-full space-y-1 sm:w-72 sm:max-w-full">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                    placeholder="Cari nomor berkas, uraian, pemohon..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="pl-9 bg-background focus:bg-background"
+                                    aria-describedby="layanan-cakupan-cari"
+                                />
+                            </div>
+                            <p id="layanan-cakupan-cari" className="text-xs text-muted-foreground">
+                                Pencarian hanya menyaring halaman yang sedang ditampilkan.
+                            </p>
                         </div>
                     </div>
                 </CardHeader>
@@ -166,6 +154,12 @@ export default function LayananArsipIndex() {
                                 <TableRow>
                                     <TableCell colSpan={6} className="p-0">
                                         <TableSkeleton rows={5} columns={6} />
+                                    </TableCell>
+                                </TableRow>
+                            ) : error ? (
+                                <TableRow>
+                                    <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
+                                        Daftar layanan belum dapat dimuat.
                                     </TableCell>
                                 </TableRow>
                             ) : filteredData.length === 0 ? (
@@ -227,6 +221,9 @@ export default function LayananArsipIndex() {
                             )}
                         </TableBody>
                     </Table>
+                    <div className="px-4 pb-4">
+                        <ResourcePagination resource={resource} label="layanan arsip" />
+                    </div>
                 </CardContent>
             </Card>
         </div>

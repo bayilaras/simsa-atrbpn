@@ -12,6 +12,7 @@ import { useAuth } from '@/context/AuthContext'
 import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope'
 import dosirService from '@/services/dosir.service'
 import settingsService from '@/services/settings.service'
+import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { format, parseISO } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
 import { useNavigate } from 'react-router-dom'
@@ -43,6 +44,9 @@ const KATEGORI_OPTIONS = [
 ]
 
 const EMPTY_STATS = { total: 0, open: 0, closed: 0, archived: 0 }
+// The dosir list endpoint has no total, so the page asks for one extra row to
+// know whether "Muat lebih banyak" should be offered.
+const DOSIR_PAGE_SIZE = 50
 
 function DosirSkeleton() {
     return (
@@ -103,42 +107,82 @@ export default function Dosir() {
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
         : (resolveEffectiveUnitKerjaId(user) || undefined)
 
+    const debouncedSearch = useDebouncedValue(search, 300)
+    const actor = user?.id || user?.email
     const query = useMemo(() => ({
-        actor: user?.id || user?.email,
+        actor,
         role: user?.role,
         unitKerjaId: resolvedUnitKerjaId,
-        search,
+        search: debouncedSearch,
         status: statusFilter === 'all' ? '' : statusFilter,
         kategori: kategoriFilter === 'all' ? '' : kategoriFilter,
         revision,
-    }), [user?.id, user?.email, user?.role, resolvedUnitKerjaId, search, statusFilter, kategoriFilter, revision])
+    }), [actor, user?.role, resolvedUnitKerjaId, debouncedSearch, statusFilter, kategoriFilter, revision])
+    // Statistics count every dosir of the unit, so typing a search or changing
+    // a filter does not refetch them.
+    const statsQuery = useMemo(() => ({ actor, role: user?.role, unitKerjaId: resolvedUnitKerjaId, revision }),
+        [actor, user?.role, resolvedUnitKerjaId, revision])
+    const [statsRequest, setStatsRequest] = useState(null)
     const fetchData = useCallback(() => setRevision(value => value + 1), [])
+
+    const fetchPage = useCallback(async offset => {
+        const rows = await dosirService.getAll({
+            search: query.search,
+            status: query.status,
+            kategori: query.kategori,
+            unitKerjaId: query.unitKerjaId,
+            limit: DOSIR_PAGE_SIZE + 1,
+            offset,
+        })
+        const list = Array.isArray(rows) ? rows : []
+        return { rows: list.slice(0, DOSIR_PAGE_SIZE), hasMore: list.length > DOSIR_PAGE_SIZE }
+    }, [query])
 
     useEffect(() => {
         let active = true
-        Promise.all([
-            dosirService.getAll({
-                search: query.search,
-                status: query.status,
-                kategori: query.kategori,
-                unitKerjaId: query.unitKerjaId,
-            }),
-            dosirService.getStats(query.unitKerjaId),
-        ]).then(([dosirRes, statsRes]) => {
-            if (active) setRequest({ query, rows: dosirRes || [], stats: statsRes || EMPTY_STATS })
+        fetchPage(0).then(({ rows, hasMore }) => {
+            if (active) setRequest({ query, rows, hasMore })
         }).catch(() => {
             if (active) setRequest({ query, error: 'Dosir belum dapat dimuat. Periksa koneksi dan coba lagi.' })
         })
         return () => { active = false }
-    }, [query])
+    }, [fetchPage, query])
+
+    useEffect(() => {
+        let active = true
+        Promise.resolve().then(() => dosirService.getStats(statsQuery.unitKerjaId)).then(stats => {
+            if (active) setStatsRequest({ query: statsQuery, stats: stats || EMPTY_STATS })
+        }).catch(() => {
+            if (active) setStatsRequest({ query: statsQuery, error: true })
+        })
+        return () => { active = false }
+    }, [statsQuery])
 
     // Results belong to this exact actor, unit, filter and reload. Hide the old
     // snapshot immediately, including before the replacement effect starts.
     const current = request?.query === query ? request : null
     const dosirList = current?.rows || []
-    const stats = current?.stats || EMPTY_STATS
     const loading = !current
     const loadError = current?.error
+    const currentStats = statsRequest?.query === statsQuery ? statsRequest : null
+    const stats = currentStats?.stats || EMPTY_STATS
+    const statsUnavailable = !currentStats || Boolean(currentStats.error)
+
+    const loadMore = () => {
+        if (!current || current.loadingMore || !current.hasMore) return
+        const offset = current.rows.length
+        // Appends only to the list it was requested for; a newer query or a
+        // second click on the same page leaves the state untouched.
+        const appendTo = (update) => setRequest(previous => (
+            previous?.query === query && previous.rows?.length === offset ? update(previous) : previous
+        ))
+        appendTo(previous => ({ ...previous, loadingMore: true, moreError: '' }))
+        fetchPage(offset).then(({ rows, hasMore }) => appendTo(previous => ({
+            ...previous, rows: [...previous.rows, ...rows], hasMore, loadingMore: false,
+        }))).catch(() => appendTo(previous => ({
+            ...previous, loadingMore: false, moreError: 'Dosir berikutnya belum dapat dimuat. Coba lagi.',
+        })))
+    }
 
     const handleCreate = async () => {
         if (!formData.judul.trim() || !resolvedUnitKerjaId || createLoading) return
@@ -294,7 +338,7 @@ export default function Dosir() {
 
             {!resolvedUnitKerjaId && <p role="status" className="text-sm text-muted-foreground">Pilih unit kerja terlebih dahulu untuk membuat dosir.</p>}
             {/* Stats Cards */}
-            <div className="grid gap-4 lg:grid-cols-4" aria-busy={loading}>
+            <div className="grid gap-4 lg:grid-cols-4" aria-busy={!currentStats}>
                 <Card className="shadow-sm border-l-4 border-l-slate-500 card-hover">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Total Dosir</CardTitle>
@@ -303,7 +347,7 @@ export default function Dosir() {
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-foreground">{loading || loadError ? '—' : stats.total}</div>
+                        <div className="text-2xl font-bold text-foreground">{statsUnavailable ? '—' : stats.total}</div>
                         <p className="text-xs text-muted-foreground mt-1">Total seluruh dosir</p>
                     </CardContent>
                 </Card>
@@ -315,7 +359,7 @@ export default function Dosir() {
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-blue-600">{loading || loadError ? '—' : stats.open}</div>
+                        <div className="text-2xl font-bold text-blue-600">{statsUnavailable ? '—' : stats.open}</div>
                         <p className="text-xs text-muted-foreground mt-1">Dosir sedang berjalan</p>
                     </CardContent>
                 </Card>
@@ -327,7 +371,7 @@ export default function Dosir() {
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-emerald-600">{loading || loadError ? '—' : stats.closed}</div>
+                        <div className="text-2xl font-bold text-emerald-600">{statsUnavailable ? '—' : stats.closed}</div>
                         <p className="text-xs text-muted-foreground mt-1">Dosir telah selesai</p>
                     </CardContent>
                 </Card>
@@ -339,7 +383,7 @@ export default function Dosir() {
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{loading || loadError ? '—' : stats.archived}</div>
+                        <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{statsUnavailable ? '—' : stats.archived}</div>
                         <p className="text-xs text-muted-foreground mt-1">Dosir diarsipkan</p>
                     </CardContent>
                 </Card>
@@ -501,6 +545,15 @@ export default function Dosir() {
                             </Card>
                         )
                     })}
+                </div>
+            )}
+            {current?.hasMore && !loadError && (
+                <div className="flex flex-col items-center gap-2">
+                    {current.moreError && <p role="alert" className="text-sm text-destructive">{current.moreError}</p>}
+                    <Button variant="outline" onClick={loadMore} disabled={current.loadingMore}>
+                        {current.loadingMore && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Muat lebih banyak
+                    </Button>
                 </div>
             )}
         </div>

@@ -123,16 +123,20 @@ describe('frontend/API integration contracts', () => {
     it('returns one normalized domain layer for list and detail services', async () => {
         const rows = [{ id: 'one' }];
         const detail = { id: 'one', status: 'draft' };
+        const pagination = { page: 2, limit: 20, total: 21, totalPages: 2 };
         apiMock.get
-            .mockResolvedValueOnce({ success: true, data: rows })
+            .mockResolvedValueOnce({ success: true, data: rows, pagination })
             .mockResolvedValueOnce({ success: true, data: detail })
-            .mockResolvedValueOnce({ success: true, data: rows })
-            .mockResolvedValueOnce({ success: true, data: rows });
+            .mockResolvedValueOnce({ success: true, data: rows, ...pagination })
+            .mockResolvedValueOnce({ success: true, data: rows, page: 2, total: 21, totalPages: 2 });
 
-        await expect(penyusutanService.findAll({ unitKerjaId: 'unit-1' })).resolves.toEqual(rows);
+        // List services keep the server pagination so pages past the first stay reachable.
+        await expect(penyusutanService.findAll({ unitKerjaId: 'unit-1', page: 2, limit: 20 }))
+            .resolves.toMatchObject({ data: rows, pagination });
         await expect(penyusutanService.findById('one', 'unit-1')).resolves.toEqual(detail);
-        await expect(layananArsipService.getAll({ status: 'diajukan' })).resolves.toEqual(rows);
-        await expect(autentikasiService.getAll({ page: 1 })).resolves.toEqual(rows);
+        await expect(layananArsipService.getAll({ status: 'diajukan', page: 2, limit: 20 }))
+            .resolves.toEqual({ data: rows, pagination });
+        await expect(autentikasiService.getAll({ page: 2, limit: 20 })).resolves.toEqual({ data: rows, pagination });
     });
 
     it('downloads the authentication PDF with credentials through the API transport', async () => {
@@ -230,15 +234,16 @@ describe('frontend/API integration contracts', () => {
 
     it('normalizes distribution data once and sends unit scope on every action', async () => {
         const rows = [{ id: 'dist-1' }];
+        const pagination = { page: 1, limit: 20, total: 1, totalPages: 1 };
         const stats = { inbox: { total: 1 }, outbox: { total: 0 } };
         apiMock.get
-            .mockResolvedValueOnce({ success: true, data: rows })
-            .mockResolvedValueOnce({ success: true, data: rows })
+            .mockResolvedValueOnce({ success: true, data: rows, pagination })
+            .mockResolvedValueOnce({ success: true, data: rows, pagination })
             .mockResolvedValueOnce({ success: true, data: stats });
         apiMock.put.mockResolvedValue({ success: true, data: { id: 'dist-1' } });
 
-        await expect(distributionService.getInbox('unit-a')).resolves.toEqual(rows);
-        await expect(distributionService.getOutbox('unit-a')).resolves.toEqual(rows);
+        await expect(distributionService.getInbox('unit-a')).resolves.toMatchObject({ data: rows, pagination });
+        await expect(distributionService.getOutbox('unit-a')).resolves.toMatchObject({ data: rows, pagination });
         await expect(distributionService.getStats('unit-a')).resolves.toEqual(stats);
         await distributionService.receive('dist-1', 'unit-a');
         await distributionService.process('dist-1', 'unit-a', { catatanPenyelesaian: 'Sudah dikoordinasikan' });

@@ -8,7 +8,6 @@ vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { role: 'super
 vi.mock('@/hooks/use-required-unit-kerja-scope', () => ({ useRequiredUnitKerjaScope: () => ({ unitKerjaId: 'dirjen' }) }))
 vi.mock('@/components/RequiredUnitKerjaScope', () => ({ RequiredUnitKerjaScope: () => null }))
 vi.mock('@/hooks/useOCRUpload', () => ({ useOCRUpload: () => upload.state }))
-vi.mock('@/hooks/use-reduced-motion', () => ({ useReducedMotion: () => true }))
 
 function show() { return render(<MemoryRouter><BulkUpload /></MemoryRouter>) }
 

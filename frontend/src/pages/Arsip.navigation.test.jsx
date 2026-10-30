@@ -32,6 +32,8 @@ function mount(entry = '/arsip/masuk') {
         <Route path="/arsip/detail/:id" element={<Detail />} />
     </Routes></MemoryRouter>)
 }
+// Search is debounced by 300 ms; leave room for that on a busy test worker.
+const SETTLED = { timeout: 3000 }
 const result = (title = 'Berkas rapat', total = 65) => ({ data: [{ id: title, uraianBerkas: title }], pagination: { total } })
 
 describe('archive list navigation', () => {
@@ -81,7 +83,22 @@ describe('archive list navigation', () => {
         expect(screen.getByRole('complementary', { name: 'Pratinjau' })).toBeInTheDocument()
         fireEvent.change(screen.getByLabelText('Cari arsip'), { target: { value: 'tanah' } })
         expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
-        await waitFor(() => expect(mocks.getAll).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'tanah', page: 1 })))
+        await waitFor(() => expect(mocks.getAll).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'tanah', page: 1 })), SETTLED)
+    })
+
+    it('sends one list request and one URL update for a typed search', async () => {
+        mount('/arsip/masuk')
+        await screen.findByRole('button', { name: 'Berkas rapat' })
+        const before = mocks.getAll.mock.calls.length
+        for (const value of ['t', 'ta', 'tan', 'tana', 'tanah']) {
+            fireEvent.change(screen.getByLabelText('Cari arsip'), { target: { value } })
+        }
+        expect(screen.getByLabelText('Cari arsip')).toHaveValue('tanah')
+        expect(screen.getByTestId('location').textContent).toBe('/arsip/masuk')
+        await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/arsip/masuk?q=tanah'), SETTLED)
+        await waitFor(() => expect(mocks.getAll).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'tanah', page: 1 })), SETTLED)
+        expect(mocks.getAll).toHaveBeenCalledTimes(before + 1)
+        expect(mocks.getStats).toHaveBeenCalledOnce()
     })
 
     it('rejects late search responses and restores keyboard focus when preview closes', async () => {
@@ -91,7 +108,7 @@ describe('archive list navigation', () => {
         mount('/arsip/masuk?q=lama')
         await waitFor(() => expect(mocks.getAll).toHaveBeenCalledOnce())
         fireEvent.change(screen.getByLabelText('Cari arsip'), { target: { value: 'baru' } })
-        const title = await screen.findByRole('button', { name: 'Hasil baru' })
+        const title = await screen.findByRole('button', { name: 'Hasil baru' }, SETTLED)
         await act(async () => resolveOld(result('Hasil lama')))
         expect(screen.queryByText('Hasil lama')).not.toBeInTheDocument()
         fireEvent.click(title)

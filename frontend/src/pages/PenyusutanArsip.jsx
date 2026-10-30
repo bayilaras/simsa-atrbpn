@@ -18,6 +18,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Link } from 'react-router-dom'
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
+import { ResourcePagination } from '@/components/ResourcePagination'
+import { usePaginatedResource } from '@/hooks/use-paginated-resource'
 import PenyusutanExecutionForm from './PenyusutanExecutionForm'
 
 const STATUS_CONFIG = {
@@ -49,10 +51,8 @@ export default function PenyusutanArsip() {
     const unitKerjaId = unitScope.unitKerjaId
 
     const [activeTab, setActiveTab] = useState('pemindahan')
-    const [batches, setBatches] = useState([])
     const [candidates, setCandidates] = useState([])
     const [selectedBatch, setSelectedBatch] = useState(null)
-    const [loading, setLoading] = useState(false)
     const [showCreate, setShowCreate] = useState(false)
     const [selectedCandidates, setSelectedCandidates] = useState([])
     const [createKeterangan, setCreateKeterangan] = useState('')
@@ -60,22 +60,19 @@ export default function PenyusutanArsip() {
     const [advancing, setAdvancing] = useState(false)
     const [recoveryReason, setRecoveryReason] = useState('')
 
-    // Load batches for active tab
-    const loadBatches = useCallback(async () => {
-        if (!unitKerjaId) return
-        setLoading(true)
-        try {
-            const result = await penyusutanService.findAll({
-                unitKerjaId,
-                jenisPenyusutan: activeTab,
-            })
-            setBatches(result || [])
-        } catch (err) {
-            console.error('Error loading batches:', err)
-        } finally {
-            setLoading(false)
-        }
-    }, [unitKerjaId, activeTab])
+    // Batches of the active tab, one server page at a time
+    const fetchBatchPage = useCallback(({ page, limit }) => penyusutanService.findAll({
+        unitKerjaId,
+        jenisPenyusutan: activeTab,
+        page,
+        limit,
+    }), [unitKerjaId, activeTab])
+    const batchList = usePaginatedResource(fetchBatchPage, {
+        queryKey: `${unitKerjaId}:${activeTab}`, enabled: Boolean(unitKerjaId), pageSize: 20,
+    })
+    const batches = batchList.rows
+    const loading = batchList.loading
+    const loadBatches = batchList.reload
 
     // Load candidates
     const loadCandidates = useCallback(async () => {
@@ -95,19 +92,17 @@ export default function PenyusutanArsip() {
 
     useEffect(() => {
         if (!unitKerjaId) {
-            setBatches([])
             setCandidates([])
             setSelectedBatch(null)
             setShowCreate(false)
             setSelectedCandidates([])
             return
         }
-        loadBatches()
         loadCandidates()
         setSelectedBatch(null)
         setShowCreate(false)
         setSelectedCandidates([])
-    }, [activeTab, loadBatches, loadCandidates, unitKerjaId])
+    }, [activeTab, loadCandidates, unitKerjaId])
 
     // Load batch detail
     const loadBatchDetail = async (id) => {
@@ -355,6 +350,8 @@ export default function PenyusutanArsip() {
                                     </div>
                                 ))}
                             </div>
+                        ) : batchList.error ? (
+                            <p className="p-4 text-sm text-muted-foreground">Riwayat usulan belum dapat dimuat.</p>
                         ) : batches.length === 0 ? (
                             <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
                                 <div className="p-4 bg-muted/50 rounded-full mb-4">
@@ -405,6 +402,9 @@ export default function PenyusutanArsip() {
                             </ScrollArea>
                         )}
                     </CardContent>
+                    <div className="px-4 pb-3">
+                        <ResourcePagination resource={batchList} label="riwayat usulan" />
+                    </div>
                 </Card>
 
                 {/* Right column: Main Content Area */}

@@ -129,7 +129,11 @@ export default defineConfig(({ command, mode }) => {
         // returning a cached SPA shell for a failed health/auth request.
         navigateFallbackDenylist: SPA_NAVIGATION_DENYLIST,
         // Precache important static assets
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}']
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        // @fontsource-variable/inter ships one woff2 per script. The UI is
+        // Indonesian, so only the latin subsets are precached; the browser
+        // still fetches any other subset on demand through unicode-range.
+        globIgnores: ['**/inter-{cyrillic,cyrillic-ext,greek,greek-ext,vietnamese}-*.woff2'],
       },
       devOptions: {
         enabled: true,
@@ -140,6 +144,9 @@ export default defineConfig(({ command, mode }) => {
   resolve: {
     alias: {
       "@": path.resolve(currentDirectory, "./src"),
+      // Keeps jose and the OIDC token verifier out of the upload chunk; see
+      // src/lib/vercel-oidc-browser.js.
+      "@vercel/oidc": path.resolve(currentDirectory, "./src/lib/vercel-oidc-browser.js"),
     },
   },
   server: {
@@ -155,8 +162,8 @@ export default defineConfig(({ command, mode }) => {
   },
   build: {
     // Vite 8 bundles with Rolldown, which dropped Rollup's object-form
-    // `manualChunks`. These codeSplitting groups keep the same four vendor
-    // chunks: each captures the listed packages plus their dependencies
+    // `manualChunks`. These codeSplitting groups name the vendor chunks: each
+    // captures the listed packages plus their dependencies
     // (includeDependenciesRecursively defaults to true), and a higher priority
     // claims a shared module first, so React itself always lands in
     // vendor-react rather than in a chunk of a package that imports it.
@@ -165,15 +172,18 @@ export default defineConfig(({ command, mode }) => {
         codeSplitting: {
           groups: [
             {
-              // Core React — changes rarely, great cache hit rate
+              // Core React and the router — change rarely, great cache hit
+              // rate. react-router-dom only re-exports react-router, so both
+              // are listed to keep the router out of the entry chunk.
               name: 'vendor-react',
-              test: /[\\/]node_modules[\\/](?:react|react-dom|react-router-dom)[\\/]/,
+              test: /[\\/]node_modules[\\/](?:react|react-dom|react-router|react-router-dom|scheduler)[\\/]/,
               priority: 40,
             },
             {
-              // UI primitives — Radix components used across many pages
+              // UI primitives the app shell needs on first paint. Select, tabs
+              // and popover are only used by lazy pages and stay with them.
               name: 'vendor-radix',
-              test: /[\\/]node_modules[\\/]@radix-ui[\\/]react-(?:dialog|dropdown-menu|select|tabs|tooltip|popover|slot)[\\/]/,
+              test: /[\\/]node_modules[\\/]@radix-ui[\\/]react-(?:dialog|dropdown-menu|tooltip|slot)[\\/]/,
               priority: 30,
             },
             {
@@ -181,6 +191,12 @@ export default defineConfig(({ command, mode }) => {
               name: 'vendor-icons',
               test: /[\\/]node_modules[\\/]lucide-react[\\/]/,
               priority: 20,
+            },
+            {
+              // Charts — shared by the dashboard and report pages only
+              name: 'vendor-chartjs',
+              test: /[\\/]node_modules[\\/](?:chart\.js|react-chartjs-2|@kurkle[\\/]color)[\\/]/,
+              priority: 15,
             },
             {
               // Date utilities
@@ -192,7 +208,8 @@ export default defineConfig(({ command, mode }) => {
         },
       },
     },
-    // Increase chunk size warning — Radix bundle is naturally larger
+    // Warn above 600 KB; the largest chunk is vendor-react (React, React DOM
+    // and React Router), well below that.
     chunkSizeWarningLimit: 600,
   },
   }

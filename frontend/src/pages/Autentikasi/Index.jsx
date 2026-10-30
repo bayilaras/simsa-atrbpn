@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FileCheck, Plus, Search, Download, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,57 +12,29 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import { useDataTable } from '@/hooks/use-data-table';
-import {
-    Pagination,
-    PaginationContent,
-    PaginationItem,
-} from "@/components/ui/pagination";
+import { usePaginatedResource } from '@/hooks/use-paginated-resource';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { ResourcePagination } from '@/components/ResourcePagination';
 import { autentikasiService } from '@/services/autentikasi.service';
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from '@/components/ui/badge';
 
+const PAGE_SIZE = 20;
+
 export default function AutentikasiIndex() {
-    const [data, setData] = useState([]);
-    const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const search = useDebouncedValue(searchTerm.trim(), 300);
     const { toast } = useToast();
 
-    // Data Table Hook
-    const {
-        currentData,
-        totalPages,
-        currentPage,
-        nextPage,
-        prevPage,
-        canNext,
-        canPrev,
-    } = useDataTable(data, { pageSize: 10 });
-
-    const fetchData = useCallback(async () => {
-        setLoading(true);
-        try {
-            const result = await autentikasiService.getAll({
-                search: searchTerm,
-                page: 1, // backend pagination support could be added to hook later, for now fetching all or let hook handle client side
-                limit: 100 // Fetch reasonably large amount or implement server-side pagination with hook
-            });
-            setData(result || []);
-        } catch (error) {
-            console.error(error);
-            toast({
-                title: "Error",
-                description: "Gagal memuat data autentikasi",
-                variant: "destructive"
-            });
-        } finally {
-            setLoading(false);
-        }
-    }, [searchTerm, toast]);
-
-    useEffect(() => {
-        fetchData();
-    }, [fetchData]);
+    // The server pages and searches; a page belongs to its search, so a late
+    // response for an older query cannot replace the current one.
+    const fetchPage = useCallback(({ page, limit }) => autentikasiService.getAll({
+        search: search || undefined,
+        page,
+        limit,
+    }), [search]);
+    const resource = usePaginatedResource(fetchPage, { queryKey: search, pageSize: PAGE_SIZE });
+    const { rows: currentData, page: currentPage, loading, error } = resource;
 
     const handleDownload = async (id) => {
         try {
@@ -124,7 +96,7 @@ export default function AutentikasiIndex() {
                         <div className="flex justify-center py-8">
                             <Loader2 className="h-8 w-8 animate-spin text-primary" />
                         </div>
-                    ) : (
+                    ) : error ? null : (
                         <>
                             <Table responsive>
                                 <TableHeader>
@@ -148,7 +120,7 @@ export default function AutentikasiIndex() {
                                     ) : (
                                         currentData.map((item, index) => (
                                             <TableRow key={item.id}>
-                                                <TableCell data-label="No.">{(currentPage - 1) * 10 + index + 1}</TableCell>
+                                                <TableCell data-label="No.">{(currentPage - 1) * PAGE_SIZE + index + 1}</TableCell>
                                                 <TableCell data-label="Nomor Berita Acara" className="font-medium">{item.nomorBeritaAcara}</TableCell>
                                                 <TableCell data-label="Tanggal">
                                                     {new Date(item.tanggalAutentikasi).toLocaleDateString('id-ID', {
@@ -177,27 +149,9 @@ export default function AutentikasiIndex() {
                                     )}
                                 </TableBody>
                             </Table>
-
-                            {totalPages > 1 && (
-                                <div className="flex items-center justify-end space-x-2 mt-4">
-                                    <Pagination>
-                                        <PaginationContent>
-                                            <PaginationItem>
-                                                <Button variant="outline" size="sm" onClick={prevPage} disabled={!canPrev}>
-                                                    Previous
-                                                </Button>
-                                            </PaginationItem>
-                                            <PaginationItem>
-                                                <Button variant="outline" size="sm" onClick={nextPage} disabled={!canNext}>
-                                                    Next
-                                                </Button>
-                                            </PaginationItem>
-                                        </PaginationContent>
-                                    </Pagination>
-                                </div>
-                            )}
                         </>
                     )}
+                    <ResourcePagination resource={resource} label="autentikasi" />
                 </CardContent>
             </Card>
         </div>

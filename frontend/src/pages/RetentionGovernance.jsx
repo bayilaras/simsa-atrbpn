@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ArchiveRestore, CheckCircle2, ClipboardCheck, FileCheck2, History, Loader2, Plus, Scale, ShieldCheck, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
+import { usePaginatedResource } from '@/hooks/use-paginated-resource';
 import retentionGovernanceService from '@/services/retention-governance.service';
 import arsipService from '@/services/arsip.service';
 import api from '@/services/api';
@@ -59,7 +60,6 @@ const STATUS_LABELS = {
 };
 
 const PAGE_SIZE = 20;
-const EMPTY_PAGINATION = { page: 1, limit: PAGE_SIZE, total: 0, totalPages: 1 };
 
 function listFrom(response) {
     if (Array.isArray(response)) return response;
@@ -77,27 +77,18 @@ function formatTimestamp(value) {
     return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('id-ID');
 }
 
-function paginationFrom(response, requestedPage) {
-    const pagination = response?.pagination || {};
-    const total = Number(pagination.total) || 0;
-    const totalPages = Math.max(1, Number(pagination.totalPages) || Math.ceil(total / PAGE_SIZE) || 1);
-    return {
-        page: Math.min(Math.max(1, Number(pagination.page) || requestedPage), totalPages),
-        limit: Number(pagination.limit) || PAGE_SIZE,
-        total,
-        totalPages,
-    };
-}
+const fetchTransfers = ({ page, limit }) => retentionGovernanceService.listPermanentTransfers({ page, limit });
 
-function PaginationControls({ pagination, onPageChange }) {
+function PaginationControls({ resource }) {
+    const { page, total, totalPages, loading, setPage } = resource;
     return (
         <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3 sm:px-0">
-            <p className="text-xs text-muted-foreground">
-                {pagination.total} data · Halaman {pagination.page} dari {pagination.totalPages}
+            <p role="status" className="text-xs text-muted-foreground">
+                {loading ? 'Memuat daftar…' : `${total} data · Halaman ${page} dari ${totalPages}`}
             </p>
             <div className="flex gap-2">
-                <Button type="button" size="sm" variant="outline" disabled={pagination.page <= 1} onClick={() => onPageChange(pagination.page - 1)}>Sebelumnya</Button>
-                <Button type="button" size="sm" variant="outline" disabled={pagination.page >= pagination.totalPages} onClick={() => onPageChange(pagination.page + 1)}>Berikutnya</Button>
+                <Button type="button" size="sm" variant="outline" disabled={loading || page <= 1} onClick={() => setPage(page - 1)}>Sebelumnya</Button>
+                <Button type="button" size="sm" variant="outline" disabled={loading || page >= totalPages} onClick={() => setPage(page + 1)}>Berikutnya</Button>
             </div>
         </div>
     );
@@ -288,20 +279,9 @@ export default function RetentionGovernance() {
     const { user } = useAuth();
     const canOperate = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'].includes(user?.role);
     const [tab, setTab] = useState('appraisals');
-    const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [appraisals, setAppraisals] = useState([]);
-    const [events, setEvents] = useState([]);
-    const [transfers, setTransfers] = useState([]);
     const [appraisalStatus, setAppraisalStatus] = useState('all');
     const [eventStatus, setEventStatus] = useState('pending');
-    const [appraisalPage, setAppraisalPage] = useState(1);
-    const [eventPage, setEventPage] = useState(1);
-    const [transferPage, setTransferPage] = useState(1);
-    const [appraisalPagination, setAppraisalPagination] = useState(EMPTY_PAGINATION);
-    const [eventPagination, setEventPagination] = useState(EMPTY_PAGINATION);
-    const [transferPagination, setTransferPagination] = useState(EMPTY_PAGINATION);
-    const [loadErrors, setLoadErrors] = useState([]);
 
     const [appraisalOpen, setAppraisalOpen] = useState(false);
     const [appraisalForm, setAppraisalForm] = useState(EMPTY_APPRAISAL);
@@ -331,62 +311,49 @@ export default function RetentionGovernance() {
     const [cancellationReason, setCancellationReason] = useState('');
     const [cancellationReview, setCancellationReview] = useState({ verdict: 'approved', note: '' });
 
-    const loadData = useCallback(async () => {
-        setLoading(true);
-        const [appraisalResult, eventResult, transferResult] = await Promise.allSettled([
-            retentionGovernanceService.listAppraisals({ ...(appraisalStatus === 'all' ? {} : { status: appraisalStatus }), page: appraisalPage, limit: PAGE_SIZE }),
-            retentionGovernanceService.listRetentionEvents({ verificationStatus: eventStatus, page: eventPage, limit: PAGE_SIZE }),
-            retentionGovernanceService.listPermanentTransfers({ page: transferPage, limit: PAGE_SIZE }),
-        ]);
-        const errors = [];
-        if (appraisalResult.status === 'fulfilled') {
-            const pagination = paginationFrom(appraisalResult.value, appraisalPage);
-            setAppraisals(listFrom(appraisalResult.value));
-            setAppraisalPagination(pagination);
-            if (pagination.page !== appraisalPage) setAppraisalPage(pagination.page);
-        } else {
-            setAppraisals([]);
-            setAppraisalPagination({ ...EMPTY_PAGINATION, page: appraisalPage });
-            errors.push(`Appraisal: ${appraisalResult.reason?.message || 'gagal dimuat'}`);
-        }
-        if (eventResult.status === 'fulfilled') {
-            const pagination = paginationFrom(eventResult.value, eventPage);
-            setEvents(listFrom(eventResult.value));
-            setEventPagination(pagination);
-            if (pagination.page !== eventPage) setEventPage(pagination.page);
-        } else {
-            setEvents([]);
-            setEventPagination({ ...EMPTY_PAGINATION, page: eventPage });
-            errors.push(`Peristiwa retensi: ${eventResult.reason?.message || 'gagal dimuat'}`);
-        }
-        if (transferResult.status === 'fulfilled') {
-            const pagination = paginationFrom(transferResult.value, transferPage);
-            setTransfers(listFrom(transferResult.value));
-            setTransferPagination(pagination);
-            if (pagination.page !== transferPage) setTransferPage(pagination.page);
-        } else {
-            setTransfers([]);
-            setTransferPagination({ ...EMPTY_PAGINATION, page: transferPage });
-            errors.push(`Penyerahan: ${transferResult.reason?.message || 'gagal dimuat'}`);
-        }
-        setLoadErrors(errors);
-        setLoading(false);
-    }, [appraisalPage, appraisalStatus, eventPage, eventStatus, transferPage]);
+    // Each list loads on its own: a page or filter change refetches only that
+    // list, and the tabs stay mounted. All three still load on open because
+    // the tab counters need every total.
+    const fetchAppraisals = useCallback(({ page, limit }) => retentionGovernanceService.listAppraisals({
+        ...(appraisalStatus === 'all' ? {} : { status: appraisalStatus }), page, limit,
+    }), [appraisalStatus]);
+    const fetchEvents = useCallback(({ page, limit }) => retentionGovernanceService.listRetentionEvents({
+        verificationStatus: eventStatus, page, limit,
+    }), [eventStatus]);
+    const appraisalList = usePaginatedResource(fetchAppraisals, { queryKey: appraisalStatus, pageSize: PAGE_SIZE });
+    const eventList = usePaginatedResource(fetchEvents, { queryKey: eventStatus, pageSize: PAGE_SIZE });
+    const transferList = usePaginatedResource(fetchTransfers, { pageSize: PAGE_SIZE });
+    const appraisals = appraisalList.rows;
+    const events = eventList.rows;
+    const transfers = transferList.rows;
+    const loadErrors = [
+        appraisalList.error && `Appraisal: ${appraisalList.error.message || 'gagal dimuat'}`,
+        eventList.error && `Peristiwa retensi: ${eventList.error.message || 'gagal dimuat'}`,
+        transferList.error && `Penyerahan: ${transferList.error.message || 'gagal dimuat'}`,
+    ].filter(Boolean);
+    const { reload: reloadAppraisals } = appraisalList;
+    const { reload: reloadEvents } = eventList;
+    const { reload: reloadTransfers } = transferList;
+    // A mutation still refreshes all three lists, now without unmounting the
+    // tabs; each list shows its own loader.
+    const loadData = useCallback(() => {
+        reloadAppraisals();
+        reloadEvents();
+        reloadTransfers();
+    }, [reloadAppraisals, reloadEvents, reloadTransfers]);
 
-    useEffect(() => { loadData(); }, [loadData]);
-
-    const counters = useMemo(() => ({
-        appraisal: appraisalPagination.total,
-        events: eventPagination.total,
-        transfers: transferPagination.total,
-    }), [appraisalPagination.total, eventPagination.total, transferPagination.total]);
+    const counters = {
+        appraisal: appraisalList.loading ? '…' : appraisalList.total,
+        events: eventList.loading ? '…' : eventList.total,
+        transfers: transferList.loading ? '…' : transferList.total,
+    };
 
     const run = async (operation, successMessage) => {
         try {
             setSaving(true);
             await operation();
             toast({ title: successMessage, description: 'Perubahan dan aktornya telah dicatat pada jejak audit.' });
-            await loadData();
+            loadData();
             return true;
         } catch (error) {
             toast({ title: 'Tindakan belum berhasil', description: error.message, variant: 'destructive' });
@@ -572,8 +539,6 @@ export default function RetentionGovernance() {
     const pendingCancellation = selectedTransfer?.cancellations?.find((request) => request.status === 'pending') || null;
     const transferCanAdvance = ['draft', 'handed_over'].includes(selectedTransfer?.status);
 
-    if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
-
     return (
         <div className="space-y-6">
             <div>
@@ -606,7 +571,7 @@ export default function RetentionGovernance() {
                         <CardHeader className="flex-row items-start justify-between gap-4">
                             <div><CardTitle>Kasus Dinilai Kembali</CardTitle><CardDescription>Assessor dan reviewer wajib berbeda.</CardDescription></div>
                             <div className="flex gap-2">
-                                <Select value={appraisalStatus} onValueChange={(value) => { setAppraisalStatus(value); setAppraisalPage(1); }}>
+                                <Select value={appraisalStatus} onValueChange={setAppraisalStatus}>
                                     <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
                                     <SelectContent><SelectItem value="all">Semua status</SelectItem><SelectItem value="open">Draft</SelectItem><SelectItem value="in_review">Menunggu telaah</SelectItem><SelectItem value="approved">Disetujui</SelectItem><SelectItem value="rejected">Ditolak</SelectItem></SelectContent>
                                 </Select>
@@ -617,16 +582,16 @@ export default function RetentionGovernance() {
                             <Table responsive><TableHeader><TableRow><TableHead>Arsip</TableHead><TableHead>Jenis</TableHead><TableHead>Usulan</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Tindakan</TableHead></TableRow></TableHeader>
                                 <TableBody>{appraisals.map((item) => <TableRow key={item.id}><TableCell data-label="Arsip"><Link className="font-mono text-xs text-primary hover:underline" to={`/arsip/detail/${item.arsipId}`}>{shortId(item.arsipId)}</Link></TableCell><TableCell data-label="Jenis">{item.caseType}</TableCell><TableCell data-label="Usulan"><OutcomeBadge value={item.proposedOutcome} /></TableCell><TableCell data-label="Status"><Badge>{STATUS_LABELS[item.status] || item.status}</Badge></TableCell><TableCell data-label="Tindakan" className="text-right"><Button size="sm" variant="outline" onClick={() => openAppraisal(item.id)}>Telaah</Button></TableCell></TableRow>)}</TableBody>
                             </Table>
-                            <PaginationControls pagination={appraisalPagination} onPageChange={setAppraisalPage} />
+                            <PaginationControls resource={appraisalList} />
                         </CardContent>
                     </Card>
                 </TabsContent>
 
                 <TabsContent value="events" className="space-y-4">
-                    <Card><CardHeader className="flex-row items-start justify-between gap-4"><div><CardTitle>Verifikasi Peristiwa Retensi</CardTitle><CardDescription>Retensi baru dihitung setelah bukti peristiwa disahkan reviewer berbeda.</CardDescription></div><div className="flex gap-2"><Select value={eventStatus} onValueChange={(value) => { setEventStatus(value); setEventPage(1); }}><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pending">Menunggu</SelectItem><SelectItem value="verified">Terverifikasi</SelectItem><SelectItem value="rejected">Ditolak</SelectItem></SelectContent></Select>{canOperate && <Button onClick={() => { setEventForm(EMPTY_EVENT); setEventOpen(true); }}><Plus className="mr-2 h-4 w-4" />Catat peristiwa</Button>}</div></CardHeader>
+                    <Card><CardHeader className="flex-row items-start justify-between gap-4"><div><CardTitle>Verifikasi Peristiwa Retensi</CardTitle><CardDescription>Retensi baru dihitung setelah bukti peristiwa disahkan reviewer berbeda.</CardDescription></div><div className="flex gap-2"><Select value={eventStatus} onValueChange={setEventStatus}><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pending">Menunggu</SelectItem><SelectItem value="verified">Terverifikasi</SelectItem><SelectItem value="rejected">Ditolak</SelectItem></SelectContent></Select>{canOperate && <Button onClick={() => { setEventForm(EMPTY_EVENT); setEventOpen(true); }}><Plus className="mr-2 h-4 w-4" />Catat peristiwa</Button>}</div></CardHeader>
                         <CardContent className="px-0 sm:px-6">
                             <Table responsive><TableHeader><TableRow><TableHead>Arsip</TableHead><TableHead>Peristiwa</TableHead><TableHead>Tanggal</TableHead><TableHead>Revisi</TableHead><TableHead className="text-right">Tindakan</TableHead></TableRow></TableHeader><TableBody>{events.map((entry) => { const event = entry.event || entry; const selfReview = event.actorId === user?.id; return <TableRow key={event.id}><TableCell data-label="Arsip"><Link className="font-mono text-xs text-primary hover:underline" to={`/arsip/detail/${event.arsipId}`}>{event.nomorBerkas || shortId(event.arsipId)}</Link></TableCell><TableCell data-label="Peristiwa">{event.label || event.eventType}{event.verdict && <Badge variant="outline" className="ml-2">{event.verdict === 'verified' ? 'Sah' : 'Ditolak'}</Badge>}</TableCell><TableCell data-label="Tanggal">{event.eventDate}</TableCell><TableCell data-label="Revisi">{event.revision}</TableCell><TableCell data-label="Tindakan" className="text-right"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => openEventHistory(entry)}><History className="mr-1 h-4 w-4" />Riwayat</Button>{canOperate && <Button size="sm" variant="outline" onClick={() => openEventCorrection(entry)}>Koreksi</Button>}{canOperate && !event.verdict && <Button size="sm" variant="outline" disabled={selfReview} title={selfReview ? 'Pencatat harus diverifikasi petugas lain' : 'Periksa bukti'} onClick={() => setVerifyEvent(entry)}>Verifikasi</Button>}</div></TableCell></TableRow>; })}</TableBody></Table>
-                            <PaginationControls pagination={eventPagination} onPageChange={setEventPage} />
+                            <PaginationControls resource={eventList} />
                         </CardContent>
                     </Card>
                 </TabsContent>
@@ -635,7 +600,7 @@ export default function RetentionGovernance() {
                     <Card><CardHeader className="flex-row items-start justify-between"><div><CardTitle>Manifest Penyerahan Permanen</CardTitle><CardDescription>Checksum, serah terima, dan bukti penerimaan tersimpan sebagai peristiwa append-only.</CardDescription></div>{canOperate && <Button onClick={openNewTransfer}><Plus className="mr-2 h-4 w-4" />Buat manifest</Button>}</CardHeader>
                         <CardContent className="px-0 sm:px-6">
                             <Table responsive><TableHeader><TableRow><TableHead>Nomor</TableHead><TableHead>Tujuan</TableHead><TableHead>Jumlah</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Tindakan</TableHead></TableRow></TableHeader><TableBody>{transfers.map((item) => <TableRow key={item.id}><TableCell data-label="Nomor" className="font-medium">{item.manifestNumber}</TableCell><TableCell data-label="Tujuan">{item.destination}</TableCell><TableCell data-label="Jumlah">{item.archiveCount ?? item.items?.length ?? 0}</TableCell><TableCell data-label="Status"><Badge variant="outline">{STATUS_LABELS[item.status] || item.status}</Badge></TableCell><TableCell data-label="Tindakan" className="text-right"><Button size="sm" variant="outline" onClick={() => openTransfer(item.id)}>Detail</Button></TableCell></TableRow>)}</TableBody></Table>
-                            <PaginationControls pagination={transferPagination} onPageChange={setTransferPage} />
+                            <PaginationControls resource={transferList} />
                         </CardContent>
                     </Card>
                 </TabsContent>

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import Dashboard from './Dashboard'
 import dashboardService from '@/services/dashboard.service'
+import settingsService from '@/services/settings.service'
 
 const mocks = vi.hoisted(() => ({ user: {}, navigate: vi.fn(), widgets: {}, motionChanged: null }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: mocks.user,
@@ -32,7 +33,13 @@ beforeEach(() => {
     vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true,
         addEventListener: (_event, callback) => { mocks.motionChanged = callback }, removeEventListener: vi.fn() })))
 })
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers() })
+// Focus refreshes are skipped within a minute of the last load; the Date-only
+// fake clock lets a test move past that.
+function passFocusRefreshInterval() {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(Date.now() + 61_000)
+}
 async function show() { render(<MemoryRouter><Dashboard /></MemoryRouter>); await screen.findByRole('heading', { name: 'Halo, Siti' }) }
 
 describe('dashboard daily workflow', () => {
@@ -53,12 +60,20 @@ describe('dashboard daily workflow', () => {
         expect(priority).toHaveTextContent('Semua unit kerja')
         expect(within(priority).getByRole('link', { name: 'Pilih unit dan tinjau keterlambatan' })).toHaveAttribute('href', '/archive-lending?status=overdue')
     })
+    it('loads all-unit totals for a super administrator without waiting for the unit list', async () => {
+        mocks.user.role = 'super_admin'
+        settingsService.getAllUnitKerja.mockImplementationOnce(() => new Promise(() => {}))
+        await show()
+        expect(dashboardService.getStats).toHaveBeenCalledWith(null)
+        expect(screen.getByRole('region', { name: 'Perlu ditindaklanjuti' })).toHaveTextContent('Semua unit kerja')
+    })
     it('distinguishes no overdue loans from unavailable lending data', async () => {
         mocks.user.role = 'admin_unit'
         mocks.widgets.lendingOverview = { borrowed: 1, overdue: 0 }
         await show()
         expect(screen.getByRole('region', { name: 'Perlu ditindaklanjuti' })).toHaveTextContent('Tidak ada peminjaman terlambat')
         dashboardService.getWidgetData.mockRejectedValueOnce(new Error('Peminjaman belum tersedia'))
+        passFocusRefreshInterval()
         fireEvent.focus(window)
         await waitFor(() => expect(screen.getByRole('region', { name: 'Perlu ditindaklanjuti' })).toHaveTextContent('Data peminjaman belum tersedia'))
         expect(screen.getByRole('region', { name: 'Perlu ditindaklanjuti' })).not.toHaveTextContent('Tidak ada peminjaman terlambat')
@@ -109,6 +124,7 @@ describe('dashboard daily workflow', () => {
         dashboardService.getStats.mockImplementation(unit => unit === 'unit-a'
             ? new Promise(resolve => { resolveOld = resolve })
             : new Promise(resolve => { resolveNew = resolve }))
+        passFocusRefreshInterval()
         fireEvent.focus(window)
         await waitFor(() => expect(resolveOld).toBeTypeOf('function'))
         mocks.user = { ...mocks.user, unitKerjaId: 'unit-b' }
@@ -134,6 +150,7 @@ describe('dashboard daily workflow', () => {
         dashboardService.getStats.mockResolvedValue({ totalMasuk: 101, totalKeluar: 0, totalArsip: 0, monthlyTrend: [] })
         await show()
         dashboardService.getStats.mockRejectedValueOnce(new Error('offline'))
+        passFocusRefreshInterval()
         fireEvent.focus(window)
         expect(await screen.findByRole('alert')).toHaveTextContent('Data terakhir')
         expect(screen.getByText('101')).toBeInTheDocument()
