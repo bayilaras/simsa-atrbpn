@@ -81,7 +81,7 @@ function withFixture(action) {
     try {
         for (const file of ['backend/scripts/build-vercel.mjs', 'backend/scripts/verify-pdf-runtime.mjs', 'backend/vercel.json',
             'frontend/scripts/build-vercel-metadata.mjs',
-            'frontend/scripts/resolve-npm-cli.mjs', 'scripts/build-cloud-metadata.mjs', 'scripts/build-internal.mjs',
+            'frontend/scripts/resolve-npm-cli.mjs', 'scripts/build-cloud-metadata.mjs',
             'scripts/verify-candidate-source.mjs']) {
             const target = path.join(directory, file); mkdirSync(path.dirname(target), { recursive: true });
             copyFileSync(new URL(file, repository), target);
@@ -140,9 +140,7 @@ for (const [wrapper, args, projects, output] of [
     ['frontend/scripts/build-vercel-metadata.mjs', [], ['frontend'], 'dist-vercel-metadata'],
     ['backend/scripts/build-vercel.mjs', [], ['backend'], 'dist-vercel'],
     ['scripts/build-cloud-metadata.mjs', ['--skip-install'], ['frontend', 'backend'], 'dist-cloud-metadata'],
-    ['scripts/build-internal.mjs', [], ['frontend', 'backend'], 'dist'],
 ]) test(`raw-node ${wrapper} runs real npm prebuild/build/postbuild without npm_execpath`, () => withFixture(({ directory, environment, run }) => {
-    if (wrapper.endsWith('build-internal.mjs')) environment.EXPECTED_STORAGE = 'vercel-blob';
     const log = run(wrapper, args);
     for (const project of projects) {
         assert.equal(readFileSync(path.join(directory, project, 'lifecycle.log'), 'utf8'), 'prebuild\nbuild\npostbuild\n');

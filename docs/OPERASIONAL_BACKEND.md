@@ -56,7 +56,7 @@ instance.
 1. **Respons 400/413:** periksa format dan ukuran input. JSON rusak menghasilkan
    400; batas parser menghasilkan 413. Keduanya tidak dianggap kegagalan server.
 2. **Banyak 5xx atau koneksi terputus:** cocokkan `X-Request-ID` dengan log, lalu
-   periksa `/ready` dan `Cek-SIMSA.cmd`. Jangan mengulang operasi tulis tanpa
+   periksa `/ready` dan panel operasional Super Admin. Jangan mengulang operasi tulis tanpa
    memeriksa hasil atau status pekerjaan sebelumnya.
 3. **Permintaan lambat:** periksa histogram dan `databasePool.waiting`, lalu
    cocokkan dengan kesehatan database, worker, serta penyimpanan. `/health`
@@ -114,12 +114,11 @@ disiapkan.
 
 ## Backup aktual
 
-Ikuti [backup database lokal dan verifikasi pemulihan](BACKUP_LOKAL.md) untuk
-mencadangkan database aktif tanpa mengubah sumber serta memulihkan artefak pada
-cluster baru. `Cek-SIMSA.cmd` menampilkan ringkasan backup dan verifikasi untuk
-bundle yang sama. Perintah npm `backup:local-current`, `restore:local-current`,
-dan `test:local-current-backup` menyediakan entrypoint prosedur tersebut; lihat
-panduan untuk argumen Python, bundle, dan kunci yang diperlukan.
+Backup terjadwal database Neon dan dokumen privat dijalankan workflow
+`.github/workflows/operations-recovery.yml`, termasuk pemulihan ke cluster baru;
+lihat [cadangan dan pemulihan](OPERATIONS_RECOVERY.md). Backup manual database
+oleh operator mengikuti [backup Neon](BACKUP_NEON.md). Status backup dan restore
+terbaru tampil pada panel operasional Super Admin.
 
 Tidak ada pengiriman alarm ke pihak luar atau penjadwalan baru yang diaktifkan
 oleh perubahan ini. Batas waktu respons, jumlah pengguna bersamaan, toleransi

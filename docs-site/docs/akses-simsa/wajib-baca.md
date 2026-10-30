@@ -38,10 +38,10 @@ SIMSA menggunakan sistem **Role-Based Access Control (RBAC)**. Artinya, menu dan
 
 ## 4️⃣ URL Akses SIMSA
 
-Pada komputer Windows yang sudah disiapkan operator, jalankan **Mulai-SIMSA.cmd**. Layanan lokal dibuka pada alamat berikut; pengguna komputer lain menggunakan alamat yang diberikan operator:
+Buka SIMSA melalui browser pada alamat berikut:
 
 ```
-http://127.0.0.1:3000
+https://simsa-frontend.vercel.app
 ```
 
 ---

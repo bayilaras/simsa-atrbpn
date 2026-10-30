@@ -9,7 +9,7 @@ Mulai dari daftar surat dan arsip fisik yang memang menjadi tanggung jawab unit 
 
 ## 1. Buka aplikasi dan masuk
 
-Pada komputer Windows yang sudah disiapkan operator, buka folder SIMSA dan jalankan **Mulai-SIMSA.cmd**. Browser akan dibuka setelah layanan lokal siap, pada `http://127.0.0.1:3000`. Gunakan **Cek-SIMSA.cmd** untuk memeriksa layanan, dan **Hentikan-SIMSA.cmd** setelah selesai memakai layanan lokal. Alamat ini hanya untuk komputer tersebut; pengguna komputer lain memakai alamat yang ditetapkan operator.
+Buka `https://simsa-frontend.vercel.app` di browser.
 
 Masukkan **Email kedinasan** dan **Kata sandi**, lalu klik **Masuk**. Google hanya digunakan bila sudah dikonfigurasi. Gunakan akun pribadi; akun uji tidak dipakai bersama untuk pekerjaan resmi.
 

@@ -224,10 +224,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Self-test release gate and Cloud SQL backup safety gates
+      - name: Self-test release gate and migration manifest helpers
         run: |
           python3 .github/scripts/check-gcp-backend-production-gate.py --self-test
-          python3 .github/scripts/validate-cloud-sql-backup-workflow.py
+          python3 .github/scripts/test-migration-manifest.py
 
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

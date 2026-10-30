@@ -72,12 +72,14 @@ restart). Worker nyata harus membuktikan heartbeat `running -> degraded ->
 running`; tes antrean kosong tidak menggantikan alur upload sampai claim/final.
 Hasil Windows native juga tidak menggantikan pengujian Linux Compose.
 
-Backup drill lokal harus memakai backup-reader, snapshot konsisten, artifact
-terenkripsi, key terpisah ber-ACL, serta instance restore baru. Bandingkan jumlah
-dan fingerprint semua tabel pada snapshot yang sama, periksa jurnal migrasi dan
-grant setelah restore, serta buktikan ciphertext yang diubah ditolak. Simpan
-versi tool, hash artifact, dan evidence tanpa credential. Drill satu workstation
-tidak menggantikan independent operator, backup Production, atau recovery GCP.
+Uji backup harus memakai backup-reader, snapshot konsisten, artifact
+terenkripsi, key terpisah ber-ACL, serta instance restore baru, seperti
+`scripts/neon-backup.mjs` ([backup Neon](docs/BACKUP_NEON.md)) dan
+`scripts/operations-recovery.mjs` ([cadangan dan pemulihan](docs/OPERATIONS_RECOVERY.md)).
+Bandingkan jumlah dan fingerprint semua tabel pada snapshot yang sama, periksa
+jurnal migrasi dan grant setelah restore, serta buktikan ciphertext yang diubah
+ditolak. Simpan versi tool, hash artifact, dan evidence tanpa credential. Drill
+satu workstation tidak menggantikan independent operator atau backup Production.
 
 Hentikan proses uji milik sendiri secara graceful setelah selesai. Simpan data
 fixture dan evidence yang diperlukan, tetapi jangan commit `.env`, password,
