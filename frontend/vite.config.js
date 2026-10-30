@@ -41,8 +41,8 @@ export function createSimsaBuildManifest(source = {}) {
   const authProvider = (value('VITE_AUTH_PROVIDER') || 'better-auth').toLowerCase()
   const storageProvider = (value('VITE_STORAGE_PROVIDER') || 'vercel-blob').toLowerCase()
 
-  if (!['full', 'metadata-demo'].includes(appMode)) {
-    throw new Error('VITE_APP_MODE must be full or metadata-demo for deployment builds.')
+  if (appMode !== 'full') {
+    throw new Error('VITE_APP_MODE must be full (or unset) for deployment builds.')
   }
   if (authProvider !== 'better-auth') {
     throw new Error('VITE_AUTH_PROVIDER must be better-auth for deployment builds.')
@@ -50,37 +50,15 @@ export function createSimsaBuildManifest(source = {}) {
   if (!['vercel-blob', 'disabled'].includes(storageProvider)) {
     throw new Error('VITE_STORAGE_PROVIDER has an unsupported deployment value.')
   }
-  if (appMode === 'full' && storageProvider === 'disabled'
+  if (storageProvider === 'disabled'
       && value('VITE_APP_PROFILE').toLowerCase() !== 'internal') {
     throw new Error('Full builds with disabled storage require explicit VITE_APP_PROFILE=internal.')
   }
 
-  if (appMode === 'metadata-demo') {
-    if ((value('VITE_APP_PROFILE') || 'internal').toLowerCase() !== 'internal') {
-      throw new Error('Metadata demo builds require VITE_APP_PROFILE=internal.')
-    }
-    if (value('VITE_API_URL')) {
-      throw new Error('Metadata demo builds require a same-origin API and an empty VITE_API_URL.')
-    }
-    if (storageProvider !== 'disabled') {
-      throw new Error('Metadata demo builds require VITE_STORAGE_PROVIDER=disabled.')
-    }
-    if (value('VITE_FEATURE_SRIKANDI').toLowerCase() === 'true') {
-      throw new Error('Metadata demo builds cannot enable SRIKANDI.')
-    }
-
-    const localBuild = value('SIMSA_DEMO_LOCAL_BUILD') === 'true'
-    const nonDeployed = !value('K_SERVICE')
-      && !value('VERCEL')
-    if (!localBuild || !nonDeployed) {
-      throw new Error('Better Auth metadata demo builds are allowed only by the explicit local build gate.')
-    }
-  }
-
   return {
     schemaVersion: 1,
-    mode: appMode,
-    syntheticDataOnly: appMode === 'metadata-demo',
+    mode: 'full',
+    syntheticDataOnly: false,
     api: 'same-origin',
     authProvider,
     storageProvider,

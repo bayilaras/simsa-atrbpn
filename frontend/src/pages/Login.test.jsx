@@ -3,14 +3,13 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Login from './Login'
 
-const profile = vi.hoisted(() => ({ mode: 'full', provider: 'better-auth', configured: false, pendingGoogleSignup: false }))
+const profile = vi.hoisted(() => ({ provider: 'better-auth', configured: false, pendingGoogleSignup: false }))
 const logout = vi.hoisted(() => ({ signingOut: false, error: null, retry: vi.fn() }))
 const emailSignIn = vi.hoisted(() => vi.fn())
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ loading: false,
     authentication: { provider: profile.provider, googleSignIn: profile.configured, pendingGoogleSignup: profile.pendingGoogleSignup },
 }) }))
 vi.mock('@/lib/app-config', () => ({ default: {
-    get mode() { return profile.mode },
     name: 'SIMSA', shortName: 'SIMSA', usageBadge: 'Internal',
 } }))
 vi.mock('@/lib/cloud-provider-config', () => ({ get AUTH_PROVIDER() { return profile.provider } }))
@@ -20,11 +19,11 @@ vi.mock('../context/AuthContext', () => ({ useAuth: () => ({
     signInWithGoogle: vi.fn(), signInWithEmail: emailSignIn,
 }) }))
 
-describe('demo login provider controls', () => {
+describe('login provider controls', () => {
     beforeEach(() => {
         logout.signingOut = false; logout.error = null; logout.retry.mockClear()
         emailSignIn.mockReset().mockResolvedValue(undefined)
-        Object.assign(profile, { mode: 'full', provider: 'better-auth', configured: false, pendingGoogleSignup: false })
+        Object.assign(profile, { provider: 'better-auth', configured: false, pendingGoogleSignup: false })
     })
     it('explains pending first Google access only when enabled by the server', () => {
         profile.configured = true
@@ -59,16 +58,14 @@ describe('demo login provider controls', () => {
         expect(logout.retry).toHaveBeenCalledOnce()
     })
     it.each([
-        ['full', 'better-auth', true, true], ['full', 'better-auth', false, false],
-        ['metadata-demo', 'better-auth', true, false],
-    ])('shows Google only when supported (%s/%s configured=%s)', (mode, provider, configured, googleVisible) => {
-        Object.assign(profile, { mode, provider, configured })
+        ['better-auth', true, true], ['better-auth', false, false],
+    ])('shows Google only when supported (%s configured=%s)', (provider, configured, googleVisible) => {
+        Object.assign(profile, { provider, configured })
         render(<MemoryRouter><Login /></MemoryRouter>)
         expect(Boolean(screen.queryByRole('button', { name: 'Masuk dengan Google' }))).toBe(googleVisible)
         expect(screen.getByRole('button', { name: 'Masuk', exact: true })).toBeEnabled()
         if (!googleVisible) {
-            expect(screen.getByText(mode === 'metadata-demo' ? 'Masukkan email dan kata sandi akun uji lokal.'
-                : 'Masukkan email dan kata sandi yang diberikan administrator.')).toBeInTheDocument()
+            expect(screen.getByText('Masukkan email dan kata sandi yang diberikan administrator.')).toBeInTheDocument()
             expect(screen.queryByRole('separator')).not.toBeInTheDocument()
         }
     })

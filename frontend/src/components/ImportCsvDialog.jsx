@@ -2,7 +2,6 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { useAppConfig } from '@/context/app-config-context'
 import api from '@/services/api'
 import { IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import'
 import { outcomeUnknown, runResumableImport } from '@/lib/resumable-import'
@@ -147,10 +146,9 @@ function CsvImportForm({ type, unitKerjaId, onImportComplete, onBusyChange }) {
 }
 
 export default function ImportCsvDialog({ type, unitKerjaId, onImportComplete }) {
-    const { mode } = useAppConfig()
     const [open, setOpen] = useState(false)
     const [busy, setBusy] = useState(false)
-    if (mode === 'metadata-demo' || !labels[type] || !unitKerjaId || unitKerjaId === 'all') return null
+    if (!labels[type] || !unitKerjaId || unitKerjaId === 'all') return null
     return <Dialog open={open} onOpenChange={value => { if (!busy) setOpen(value) }}>
         <Button variant="outline" size="sm" className="h-9" onClick={() => setOpen(true)}><Upload aria-hidden="true" className="mr-2 h-3.5 w-3.5" />Impor CSV</Button>
         <DialogContent className="sm:max-w-3xl" showCloseButton={!busy}>

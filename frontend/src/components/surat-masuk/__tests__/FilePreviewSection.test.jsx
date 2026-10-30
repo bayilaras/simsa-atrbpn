@@ -194,7 +194,6 @@ describe('private file preview', () => {
             <AppConfigContext.Provider value={{
                 features: DISABLED_FEATURES,
                 capabilities: { metadata: true, files: false, externalIntegrations: false },
-                mode: 'metadata-demo',
                 compatible: true,
                 loading: false,
             }}>

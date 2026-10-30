@@ -93,71 +93,11 @@ describe('app config', () => {
 
     it('uses the internal profile and branding by default', () => {
         expect(createAppConfig({})).toMatchObject({
-            mode: 'full',
             profile: 'internal',
             name: 'SIMSA Internal Ditjen PTPP',
             usageBadge: 'Penggunaan Internal',
         })
         expect(createAppConfig({ VITE_APP_PROFILE: 'public' }).profile).toBe('internal')
-    })
-
-    it('enables the restrictive metadata-demo build only for its exact mode value', () => {
-        expect(createAppConfig({ VITE_APP_MODE: ' metadata-demo ' })).toMatchObject({
-            mode: 'metadata-demo',
-            syntheticDataOnly: true,
-            capabilities: {
-                metadata: false,
-                files: false,
-                externalIntegrations: false,
-            },
-            features: { srikandi: false },
-        })
-        expect(createAppConfig({ VITE_APP_MODE: 'unknown' })).toMatchObject({
-            mode: 'full',
-            syntheticDataOnly: false,
-            capabilities: {
-                metadata: true,
-                files: true,
-                externalIntegrations: true,
-            },
-        })
-    })
-
-    it('accepts only an exact fail-closed backend capability contract for the demo build', () => {
-        const demoBuild = createAppConfig({ VITE_APP_MODE: 'metadata-demo' })
-        const exact = {
-            mode: 'metadata-demo',
-            syntheticDataOnly: true,
-            capabilities: {
-                metadata: true,
-                files: false,
-                externalIntegrations: false,
-            },
-        }
-
-        expect(resolveRuntimeCapabilities(demoBuild, exact)).toMatchObject({
-            compatible: true,
-            capabilities: exact.capabilities,
-        })
-
-        for (const mismatch of [
-            null,
-            { ...exact, mode: 'full' },
-            { ...exact, syntheticDataOnly: false },
-            { ...exact, capabilities: { ...exact.capabilities, files: true } },
-            { ...exact, capabilities: { ...exact.capabilities, letterFileUploads: true } },
-            { ...exact, capabilities: { ...exact.capabilities, metadata: false } },
-            { ...exact, capabilities: { ...exact.capabilities, externalIntegrations: true } },
-        ]) {
-            expect(resolveRuntimeCapabilities(demoBuild, mismatch)).toMatchObject({
-                compatible: false,
-                capabilities: {
-                    metadata: false,
-                    files: false,
-                    externalIntegrations: false,
-                },
-            })
-        }
     })
 
     it('enables SRIKANDI only for an explicitly enabled integrated profile', () => {

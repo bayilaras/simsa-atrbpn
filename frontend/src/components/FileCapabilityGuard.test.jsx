@@ -5,7 +5,7 @@ import { AppConfigContext } from '@/context/app-config-context'
 import { FileCapabilityGuard } from './FileCapabilityGuard'
 
 function show(capabilities, upload = false) {
-    return render(<AppConfigContext.Provider value={{ mode: 'full', loading: false, capabilities }}>
+    return render(<AppConfigContext.Provider value={{ loading: false, capabilities }}>
         <MemoryRouter><FileCapabilityGuard upload={upload}><p>Fitur berkas</p></FileCapabilityGuard></MemoryRouter>
     </AppConfigContext.Provider>)
 }

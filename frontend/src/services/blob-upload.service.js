@@ -198,7 +198,7 @@ export async function uploadFileToBlob(file, options = {}) {
     const validationError = directUploadError(file, options);
     if (validationError) throw new Error(validationError);
     if (STORAGE_PROVIDER === 'disabled') {
-        throw new Error('Unggah berkas dinonaktifkan pada demo metadata.');
+        throw new Error('Unggah berkas dinonaktifkan pada deployment ini.');
     }
     return uploadFileToVercelBlob(file, options);
 }

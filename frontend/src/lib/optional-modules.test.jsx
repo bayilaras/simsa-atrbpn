@@ -13,7 +13,7 @@ const state = vi.hoisted(() => ({ path: '/', capabilities: {}, loading: false, n
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ isAuthenticated: true, loading: false,
     user: { id: 'operator', name: 'Siti', role: 'admin_dirjen', unitKerjaId: 'unit-a' }, canWrite: () => true }) }))
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ loading: state.loading, compatible: true,
-    capabilities: state.capabilities, features: {}, authentication: {}, mode: 'full' }) }))
+    capabilities: state.capabilities, features: {}, authentication: {} }) }))
 vi.mock('react-router-dom', async importOriginal => {
     const actual = await importOriginal()
     function TestRoutes({ routes }) { return actual.useRoutes(routes) }

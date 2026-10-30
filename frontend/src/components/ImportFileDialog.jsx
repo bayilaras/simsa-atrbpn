@@ -6,7 +6,6 @@ import ImportRowReport from '@/components/ImportRowReport'
 import ImportSyncOption from '@/components/ImportSyncOption'
 import ImportUnitRequiredButton from '@/components/ImportUnitRequiredButton'
 import { importResultSummary } from '@/lib/import-report'
-import { useAppConfig } from '@/context/app-config-context'
 import api from '@/services/api'
 import { addImportPart, emptyImportTotals, IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import'
 import { runResumableImport, unfinishedImportNotice } from '@/lib/resumable-import'
@@ -280,10 +279,9 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
 }
 
 export default function ImportFileDialog({ type, unitKerjaId, onImportComplete }) {
-    const { mode } = useAppConfig()
     const [open, setOpen] = useState(false)
     const [busy, setBusy] = useState(false)
-    if (mode === 'metadata-demo' || !labels[type]) return null
+    if (!labels[type]) return null
     if (!unitKerjaId || unitKerjaId === 'all') return <ImportUnitRequiredButton className={`${buttonVariants({ variant: 'outline', size: 'sm' })} h-9`}>
         <FileSpreadsheet aria-hidden="true" className="mr-2 h-3.5 w-3.5" />Impor CSV/XLSX
     </ImportUnitRequiredButton>

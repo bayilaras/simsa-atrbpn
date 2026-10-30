@@ -3,16 +3,8 @@
 import { describe, expect, it } from 'vitest'
 import { createSimsaBuildManifest, SPA_NAVIGATION_DENYLIST } from '../../vite.config.js'
 
-const localDemo = {
-    VITE_APP_MODE: 'metadata-demo',
-    VITE_APP_PROFILE: 'internal',
-    VITE_API_URL: '',
-    VITE_STORAGE_PROVIDER: 'disabled',
-    SIMSA_DEMO_LOCAL_BUILD: 'true',
-}
-
 describe('SIMSA public build manifest', () => {
-    it('supports operational internal metadata without demo restrictions or file storage', () => {
+    it('supports the internal metadata profile without file storage', () => {
         const source = { VITE_APP_MODE: 'full', VITE_APP_PROFILE: 'internal', VITE_STORAGE_PROVIDER: 'disabled' }
         expect(createSimsaBuildManifest(source)).toMatchObject({
             mode: 'full', syntheticDataOnly: false, authProvider: 'better-auth', storageProvider: 'disabled',
@@ -39,27 +31,9 @@ describe('SIMSA public build manifest', () => {
         expect(() => createSimsaBuildManifest({ VITE_STORAGE_PROVIDER: 'gcs' })).toThrow(/VITE_STORAGE_PROVIDER/)
     })
 
-    it.each([
-        [{ ...localDemo, VITE_APP_MODE: 'preview' }, /VITE_APP_MODE/],
-        [{ ...localDemo, VITE_APP_PROFILE: 'integrated' }, /VITE_APP_PROFILE/],
-        [{ ...localDemo, VITE_API_URL: 'https://api.example' }, /same-origin/],
-        [{ ...localDemo, VITE_STORAGE_PROVIDER: 'vercel-blob' }, /VITE_STORAGE_PROVIDER=disabled/],
-        [{ ...localDemo, VITE_FEATURE_SRIKANDI: 'true' }, /cannot enable SRIKANDI/],
-    ])('rejects an unsafe demo build contract %#', (source, expected) => {
-        expect(() => createSimsaBuildManifest(source)).toThrow(expected)
-    })
-
-    it('allows the demo only behind the explicit non-deployed local build gate', () => {
-        expect(createSimsaBuildManifest(localDemo)).toMatchObject({
-            mode: 'metadata-demo',
-            authProvider: 'better-auth',
-            storageProvider: 'disabled',
-        })
-
-        expect(() => createSimsaBuildManifest({ ...localDemo, SIMSA_DEMO_LOCAL_BUILD: '' }))
-            .toThrow(/explicit local build gate/)
-        expect(() => createSimsaBuildManifest({ ...localDemo, K_SERVICE: 'demo-service' }))
-            .toThrow(/explicit local build gate/)
+    it.each(['metadata-demo', 'preview'])('rejects the unsupported app mode %s', mode => {
+        expect(() => createSimsaBuildManifest({ VITE_APP_MODE: mode, VITE_STORAGE_PROVIDER: 'disabled', VITE_APP_PROFILE: 'internal' }))
+            .toThrow(/VITE_APP_MODE must be full/)
     })
 })
 
