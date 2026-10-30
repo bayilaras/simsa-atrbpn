@@ -16,7 +16,7 @@ import { pathToFileURL } from 'node:url';
 const BLOCKING = new Set(['high', 'critical']);
 const GHSA = /GHSA-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}/;
 // Gangguan registry/jaringan, bukan hasil audit: `npm audit` yang menggantung
-// lalu berakhir dengan galat kosong (CI 22 Okt, spark 4,5 menit) termasuk di sini.
+// lalu berakhir dengan galat kosong (CI 22 Okt, 4,5 menit) termasuk di sini.
 const TRANSIENT_CODES = /^(ETIMEDOUT|ESOCKETTIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|EPIPE|E429|E5\d\d)$/;
 const TRANSIENT_TEXT = /timed? ?out|socket hang up|network|ECONNRESET|ETIMEDOUT|EAI_AGAIN|audit endpoint|503|502|504|429/i;
 const ATTEMPT_TIMEOUT_MS = 120_000;

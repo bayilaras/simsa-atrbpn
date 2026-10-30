@@ -738,35 +738,6 @@ jobs:
         run: npx vitest run --reporter=verbose
         working-directory: frontend
 
-      - name: Setup Java for isolated Firebase emulators
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - name: Install Firebase Spark edition dependencies
-        run: npm ci
-        working-directory: spark
-
-      - name: Typecheck and test Firebase Spark edition
-        run: |
-          npm run typecheck
-          npm test
-          npm run build:emulator
-        working-directory: spark
-
-      - name: Verify Firestore rules and repository against isolated emulators
-        # No credentials/secrets or live Firebase project. Failure gates the
-        # existing required Frontend Tests check, not an optional new check.
-        run: npm run test:emulator
-        working-directory: spark
-
-      - name: Rehearse encrypted Spark metadata backup and independent local restore
-        # Dedicated empty demo namespaces, no live credentials or projects.
-        # Accounts restore disabled; this is not a production Auth backup gate.
-        run: npm run backup:drill
-        working-directory: spark
-
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest
@@ -782,7 +753,7 @@ jobs:
 
       # Kebijakan audit (lihat .github/npm-audit-allowlist.json):
       # - backend: semua dependensi, tanpa pengecualian;
-      # - frontend & Spark: gerbang pada dependensi produksi (--omit=dev);
+      # - frontend: gerbang pada dependensi produksi (--omit=dev);
       #   audit penuh tetap dicetak sebagai informasi;
       # - docs-site: semua dependensi, dengan pengecualian sementara bertanggal
       #   kedaluwarsa untuk advisori yang belum memiliki versi perbaikan.
@@ -799,14 +770,6 @@ jobs:
         continue-on-error: true
         run: npm audit --audit-level=high
         working-directory: frontend
-
-      - name: Audit Firebase Spark edition (dependensi produksi)
-        run: node .github/scripts/npm-audit-gate.mjs spark --omit=dev
-
-      - name: Audit Firebase Spark edition (semua dependensi, informasi)
-        continue-on-error: true
-        run: npm audit --audit-level=high
-        working-directory: spark
 
       - name: Audit documentation
         run: node .github/scripts/npm-audit-gate.mjs docs-site

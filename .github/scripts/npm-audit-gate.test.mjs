@@ -71,7 +71,7 @@ test('laporan audit yang terbaca diteruskan apa adanya, termasuk yang berisi adv
 });
 
 test('gangguan registry dan jaringan dianggap sementara; galat konfigurasi tidak', () => {
-    // CI 22 Okt: langkah spark berjalan 4,5 menit lalu "npm audit gagal untuk spark: " (ringkasan kosong).
+    // CI 22 Okt: satu langkah audit berjalan 4,5 menit lalu gagal dengan ringkasan kosong.
     const empty = classifyAuditRun({ status: 1, stdout: JSON.stringify({ error: { code: null, summary: '', detail: '' } }), stderr: '' });
     assert.deepEqual([empty.ok, empty.transient], [false, true]);
     for (const code of ['ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', 'E503', 'E429']) {

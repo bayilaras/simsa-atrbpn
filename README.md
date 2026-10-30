@@ -26,16 +26,18 @@ pemulihan unggahan dijelaskan dalam [panduan operasional backend](docs/OPERASION
 Rincian perubahan, pengukuran lokal, dan batas pengujian ada di
 [hasil penguatan backend](docs/HASIL_PENGUATAN_BACKEND_2026-09-11.md).
 
-## Pilih aplikasi
+## Struktur repositori
 
-| Jalur | Direktori | Cakupan |
-| --- | --- | --- |
-| SIMSA lengkap | `frontend/` + `backend/` | React, Express, PostgreSQL; berkas digital membutuhkan private object storage dan antivirus yang dikonfigurasi. |
-| SIMSA Spark | `spark/` | Edisi terpisah berbasis Firebase Auth/Firestore untuk metadata dan lokasi arsip fisik; belum mencakup unggah dokumen atau seluruh alur versi lengkap. |
+| Direktori | Isi |
+| --- | --- |
+| `frontend/` | Aplikasi React (Vite); proyek Vercel `simsa-frontend`. |
+| `backend/` | API Express dan PostgreSQL (Drizzle); proyek Vercel `simsa-backend`. Berkas digital membutuhkan private object storage dan antivirus yang dikonfigurasi. |
+| `docs-site/` | Situs dokumentasi Docusaurus; `vercel.json` di akar membangunnya. |
+| `scripts/` | Skrip operasional Neon, backup dan pemulihan, rilis, serta pemeriksaan deployment. |
+| `docs/` | Runbook operasional dan laporan rilis. |
 
 Lihat [panduan pengguna](docs/README.md), [spesifikasi fitur](product_specification.md),
 dan [hasil pemeriksaan kesiapan](docs/KESIAPAN_PENGGUNA_2026-09-11.md).
-Panduan [Spark](spark/README.md) menjelaskan batas dan cara menjalankan edisi tersebut.
 
 ## Pengembangan versi lengkap
 
