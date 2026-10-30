@@ -1,4 +1,4 @@
-import nodemailer, { type Transporter } from 'nodemailer';
+import type { Transporter } from 'nodemailer';
 import { createLogger } from '../utils/logger';
 import {
     buildEmailConfig,
@@ -49,31 +49,36 @@ export type EmailDeliveryResult =
     | { sent: false; status: 'not_configured' | 'failed'; error: string };
 
 export class EmailService {
-    private transporter: Transporter | null = null;
+    private transporter: Promise<Transporter> | null = null;
 
     constructor(private readonly config: EmailConfig = buildEmailConfig()) {
-        if (config.ready) {
-            this.transporter = nodemailer.createTransport({
-                host: config.host,
-                port: config.port,
-                secure: config.secure,
-                auth: {
-                    user: config.user,
-                    pass: config.password,
-                },
-                connectionTimeout: config.timeoutMs,
-                greetingTimeout: config.timeoutMs,
-                socketTimeout: config.timeoutMs,
-            });
-        } else {
+        if (!config.ready) {
             log.info({
                 status: getEmailConfigurationStatus(config),
             }, 'SMTP unavailable; email delivery is disabled');
         }
     }
 
+    // nodemailer loads on the first send instead of on every cold start.
+    private getTransporter(): Promise<Transporter> {
+        const { config } = this;
+        this.transporter ??= import('nodemailer').then(({ default: nodemailer }) => nodemailer.createTransport({
+            host: config.host,
+            port: config.port,
+            secure: config.secure,
+            auth: {
+                user: config.user,
+                pass: config.password,
+            },
+            connectionTimeout: config.timeoutMs,
+            greetingTimeout: config.timeoutMs,
+            socketTimeout: config.timeoutMs,
+        }));
+        return this.transporter;
+    }
+
     async sendEmail(options: EmailOptions): Promise<EmailDeliveryResult> {
-        if (!this.transporter) {
+        if (!this.config.ready) {
             log.warn({ to: options.to, subject: options.subject }, 'Email not sent: SMTP is not configured');
             return {
                 sent: false,
@@ -83,7 +88,8 @@ export class EmailService {
         }
 
         try {
-            const info = await this.transporter.sendMail({
+            const transporter = await this.getTransporter();
+            const info = await transporter.sendMail({
                 from: this.config.from,
                 to: options.to,
                 subject: options.subject,

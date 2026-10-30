@@ -1,11 +1,11 @@
-import ExcelJS from 'exceljs';
-import PDFDocument from 'pdfkit';
+import type ExcelJS from 'exceljs';
 import { EXPORT_ROW_LIMIT, requireCompleteExport } from './export-completeness.js';
 import { suratMasukService, SuratMasukFilters } from './surat-masuk.service';
 import { suratKeluarService, SuratKeluarFilters } from './surat-keluar.service';
 import { arsipService, ArsipFilters } from './arsip.service';
 import { ASAL_NASKAH_LABEL, resolveBalasanLabels } from './export-balasan';
 import { sifatSuratLabel } from './sifat-surat.js';
+import { loadExcelJS, loadPdfKit } from '../utils/lazy-libraries.js';
 
 export interface ExportOptions {
     format: 'excel' | 'pdf';
@@ -50,7 +50,8 @@ export class ExportService {
         });
         const data = requireCompleteExport(result);
 
-        const workbook = new ExcelJS.Workbook();
+        const { Workbook } = await loadExcelJS();
+        const workbook = new Workbook();
         workbook.creator = 'SIMSA ATR/BPN';
         workbook.created = new Date();
 
@@ -141,7 +142,8 @@ export class ExportService {
         const data = requireCompleteExport(result);
         const balasanLabels = await resolveBalasanLabels(data, filters.securityClassifications);
 
-        const workbook = new ExcelJS.Workbook();
+        const { Workbook } = await loadExcelJS();
+        const workbook = new Workbook();
         workbook.creator = 'SIMSA ATR/BPN';
         workbook.created = new Date();
 
@@ -236,7 +238,8 @@ export class ExportService {
         });
         const data = requireCompleteExport(result);
 
-        const workbook = new ExcelJS.Workbook();
+        const { Workbook } = await loadExcelJS();
+        const workbook = new Workbook();
         workbook.creator = 'SIMSA ATR/BPN';
         workbook.created = new Date();
 
@@ -575,6 +578,7 @@ export class ExportService {
         });
         const data = requireCompleteExport(result);
 
+        const PDFDocument = await loadPdfKit();
         return new Promise((resolve, reject) => {
             const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 30 });
             const chunks: Buffer[] = [];
@@ -647,6 +651,7 @@ export class ExportService {
         });
         const data = requireCompleteExport(result);
 
+        const PDFDocument = await loadPdfKit();
         return new Promise((resolve, reject) => {
             const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 30 });
             const chunks: Buffer[] = [];
@@ -720,6 +725,7 @@ export class ExportService {
         });
         const data = requireCompleteExport(result);
 
+        const PDFDocument = await loadPdfKit();
         return new Promise((resolve, reject) => {
             const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 30 });
             const chunks: Buffer[] = [];
