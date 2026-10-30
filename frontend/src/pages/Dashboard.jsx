@@ -97,6 +97,11 @@ const baseChartOptions = {
     },
 }
 
+// Switching back to the tab refreshes the dashboard silently at most once a
+// minute. Returning to the page by navigation and the retry buttons still
+// refresh right away.
+const FOCUS_REFRESH_MIN_INTERVAL_MS = 60_000
+
 export default function Dashboard() {
     const navigate = useNavigate();
     const location = useLocation();
@@ -113,6 +118,7 @@ export default function Dashboard() {
     const requestGeneration = useRef(0);
     const loadedScope = useRef(null);
     const inFlightLoad = useRef(null);
+    const lastLoadedAt = useRef(0);
     const [stats, setStats] = useState(null);
     const [expiring, setExpiring] = useState([]);
     const [recentActivity, setRecentActivity] = useState([]);
@@ -191,6 +197,7 @@ export default function Dashboard() {
                     : 'Ringkasan tambahan belum tersedia. Muat ulang untuk melihat siklus, peminjaman, penyimpanan, dan pelaporan arsip.');
             }
             loadedScope.current = scopeKey;
+            lastLoadedAt.current = Date.now();
             setDisplayScope(scopeKey);
         } catch (err) {
             if (generation !== requestGeneration.current) return;
@@ -249,18 +256,18 @@ export default function Dashboard() {
         }
     }, [location.key, user, selectedUnitKerja, refreshData]);
 
-    // Re-fetch data when window regains focus (e.g. user switches tabs back).
+    // Re-fetch data when window regains focus (e.g. user switches tabs back),
+    // unless the last successful load is less than a minute old.
     useEffect(() => {
-        const handleFocus = () => {
-            if (isInitializedRef.current && user && selectedUnitKerja !== undefined) {
-                refreshData();
-            }
+        const refreshIfStale = () => {
+            if (!isInitializedRef.current || !user || selectedUnitKerja === undefined) return;
+            if (Date.now() - lastLoadedAt.current < FOCUS_REFRESH_MIN_INTERVAL_MS) return;
+            refreshData();
         };
+        const handleFocus = () => refreshIfStale();
 
         const handleVisibility = () => {
-            if (document.visibilityState === 'visible' && isInitializedRef.current && user && selectedUnitKerja !== undefined) {
-                refreshData();
-            }
+            if (document.visibilityState === 'visible') refreshIfStale();
         };
 
         window.addEventListener('focus', handleFocus);
