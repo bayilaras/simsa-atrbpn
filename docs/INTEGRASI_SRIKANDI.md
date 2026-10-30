@@ -32,10 +32,6 @@ npm run dev:srikandi-worker
 
 Deploy worker pada runtime yang mendukung proses jangka panjang dan graceful shutdown. Beberapa instance boleh berjalan bersamaan karena claim dan lease dilakukan secara kondisional di database.
 
-Definisi deployment bersama worker antivirus tersedia di
-`deploy/workers/compose.yml`. Profil `srikandi` sengaja opsional dan tidak
-berjalan tanpa dipilih secara eksplisit.
-
 Endpoint admin `POST /api/integrations/srikandi/dispatch-due` hanya fallback diagnostik dan dibatasi satu item per request. Endpoint itu bukan pengganti worker produksi.
 
 ## Konfigurasi

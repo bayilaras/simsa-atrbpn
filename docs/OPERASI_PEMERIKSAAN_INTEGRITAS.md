@@ -12,13 +12,7 @@ Untuk satu eksekusi pada lingkungan yang sudah dikonfigurasi:
 npm run start:file-fixity
 ```
 
-Untuk paket Compose yang tersedia di repository:
-
-```sh
-docker compose --env-file .env -f deploy/workers/compose.yml --profile maintenance run --rm file-fixity
-```
-
-Bootstrap worker GCP memasang `simsa-file-fixity.timer`. Timer berjalan setiap 15 menit, dengan penundaan acak hingga 2 menit; setiap berkas yang cocok dijadwalkan ulang setelah 7 hari. Pada server lain, pasang perintah tersebut di scheduler milik server dan tangkap exit status serta lognya. Belum ada scheduler yang dipasang pada komputer pengguna hanya karena dokumen ini tersedia.
+Produksi menjalankan pemeriksaan terjadwal melalui workflow `.github/workflows/operations-fixity.yml`; lihat [pemeriksaan integritas file terjadwal](OPERATIONS_FIXITY.md). Setiap berkas yang cocok dijadwalkan ulang setelah 7 hari. Pada server lain, pasang perintah tersebut di scheduler milik server dan tangkap exit status serta lognya. Belum ada scheduler yang dipasang pada komputer pengguna hanya karena dokumen ini tersedia.
 
 | Pengaturan | Default | Batas yang diterima |
 |---|---:|---|

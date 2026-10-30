@@ -104,30 +104,6 @@ jobs:
           VITE_FIREBASE_APP_ID: 1:123456789:web:ci
           VITE_FIREBASE_APP_CHECK_SITE_KEY: ci-public-site-key
 
-      - name: Validate worker Compose definitions
-        run: |
-          docker compose --env-file .env.example -f compose.yml --profile '*' config --quiet
-          docker compose --env-file .env.example -f compose.yml -f compose.local.yml --profile '*' config --quiet
-        working-directory: deploy/workers
-
-      - name: Validate production worker image preflight
-        run: |
-          digest=$(printf 'a%.0s' {1..64})
-          SIMSA_WORKER_IMAGE="ghcr.io/example/simsa-worker@sha256:${digest}" \
-            sh ./preflight-worker-image.sh --format-only
-          if SIMSA_WORKER_IMAGE="ghcr.io/example/simsa-worker:latest" \
-            sh ./preflight-worker-image.sh --format-only; then
-            echo "::error::Worker preflight unexpectedly accepted a mutable tag."
-            exit 1
-          fi
-        working-directory: deploy/workers
-
-      - name: Build and inspect worker image
-        run: |
-          docker build --check --file backend/Dockerfile.worker backend
-          docker build --file backend/Dockerfile.worker --tag simsa-worker:${{ github.sha }} backend
-          docker run --rm --entrypoint node simsa-worker:${{ github.sha }} --check dist/workers/malware-scan.js
-
       - name: Verify production uses the same-origin API proxy
         run: |
           if VITE_API_URL=https://simsa-backend.vercel.app npm run build > api-proxy-guard.log 2>&1; then
@@ -180,6 +156,8 @@ jobs:
           CLAMAV_PORT: '3310'
           CLAMAV_SMOKE_WAIT_MS: '360000'
           CLAMAV_SMOKE_POLL_MS: '2000'
+          # Keep in sync with docs/OPERASI_ANTIVIRUS_BITSTREAM.md.
+          CLAMAV_IMAGE: clamav/clamav:1.5-debian13-slim@sha256:967334b92d1782e4d1314ddf903ae537d26792d21c9a39adecb8ac9757980514
         run: |
           set -Eeuo pipefail
           container="simsa-clamav-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -194,20 +172,11 @@ jobs:
           }
           trap cleanup EXIT
 
-          clamav_image=$(docker compose \
-            --env-file deploy/workers/.env.example \
-            -f deploy/workers/compose.yml \
-            config --images | awk '/^clamav\/clamav:/{ print; exit }')
-          if [ -z "$clamav_image" ]; then
-            echo "::error::Could not resolve the pinned ClamAV image from Compose."
-            exit 1
-          fi
-
           docker run --detach \
             --name "$container" \
             --publish 127.0.0.1:3310:3310 \
             --env CLAMD_CONF_StreamMaxLength=52428800 \
-            "$clamav_image"
+            "$CLAMAV_IMAGE"
 
           npm --prefix backend run smoke:clamav
           docker restart --time 30 "$container"

@@ -70,7 +70,7 @@ kompilasi, bukan login/App Check/GCS live.
 ClamAV native dapat menguji protokol INSTREAM (clean, EICAR, unavailable, dan
 restart). Worker nyata harus membuktikan heartbeat `running -> degraded ->
 running`; tes antrean kosong tidak menggantikan alur upload sampai claim/final.
-Hasil Windows native juga tidak menggantikan pengujian Linux Compose.
+Hasil Windows native juga tidak menggantikan pengujian Linux.
 
 Uji backup harus memakai backup-reader, snapshot konsisten, artifact
 terenkripsi, key terpisah ber-ACL, serta instance restore baru, seperti
