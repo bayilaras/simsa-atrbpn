@@ -47,6 +47,16 @@ describe('ApiClient transport contracts', () => {
         expect(fetchMock.mock.calls.map(([, config]) => config.cache)).toEqual(['no-store', 'no-store']);
     });
 
+    it('lets reference catalogs revalidate a cached copy instead of downloading it again', async () => {
+        const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ data: [] }) });
+        vi.stubGlobal('fetch', fetchMock);
+
+        await api.get('/api/klasifikasi', {}, { cache: 'no-cache' });
+        await api.get('/api/klasifikasi', {}, { cache: 'default' });
+
+        expect(fetchMock.mock.calls.map(([, config]) => config.cache)).toEqual(['no-cache', 'no-store']);
+    });
+
     it('still rejects private-file errors when a raw response is requested', async () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
             ok: false, status: 403, headers: new Headers(),

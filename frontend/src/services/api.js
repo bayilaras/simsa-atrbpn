@@ -239,7 +239,9 @@ export class ApiClient {
             credentials: 'include', // Important for cookies/sessions
             // Record data must not stay in the browser's HTTP cache after
             // logout on a shared workstation (the API also sends no-store).
-            cache: 'no-store',
+            // Reference catalogs may opt into 'no-cache': the browser keeps a
+            // copy but revalidates it on every request (ETag -> 304).
+            cache: options.cache === 'no-cache' ? 'no-cache' : 'no-store',
             headers: {
                 'Content-Type': 'application/json',
                 ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
