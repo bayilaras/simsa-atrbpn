@@ -93,7 +93,7 @@ router.get('/outbox', validateQuery(srikandiOutboxQuerySchema), async (req: Auth
             page: query.page,
             limit: query.limit,
         });
-        res.json({ success: true, ...result });
+        res.json({ success: true, ...result, data: await srikandiService.samarkanUntuk(req.user, result.data) });
     } catch (error) {
         next(error);
     }
@@ -109,7 +109,8 @@ router.get('/outbox/:id', async (req: AuthRequest, res, next) => {
             res.status(404).json({ success: false, error: 'Outbox SRIKANDI tidak ditemukan' });
             return;
         }
-        res.json({ success: true, data: result });
+        const [item] = await srikandiService.samarkanUntuk(req.user, [result.item]);
+        res.json({ success: true, data: { ...result, item } });
     } catch (error) {
         next(error);
     }
@@ -135,10 +136,11 @@ router.post(
                 res.status(404).json({ success: false, error: 'Outbox SRIKANDI tidak ditemukan' });
                 return;
             }
+            const [data] = await srikandiService.samarkanUntuk(req.user, [item]);
             res.status(202).json({
                 success: true,
                 synchronized: false,
-                data: item,
+                data,
                 message: 'Retry dijadwalkan; data belum dinyatakan tersinkron',
             });
         } catch (error) {
@@ -167,11 +169,12 @@ router.post(
             }
 
             const synchronized = result.outcome === 'succeeded';
+            const [data] = await srikandiService.samarkanUntuk(req.user, [result.item]);
             res.status(synchronized ? 200 : 202).json({
                 success: true,
                 synchronized,
                 outcome: result.outcome,
-                data: result.item,
+                data,
                 message: synchronized
                     ? 'SRIKANDI memberikan pengakuan resmi dan ID sinkronisasi'
                     : 'Belum ada pengakuan resmi; status outbox telah diperbarui',

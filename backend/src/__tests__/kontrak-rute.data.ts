@@ -403,10 +403,10 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
     },
     'srikandi.routes.ts': {
         'GET /status': 'bukan-rekaman',
-        'GET /outbox': proyeksi('srikandiService.list'),
-        'GET /outbox/:id': checkRead('srikandiService.getDetail'),
-        'POST /outbox/:id/retry': check('srikandiService.manualRetry'),
-        'POST /outbox/:id/dispatch': check('srikandiService.dispatchOne'),
+        'GET /outbox': proyeksi('srikandiService.samarkanUntuk'),
+        'GET /outbox/:id': checkRead('srikandiService.samarkanUntuk'),
+        'POST /outbox/:id/retry': check('srikandiService.samarkanUntuk'),
+        'POST /outbox/:id/dispatch': check('srikandiService.samarkanUntuk'),
         'POST /dispatch-due': check('srikandiService.dispatchDue'),
     },
     'storage-location.routes.ts': {
