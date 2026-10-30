@@ -25,7 +25,6 @@ const packages = new Map([
     ['pdfkit', 'missing_pdfkit'], ['exceljs', 'missing_exceljs'], ['pg', 'missing_pg'],
     ['@vercel/functions', 'missing_vercel_functions'], ['@vercel/blob', 'missing_vercel_blob'],
     ['@napi-rs/canvas', 'missing_canvas'], ['@napi-rs/canvas-linux-x64-gnu', 'missing_canvas_binding'],
-    ['swagger-jsdoc', 'missing_swagger'], ['swagger-ui-express', 'missing_swagger'],
     ['better-auth', 'missing_better_auth'], ['drizzle-orm', 'missing_drizzle'],
 ]);
 const messageReasons = new Map([

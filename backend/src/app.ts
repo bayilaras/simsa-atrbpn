@@ -17,7 +17,6 @@ import { authMiddleware } from './middlewares/auth.middleware';
 import { roleMiddleware } from './middlewares/role.middleware';
 import { csrfCookieSetter, csrfProtection } from './middlewares/csrf.middleware';
 import { sanitizeInput } from './middlewares/sanitize.middleware';
-import { setupSwagger } from './config/swagger';
 import { AppError, ForbiddenError } from './utils/errors';
 import { publicErrorResponse, publicErrorStatus } from './utils/public-error.js';
 import { logger } from './utils/logger';
@@ -388,9 +387,6 @@ app.use('/api/client-upload', clientUploadRoutes); // Private Vercel Blob direct
 app.use('/api/files', fileAccessRoutes); // Authenticated, unit-scoped private file streaming
 app.use('/api/integrations/srikandi', srikandiRoutes);
 app.use('/api/record-access-grants', recordAccessGrantRoutes); // Purpose-bound, time-limited need-to-know workflow
-
-// Setup Swagger API documentation - available at /api/docs
-setupSwagger(app);
 
 // 404 handler
 app.use((req: Request, res: Response) => {

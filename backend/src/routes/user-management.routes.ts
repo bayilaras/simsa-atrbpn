@@ -30,47 +30,6 @@ function requireSuperAdmin(req: AuthRequest, res: Response, next: NextFunction) 
 
 router.use(requireSuperAdmin);
 
-/**
- * @swagger
- * /api/users:
- *   get:
- *     summary: List all users with filters
- *     tags: [User Management]
- *     security:
- *       - cookieAuth: []
- *     parameters:
- *       - in: query
- *         name: search
- *         schema:
- *           type: string
- *         description: Search by name or email
- *       - in: query
- *         name: role
- *         schema:
- *           type: string
- *           enum: [super_admin, admin_unit]
- *       - in: query
- *         name: unitKerjaId
- *         schema:
- *           type: string
- *       - in: query
- *         name: isActive
- *         schema:
- *           type: boolean
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *           default: 1
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           default: 20
- *     responses:
- *       200:
- *         description: List of users with pagination
- */
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const parseResult = listUsersSchema.safeParse(req.query);
@@ -88,53 +47,6 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     }
 });
 
-/**
- * @swagger
- * /api/users:
- *   post:
- *     summary: Create a new user (Super Admin only)
- *     tags: [User Management]
- *     security:
- *       - cookieAuth: []
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [email, name, role]
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
- *               name:
- *                 type: string
- *               role:
- *                 type: string
- *                 enum: [super_admin, admin_unit]
- *               unitKerjaId:
- *                 type: string
- *                 nullable: true
- *               jabatan:
- *                 type: string
- *                 nullable: true
- *               nip:
- *                 type: string
- *                 nullable: true
- *               password:
- *                 type: string
- *                 format: password
- *                 minLength: 8
- *                 description: Optional; stored only as a Better Auth credential hash
- *     responses:
- *       201:
- *         description: User created successfully
- *       400:
- *         description: Validation error
- *       409:
- *         description: The identity is already in use
- *       503:
- *         description: External identity reconciliation must be retried
- */
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const bodyResult = createUserSchema.safeParse(req.body);
@@ -158,18 +70,6 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     }
 });
 
-/**
- * @swagger
- * /api/users/roles:
- *   get:
- *     summary: Get available roles
- *     tags: [User Management]
- *     security:
- *       - cookieAuth: []
- *     responses:
- *       200:
- *         description: List of available roles
- */
 router.get('/roles', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const roles = userManagementService.getRoles();
@@ -179,18 +79,6 @@ router.get('/roles', async (req: Request, res: Response, next: NextFunction) => 
     }
 });
 
-/**
- * @swagger
- * /api/users/unit-kerja:
- *   get:
- *     summary: Get available unit kerja for assignment
- *     tags: [User Management]
- *     security:
- *       - cookieAuth: []
- *     responses:
- *       200:
- *         description: List of unit kerja
- */
 router.get('/unit-kerja', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const unitKerjaList = await userManagementService.listUnitKerja();
@@ -200,27 +88,6 @@ router.get('/unit-kerja', async (req: Request, res: Response, next: NextFunction
     }
 });
 
-/**
- * @swagger
- * /api/users/{userId}:
- *   get:
- *     summary: Get user by ID
- *     tags: [User Management]
- *     security:
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: userId
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     responses:
- *       200:
- *         description: User details
- *       404:
- *         description: User not found
- */
 router.get('/:userId', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const parseResult = userIdParamSchema.safeParse(req.params);
@@ -242,49 +109,6 @@ router.get('/:userId', async (req: Request, res: Response, next: NextFunction) =
     }
 });
 
-/**
- * @swagger
- * /api/users/{userId}:
- *   put:
- *     summary: Update user (role, unit kerja, status)
- *     tags: [User Management]
- *     security:
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: userId
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               role:
- *                 type: string
- *                 enum: [super_admin, admin_unit]
- *               unitKerjaId:
- *                 type: string
- *                 nullable: true
- *               isActive:
- *                 type: boolean
- *               jabatan:
- *                 type: string
- *                 nullable: true
- *                 maxLength: 100
- *                 description: Job title/position (e.g. Arsiparis)
- *               nip:
- *                 type: string
- *                 nullable: true
- *                 maxLength: 30
- *                 description: Nomor Induk Pegawai
- *     responses:
- *       200:
- *         description: User updated successfully
- */
 router.put('/:userId', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const paramResult = userIdParamSchema.safeParse(req.params);
@@ -335,25 +159,6 @@ router.put('/:userId', async (req: Request, res: Response, next: NextFunction) =
     }
 });
 
-/**
- * @swagger
- * /api/users/{userId}:
- *   delete:
- *     summary: Deactivate user (soft delete)
- *     tags: [User Management]
- *     security:
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: userId
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     responses:
- *       200:
- *         description: User deactivated successfully
- */
 router.delete('/:userId', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const parseResult = userIdParamSchema.safeParse(req.params);

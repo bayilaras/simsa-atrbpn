@@ -39,13 +39,6 @@ router.param('id', uuidParamValidator);
 router.param('arsipId', uuidParamValidator);
 router.param('locationId', uuidParamValidator);
 
-/**
- * @swagger
- * /api/archive-lending:
- *   get:
- *     summary: List lending records with filters
- *     tags: [Archive Lending]
- */
 router.get('/', validateQuery(queryArchiveLendingSchema), async (req: AuthRequest, res, next) => {
     try {
         const { status, lendingType, borrowerId, arsipId, storageLocationId, search, page, limit } = res.locals.validatedQuery;
@@ -73,13 +66,6 @@ router.get('/', validateQuery(queryArchiveLendingSchema), async (req: AuthReques
     }
 });
 
-/**
- * @swagger
- * /api/archive-lending/overdue:
- *   get:
- *     summary: Get overdue lending records
- *     tags: [Archive Lending]
- */
 router.get('/overdue', async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = readUnitScope(req);
@@ -93,13 +79,6 @@ router.get('/overdue', async (req: AuthRequest, res, next) => {
     }
 });
 
-/**
- * @swagger
- * /api/archive-lending/stats:
- *   get:
- *     summary: Get lending statistics
- *     tags: [Archive Lending]
- */
 router.get('/stats', async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = readUnitScope(req);
@@ -113,13 +92,6 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
     }
 });
 
-/**
- * @swagger
- * /api/archive-lending/arsip/{arsipId}:
- *   get:
- *     summary: Get lending history for an arsip
- *     tags: [Archive Lending]
- */
 router.get('/arsip/:arsipId', async (req: AuthRequest, res, next) => {
     try {
         const { arsipId } = req.params;
@@ -138,13 +110,6 @@ router.get('/arsip/:arsipId', async (req: AuthRequest, res, next) => {
     }
 });
 
-/**
- * @swagger
- * /api/archive-lending/location/{locationId}:
- *   get:
- *     summary: Get lending history for a storage location
- *     tags: [Archive Lending]
- */
 router.get('/location/:locationId', async (req: AuthRequest, res, next) => {
     try {
         const { locationId } = req.params;
@@ -163,13 +128,6 @@ router.get('/location/:locationId', async (req: AuthRequest, res, next) => {
     }
 });
 
-/**
- * @swagger
- * /api/archive-lending/{id}:
- *   get:
- *     summary: Get lending record by ID
- *     tags: [Archive Lending]
- */
 router.get('/:id', async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
@@ -189,13 +147,6 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
     }
 });
 
-/**
- * @swagger
- * /api/archive-lending/borrow:
- *   post:
- *     summary: Borrow an archive (per-arsip or per-box)
- *     tags: [Archive Lending]
- */
 router.post('/borrow', canWriteMiddleware(), sensitiveLimiter, validateBody(borrowArchiveSchema), async (req: AuthRequest, res, next) => {
     try {
         const { unitKerjaId: requestedCreateUnit, lendingType, arsipId, storageLocationId, borrowerName, departmentUnit, dueDate, purpose } = req.body;
@@ -235,13 +186,6 @@ router.post('/borrow', canWriteMiddleware(), sensitiveLimiter, validateBody(borr
     }
 });
 
-/**
- * @swagger
- * /api/archive-lending/{id}/return:
- *   put:
- *     summary: Return a borrowed archive
- *     tags: [Archive Lending]
- */
 router.put('/:id/return', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
@@ -264,13 +208,6 @@ router.put('/:id/return', canWriteMiddleware(), async (req: AuthRequest, res, ne
     }
 });
 
-/**
- * @swagger
- * /api/archive-lending/{id}/extend:
- *   put:
- *     summary: Extend due date for a lending
- *     tags: [Archive Lending]
- */
 router.put('/:id/extend', canWriteMiddleware(), validateBody(extendLendingSchema), async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
@@ -297,13 +234,6 @@ router.put('/:id/extend', canWriteMiddleware(), validateBody(extendLendingSchema
     }
 });
 
-/**
- * @swagger
- * /api/archive-lending/qr/arsip/{arsipId}:
- *   get:
- *     summary: Generate QR code for an arsip
- *     tags: [Archive Lending]
- */
 router.get('/qr/arsip/:arsipId', async (req: AuthRequest, res, next) => {
     try {
         const { arsipId } = req.params;

@@ -69,24 +69,10 @@ const importInput = z.object({
     message: 'prefixHash wajib dikirim bersama startRow dari bagian impor sebelumnya.', path: ['prefixHash'],
 });
 
-/**
- * @swagger
- * /api/import/berkas/lembar:
- *   post:
- *     summary: List the tabs of an uploaded XLSX file (a CSV file has none)
- *     tags: [Import]
- */
 router.post('/lembar', importDiscoveryLimiter, canWriteMiddleware(), receiveFile, validateBody(sheetsInput), async (req: AuthRequest, res, next) => {
     try { res.json(await fileImportService.sheets(uploaded(req))); } catch (error) { next(error); }
 });
 
-/**
- * @swagger
- * /api/import/berkas/preview:
- *   post:
- *     summary: Column mapping and up to 100 rows of an uploaded CSV file or XLSX tab
- *     tags: [Import]
- */
 router.post('/preview', importPreviewLimiter, canWriteMiddleware(), receiveFile, validateBody(previewInput), async (req: AuthRequest, res, next) => {
     try {
         const { type, sheet: name, maxRows } = req.body;
@@ -94,17 +80,6 @@ router.post('/preview', importPreviewLimiter, canWriteMiddleware(), receiveFile,
     } catch (error) { next(error); }
 });
 
-/**
- * @swagger
- * /api/import/berkas/surat-masuk:
- *   post:
- *     summary: Import up to 1000 surat masuk from an uploaded CSV file or XLSX tab, optionally in resumable parts
- *     tags: [Import]
- * /api/import/berkas/surat-keluar:
- *   post:
- *     summary: Import up to 1000 surat keluar from an uploaded CSV file or XLSX tab, optionally in resumable parts
- *     tags: [Import]
- */
 for (const kind of ['masuk', 'keluar'] as const) {
     router.post(`/surat-${kind}`, importLimiter, canWriteMiddleware(), receiveFile, validateBody(importInput), async (req: AuthRequest, res, next) => {
         try {
