@@ -1,9 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { readFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
-import { resolve } from 'node:path';
 import { neonOperation, runNeonOperation, sanitizedNeonFailure } from './neon-database.mjs';
 
 const host = 'ep-synthetic-123.ap-southeast-1.aws.neon.tech';
@@ -69,26 +66,4 @@ test('provider errors never disclose SQL, URL, password, detail or stack', () =>
   const safe = sanitizedNeonFailure(error);
   assert.match(safe, /42501/); assert.doesNotMatch(safe, /private|postgresql|CREATE ROLE/);
   assert.match(sanitizedNeonFailure({ code: 'password-secret' }), /CONFIG_OR_POLICY/);
-});
-
-test('Render Blueprint declares one free web service with manual deployment and no paid or database mutation resources', async () => {
-  const requireFrontend = createRequire(resolve(import.meta.dirname, '../frontend/package.json'));
-  const yaml = requireFrontend('js-yaml');
-  const blueprint = yaml.load(await readFile(resolve(import.meta.dirname, '../deploy/render/render.yaml'), 'utf8'));
-  assert.deepEqual(Object.keys(blueprint), ['services']);
-  assert.equal(blueprint.services.length, 1);
-  const service = blueprint.services[0];
-  assert.equal(service.type, 'web'); assert.equal(service.runtime, 'node'); assert.equal(service.plan, 'free');
-  assert.equal(service.branch, 'fix/user-readiness');
-  assert.equal(service.autoDeployTrigger, 'off'); assert.equal(service.healthCheckPath, '/health');
-  assert.equal(service.buildCommand, 'npm run build:cloud-metadata');
-  assert.equal(service.startCommand, 'npm run start:cloud-metadata');
-  assert.equal(service.disk, undefined); assert.equal(service.preDeployCommand, undefined);
-  const values = Object.fromEntries(service.envVars.map(v => [v.key, v]));
-  assert.equal(values.DATABASE_URL.sync, false); assert.equal(values.BETTER_AUTH_SECRET.generateValue, true);
-  for (const key of ['GOOGLE_OAUTH_ENABLED', 'MALWARE_SCAN_WORKER_ENABLED', 'SRIKANDI_ENABLED']) assert.equal(values[key].value, 'false');
-  assert.equal(values.OBJECT_STORAGE_PROVIDER.value, 'disabled');
-  assert.equal(values.MALWARE_SCANNER_MODE.value, 'disabled');
-  assert.equal(values.AUTH_PROVIDER.value, 'better-auth'); assert.equal(values.SIMSA_APP_MODE.value, 'full');
-  assert.equal(values.APP_PROFILE.value, 'internal'); assert.equal(values.DB_POOL_MAX.value, '3');
 });

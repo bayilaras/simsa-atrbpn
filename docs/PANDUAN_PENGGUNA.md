@@ -55,7 +55,7 @@ Alur berkas digital dalam panduan ini berlaku hanya pada lingkungan yang sudah m
 
 Database cloud baru belum memiliki klasifikasi dan JRA aktif. Registrasi arsip yang mensyaratkannya belum dapat diselesaikan sampai operator menyiapkan aturan yang berlaku. Aktivasi aturan dengan PDF sumber terverifikasi juga menunggu layanan berkas tersedia.
 
-Database cloud baru tidak otomatis berisi data, file, akun, atau konfigurasi dari aplikasi lokal. Periksa lingkungan dan unit kerja sebelum menyimpulkan bahwa data hilang. Pemindahan data lama perlu direncanakan dan diperiksa oleh operator; lihat [panduan deployment Render/Neon](DEPLOY_RENDER_NEON.md).
+Database cloud baru tidak otomatis berisi data, file, akun, atau konfigurasi dari aplikasi lokal. Periksa lingkungan dan unit kerja sebelum menyimpulkan bahwa data hilang. Pemindahan data lama perlu direncanakan dan diperiksa oleh operator; lihat [penyiapan database Neon](PENYIAPAN_DATABASE_NEON.md).
 
 ### Sesi dan keluar aplikasi
 

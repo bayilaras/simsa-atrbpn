@@ -109,7 +109,7 @@ runbook ini. Bila satu saja belum terpenuhi, **jangan deploy**.
 ## 2. Urutan deploy
 
 Contoh perintah adapter Neon memakai variabel yang sama dengan
-`docs/DEPLOY_RENDER_NEON.md` §2 (`$cloudNode` = Node 24 lokal,
+`docs/PENYIAPAN_DATABASE_NEON.md` §2 (`$cloudNode` = Node 24 lokal,
 `$cloudEnv` = berkas env privat berisi pin target dan akun migrasi):
 
 1. **Backup** — sudah dilakukan pada §0.2 (RUNBOOK_P1 langkah 1).

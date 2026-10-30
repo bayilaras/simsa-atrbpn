@@ -70,9 +70,7 @@ coverage/
 # Generated Python bytecode from local workflow validators
 __pycache__/
 *.py[cod]
-# Isolated cloud trial builds; preserve the existing local runtime artifacts.
-/frontend/dist-cloud-metadata/
-/backend/dist-cloud-metadata/
+# Isolated Vercel builds and generated assets.
 /frontend/dist-vercel-metadata/
 /backend/dist-vercel/
 /backend/native-clamav-assets/

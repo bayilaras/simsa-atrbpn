@@ -10,22 +10,6 @@ ketertelusuran di SIMSA; hasilnya dinilai melalui pengujian dan UAT pengguna.
 Lihat [profil aplikasi](docs/PROFIL_APLIKASI_INTERNAL.md) untuk konfigurasi dan
 prasyarat masing-masing fitur.
 
-## Uji coba cloud gratis dengan Render dan Neon
-
-Jalur [Render Free + Neon Free](docs/DEPLOY_RENDER_NEON.md) menyiapkan aplikasi
-internal untuk login sandi, metadata surat/arsip, pencarian, lokasi fisik, dan
-laporan. Database tetap PostgreSQL; ini mode operasional `full`, bukan demo
-data sintetis. Unggahan, akses bitstream, OCR, dan proses yang memerlukan bukti
-berkas dinonaktifkan sampai penyimpanan serta antivirus tersedia.
-
-Gunakan `npm run build:cloud-metadata` dan `npm run start:cloud-metadata` dengan
-environment pada panduan. Build terpisah di `frontend/dist-cloud-metadata` dan
-`backend/dist-cloud-metadata`; startup tidak melakukan migrasi atau seed.
-Paket gratis mempunyai batas kapasitas dan waktu tidur layanan, sehingga tahap
-ini adalah uji coba pengguna. Penyiapan kode bukan bukti deployment hidup;
-koneksi Neon, pemasangan skema, akun, dan pengujian cloud harus diselesaikan
-sebelum beralih dari lingkungan sebelumnya.
-
 ## Akses pengguna
 
 Staf membuka SIMSA di **https://simsa-frontend.vercel.app** dengan akun yang

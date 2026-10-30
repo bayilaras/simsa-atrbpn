@@ -81,7 +81,7 @@ function withFixture(action) {
     try {
         for (const file of ['backend/scripts/build-vercel.mjs', 'backend/scripts/verify-pdf-runtime.mjs', 'backend/vercel.json',
             'frontend/scripts/build-vercel-metadata.mjs',
-            'frontend/scripts/resolve-npm-cli.mjs', 'scripts/build-cloud-metadata.mjs',
+            'frontend/scripts/resolve-npm-cli.mjs',
             'scripts/verify-candidate-source.mjs']) {
             const target = path.join(directory, file); mkdirSync(path.dirname(target), { recursive: true });
             copyFileSync(new URL(file, repository), target);
@@ -139,7 +139,6 @@ function withFixture(action) {
 for (const [wrapper, args, projects, output] of [
     ['frontend/scripts/build-vercel-metadata.mjs', [], ['frontend'], 'dist-vercel-metadata'],
     ['backend/scripts/build-vercel.mjs', [], ['backend'], 'dist-vercel'],
-    ['scripts/build-cloud-metadata.mjs', ['--skip-install'], ['frontend', 'backend'], 'dist-cloud-metadata'],
 ]) test(`raw-node ${wrapper} runs real npm prebuild/build/postbuild without npm_execpath`, () => withFixture(({ directory, environment, run }) => {
     const log = run(wrapper, args);
     for (const project of projects) {
