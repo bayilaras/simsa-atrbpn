@@ -78,9 +78,11 @@ export default function Arsip() {
     )
     const setSearchTerm = search => updateQuery({ search, page: 1 })
     // The box keeps what the user is typing; only a settled value reaches the
-    // URL and the list request. A URL change from elsewhere (chip, saved filter,
-    // reset) replaces the draft because the draft remembers which URL value it edits.
+    // URL and the list request. Any change of the URL search (the draft's own
+    // commit, a chip, saved filter or reset) restarts the draft from the URL, so
+    // a cleared search is not written back by the stale draft.
     const [searchDraft, setSearchDraft] = useState({ base: searchTerm, value: searchTerm })
+    if (searchDraft.base !== searchTerm) setSearchDraft({ base: searchTerm, value: searchTerm })
     const searchInput = searchDraft.base === searchTerm ? searchDraft.value : searchTerm
     const settledSearch = useDebouncedValue(searchInput, 300)
     useEffect(() => {

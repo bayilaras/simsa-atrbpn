@@ -101,6 +101,23 @@ describe('archive list navigation', () => {
         expect(mocks.getStats).toHaveBeenCalledOnce()
     })
 
+    it.each([
+        ['the search chip', 'Hapus filter pencarian'],
+        ['the reset button', 'Hapus semua filter'],
+    ])('keeps a typed search cleared after removing it with %s', async (_control, name) => {
+        mount('/arsip/masuk')
+        await screen.findByRole('button', { name: 'Berkas rapat' })
+        fireEvent.change(screen.getByLabelText('Cari arsip'), { target: { value: 'tanah' } })
+        await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/arsip/masuk?q=tanah'), SETTLED)
+        fireEvent.click(screen.getByRole('button', { name }))
+        expect(screen.getByLabelText('Cari arsip')).toHaveValue('')
+        // Leave the debounce time to put a stale draft back into the URL.
+        await act(() => new Promise(resolve => setTimeout(resolve, 400)))
+        expect(screen.getByTestId('location').textContent).toBe('/arsip/masuk')
+        expect(screen.getByLabelText('Cari arsip')).toHaveValue('')
+        expect(mocks.getAll).toHaveBeenLastCalledWith(expect.objectContaining({ search: '', page: 1 }))
+    })
+
     it('rejects late search responses and restores keyboard focus when preview closes', async () => {
         let resolveOld
         mocks.getAll.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
