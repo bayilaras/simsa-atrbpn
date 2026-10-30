@@ -6,12 +6,6 @@ import { KlasifikasiPicker } from './KlasifikasiPicker'
 const auth = vi.hoisted(() => ({ user: { role: 'staff' } }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: auth.user }) }))
 
-vi.mock('@/lib/cloud-provider-config', () => ({ USE_FIREBASE_AUTH: true }))
-vi.mock('@/lib/firebase-client', () => ({
-    getFirebaseAppCheckToken: vi.fn().mockResolvedValue('test-app-check'),
-    getFirebaseLimitedUseAppCheckToken: vi.fn(),
-}))
-
 function classification(index) {
     const suffix = String(index).padStart(4, '0')
     return {
@@ -68,7 +62,7 @@ describe('KlasifikasiPicker search rendering', () => {
         })
     })
 
-    it('authenticates classification, mapping, and JRA reads through Firebase App Check', async () => {
+    it('sends classification, mapping, and JRA reads with the session cookie', async () => {
         const item = classification(1)
         const fetchMock = vi.fn().mockImplementation(async (url) => ({
             ok: true,
@@ -90,10 +84,7 @@ describe('KlasifikasiPicker search rendering', () => {
             '/api/jra',
         ])
         for (const [, options] of fetchMock.mock.calls) {
-            expect(options).toMatchObject({
-                credentials: 'include',
-                headers: { 'X-Firebase-AppCheck': 'test-app-check' },
-            })
+            expect(options).toMatchObject({ credentials: 'include' })
         }
     })
 })

@@ -21,11 +21,6 @@ vi.mock('../services/notification.service', async (importOriginal) => {
         },
     };
 });
-vi.mock('../lib/cloud-provider-config', () => ({ USE_FIREBASE_AUTH: true }));
-vi.mock('../lib/firebase-client', () => ({
-    getFirebaseAppCheckToken: vi.fn().mockResolvedValue('test-app-check'),
-    getFirebaseLimitedUseAppCheckToken: vi.fn(),
-}));
 
 import { useNotifications } from './useNotifications';
 
@@ -72,10 +67,7 @@ describe('useNotifications unit-scoped mutations', () => {
 
         expect(fetch).toHaveBeenCalledWith(
             expect.stringContaining('unitKerjaId=unit-server-a'),
-            expect.objectContaining({
-                credentials: 'include',
-                headers: expect.objectContaining({ 'X-Firebase-AppCheck': 'test-app-check' }),
-            }),
+            expect.objectContaining({ credentials: 'include' }),
         );
         expect(mocks.markAsRead).toHaveBeenCalledWith(notification.id, 'unit-server-a');
     });

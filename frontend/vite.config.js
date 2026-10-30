@@ -28,33 +28,6 @@ function validateClientApiTarget(command, mode) {
   throw new Error('Deployment builds must leave VITE_API_URL unset and use a same-origin API proxy; cross-origin client API URLs break cookie-authenticated uploads.')
 }
 
-function validateFirebaseBuildTarget(command, mode) {
-  if (command !== 'build') return
-
-  const loadedEnvironment = loadEnv(mode, currentDirectory, '')
-  const value = (name) => (process.env[name] ?? loadedEnvironment[name] ?? '').trim()
-  if ((value('VITE_AUTH_PROVIDER') || 'better-auth').toLowerCase() !== 'firebase') return
-
-  const required = [
-    'VITE_FIREBASE_API_KEY',
-    'VITE_FIREBASE_AUTH_DOMAIN',
-    'VITE_FIREBASE_PROJECT_ID',
-    'VITE_FIREBASE_APP_ID',
-    'VITE_FIREBASE_APP_CHECK_SITE_KEY',
-  ]
-  const missing = required.filter((name) => !value(name))
-  if (missing.length) {
-    throw new Error(`Firebase deployment build is missing public configuration: ${missing.join(', ')}.`)
-  }
-  if (!/^[A-Za-z0-9.-]+$/.test(value('VITE_FIREBASE_AUTH_DOMAIN'))
-      || value('VITE_FIREBASE_AUTH_DOMAIN').includes('..')) {
-    throw new Error('VITE_FIREBASE_AUTH_DOMAIN must be one canonical hostname.')
-  }
-  if (value('VITE_FIREBASE_APP_CHECK_DEBUG_TOKEN')) {
-    throw new Error('Firebase App Check debug tokens are forbidden in deployment builds.')
-  }
-}
-
 function buildEnvironment(mode) {
   return {
     ...loadEnv(mode, currentDirectory, ''),
@@ -71,8 +44,8 @@ export function createSimsaBuildManifest(source = {}) {
   if (!['full', 'metadata-demo'].includes(appMode)) {
     throw new Error('VITE_APP_MODE must be full or metadata-demo for deployment builds.')
   }
-  if (!['better-auth', 'firebase'].includes(authProvider)) {
-    throw new Error('VITE_AUTH_PROVIDER must be better-auth or firebase for deployment builds.')
+  if (authProvider !== 'better-auth') {
+    throw new Error('VITE_AUTH_PROVIDER must be better-auth for deployment builds.')
   }
   if (!['vercel-blob', 'gcs', 'disabled'].includes(storageProvider)) {
     throw new Error('VITE_STORAGE_PROVIDER has an unsupported deployment value.')
@@ -96,23 +69,13 @@ export function createSimsaBuildManifest(source = {}) {
       throw new Error('Metadata demo builds cannot enable SRIKANDI.')
     }
 
-    if (authProvider === 'better-auth') {
-      const localBuild = value('SIMSA_DEMO_LOCAL_BUILD') === 'true'
-      const nonDeployed = !value('K_SERVICE')
-        && !value('VERCEL')
-      if (!localBuild || !nonDeployed) {
-        throw new Error('Better Auth metadata demo builds are allowed only by the explicit local build gate.')
-      }
+    const localBuild = value('SIMSA_DEMO_LOCAL_BUILD') === 'true'
+    const nonDeployed = !value('K_SERVICE')
+      && !value('VERCEL')
+    if (!localBuild || !nonDeployed) {
+      throw new Error('Better Auth metadata demo builds are allowed only by the explicit local build gate.')
     }
   }
-
-  const firebase = authProvider === 'firebase'
-    ? {
-        projectId: value('VITE_FIREBASE_PROJECT_ID'),
-        authDomain: value('VITE_FIREBASE_AUTH_DOMAIN'),
-        appId: value('VITE_FIREBASE_APP_ID'),
-      }
-    : null
 
   return {
     schemaVersion: 1,
@@ -121,7 +84,6 @@ export function createSimsaBuildManifest(source = {}) {
     api: 'same-origin',
     authProvider,
     storageProvider,
-    firebase,
   }
 }
 
@@ -141,7 +103,6 @@ function buildManifestPlugin(manifest) {
 // https://vite.dev/config/
 export default defineConfig(({ command, mode }) => {
   validateClientApiTarget(command, mode)
-  validateFirebaseBuildTarget(command, mode)
   const manifest = command === 'build'
     ? createSimsaBuildManifest(buildEnvironment(mode))
     : null

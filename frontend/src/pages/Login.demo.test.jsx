@@ -60,7 +60,7 @@ describe('demo login provider controls', () => {
     })
     it.each([
         ['full', 'better-auth', true, true], ['full', 'better-auth', false, false],
-        ['metadata-demo', 'firebase', true, true], ['metadata-demo', 'better-auth', true, false],
+        ['metadata-demo', 'better-auth', true, false],
     ])('shows Google only when supported (%s/%s configured=%s)', (mode, provider, configured, googleVisible) => {
         Object.assign(profile, { mode, provider, configured })
         render(<MemoryRouter><Login /></MemoryRouter>)

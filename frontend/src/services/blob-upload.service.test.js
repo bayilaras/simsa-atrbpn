@@ -11,7 +11,7 @@ import {
 const blobSdk = vi.hoisted(() => ({ upload: vi.fn(), getStatus: vi.fn() }));
 vi.mock('@vercel/blob/client', () => blobSdk);
 vi.mock('./api', () => ({ api: { get: blobSdk.getStatus } }));
-vi.mock('../lib/cloud-provider-config', () => ({ STORAGE_PROVIDER: 'vercel-blob', USE_FIREBASE_AUTH: false }));
+vi.mock('../lib/cloud-provider-config', () => ({ STORAGE_PROVIDER: 'vercel-blob' }));
 const ruleSetId = '08002020-0800-4080-8080-000000000008';
 
 beforeEach(() => {

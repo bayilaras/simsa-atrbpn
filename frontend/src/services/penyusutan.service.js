@@ -78,8 +78,8 @@ export const penyusutanService = {
         return api.delete(scopedPath(`${BASE_URL}/${id}`, unitKerjaId));
     },
 
-    // Fetch through the authenticated transport. A browser navigation cannot
-    // attach the Firebase App Check header required by these private endpoints.
+    // Fetch through the authenticated transport so these private endpoints get
+    // the same session, timeout, and error handling as other API calls.
     getPrintDocument(type, params = {}) {
         const scopedParams = {
             ...params,

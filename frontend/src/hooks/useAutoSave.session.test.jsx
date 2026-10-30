@@ -25,7 +25,6 @@ describe('session-scoped drafts', () => {
 
         vi.spyOn(console, 'error').mockImplementation(() => {})
         const auth = createAuthService({
-            provider: 'better-auth',
             legacyClient: { signOut: fails ? vi.fn().mockRejectedValue(new Error('offline')) : vi.fn().mockResolvedValue({}) },
         })
         if (fails) await expect(auth.signOut()).rejects.toThrow('offline')
@@ -59,7 +58,7 @@ describe('session-scoped drafts', () => {
         firstUser.unmount()
         let finishLogout
         const remoteLogout = new Promise(resolve => { finishLogout = resolve })
-        const auth = createAuthService({ provider: 'better-auth', legacyClient: { signOut: () => remoteLogout } })
+        const auth = createAuthService({ legacyClient: { signOut: () => remoteLogout } })
         const logout = auth.signOut()
 
         const nextUser = renderHook(() => useAutoSave('pending-logout', 100))

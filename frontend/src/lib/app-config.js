@@ -160,8 +160,8 @@ export function resolveRuntimeCapabilities(buildConfig, payload) {
         }),
         authentication: Object.freeze({
             provider: payload?.authentication?.provider,
-            googleSignIn: payload?.authentication?.provider === 'firebase' && payload?.authentication?.googleSignIn === true,
-            pendingGoogleSignup: payload?.authentication?.provider === 'firebase' && payload?.authentication?.googleSignIn === true && payload?.authentication?.pendingGoogleSignup === true,
+            googleSignIn: false,
+            pendingGoogleSignup: false,
         }),
     })
 }
