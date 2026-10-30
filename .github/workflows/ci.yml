@@ -283,8 +283,7 @@ jobs:
               --set backup_principal=simsa_ci_backup \
               --file /grants/0001_bootstrap_cloud_sql_roles.sql
           # Langkah privileged pg_trgm (migrasi 0049) oleh administrator grant,
-          # terpisah dari 0001 karena drill restore Cloud SQL menjalankan ulang
-          # 0001 dan membandingkan bukti extension secara persis.
+          # berkas terpisah dari 0001 seperti langkah 0003 pada runbook Neon.
           docker run --rm --network host \
             --env PGPASSWORD \
             --volume "$GITHUB_WORKSPACE/backend/src/db/grants:/grants:ro" \
