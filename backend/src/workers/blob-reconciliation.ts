@@ -1,5 +1,4 @@
 import { assertValidBlobStorageEnvironment } from '../config/blob-storage.js';
-import { validateDemoEnvironment } from '../config/demo.js';
 import {
     assertGcpIamDatabaseRuntimeEnvironment,
     assertValidCloudPlatformEnvironment,
@@ -15,7 +14,6 @@ import { pathToFileURL } from 'node:url';
 const log = createLogger('ClientBlobReconciliationWorker');
 
 export async function runBlobReconciliation() {
-    validateDemoEnvironment('blob-reconciliation');
     buildDatabasePoolConfig(process.env);
     const cloud = buildCloudPlatformConfig(process.env);
     if (cloud.storageProvider === 'gcs') {

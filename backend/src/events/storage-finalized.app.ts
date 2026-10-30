@@ -1,6 +1,5 @@
 import express, { type Express, type Request } from 'express';
 import { z } from 'zod';
-import { validateDemoEnvironment } from '../config/demo.js';
 import {
     assertGcpIamDatabaseRuntimeEnvironment,
     assertValidCloudPlatformEnvironment,
@@ -225,7 +224,6 @@ function parseFinalizedObject(req: Request): ParsedStorageObject | null {
 }
 
 function defaultDependencies(): StorageEventDependencies {
-    validateDemoEnvironment('storage-events');
     const config = assertValidCloudPlatformEnvironment(process.env, {
         requireAuth: false,
         requireStorage: true,
@@ -269,7 +267,6 @@ async function rejectObject(
 export function createStorageFinalizedApp(
     dependencies: StorageEventDependencies = defaultDependencies(),
 ): Express {
-    validateDemoEnvironment('storage-events');
     const app = express();
     app.disable('x-powered-by');
     app.use(express.json({ limit: '256kb', type: ['application/json', 'application/cloudevents+json'] }));

@@ -12,6 +12,16 @@ export interface BlobStorageConfigOptions {
     requireCallbackUrl?: boolean;
 }
 
+export function isObjectStorageDisabled(source: NodeJS.ProcessEnv = process.env): boolean {
+    return source.OBJECT_STORAGE_PROVIDER?.trim().toLowerCase() === 'disabled';
+}
+
+export function assertObjectStorageAvailable(source: NodeJS.ProcessEnv = process.env): void {
+    if (isObjectStorageDisabled(source)) {
+        throw new ServiceUnavailableError('Penyimpanan berkas digital dinonaktifkan pada layanan ini. Metadata arsip tetap tersedia.');
+    }
+}
+
 function isVercelRuntime(source: NodeJS.ProcessEnv): boolean {
     return source.VERCEL?.trim() === '1';
 }
@@ -156,3 +166,4 @@ export function getObjectStorageConfigurationStatus(source: NodeJS.ProcessEnv = 
     };
 }
 import { buildCloudPlatformConfig } from './cloud-platform.js';
+import { ServiceUnavailableError } from '../utils/errors.js';

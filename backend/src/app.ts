@@ -6,13 +6,9 @@ import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import { env, validateEnv, cloudPlatformConfig } from './config/env';
 import { getPublicAppMetadata } from './config/app-profile.js';
-import { isMetadataDemo } from './config/demo.js';
-import { isObjectStorageDisabled } from './config/demo.js';
+import { isObjectStorageDisabled } from './config/blob-storage.js';
 import { createFileStorageAccessMiddleware, createOptionalModuleAccessMiddleware } from './middlewares/file-storage-access.middleware.js';
 import { getPublicCapabilities } from './config/public-capabilities.js';
-import { createDemoAccessMiddleware } from './middlewares/demo-access.middleware.js';
-import { installFrontendHosting } from './middlewares/frontend-hosting.middleware.js';
-import { frontendSecurityDirectives } from './config/frontend-security.js';
 import { srikandiConfig } from './config/srikandi.js';
 import { isTrustedOrigin } from './config/trusted-origins';
 import { generalLimiter, authLimiter } from './middlewares/rate-limiter.middleware';
@@ -141,7 +137,6 @@ app.use(helmet({
             formAction: ["'self'"],       // Prevent form submissions to external origins
             baseUri: ["'self'"],          // Prevent base tag hijacking
             upgradeInsecureRequests: [],   // Force HTTPS for all resources
-            ...frontendSecurityDirectives(),
         },
     },
     hsts: {
@@ -152,11 +147,6 @@ app.use(helmet({
     frameguard: {
         action: 'deny' // Prevent clickjacking
     },
-    // Firebase popup sign-in needs to communicate with its opener. Scope the
-    // compatible COOP policy to the hosted Firebase frontend only.
-    ...(process.env.SIMSA_FRONTEND_DIST && cloudPlatformConfig.authProvider === 'firebase'
-        ? { crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' } }
-        : {}),
     noSniff: true, // Prevent MIME type sniffing
     xssFilter: true, // Enable XSS filter
     referrerPolicy: {
@@ -217,7 +207,7 @@ app.get('/ready', readinessHandler);
 app.get('/api/health', readinessHandler);
 
 // Bounded public feature contract. No identifiers, credentials or dependency
-// diagnostics are exposed, and stale responses cannot enable a demo feature.
+// diagnostics are exposed, and stale responses cannot enable a feature.
 app.get('/api/capabilities', (_req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     res.json(getPublicCapabilities());
@@ -314,9 +304,8 @@ app.use('/api', csrfProtection);
 // handlers. This is an anti-abuse signal, never an authorization substitute.
 app.use('/api', firebaseAppCheckMiddleware);
 
-// Defense in depth: hiding file controls in the demo UI is not authorization.
-// Reject unsupported operations before any domain router or upload parser runs.
-app.use('/api', createDemoAccessMiddleware(isMetadataDemo()));
+// Defense in depth: hiding file controls in the UI is not authorization.
+// Reject file operations before any domain router or upload parser runs.
 app.use('/api', createFileStorageAccessMiddleware(isObjectStorageDisabled()));
 
 // Response compression - compress all responses
@@ -419,8 +408,6 @@ app.use('/api/record-access-grants', recordAccessGrantRoutes); // Purpose-bound,
 
 // Setup Swagger API documentation - available at /api/docs
 setupSwagger(app);
-
-installFrontendHosting(app);
 
 // 404 handler
 app.use((req: Request, res: Response) => {

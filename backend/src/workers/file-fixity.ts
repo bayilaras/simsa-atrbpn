@@ -1,7 +1,6 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { pool, buildDatabasePoolConfig } from '../config/database.js';
-import { validateDemoEnvironment } from '../config/demo.js';
 import { assertValidBlobStorageEnvironment } from '../config/blob-storage.js';
 import { assertGcpIamDatabaseRuntimeEnvironment, assertValidCloudPlatformEnvironment, buildCloudPlatformConfig } from '../config/cloud-platform.js';
 import { blobStorageService } from '../services/blob-storage.service.js';
@@ -11,7 +10,6 @@ import { createLogger } from '../utils/logger.js';
 const log = createLogger('FileFixityWorker');
 
 export async function runFileFixity() {
-    validateDemoEnvironment('file-fixity');
     buildDatabasePoolConfig(process.env);
     const config = loadFixityConfig();
     if (buildCloudPlatformConfig().storageProvider === 'gcs') {

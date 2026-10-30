@@ -46,7 +46,7 @@ describe('API bootstrap error boundary', () => {
     }
 
     it('catches strict mode errors thrown by eager configuration builders before application construction', async () => {
-        const error = new Error('SIMSA_APP_MODE must be full or metadata-demo');
+        const error = new Error('SIMSA_APP_MODE must be full');
         const state = setup({ importError: error });
         await expect(import('../index.js')).rejects.toBe(state.stopped);
         expect(state.events).toEqual(['configuration-import']);
@@ -69,7 +69,7 @@ describe('API bootstrap error boundary', () => {
     });
 
     it('also catches a later module-construction failure inside the application graph', async () => {
-        const error = new Error('SIMSA_APP_MODE must be full or metadata-demo');
+        const error = new Error('SIMSA_APP_MODE must be full');
         const state = setup({ runtimeError: error });
         await expect(import('../index.js')).rejects.toBe(state.stopped);
         expect(state.events).toEqual(['configuration-import', 'validation', 'runtime-import']);
@@ -95,7 +95,7 @@ describe('real Node API startup failures', () => {
         const cwd = mkdtempSync(path.join(tmpdir(), 'simsa-invalid-startup-'));
         const environment: NodeJS.ProcessEnv = {
             NODE_ENV: nodeEnv,
-            SIMSA_APP_MODE: 'metadata-demoo',
+            SIMSA_APP_MODE: 'metadata-demo',
             DATABASE_URL: 'postgresql://fixture:fixture@127.0.0.1:1/simsa_demo_fixture',
         };
         for (const key of ['PATH', 'Path', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'TMPDIR']) {
@@ -127,7 +127,7 @@ describe('real Node API startup failures', () => {
         expect(records[0]).toMatchObject({
             level: 'fatal',
             msg: 'Environment validation failed',
-            err: { type: 'Error', message: 'SIMSA_APP_MODE must be full or metadata-demo' },
+            err: { type: 'Error', message: 'Invalid cloud platform configuration: SIMSA_APP_MODE must be full' },
         });
         expect(stderr).not.toContain(environment.DATABASE_URL);
     }, 20_000);

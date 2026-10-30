@@ -1,6 +1,5 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { validateDemoEnvironment } from '../config/demo.js';
 import {
     assertGcpIamDatabaseRuntimeEnvironment,
     assertValidCloudPlatformEnvironment,
@@ -25,7 +24,6 @@ function boundedInteger(name: string, fallback: number, min: number, max: number
 }
 
 export async function runFinalObjectOrphanCleanup() {
-    validateDemoEnvironment('final-object-orphan-reconciliation');
     buildDatabasePoolConfig(process.env);
     const cloud = assertValidCloudPlatformEnvironment(process.env, { requireAuth: false });
     assertGcpIamDatabaseRuntimeEnvironment(process.env, cloud.projectId);

@@ -6,7 +6,6 @@ const storage = { NODE_ENV: 'test', BLOB_READ_WRITE_TOKEN: 'synthetic-test-token
 describe('public runtime capabilities', () => {
     it('keeps metadata imports independent from the optional SRIKANDI connector', () => {
         expect(getPublicCapabilities({ SRIKANDI_ENABLED: 'false' }).capabilities.externalIntegrations).toBe(true);
-        expect(getPublicCapabilities({ SIMSA_APP_MODE: 'metadata-demo' }).capabilities.externalIntegrations).toBe(false);
     });
     it('keeps full metadata available without pretending unconfigured storage works', () => {
         expect(getPublicCapabilities({ NODE_ENV: 'test' })).toMatchObject({
@@ -43,10 +42,5 @@ describe('public runtime capabilities', () => {
         expect(getPublicCapabilities(oauth).authentication.googleSignIn).toBe(true);
         expect(getPublicCapabilities({ ...oauth, GOOGLE_CLIENT_SECRET: '' }).authentication.googleSignIn).toBe(false);
         expect(JSON.stringify(getPublicCapabilities(oauth))).not.toMatch(/test-client|test-secret/);
-    });
-    it('keeps demo storage and local social login disabled even with conflicting settings', () => {
-        expect(getPublicCapabilities({ ...storage, SIMSA_APP_MODE: 'metadata-demo',
-            MALWARE_SCANNER_MODE: 'clamav', GOOGLE_CLIENT_ID: 'test', GOOGLE_CLIENT_SECRET: 'test',
-        })).toMatchObject({ capabilities: { files: false, fileUploads: false, letterFileUploads: false }, authentication: { googleSignIn: false } });
     });
 });

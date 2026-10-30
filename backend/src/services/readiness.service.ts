@@ -3,7 +3,6 @@ import type { PoolClient } from 'pg';
 import { malwareScanConfig } from '../config/env.js';
 import { getObjectStorageConfigurationStatus } from '../config/blob-storage.js';
 import { buildCloudPlatformConfig } from '../config/cloud-platform.js';
-import { isMetadataDemo } from '../config/demo.js';
 import { getEmailConfigurationStatus } from '../config/email.js';
 import { getFirebaseAdminAuth } from '../config/firebase-admin.js';
 import { getSrikandiConfigurationStatus, srikandiConfig } from '../config/srikandi.js';
@@ -404,14 +403,6 @@ async function withAbortableDatabaseClient<T>(
 const defaultDependencies: ReadinessDependencies = {
     async probeDatabase(signal) {
         const schemaReady = await withAbortableDatabaseClient(signal, async (client) => {
-            if (isMetadataDemo()) {
-                const identity = await client.query<{ database_name: string }>(
-                    'SELECT current_database() AS database_name',
-                );
-                if (identity.rows[0]?.database_name !== process.env.SIMSA_DEMO_DATABASE) {
-                    throw new Error('Metadata demo database identity does not match its isolated target');
-                }
-            }
             // The runtime login intentionally cannot read the migration journal.
             // Validate the complete migration-0037 schema/constraint contract
             // instead of weakening least privilege for a timestamp probe.
@@ -613,7 +604,7 @@ export async function collectReadiness(
                 dependencies.probeEmbeddedScanner || defaultDependencies.probeEmbeddedScanner!,
             )
             : Promise.resolve({ ready: true, skipped: true }),
-        isMetadataDemo() || (storageDisabled && !srikandiConfig.enabled)
+        storageDisabled && !srikandiConfig.enabled
             ? Promise.resolve({ ready: true, skipped: true }) : timedProbe('worker_heartbeats', async (signal) => {
             const rows = await dependencies.readHeartbeats(signal);
             // A non-cooperative injected dependency may settle after timeout;

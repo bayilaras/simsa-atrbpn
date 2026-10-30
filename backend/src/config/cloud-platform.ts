@@ -1,5 +1,3 @@
-import { isMetadataDemo } from './demo.js';
-
 export type SimsaCloudPlatform = 'local' | 'gcp';
 export type SimsaAuthProvider = 'better-auth' | 'firebase';
 export type SimsaStorageProvider = 'vercel-blob' | 'gcs' | 'disabled';
@@ -94,7 +92,6 @@ export function buildCloudPlatformConfig(
     source: NodeJS.ProcessEnv = process.env,
 ): CloudPlatformConfig {
     const errors: string[] = [];
-    const metadataDemo = isMetadataDemo(source);
     const inferredPlatform: SimsaCloudPlatform = source.K_SERVICE ? 'gcp' : 'local';
     const platform = choice(
         source.SIMSA_CLOUD_PLATFORM,
@@ -176,14 +173,16 @@ export function buildCloudPlatformConfig(
     if (platform === 'gcp' && authProvider !== 'firebase') {
         errors.push('The GCP platform requires AUTH_PROVIDER=firebase');
     }
-    const internalFullMetadata = !metadataDemo && (source.APP_PROFILE || 'internal').trim().toLowerCase() === 'internal';
-    if (storageProvider === 'disabled' && !metadataDemo && !internalFullMetadata) {
-        errors.push('Disabled storage is only permitted in metadata-demo or full internal mode');
+    // The metadata-demo mode was removed; a stale value must not be ignored.
+    const appMode = source.SIMSA_APP_MODE?.trim().toLowerCase();
+    if (appMode && appMode !== 'full') {
+        errors.push('SIMSA_APP_MODE must be full');
     }
-    if (metadataDemo && storageProvider !== 'disabled') {
-        errors.push('Metadata demo requires disabled storage');
+    const internalProfile = (source.APP_PROFILE || 'internal').trim().toLowerCase() === 'internal';
+    if (storageProvider === 'disabled' && !internalProfile) {
+        errors.push('Disabled storage is only permitted in full internal mode');
     }
-    if (platform === 'gcp' && storageProvider !== 'gcs' && !(metadataDemo && storageProvider === 'disabled')) {
+    if (platform === 'gcp' && storageProvider !== 'gcs') {
         errors.push('The GCP platform requires OBJECT_STORAGE_PROVIDER=gcs');
     }
 
