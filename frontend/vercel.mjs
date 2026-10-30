@@ -28,21 +28,16 @@ const FRONTEND_PATH = '/((?!api(?:/|$)|health$|ready$|uploads(?:/|$)).*)'
 const FRONTEND_ROUTE = '^' + FRONTEND_PATH + '$'
 const PREVIEW_SCRIPT_HASH = "'sha256-UJuKwoqlC+F7kA0boK+uzhdPCF/csE9eCe8rJ3SZQhs='"
 
-function frontendSecurityHeaders(firebaseAuthDomain = '', unavailable = false) {
-  const authDomain = firebaseAuthDomain.trim()
-  if (authDomain && (!/^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$/i.test(authDomain)
-    || authDomain.includes('..'))) {
-    throw new Error('VITE_FIREBASE_AUTH_DOMAIN must be a hostname without scheme, path, or port.')
-  }
-  const authOrigin = authDomain ? ` https://${authDomain.toLowerCase()}` : ''
+function frontendSecurityHeaders(unavailable = false) {
+  // Google sign-in is a top-level redirect through the backend, so no Google
+  // origin needs script, connect, or frame access here.
   const csp = [
     "default-src 'self'",
     "base-uri 'none'",
     "object-src 'none'",
     "frame-ancestors 'none'",
     "form-action 'self'",
-    unavailable ? `script-src 'self' ${PREVIEW_SCRIPT_HASH}`
-      : "script-src 'self' https://apis.google.com https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/",
+    unavailable ? `script-src 'self' ${PREVIEW_SCRIPT_HASH}` : "script-src 'self'",
     // Radix positioning, chart sizing, and the maintenance shell use inline styles.
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
@@ -50,9 +45,9 @@ function frontendSecurityHeaders(firebaseAuthDomain = '', unavailable = false) {
     unavailable ? "connect-src 'self'"
       // Blob's client SDK uses both the exact endpoint and paths beneath it.
       // CSP without the trailing slash matches only the exact path.
-      : "connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://content-firebaseappcheck.googleapis.com https://www.google.com/recaptcha/ https://vercel.com/api/blob https://vercel.com/api/blob/ https://*.blob.vercel-storage.com https://storage.googleapis.com https://www.googleapis.com" + authOrigin,
-    unavailable ? "frame-src 'none'"
-      : "frame-src 'self' blob: https://www.google.com/recaptcha/ https://recaptcha.google.com/recaptcha/" + authOrigin,
+      : "connect-src 'self' https://vercel.com/api/blob https://vercel.com/api/blob/ https://*.blob.vercel-storage.com",
+    // The PDF viewer embeds same-origin blob: documents.
+    unavailable ? "frame-src 'none'" : "frame-src 'self' blob:",
     "worker-src 'self' blob:",
     "manifest-src 'self'",
     "media-src 'self' blob:",
@@ -62,7 +57,8 @@ function frontendSecurityHeaders(firebaseAuthDomain = '', unavailable = false) {
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
-    // Preserve Firebase signInWithPopup's window relationship.
+    // Unchanged on purpose: the PDF viewer and print views open same-origin
+    // about:blank/blob: windows from the SPA.
     'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
     'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
     'Strict-Transport-Security': 'max-age=31536000',
@@ -157,7 +153,7 @@ function proxyRewrite(source, destination, useProtectionBypass) {
 }
 
 function unprovisionedPreviewConfig() {
-  const securityHeaders = frontendSecurityHeaders('', true)
+  const securityHeaders = frontendSecurityHeaders(true)
   const noStoreHeaders = {
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
@@ -210,7 +206,6 @@ export function createVercelConfig({
   gitCommitRef = process.env.VERCEL_GIT_COMMIT_REF?.trim() ?? '',
   protectionBypassConfigured = Boolean(process.env[PROTECTION_BYPASS_ENV]?.trim()),
   metadataMode = process.env.SIMSA_VERCEL_METADATA_ENABLED ?? '',
-  firebaseAuthDomain = process.env.VITE_FIREBASE_AUTH_DOMAIN ?? '',
   verifyCandidateSource = process.env.SIMSA_VERIFY_CANDIDATE_SOURCE ?? '',
 } = {}) {
   if (!['', '1'].includes(verifyCandidateSource)) {
@@ -259,7 +254,7 @@ export function createVercelConfig({
     proxyRewrite('/uploads/:path*', `${apiOrigin}/uploads/:path*`, useProtectionBypass),
   ]
   const spaFallback = routes.rewrite('/(.*)', '/index.html')
-  const securityHeaders = frontendSecurityHeaders(firebaseAuthDomain)
+  const securityHeaders = frontendSecurityHeaders()
 
   if (useProtectionBypass) {
     // Header transforms require the low-level routes format. The fallback's
