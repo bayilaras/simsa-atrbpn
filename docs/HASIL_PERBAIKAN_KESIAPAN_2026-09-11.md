@@ -50,4 +50,4 @@ Bukti restore drill: `D:\SIMSA-Local-Drills\simsa-local-drill-RItH4r\result.json
 
 Pencatatan pelaksanaan pemusnahan tidak menghapus otomatis objek storage, replika atau backup. Penanganan salinan tetap bagian dari pelaksanaan dan bukti petugas. Uji integritas/bukti otomatis memakai storage tiruan; ketersediaan storage dan scanner sungguhan masih memerlukan pengujian lingkungan tujuan.
 
-Panduan: [akun](administrasi/user-management.md), [penyusutan](PENYUSUTAN_TERKENDALI.md), [pelaporan terjaga](PELAPORAN_TERJAGA_BERBUKTI.md), [integritas berkala](OPERASI_PEMERIKSAAN_INTEGRITAS.md), dan [rencana pekerjaan](PLAN_PERBAIKAN_KESIAPAN.md).
+Panduan: [akun](administrasi/user-management.md), [penyusutan](PENYUSUTAN_TERKENDALI.md), [pelaporan terjaga](PELAPORAN_TERJAGA_BERBUKTI.md), dan [integritas berkala](OPERASI_PEMERIKSAAN_INTEGRITAS.md).
