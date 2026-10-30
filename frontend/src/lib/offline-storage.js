@@ -5,9 +5,8 @@
  * can contain restricted information and must not remain as plaintext IndexedDB
  * records on shared workstations after a user signs out or a session expires.
  *
- * The no-op store exports are kept temporarily for API compatibility with older
- * components. A future offline mode must use an approved encrypted, user-scoped
- * design with classification-aware policy and remote revocation.
+ * A future offline mode must use an approved encrypted, user-scoped design with
+ * classification-aware policy and remote revocation.
  */
 
 import { clearMemoryDrafts } from './memory-drafts';
@@ -60,43 +59,6 @@ export async function clearOfflineStorage() {
     return { indexedDbDeleted, cacheDeleted };
 }
 
-// Compatibility facade: persistent reads always return empty and writes are
-// discarded. This makes accidental re-use fail closed without breaking imports.
-export const offlineStorage = Object.freeze({
-    async saveMany() { },
-    async save() { },
-    async getAll() { return []; },
-    async get() { return null; },
-    async getByIndex() { return []; },
-    async delete() { },
-    async clear() { },
-    async getLastCached() { return null; },
-});
-
-function createDisabledRecordStore() {
-    return Object.freeze({
-        async cache() { },
-        async getAll() { return []; },
-        async getByUnitKerja() { return []; },
-        async getLastCached() { return null; },
-    });
-}
-
-export const suratMasukOffline = createDisabledRecordStore();
-export const suratKeluarOffline = createDisabledRecordStore();
-export const arsipOffline = createDisabledRecordStore();
-
-export const dashboardOffline = Object.freeze({
-    async cache() { },
-    async get() { return null; },
-});
-
-export const syncQueue = Object.freeze({
-    async add() { return null; },
-    async getPending() { return []; },
-    async markSynced() { },
-});
-
 export function isOnline() {
     return typeof navigator === 'undefined' ? true : navigator.onLine;
 }
@@ -122,5 +84,3 @@ export function onConnectivityChange(callback) {
 if (typeof window !== 'undefined') {
     void clearOfflineStorage();
 }
-
-export default offlineStorage;

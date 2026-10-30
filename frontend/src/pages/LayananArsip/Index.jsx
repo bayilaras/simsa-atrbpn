@@ -37,7 +37,7 @@ import { layananArsipService } from '@/services/layanan-arsip.service';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
-import { TableSkeleton } from '@/components/LoadingSkeletons';
+import { TableSkeleton } from '@/components/skeletons';
 import { useAuth } from '@/context/AuthContext';
 import { layananUserInitial, layananUserName } from './layanan-display';
 
