@@ -22,10 +22,6 @@ pesan exception tidak otomatis masuk ke `msg`. Teks log langsung dan keluaran
 `console` lama tetap perlu menggunakan pesan aman di lokasi pemanggilannya;
 pelindung ini bukan penyaring semua data sensitif secara umum.
 
-Pada paket Windows, log proses berada di
-`output/local-runtime/internal-app.stdout.log` dan `internal-app.stderr.log`.
-Folder tersebut diabaikan Git dan tetap perlu dibatasi aksesnya oleh pengelola.
-
 ## Membaca metrik
 
 Setelah login sebagai **Super Admin**, buka `/api/operations/metrics` pada alamat

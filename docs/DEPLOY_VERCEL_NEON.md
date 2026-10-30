@@ -76,7 +76,7 @@ Untuk kegagalan startup atau pemindaian, log menjawab dua pertanyaan: tahap mana
 
 Jika `/health` mengembalikan `application_initialization_failed`, periksa log `application_import` dan konfigurasi atau paket yang ditunjuk kode terkontrol. Jika worker mengembalikan `unavailable`, periksa tahap `environment_validation`, `dependency_import`, `database_connect`, `role_check`, `queue_process`, `engine_health`, atau `heartbeat`. Koreksi penyebab lalu jalankan ulang pemeriksaan; jangan mengubah status karantina secara manual atau menonaktifkan perlindungan akses untuk mengatasi error.
 
-`firebase-admin` yang ikut dimuat API menggunakan `jwks-rsa`/`jose` dengan interoperabilitas `require(esm)` pada Node 24. Vercel menonaktifkannya secara default; tetapkan `NODE_OPTIONS=--experimental-require-module` pada backend Production sesuai [dokumentasi runtime Vercel](https://vercel.com/docs/functions/runtimes/node-js/advanced-node-configuration#experimental-nodejs-require-of-es-module). Tanpa opsi ini startup dapat gagal dengan `ERR_REQUIRE_ESM` sebelum konfigurasi aplikasi dimuat. Pengaturan ini mempertahankan versi dependensi dan pemeriksaan autentikasi; jangan menurunkan versi library atau menonaktifkan verifikasi token untuk mengatasinya.
+Backend tidak lagi memuat `firebase-admin`, alasan awal pengaturan `NODE_OPTIONS=--experimental-require-module` pada backend Production. Nilai yang sudah terpasang tidak berbahaya; hapus hanya setelah kandidat deployment tanpa opsi tersebut lolos uji asap login, unggah, dan ekspor.
 
 ## Tahap metadata dengan login nyata
 

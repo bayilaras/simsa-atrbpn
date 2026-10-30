@@ -204,7 +204,7 @@ Langkah eksekusi:
 
 Lewati aktivasi pada bagian ini bila SRIKANDI tidak diwajibkan. Kontrol gagal-tertutup dan feature flag nonaktif tetap harus dipertahankan.
 
-- [x] Tanda tangan elektronik berada di luar ruang lingkup; endpoint legacy tidak membuat `MOCK-SIG`, tetap gagal-tertutup, dan artefak simulasi selalu dianggap tidak sah.
+- [x] Tanda tangan elektronik berada di luar ruang lingkup; endpoint legacy `/api/approval/sign` sudah dihapus dan artefak simulasi `MOCK-SIG` lama tidak pernah dianggap sah.
 - [ ] **Kondisional — SRIKANDI:** gunakan sandbox; uji idempotency, retry, dead-letter, timeout, perubahan skema, dan rekonsiliasi sesuai kontrak resmi.
 - [x] Fondasi outbox durable, snapshot versi kontrak, audit append-only, idempotency/hash conflict, lease recovery, retry/backoff/dead-letter, bounded response streaming, validasi ACK + remote ID, dan worker persisten tersedia serta disabled-by-default.
 - [ ] **Kondisional — SRIKANDI:** deploy worker pada runtime persisten; endpoint HTTP pemrosesan antrean hanya fallback diagnostik satu item.

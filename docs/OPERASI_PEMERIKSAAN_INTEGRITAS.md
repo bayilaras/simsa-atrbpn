@@ -1,6 +1,6 @@
 # Pemeriksaan integritas berkas berkala
 
-Pekerjaan `start:file-fixity` membaca ulang berkas privat yang sudah lolos antivirus dan mempunyai baseline SHA-256. Hasil harus cocok dengan **hash dan ukuran** yang tercatat. Untuk GCS, pembacaan dikunci pada generation yang tercatat. Ini mendeteksi perubahan atau kerusakan; pemeriksaan tidak membuktikan kebenaran isi surat atau pengesahan pejabat.
+Pekerjaan `start:file-fixity` membaca ulang berkas privat yang sudah lolos antivirus dan mempunyai baseline SHA-256. Hasil harus cocok dengan **hash dan ukuran** yang tercatat. Ini mendeteksi perubahan atau kerusakan; pemeriksaan tidak membuktikan kebenaran isi surat atau pengesahan pejabat.
 
 ## Menjalankan dan menjadwalkan
 
