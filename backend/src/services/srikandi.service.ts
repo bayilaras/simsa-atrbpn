@@ -25,6 +25,7 @@ import {
     srikandiHttpAdapter,
     type SrikandiHttpAdapterLike,
 } from './srikandi-http.adapter.js';
+import { barisDari, resolveKonteksBaca, visibleSql, type PenggunaVisibilitas } from './access/visibility-spec.js';
 
 const MAX_PAYLOAD_BYTES = 256 * 1024;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -133,6 +134,27 @@ export function planSrikandiFailure(
                 maxSeconds,
             ))
             : null,
+    };
+}
+
+// Bagian payload yang bukan isi surat. Kunci lain (nomor, tanggal, perihal,
+// pihak, dan apa pun yang ditambahkan producer kelak) ikut disamarkan.
+const PAYLOAD_TANPA_ISI = ['profile', 'lifecycleState', 'direction', 'occurredAt'];
+const RECORD_TANPA_ISI = ['id', 'unitKerjaId'];
+
+function pilihKunci(source: unknown, keys: string[]): Record<string, unknown> | null {
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return null;
+    const record = source as Record<string, unknown>;
+    return Object.fromEntries(keys.filter(key => key in record).map(key => [key, record[key]]));
+}
+
+/** Baris tersamar: status dan riwayat pengiriman tetap; isi surat dan respons SRIKANDI disembunyikan. */
+export function samarkanOutbox<T extends SrikandiOutbox>(item: T) {
+    return {
+        ...item,
+        payload: { ...pilihKunci(item.payload, PAYLOAD_TANPA_ISI), record: pilihKunci(item.payload?.record, RECORD_TANPA_ISI) },
+        responsePayload: null,
+        masked: true as const,
     };
 }
 
@@ -305,6 +327,31 @@ export class SrikandiService {
                 totalPages: Math.ceil(count / limit),
             },
         };
+    }
+
+    /**
+     * Isi surat di payload dan respons hanya untuk pembaca yang melihat surat
+     * sumbernya di daftar surat (visibleSql mode list). Cakupan unit outbox
+     * saja tidak cukup: admin unit tidak melihat surat rahasia di daftar.
+     */
+    async samarkanUntuk<T extends SrikandiOutbox>(
+        pembaca: PenggunaVisibilitas | undefined,
+        items: T[],
+    ): Promise<Array<T | ReturnType<typeof samarkanOutbox<T>>>> {
+        if (items.length === 0) return [];
+        const ctx = await resolveKonteksBaca(pembaca, this.database);
+        const ids = sql.join(items.map(item => sql`${item.id}::uuid`), sql`, `);
+        const terbaca = new Set(barisDari<{ id: string }>(await this.database.execute(sql`
+            SELECT o.id FROM srikandi_outbox o
+            WHERE o.id IN (${ids}) AND CASE o.source_entity_type
+                WHEN 'surat_masuk' THEN EXISTS (SELECT 1 FROM surat_masuk sm WHERE sm.id = o.source_entity_id
+                    AND ${visibleSql(ctx, { type: 'surat_masuk', alias: 'sm' }, 'list')})
+                WHEN 'surat_keluar' THEN EXISTS (SELECT 1 FROM surat_keluar sk WHERE sk.id = o.source_entity_id
+                    AND ${visibleSql(ctx, { type: 'surat_keluar', alias: 'sk' }, 'list')})
+                ELSE false
+            END
+        `)).map(row => row.id));
+        return items.map(item => (terbaca.has(item.id) ? item : samarkanOutbox(item)));
     }
 
     async findById(id: string, unitScope: RecordUnitScope): Promise<SrikandiOutbox | null> {

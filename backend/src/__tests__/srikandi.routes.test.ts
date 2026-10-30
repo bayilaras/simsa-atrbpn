@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
         manualRetry: vi.fn(),
         dispatchOne: vi.fn(),
         dispatchDue: vi.fn(),
+        samarkanUntuk: vi.fn(async (_pembaca: unknown, items: unknown[]) => items),
     },
 }));
 
