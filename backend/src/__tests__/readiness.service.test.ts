@@ -201,27 +201,6 @@ describe('collectReadiness', () => {
         expect(JSON.stringify(result)).not.toContain('database unavailable');
     });
 
-    it('fails readiness when the configured Firebase control plane or runtime IAM is unavailable', async () => {
-        vi.stubEnv('AUTH_PROVIDER', 'firebase');
-        vi.stubEnv('FIREBASE_PROJECT_ID', 'simsa-readiness-test');
-        const identityProbe = vi.fn().mockRejectedValue(new Error('permission denied'));
-        const result = await collectReadiness({
-            probeDatabase: vi.fn().mockResolvedValue(undefined),
-            probeBlob: vi.fn().mockResolvedValue(undefined),
-            probeFirebaseIdentity: identityProbe,
-            readHeartbeats: vi.fn().mockResolvedValue([]),
-            now: () => Date.parse('2026-08-28T12:00:00.000Z'),
-        });
-
-        expect(result.status).toBe('not_ready');
-        expect(result.dependencies.firebaseIdentity).toMatchObject({
-            required: true,
-            runtime: { ready: false, reason: 'probe_failed' },
-        });
-        expect(identityProbe).toHaveBeenCalledOnce();
-        expect(JSON.stringify(result)).not.toContain('permission denied');
-    });
-
     it('requires the complete 0037 least-privilege schema contract in the default database probe', async () => {
         const databaseQuery = vi.fn().mockResolvedValue({ rows: [{ schema_ready: true }] });
         const databaseRelease = vi.fn();

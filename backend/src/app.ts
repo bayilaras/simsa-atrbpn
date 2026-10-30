@@ -16,7 +16,6 @@ import { prepareBetterAuthClientIp } from './middlewares/better-auth-ip.middlewa
 import { authMiddleware } from './middlewares/auth.middleware';
 import { roleMiddleware } from './middlewares/role.middleware';
 import { csrfCookieSetter, csrfProtection } from './middlewares/csrf.middleware';
-import { firebaseAppCheckMiddleware } from './middlewares/firebase-app-check.middleware.js';
 import { sanitizeInput } from './middlewares/sanitize.middleware';
 import { setupSwagger } from './config/swagger';
 import { AppError, ForbiddenError } from './utils/errors';
@@ -70,7 +69,6 @@ import srikandiRoutes from './routes/srikandi.routes';
 import recordAccessGrantRoutes from './routes/record-access-grant.routes';
 import regulatoryRuleSetRoutes from './routes/regulatory-rule-set.routes';
 import retentionGovernanceRoutes from './routes/retention-governance.routes';
-import firebaseAuthRoutes from './routes/firebase-auth.routes.js';
 import gcsUploadRoutes from './routes/gcs-upload.routes.js';
 import { getReadiness } from './services/readiness.service.js';
 import { createHttpObservability } from './middlewares/http-observability.middleware.js';
@@ -114,7 +112,6 @@ app.use(cors({
         'X-Requested-With',
         'Accept',
         'X-CSRF-Token',
-        'X-Firebase-AppCheck',
     ],
     exposedHeaders: ['Retry-After', 'X-Request-ID'],
     credentials: true,
@@ -227,7 +224,7 @@ app.options('/api/auth/*splat', (req: Request, res: Response) => {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
     res.setHeader(
         'Access-Control-Allow-Headers',
-        'Content-Type, Authorization, X-Requested-With, Accept, X-CSRF-Token, X-Firebase-AppCheck',
+        'Content-Type, Authorization, X-Requested-With, Accept, X-CSRF-Token',
     );
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Max-Age', '86400');
@@ -278,13 +275,9 @@ app.post('/api/auth/sign-out', (_req: Request, res: Response, next: NextFunction
     next();
 });
 
-if (cloudPlatformConfig.authProvider === 'firebase') {
-    app.use('/api/auth', firebaseAuthRoutes);
-} else {
-    app.all('/api/auth/*splat', wrappedAuthHandler);
-    app.all('/api/auth/:path', wrappedAuthHandler);
-    app.all('/api/auth/:path/:subpath', wrappedAuthHandler);
-}
+app.all('/api/auth/*splat', wrappedAuthHandler);
+app.all('/api/auth/:path', wrappedAuthHandler);
+app.all('/api/auth/:path/:subpath', wrappedAuthHandler);
 
 // Body parsing - AFTER Better Auth handler
 app.use('/api', createOptionalModuleAccessMiddleware());
@@ -298,10 +291,6 @@ app.use(sanitizeInput);
 // Applies to /api routes only (excludes auth routes which have their own CSRF)
 // Note: cookieParser and csrfCookieSetter are applied earlier (before health check)
 app.use('/api', csrfProtection);
-
-// In Firebase mode, reject forged/non-app clients before they reach domain
-// handlers. This is an anti-abuse signal, never an authorization substitute.
-app.use('/api', firebaseAppCheckMiddleware);
 
 // Defense in depth: hiding file controls in the UI is not authorization.
 // Reject file operations before any domain router or upload parser runs.

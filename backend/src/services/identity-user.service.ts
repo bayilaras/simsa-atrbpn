@@ -10,7 +10,6 @@ export interface ProvisionedIdentityUser {
     role: string;
     unitKerjaId: string | null;
     isActive: boolean;
-    firebaseUid: string | null;
 }
 
 const ARCHIVE_ACCESS_ROLES = new Set([
@@ -33,9 +32,6 @@ export function archiveAccessProvisioningIssue(
 export async function findProvisionedIdentityUser(
     identity: VerifiedRequestIdentity,
 ): Promise<ProvisionedIdentityUser | null> {
-    const condition = identity.provider === 'firebase'
-        ? eq(users.firebaseUid, identity.subject)
-        : eq(users.id, identity.subject);
     const [user] = await db.select({
         id: users.id,
         email: users.email,
@@ -43,18 +39,6 @@ export async function findProvisionedIdentityUser(
         role: users.role,
         unitKerjaId: users.unitKerjaId,
         isActive: users.isActive,
-        firebaseUid: users.firebaseUid,
-    }).from(users).where(condition).limit(1);
-    if (!user) return null;
-
-    // A UID mapping is authoritative, but an unexpected email change is still
-    // blocked until an administrator reconciles both identity systems.
-    if (
-        identity.provider === 'firebase'
-        && identity.email
-        && identity.email.toLowerCase() !== user.email.toLowerCase()
-    ) {
-        return null;
-    }
-    return user;
+    }).from(users).where(eq(users.id, identity.subject)).limit(1);
+    return user ?? null;
 }

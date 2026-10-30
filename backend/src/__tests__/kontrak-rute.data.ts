@@ -195,12 +195,6 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'POST /preview': 'bukan-rekaman',
         'POST /surat-${kind}': check('fileImportService.importSurat'),
     },
-    'firebase-auth.routes.ts': {
-        'POST /session': 'bukan-rekaman',
-        'GET /get-session': 'bukan-rekaman',
-        'POST /sign-out': 'bukan-rekaman',
-        'POST /revoke-sessions': 'bukan-rekaman',
-    },
     'gcs-upload.routes.ts': {
         'POST /': 'bukan-rekaman',
         'GET /:uploadId': 'bukan-rekaman',
@@ -498,12 +492,6 @@ export const TANPA_SESI: Record<string, Record<string, string>> = {
     },
     'client-upload.routes.ts': {
         'POST /': 'authorizeTokenGeneration: sesi untuk token, tanda tangan Blob untuk callback',
-    },
-    'firebase-auth.routes.ts': {
-        'POST /session': 'membuat sesi; App Check dan origin tepercaya',
-        'GET /get-session': 'membaca cookie sesi',
-        'POST /sign-out': 'menghapus cookie sesi; origin tepercaya',
-        'POST /revoke-sessions': 'cookie sesi atau bearer, dengan CSRF',
     },
     'operations.routes.ts': {
         'GET /probe': 'token otomasi (Bearer), bukan sesi',

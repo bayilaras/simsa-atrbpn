@@ -106,14 +106,6 @@ describe('runtime-specific environment validation', () => {
         })).not.toThrow();
     });
 
-    it('rejects an Auth Emulator leak before validating any deployed worker', () => {
-        expect(() => validateRuntimeEnv('srikandi-worker', {
-            ...database,
-            NODE_ENV: 'production',
-            FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9099',
-        })).toThrow(/FIREBASE_AUTH_EMULATOR_HOST must not be set/);
-    });
-
     it('keeps each worker fail-closed for its own dependencies', () => {
         expect(() => validateRuntimeEnv('malware-worker', {
             ...database,

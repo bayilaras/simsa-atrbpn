@@ -32,13 +32,6 @@ export async function authMiddleware(
             return res.status(401).json({ error: 'Unauthorized: No valid session' });
         }
 
-        if (identity.provider === 'firebase' && identity.emailVerified !== true) {
-            return res.status(403).json({
-                error: 'Email verification required',
-                message: 'Verifikasi email Firebase diperlukan sebelum mengakses SIMSA.',
-            });
-        }
-
         const user = await findProvisionedIdentityUser(identity);
 
         if (!user) {
@@ -47,8 +40,7 @@ export async function authMiddleware(
 
         // Deactivating a user does not revoke their Better Auth session, so a
         // soft-deleted account stays authenticated until expiry unless blocked here.
-        const { isActive, firebaseUid: _firebaseUid, ...authUser } = user;
-        void _firebaseUid;
+        const { isActive, ...authUser } = user;
         if (isActive === false) {
             return res.status(403).json({
                 error: 'Forbidden',
@@ -88,10 +80,6 @@ export async function authMiddleware(
         next();
     } catch (error) {
         log.error({ err: error }, 'Auth middleware error');
-        if (String((error as { code?: unknown }).code || '').startsWith('auth/')) {
-            res.status(401).json({ error: 'Unauthorized: Invalid or revoked Firebase session' });
-            return;
-        }
         res.status(500).json({ error: 'Internal server error' });
     }
 }
@@ -105,12 +93,11 @@ export async function optionalAuthMiddleware(
     try {
         const identity = await verifyRequestIdentity(req);
 
-        if (identity && (identity.provider !== 'firebase' || identity.emailVerified === true)) {
+        if (identity) {
             const user = await findProvisionedIdentityUser(identity);
 
             if (user) {
-                const { isActive, firebaseUid: _firebaseUid, ...authUser } = user;
-                void _firebaseUid;
+                const { isActive, ...authUser } = user;
                 if (isActive !== false && archiveAccessProvisioningIssue(authUser) === null) {
                     req.user = {
                         ...authUser,

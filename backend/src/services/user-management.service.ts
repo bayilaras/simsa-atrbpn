@@ -2,32 +2,15 @@ import { db } from '../config/database';
 import { users, unitKerja, sessions, accounts, suratKeluar } from '../db/schema';
 import { eq, ilike, or, and, desc, sql } from 'drizzle-orm';
 import { hashPassword } from 'better-auth/crypto';
-import type { UserRecord } from 'firebase-admin/auth';
-import { getFirebaseAdminAuth } from '../config/firebase-admin.js';
-import { assertValidCloudPlatformEnvironment } from '../config/cloud-platform.js';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 import { ROLE_MANDATED_UNIT_KERJA } from '../utils/resolve-unit-kerja.js';
 import {
-    AppError,
     ConflictError,
     ForbiddenError,
-    ServiceUnavailableError,
     ValidationError,
 } from '../utils/errors.js';
 import { lockAuthorizationMandatesExclusive } from '../utils/authorization-mandate-lock.js';
-import { createLogger } from '../utils/logger.js';
-import { publicErrorStatus } from '../utils/public-error.js';
 import { ASSIGNABLE_ROLES, KNOWN_ROLES } from '../config/permissions.js';
-
-const log = createLogger('UserManagementService');
-
-// The Firebase session boundary requires email_verified=true. Admin-created
-// accounts therefore use an explicit administrator-attested verification
-// policy and are immediately usable with the transient password supplied to
-// Firebase Admin. A future email-invitation flow must change this policy and
-// the session exchange together; silently creating an unusable unverified
-// identity is not acceptable.
-export const FIREBASE_ADMIN_CREATED_EMAIL_VERIFIED = true;
 
 export interface UserFilters {
     search?: string;
@@ -136,43 +119,11 @@ function selectUserById(executor: Pick<typeof db, 'select'>, userId: string) {
         .limit(1);
 }
 
-function userManagementAuthProvider() {
-    return assertValidCloudPlatformEnvironment(process.env, {
-        requireStorage: false,
-    }).authProvider;
-}
-
-function externalErrorCode(error: unknown): string | undefined {
-    if (!error || typeof error !== 'object' || !('code' in error)) return undefined;
-    const code = (error as { code?: unknown }).code;
-    return typeof code === 'string' ? code : undefined;
-}
-
-function isDatabaseUniqueViolation(error: unknown): boolean {
-    return externalErrorCode(error) === '23505';
-}
-
-function firebaseProvisioningConflict(error: unknown): boolean {
-    const code = externalErrorCode(error);
-    return code === 'auth/email-already-exists' || code === 'auth/uid-already-exists';
-}
-
-function normalizeProvisioningError(error: unknown): unknown {
-    if (error instanceof AppError) return error;
-    if (isDatabaseUniqueViolation(error) || firebaseProvisioningConflict(error)) {
-        // The caller is privileged, but keep the response identical for a DB
-        // duplicate, a Firebase duplicate, and a concurrent create race.
-        return new ConflictError('Identitas pengguna tersebut sudah digunakan.');
-    }
-    return error;
-}
-
 async function validateCreatePrerequisites(
     tx: UserManagementTransaction,
     normalizedEmail: string,
     normalizedUnitKerjaId: string | null,
     auditContext: CriticalAuditContext,
-    duplicatePolicy: 'legacy' | 'generic',
 ) {
     await lockAuthorizationMandatesExclusive(tx);
     await requireActiveSuperAdminActor(tx, auditContext);
@@ -182,10 +133,7 @@ async function validateCreatePrerequisites(
         .from(users)
         .where(ilike(users.email, normalizedEmail))
         .limit(1);
-    if (existingUser) {
-        if (duplicatePolicy === 'legacy') throw new ValidationError('Email sudah terdaftar');
-        throw new ConflictError('Identitas pengguna tersebut sudah digunakan.');
-    }
+    if (existingUser) throw new ValidationError('Email sudah terdaftar');
 
     if (normalizedUnitKerjaId) {
         const [unit] = await tx
@@ -197,28 +145,21 @@ async function validateCreatePrerequisites(
     }
 }
 
-interface PersistUserIdentity {
-    provider: 'better_auth' | 'firebase';
-    firebaseUid?: string;
-    passwordHash?: string;
-}
-
 async function persistCreatedUser(
     data: CreateUserData,
     normalizedEmail: string,
     normalizedUnitKerjaId: string | null,
-    identity: PersistUserIdentity,
+    passwordHash: string | undefined,
     auditContext: CriticalAuditContext,
 ) {
     return db.transaction(async (tx) => {
-        // Repeat all preflight checks after the external Firebase create. This
-        // closes actor deactivation, unit deletion, and duplicate-email races.
+        // Check authority, unit and duplicate email inside the write
+        // transaction. This closes actor deactivation and unit deletion races.
         await validateCreatePrerequisites(
             tx,
             normalizedEmail,
             normalizedUnitKerjaId,
             auditContext,
-            identity.provider === 'firebase' ? 'generic' : 'legacy',
         );
 
         const [newUser] = await tx
@@ -231,24 +172,20 @@ async function persistCreatedUser(
                 jabatan: data.jabatan || null,
                 nip: data.nip || null,
                 isActive: true,
-                emailVerified: identity.provider === 'firebase'
-                    ? FIREBASE_ADMIN_CREATED_EMAIL_VERIFIED
-                    : Boolean(identity.passwordHash),
-                firebaseUid: identity.firebaseUid,
-                identityProvider: identity.provider,
-                authMigratedAt: identity.provider === 'firebase' ? new Date() : undefined,
+                emailVerified: Boolean(passwordHash),
+                identityProvider: 'better_auth',
             })
             .returning();
 
         if (!newUser) throw new Error('Failed to create user');
 
-        if (identity.provider === 'better_auth' && identity.passwordHash) {
+        if (passwordHash) {
             await tx.insert(accounts).values({
                 userId: newUser.id,
                 issuer: 'local:credential',
                 accountId: newUser.id,
                 providerId: 'credential',
-                password: identity.passwordHash,
+                password: passwordHash,
             });
         }
 
@@ -264,7 +201,7 @@ async function persistCreatedUser(
                     role: newUser.role,
                     unitKerjaId: newUser.unitKerjaId,
                     isActive: newUser.isActive,
-                    identityProvider: identity.provider,
+                    identityProvider: 'better_auth',
                 },
             },
         }, tx);
@@ -272,54 +209,6 @@ async function persistCreatedUser(
         const [profile] = await selectUserById(tx, newUser.id);
         return profile || newUser;
     });
-}
-
-async function compensateFirebaseCreate(firebaseUid: string, cause: unknown): Promise<never> {
-    try {
-        await getFirebaseAdminAuth().deleteUser(firebaseUid);
-    } catch (compensationError) {
-        // A concurrent reconciler may already have removed the same orphan.
-        // Firebase's not-found result is therefore a successful idempotent
-        // compensation, not a new incident.
-        if (externalErrorCode(compensationError) === 'auth/user-not-found') {
-            throw normalizeProvisioningError(cause);
-        }
-        // A process crash in the same create->persist window has the same
-        // residual shape. It cannot enter SIMSA because no DB mapping exists;
-        // the identity:firebase:plan reconciliation command reports the
-        // verified unmatched Firebase identity for operator cleanup.
-        log.error({
-            event: 'firebase_provisioning_compensation_failed',
-            status: publicErrorStatus(compensationError),
-            firebaseUid,
-            originalStatus: publicErrorStatus(cause),
-        }, 'Firebase provisioning compensation failed; unmatched identity requires reconciliation');
-        throw new ServiceUnavailableError(
-            'Provisioning pengguna belum dapat dipastikan. Jalankan rekonsiliasi identitas sebelum mencoba lagi.',
-        );
-    }
-    throw normalizeProvisioningError(cause);
-}
-
-async function synchronizeFirebaseAuthorizationState(
-    firebaseUid: string,
-    isActive: boolean,
-    revokeSessions: boolean,
-): Promise<void> {
-    const firebaseAuth = getFirebaseAdminAuth();
-    try {
-        // updateUser and revokeRefreshTokens are idempotent for retries. The DB
-        // commit happens first and remains the authorization authority even if
-        // Firebase is temporarily unavailable.
-        await firebaseAuth.updateUser(firebaseUid, { disabled: !isActive });
-        if (revokeSessions) await firebaseAuth.revokeRefreshTokens(firebaseUid);
-    } catch (error) {
-        log.error({ event: 'firebase_authorization_reconciliation_failed', status: publicErrorStatus(error), firebaseUid, desiredActiveState: isActive },
-            'Database user state committed but Firebase authorization reconciliation failed');
-        throw new ServiceUnavailableError(
-            'Perubahan pengguna tersimpan, tetapi sinkronisasi sesi belum selesai. Ulangi permintaan ini.',
-        );
-    }
 }
 
 export const userManagementService = {
@@ -337,80 +226,17 @@ export const userManagementService = {
             data.unitKerjaId,
             Object.prototype.hasOwnProperty.call(data, 'unitKerjaId'),
         );
-        const authProvider = userManagementAuthProvider();
-
-        if (authProvider === 'better-auth') {
-            // Preserve legacy behavior exactly: Better Auth receives its own
-            // scrypt hash and an optional credential account is stored in the
-            // same transaction as the domain user and critical audit record.
-            const passwordHash = data.password ? await hashPassword(data.password) : undefined;
-            return persistCreatedUser(
-                data,
-                normalizedEmail,
-                normalizedUnitKerjaId,
-                { provider: 'better_auth', passwordHash },
-                auditContext,
-            );
-        }
-
-        if (!data.password) {
-            throw new ValidationError(
-                'Password wajib untuk akun Firebase yang dibuat administrator.',
-            );
-        }
-
-        // Verify authority and obvious conflicts before creating an external
-        // identity. The persistence transaction repeats these checks to close
-        // the race between this commit and Firebase Admin.
-        await db.transaction(async (tx) => {
-            await validateCreatePrerequisites(
-                tx,
-                normalizedEmail,
-                normalizedUnitKerjaId,
-                auditContext,
-                'generic',
-            );
-        });
-
-        const firebaseAuth = getFirebaseAdminAuth();
-        let firebaseUser: UserRecord;
-        try {
-            // The plaintext password exists only in this request and Firebase
-            // Admin call. It is never hashed, logged, audited, or persisted by
-            // the SIMSA backend in Firebase mode.
-            firebaseUser = await firebaseAuth.createUser({
-                email: normalizedEmail,
-                password: data.password,
-                displayName: data.name,
-                emailVerified: FIREBASE_ADMIN_CREATED_EMAIL_VERIFIED,
-                disabled: false,
-            });
-        } catch (error) {
-            throw normalizeProvisioningError(error);
-        }
-
-        if (
-            !firebaseUser.uid
-            || firebaseUser.uid.length > 128
-            || firebaseUser.email?.trim().toLowerCase() !== normalizedEmail
-        ) {
-            return compensateFirebaseCreate(
-                firebaseUser.uid,
-                new Error('Firebase returned an invalid or mismatched user record'),
-            );
-        }
-
-        try {
-            return await persistCreatedUser(
-                data,
-                normalizedEmail,
-                normalizedUnitKerjaId,
-                { provider: 'firebase', firebaseUid: firebaseUser.uid },
-                auditContext,
-            );
-        } catch (error) {
-            return compensateFirebaseCreate(firebaseUser.uid, error);
-        }
+        // Better Auth receives its own scrypt hash, and an optional credential
+        // account is stored in the same transaction as the domain user and
+        // critical audit record.
+        const passwordHash = data.password ? await hashPassword(data.password) : undefined;
+        return persistCreatedUser(
+            data,
+            normalizedEmail,
+            normalizedUnitKerjaId,
+            passwordHash,
+            auditContext,
+        );
     },
 
     /**
@@ -517,8 +343,7 @@ export const userManagementService = {
         if (data.jabatan !== undefined) updateData.jabatan = data.jabatan;
         if (data.nip !== undefined) updateData.nip = data.nip;
 
-        const authProvider = userManagementAuthProvider();
-        const mutation = await db.transaction(async (tx) => {
+        return db.transaction(async (tx) => {
         // Serialize every privileged user mutation with approval's shared gate,
         // then re-authorize the actor before locking the target. This gives role
         // revocation a transactionally observable boundary for in-flight calls.
@@ -666,28 +491,8 @@ export const userManagementService = {
         }, tx);
 
         const [profile] = await selectUserById(tx, userId);
-        return {
-            publicUser: profile || updatedUser,
-            firebaseUid: updatedUser.firebaseUid,
-            isActive: updatedUser.isActive,
-            // Use requested authorization fields, not only state deltas. If a
-            // previous post-commit Firebase call failed, retrying the same
-            // idempotent request must still finish token revocation.
-            revokeFirebaseSessions: data.role !== undefined
-                || data.unitKerjaId !== undefined
-                || data.isActive !== undefined,
-        };
+        return profile || updatedUser;
         });
-
-        if (!mutation) return null;
-        if (authProvider === 'firebase' && mutation.firebaseUid) {
-            await synchronizeFirebaseAuthorizationState(
-                mutation.firebaseUid,
-                mutation.isActive,
-                mutation.revokeFirebaseSessions,
-            );
-        }
-        return mutation.publicUser;
     },
 
     /**

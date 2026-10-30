@@ -144,20 +144,22 @@ describe('backend application profile', () => {
         }));
     });
 
-    it('allows the required Firebase App Check header in a trusted CORS preflight', async () => {
+    it('allows the CSRF header but not the retired App Check header in a trusted CORS preflight', async () => {
         const previousAdditionalOrigins = env.ADDITIONAL_TRUSTED_ORIGINS;
-        const alternateOrigin = 'https://firebase.simsa.example.go.id';
+        const alternateOrigin = 'https://alternate.simsa.example.go.id';
         env.ADDITIONAL_TRUSTED_ORIGINS = alternateOrigin;
         try {
             const response = await request(app)
                 .options('/api/health')
                 .set('Origin', alternateOrigin)
                 .set('Access-Control-Request-Method', 'GET')
-                .set('Access-Control-Request-Headers', 'X-Firebase-AppCheck')
+                .set('Access-Control-Request-Headers', 'X-CSRF-Token')
                 .expect(204);
 
             expect(response.headers['access-control-allow-headers'])
-                .toContain('X-Firebase-AppCheck');
+                .toContain('X-CSRF-Token');
+            expect(response.headers['access-control-allow-headers'])
+                .not.toContain('X-Firebase-AppCheck');
         } finally {
             env.ADDITIONAL_TRUSTED_ORIGINS = previousAdditionalOrigins;
         }

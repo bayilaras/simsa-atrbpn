@@ -5,7 +5,6 @@ import { buildCloudPlatformConfig } from '../config/cloud-platform.js';
 import { env } from '../config/env.js';
 import { isTrustedOrigin } from '../config/trusted-origins.js';
 import { authMiddleware, type AuthRequest } from '../middlewares/auth.middleware.js';
-import { firebaseReplayProtectedAppCheckMiddleware } from '../middlewares/firebase-app-check.middleware.js';
 import { uploadLimiter } from '../middlewares/rate-limiter.middleware.js';
 import { canWriteMiddleware } from '../middlewares/role.middleware.js';
 import { clientBlobUploadService, type ClientBlobPurpose } from '../services/client-blob-upload.service.js';
@@ -57,7 +56,6 @@ function objectPath(
 
 router.post(
     '/',
-    firebaseReplayProtectedAppCheckMiddleware,
     authMiddleware as any,
     uploadLimiter,
     canWriteMiddleware() as any,

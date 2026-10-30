@@ -124,7 +124,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
  *                 type: string
  *                 format: password
  *                 minLength: 8
- *                 description: Required for Firebase mode; forwarded transiently to Firebase Admin and never stored by SIMSA
+ *                 description: Optional; stored only as a Better Auth credential hash
  *     responses:
  *       201:
  *         description: User created successfully

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { validateRuntimeEnv } from '../config/env.js';
 import { getPublicCapabilities } from '../config/public-capabilities.js';
-import { buildGoogleOAuthConfig } from '../config/google-oauth.js';
 
 const deployedInternal = {
     NODE_ENV: 'production', APP_PROFILE: 'internal', AUTH_PROVIDER: 'better-auth',
@@ -52,14 +51,8 @@ describe('explicit internal password-only Google OAuth configuration', () => {
             APP_PROFILE: 'integrated', GOOGLE_OAUTH_ENABLED: 'false' })).toThrow(/GOOGLE_OAUTH_ENABLED=false.*internal/);
     });
 
-    it('keeps the opt-out outside Firebase semantics', () => {
-        expect(buildGoogleOAuthConfig({ ...deployedInternal, AUTH_PROVIDER: 'firebase', GOOGLE_OAUTH_ENABLED: 'false' }).validationErrors)
-            .toContain('GOOGLE_OAUTH_ENABLED=false requires the internal profile with Better Auth');
-    });
-
-    it('keeps Firebase Google capability controlled by Firebase rather than Better Auth credentials', () => {
-        const source = { AUTH_PROVIDER: 'firebase', FIREBASE_PROJECT_ID: 'synthetic-project', NODE_ENV: 'test' };
-        expect(buildGoogleOAuthConfig(source).validationErrors).toEqual([]);
-        expect(getPublicCapabilities(source).authentication).toEqual({ provider: 'firebase', googleSignIn: true, pendingGoogleSignup: false });
+    it('rejects the retired Firebase provider value even with the opt-out', () => {
+        expect(() => validateRuntimeEnv('api', { ...deployedInternal, AUTH_PROVIDER: 'firebase', GOOGLE_OAUTH_ENABLED: 'false' }))
+            .toThrow(/AUTH_PROVIDER must be one of: better-auth/);
     });
 });

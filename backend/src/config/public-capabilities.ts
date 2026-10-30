@@ -26,9 +26,7 @@ export function getPublicCapabilities(source: NodeJS.ProcessEnv = process.env) {
             fileUploads = scanner.mode === 'clamav' && scanner.workerEnabled;
         } catch { /* Invalid scanner settings must never advertise usable uploads. */ }
     }
-    const googleSignIn = cloud.authProvider === 'firebase'
-        ? Boolean(cloud.firebaseProjectId) && !cloud.validationErrors.some(error => /Firebase|FIREBASE|project authority|AUTH_PROVIDER/.test(error))
-        : buildGoogleOAuthConfig(source).configured;
+    const googleSignIn = buildGoogleOAuthConfig(source).configured;
     return {
         mode: 'full',
         syntheticDataOnly: false,
