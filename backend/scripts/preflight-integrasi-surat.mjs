@@ -168,7 +168,7 @@ ORDER BY 1, 2`,
   {
     id: 'index_manual_surat',
     judul: 'Seluruh index pada tabel surat dan unit_kerja',
-    keputusan: 'Arsipkan. Index yang tidak berasal dari rantai migrasi (mis. dari add_soft_delete_and_indexes.sql) dicatat sebagai index manual.',
+    keputusan: 'Arsipkan. Index yang tidak berasal dari rantai migrasi dicatat sebagai index manual.',
     sql: `SELECT tablename, indexname, indexdef
 FROM pg_indexes
 WHERE schemaname = 'public' AND tablename IN ('surat_masuk', 'surat_keluar', 'surat_distributions', 'unit_kerja')

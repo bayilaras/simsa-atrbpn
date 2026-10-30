@@ -45,3 +45,9 @@ temp/
 *.tmp
 .vercel
 .env*.local
+
+# Generated test and type-check output
+tap-output.txt
+test-results.json
+tsc_check.txt
+testsprite_tests/
