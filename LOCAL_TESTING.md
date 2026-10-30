@@ -37,7 +37,9 @@ Jalankan hanya pada database disposable, bukan target yang dipakai pengguna.
 2. Ikuti pemisahan grant-admin, migrator, maintenance, runtime, dan backup-reader
    pada langkah bootstrap job Backend Tests di `.github/workflows/ci.yml`
    (`backend/src/db/grants/0001_bootstrap_cloud_sql_roles.sql`, lalu
-   `npm run db:roles:bootstrap`), dengan identitas lokal tersendiri.
+   `npm run db:roles:bootstrap`), dengan identitas lokal tersendiri. Pemetaan
+   peran yang sama untuk Neon ada di `scripts/neon-database-policy.mjs` dan
+   [runbook kredensial database](docs/RUNBOOK_KREDENSIAL_DATABASE.md).
    Bootstrap schema/role sebelum `npm run db:migrate`; jangan memakai `db:push`.
    Setelah bootstrap final dan grant convergence, jalankan migrasi lagi: harus
    `0 applied`, dengan database `CREATE` migrator tetap ditolak.

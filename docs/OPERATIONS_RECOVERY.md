@@ -83,3 +83,40 @@ Mode tersebut tidak membaca credential sumber Neon/Blob, tidak terhubung ke prod
 Workflow `.github/workflows/operations-recovery.yml` berjalan pada default branch yang terlindungi dan environment khusus `production-recovery`. Environment lama `production-backup` menunjuk target database berbeda dan dipertahankan tanpa perubahan. Konfigurasi baru harus memverifikasi pin database dan store privat, menyediakan credential recovery terpisah, serta menyimpan passphrase pemulihan secara privat; jangan mengganti atau memakai ulang target lama secara otomatis. Aktivasi memerlukan repository variable `OPERATIONS_RECOVERY_ENABLED=true`, secret/variable environment di tabel, dan pembatasan deployment branch environment. Workflow lama `backup-neon.yml` sudah dihapus dari repository; alur ini satu-satunya backup terjadwal. Waktu selesai backup pada status menggunakan waktu snapshot database; waktu pengambilan byte dicatat terpisah agar umur backup tidak diperpanjang oleh proses restore.
 
 File workflow telah disiapkan, tetapi merge ke protected default branch, aktivasi, dan run GitHub pertama harus diverifikasi tersendiri. Tidak ada public PR dibuat oleh pekerjaan recovery ini. Uji lokal, bukti restore aktual, dan kesiapan konfigurasi tidak boleh dilaporkan sebagai jadwal CI yang sudah berjalan.
+
+## Bukti database dalam bundle
+
+Bundle database mengikat hash helper dan seluruh jurnal migrasi checkout. Selama rantai jurnal di `main` berbeda dengan rantai database produksi, backup terjadwal gagal; rapatkan jarak antara merge migrasi dan penerapannya, atau ambil backup manual dengan checkout yang cocok.
+
+Collector `.github/scripts/collect-backup-evidence.sql` mengenal profil migrasi berikut:
+
+- `pre_migration` harus persis berisi 21 timestamp Drizzle dari `0000` sampai `0020_permanent_transfer_lifecycle`;
+- `pre_upgrade_0038` tepat sampai `0038_arsip_direct_upload`, untuk cadangan sebelum upgrade 0039;
+- `post_migration` harus persis berisi seluruh timestamp dan hash migrasi dalam jurnal checkout yang direview; jumlahnya tidak disalin ke dokumen.
+
+Mode `auto` collector hanya menerima salah satu rantai yang telah direview dan mencatat profil hasil resolusinya. Riwayat parsial di antara baseline, duplikat, timestamp tak dikenal, atau migrasi di luar profil ditolak. Bukti mencakup profil terpilih, identitas lengkap riwayat migrasi, fingerprint SHA-256 schema semantik, jumlah persis setiap tabel, dan fingerprint konten setiap regular/leaf table pada schema `public` serta `drizzle`. Fingerprint dibuat sebelum dump pada snapshot yang diimpor oleh `pg_dump`, jadi aktivitas transaksi selama backup tidak menghasilkan perbandingan palsu.
+
+Setiap hash riwayat migrasi aktual dibandingkan persis antara sumber dan hasil pemulihan. Migrasi `0010` dan seterusnya hanya menerima SHA-256 SQL checkout LF. Untuk `0000`–`0009`, verifier menerima SHA-256 checkout LF atau tepat satu varian lama per migrasi yang telah direkonsiliasi terhadap metadata produksi dan riwayat Git; hash lain ditolak. Daftar varian dibatasi di helper verifier, bukan ambang atau wildcard, dan `.gitattributes` menetapkan LF untuk migrasi berikutnya.
+
+Fingerprint schema sengaja tidak mencakup owner dan ACL karena dump/restore memakai `--no-owner --no-privileges`; grant dibangun ulang dan diuji oleh prosedur pemulihan. Fingerprint tetap mencakup urutan logis kolom, struktur constraint/index, ekspresi check/index dan predicate, kolom/kunci, operator exclusion, status validasi, aksi foreign key, sequence beserta ownership/parameter, dan extension. Normalisasi ekspresi hanya menghapus cast text/array dan wrapper literal-array yang ekuivalen akibat dump/restore, serta satu bentuk asosiasi `AND` lama yang dikenal. Token raw single/double-quoted yang berurutan ikut di-hash, sehingga whitespace atau teks mirip cast di dalam literal atau quoted identifier tetap sensitif; tanda kurung pengelompokan lain juga dipertahankan.
+
+## Sebelum migrasi produksi dan saat insiden
+
+Retensi PITR/branch bergantung pada plan dan konfigurasi project Neon yang aktif. Verifikasi nilainya langsung di console dan simpan bukti konfigurasinya; RPO/RTO baru boleh disahkan dari hasil drill terukur.
+
+Sebelum migrasi produksi:
+
+1. pastikan backup terjadwal terakhir hijau, atau ambil backup manual ([backup Neon](BACKUP_NEON.md)) dengan checkout yang cocok, dan catat artefaknya;
+2. buat branch/PITR Neon dari titik yang sama dan catat timestamp;
+3. pastikan pemulihan terisolasi terakhir berhasil; lalu
+4. jalankan migrasi hanya setelah approval operasional.
+
+Saat insiden, pulihkan ke environment terpisah, bandingkan snapshot dengan produksi, dan salin data kembali hanya melalui prosedur yang diaudit. Jangan melakukan restore in-place atau menghapus branch/objek lama sebelum validasi bisnis, fixity, audit, serta persetujuan pemilik data selesai. Pemulihan database yang berhasil tetapi dokumennya tidak dapat diambil atau hash-nya berbeda tetap dihitung sebagai drill gagal.
+
+## Bukti berkala
+
+| Frekuensi | Bukti minimum |
+|---|---|
+| Harian | Workflow `operations-recovery.yml` hijau dan status backup/restore terbaru pada panel Super Admin |
+| Bulanan | Unduh artefak terbaru ke penyimpanan kantor, uji buka dengan `operations-recovery-extract.mjs`, serta ukur RPO/RTO |
+| Sebelum deploy/migrasi | Backup database dan dokumen terbaru, branch/PITR, pemulihan terisolasi, approval |
