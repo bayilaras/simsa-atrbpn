@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -32,6 +32,13 @@ const HASIL_AKHIR_OPTIONS = {
     'Dinilai Kembali': { label: 'Dinilai Kembali', color: 'bg-yellow-500', badgeClass: 'bg-yellow-100 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-200' },
 }
 
+// Returns a check that stays true only while this is the newest request of
+// its kind, so a slower response for an older unit, page or filter is dropped.
+function startRequest(counters, key) {
+    const id = ++counters.current[key]
+    return () => id === counters.current[key]
+}
+
 export default function RetentionManagement() {
     const { user } = useAuth()
     const { toast } = useToast()
@@ -57,13 +64,15 @@ export default function RetentionManagement() {
     const [holdMode, setHoldMode] = useState('hold')
     const [holdReason, setHoldReason] = useState('')
     const [holdSaving, setHoldSaving] = useState(false)
+    const requestCounters = useRef({ summary: 0, candidates: 0, holds: 0 })
 
     // Fetch summary
     const fetchSummary = useCallback(async () => {
         if (!unitKerjaId) return
+        const isLatest = startRequest(requestCounters, 'summary')
         try {
             const res = await retentionService.getSummary(unitKerjaId)
-            setSummary(res.data)
+            if (isLatest()) setSummary(res.data)
         } catch (error) {
             console.error('Error fetching summary:', error)
         }
@@ -72,6 +81,7 @@ export default function RetentionManagement() {
     // Fetch candidates
     const fetchCandidates = useCallback(async () => {
         if (!unitKerjaId) return
+        const isLatest = startRequest(requestCounters, 'candidates')
         try {
             setCandidatesLoading(true)
             const filters = { page, limit: 20 }
@@ -79,24 +89,27 @@ export default function RetentionManagement() {
             if (hasilAkhirFilter !== 'all') filters.hasilAkhir = hasilAkhirFilter
 
             const res = await retentionService.getCandidates(unitKerjaId, filters)
-            setCandidates(res)
+            if (isLatest()) setCandidates(res)
         } catch (error) {
             console.error('Error fetching candidates:', error)
         } finally {
-            setCandidatesLoading(false)
+            if (isLatest()) setCandidatesLoading(false)
         }
     }, [unitKerjaId, statusFilter, hasilAkhirFilter, page])
 
     const fetchHolds = useCallback(async () => {
         if (!unitKerjaId) return
+        const isLatest = startRequest(requestCounters, 'holds')
         try {
             const res = await retentionService.getHolds(unitKerjaId)
-            setHolds(res.data || [])
+            if (isLatest()) setHolds(res.data || [])
         } catch (error) {
             console.error('Error fetching legal holds:', error)
         }
     }, [unitKerjaId])
 
+    // The summary and legal holds depend only on the unit. A page or filter
+    // change reloads just the candidate table, with its own inline loader.
     useEffect(() => {
         if (!unitKerjaId) {
             setSummary(null)
@@ -108,11 +121,15 @@ export default function RetentionManagement() {
         }
         const init = async () => {
             setLoading(true)
-            await Promise.all([fetchSummary(), fetchCandidates(), fetchHolds()])
+            await Promise.all([fetchSummary(), fetchHolds()])
             setLoading(false)
         }
         init()
-    }, [fetchSummary, fetchCandidates, fetchHolds, unitKerjaId])
+    }, [fetchSummary, fetchHolds, unitKerjaId])
+
+    useEffect(() => {
+        fetchCandidates()
+    }, [fetchCandidates])
 
     const handleSelectArchive = (id, checked) => {
         if (checked) {
