@@ -33,6 +33,7 @@ const sidebars = {
         'manajemen-surat/surat-masuk',
         'manajemen-surat/surat-keluar',
         'manajemen-surat/distribusi',
+        'manajemen-surat/rangkaian-surat',
       ],
     },
     {
