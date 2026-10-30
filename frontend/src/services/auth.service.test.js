@@ -43,3 +43,30 @@ describe('Better Auth Google sign-in', () => {
         await expect(service.signInWithGoogle()).rejects.toBe(failure)
     })
 })
+
+describe('session prefetch at boot', () => {
+    const session = (name) => ({ data: { user: { id: name, name } } })
+
+    it('serves the first session read from the prefetch and later reads fresh', async () => {
+        const getSession = vi.fn().mockResolvedValueOnce(session('boot')).mockResolvedValue(session('fresh'))
+        const service = createAuthService({ legacyClient: { getSession } })
+        service.prefetchSession()
+        service.prefetchSession()
+        expect(getSession).toHaveBeenCalledOnce()
+
+        await expect(service.getSession()).resolves.toEqual(session('boot').data)
+        await expect(service.getSession()).resolves.toEqual(session('fresh').data)
+        expect(getSession).toHaveBeenCalledTimes(2)
+    })
+
+    it('discards an unused prefetch when the user signs out', async () => {
+        const getSession = vi.fn().mockResolvedValueOnce(session('boot')).mockResolvedValue({ data: null })
+        const signOut = vi.fn().mockResolvedValue({})
+        const service = createAuthService({ legacyClient: { getSession, signOut }, clearStorage: vi.fn(async () => {}) })
+        service.prefetchSession()
+        await service.signOut()
+
+        await expect(service.getSession()).resolves.toBeNull()
+        expect(getSession).toHaveBeenCalledTimes(2)
+    })
+})
