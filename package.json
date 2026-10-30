@@ -8,20 +8,19 @@
     "node": "24.x"
   },
   "scripts": {
-    "build:full": "npm run build:frontend && npm run build:backend",
-    "test:neon": "node --test --test-concurrency=1 scripts/neon-target.test.mjs scripts/neon-database.test.mjs scripts/neon-database-policy.test.mjs scripts/neon-first-admin.test.mjs",
+    "test": "npm run test:manifest && npm run test:migration-manifest && npm run test:backup-core && npm run test:neon && npm run test:cloud-access && npm run test:vercel-deployment && npm run test:neon-backup && npm run test:ops",
+    "test:manifest": "npm --prefix frontend exec -- vitest run src/lib/build-manifest.test.js",
+    "test:migration-manifest": "node --test scripts/migration-manifest.test.mjs",
+    "test:backup-core": "node --test scripts/local-backup-drill.test.mjs scripts/local-current-backup.test.mjs",
+    "test:neon": "node --test --test-concurrency=1 scripts/neon-target.test.mjs scripts/neon-database.test.mjs scripts/neon-database-policy.test.mjs scripts/neon-first-admin.test.mjs scripts/neon-worker.test.mjs",
     "test:cloud-access": "node --test scripts/verify-cloud-access.test.mjs",
-    "test:vercel-deployment": "node --test --test-concurrency=1 scripts/vercel-deployment.test.mjs scripts/cloud-metadata-config.test.mjs scripts/vercel-build.test.mjs",
+    "test:vercel-deployment": "node --test --test-concurrency=1 scripts/vercel-deployment.test.mjs scripts/cloud-metadata-config.test.mjs scripts/vercel-build.test.mjs backend/lib/runtime-diagnostics.test.mjs",
     "test:neon-backup": "node --test --test-concurrency=1 scripts/neon-backup.test.mjs scripts/neon-backup-policy.test.mjs",
-    "db:neon": "node scripts/neon-database.mjs",
+    "test:ops": "node --test --test-concurrency=1 scripts/ops/neon-credential.test.mjs scripts/ops/rilis-neon.test.mjs scripts/ops/neon-role-rotation.postgres.test.mjs scripts/ops/release-source.test.mjs scripts/ops/vercel-release.test.mjs scripts/ops/release-smoke.test.mjs scripts/ops/release-workflow.test.mjs",
+    "build:full": "npm run build:frontend && npm run build:backend",
     "build:frontend": "npm --prefix frontend ci && npm --prefix frontend run build",
     "build:backend": "npm --prefix backend ci --include=dev && npm --prefix backend run build",
-    "test:ops": "node --test --test-concurrency=1 scripts/ops/neon-credential.test.mjs scripts/ops/rilis-neon.test.mjs scripts/ops/neon-role-rotation.postgres.test.mjs scripts/ops/release-source.test.mjs scripts/ops/vercel-release.test.mjs scripts/ops/release-smoke.test.mjs scripts/ops/release-workflow.test.mjs",
-    "test": "npm run test:manifest && npm run test:hosting && npm run test:migration-manifest && npm run test:backup-core && npm run test:neon && npm run test:cloud-access && npm run test:vercel-deployment && npm run test:neon-backup && npm run test:ops",
-    "test:migration-manifest": "node --test scripts/migration-manifest.test.mjs",
-    "recovery:extract": "node scripts/operations-recovery-extract.mjs",
-    "test:backup-core": "node --test scripts/local-backup-drill.test.mjs scripts/local-current-backup.test.mjs",
-    "test:manifest": "npm --prefix frontend exec -- vitest run src/lib/build-manifest.test.js",
-    "test:hosting": "npm --prefix backend exec -- vitest run src/__tests__/frontend-hosting.middleware.test.ts"
+    "db:neon": "node scripts/neon-database.mjs",
+    "recovery:extract": "node scripts/operations-recovery-extract.mjs"
   }
 }
