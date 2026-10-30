@@ -1,7 +1,7 @@
 {
   "name": "simsa-backend",
   "version": "1.0.0",
-  "description": "SIMSA Backend API - Express, PostgreSQL, Firebase Auth, and private object storage",
+  "description": "SIMSA Backend API - Express, PostgreSQL, Better Auth, and private Vercel Blob storage",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
