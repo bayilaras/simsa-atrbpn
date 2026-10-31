@@ -1,6 +1,14 @@
 import { authClient } from '../lib/auth-client';
 import { clearOfflineStorage } from '../lib/offline-storage';
 
+// Keep Better Auth's error code so callers can show a specific message.
+function authClientError(error, fallback) {
+    const failure = new Error(error?.message || fallback);
+    failure.code = error?.code;
+    failure.status = error?.status;
+    return failure;
+}
+
 export function createAuthService({
     legacyClient = authClient,
     clearStorage = clearOfflineStorage,
@@ -90,6 +98,24 @@ export function createAuthService({
         async getCurrentUser() {
             const session = await this.getSession();
             return session?.user || null;
+        },
+
+        /** Sign-in methods linked to the current user, e.g. 'credential' or 'google'. */
+        async listAccounts() {
+            const result = await legacyClient.listAccounts();
+            if (result?.error) throw authClientError(result.error, 'Metode masuk akun tidak dapat dimuat.');
+            return Array.isArray(result?.data) ? result.data : [];
+        },
+
+        /** Change the own email+password credential; other devices are signed out. */
+        async changePassword(currentPassword, newPassword) {
+            const result = await legacyClient.changePassword({
+                currentPassword,
+                newPassword,
+                revokeOtherSessions: true,
+            });
+            if (result?.error) throw authClientError(result.error, 'Kata sandi gagal diubah.');
+            return result.data;
         },
     };
 }

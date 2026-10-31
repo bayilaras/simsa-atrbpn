@@ -43,6 +43,15 @@ const userManagementService = {
     },
 
     /**
+     * Set a new email+password credential for another user (Super Admin only).
+     * The server revokes all of that user's sessions.
+     */
+    async resetPassword(userId, newPassword) {
+        const response = await api.post(`/api/users/${userId}/password`, { newPassword });
+        return response;
+    },
+
+    /**
      * Deactivate user (soft delete)
      */
     async deactivateUser(userId) {
