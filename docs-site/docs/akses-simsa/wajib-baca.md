@@ -19,11 +19,10 @@ SIMSA menggunakan sistem **Role-Based Access Control (RBAC)**. Artinya, menu dan
 
 | Role | Akses |
 |------|-------|
-| **Staff** | Lihat surat masuk/keluar (read-only), lihat arsip aktif (read-only), laporan |
-| **Admin Dirjen** | Mengelola surat/arsip dan layanan pada unit Ditjen sesuai izin, status proses, serta kesiapan fitur |
-| **Admin Sesditjen** | Mengelola operasional pada unit Sesditjen dengan pemeriksaan akses dan proses yang sama |
-| **Super Admin** | Administrasi lintas unit, Manajemen Pengguna, pengaturan, dan pengawasan; akses rekod terkendali tetap diperiksa |
-| **Auditor** | Pengawasan/baca-saja sesuai mandat unit; Audit Log global hanya untuk Super Admin |
+| **Admin Unit Kerja** | Mengelola surat, arsip, distribusi, layanan, dan lokasi simpan pada unit kerja yang ditetapkan, sesuai izin, status proses, serta kesiapan fitur |
+| **Super Admin** | Administrasi lintas unit, Manajemen Pengguna, pengaturan, master data, Audit Log, dan pengawasan; akses rekod terkendali tetap diperiksa |
+
+Akun lama dengan role **Admin Dirjen**, **Admin Sesditjen**, **Staff**, atau **Auditor** tetap memakai hak aksesnya sampai Super Admin menetapkan role baru. Akun Staff dan Auditor lama tidak bisa mengubah surat atau arsip.
 
 > 💡 Kalau ada menu yang tidak muncul di sidebar kamu, kemungkinan besar role kamu tidak memiliki akses ke menu tersebut. Hubungi **Super Admin** untuk memeriksa peran sesuai penugasan; sebagian fitur juga memerlukan layanan yang dikonfigurasi operator.
 

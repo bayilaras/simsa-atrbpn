@@ -10,7 +10,7 @@ Menu **Pengaturan** (⚙️) muncul bagi semua akun yang sudah diprovisi. Anda j
 
 1. Buka **Pengaturan** dari sidebar atau avatar di header.
 2. Semua pengguna mendapat tab **Profil** dan **Preferensi**.
-3. Admin mendapat tab **Unit Kerja** dan **Template** sesuai cakupan unitnya; Super Admin dapat memilih lintas unit.
+3. Admin Unit Kerja mendapat tab **Template** untuk unitnya. Super Admin mendapat tab **Template** untuk unit yang dipilih dan tab **Unit Kerja**.
 
 ---
 
@@ -36,7 +36,7 @@ Tab ini tersedia untuk **semua pengguna**. Tema, bahasa, notifikasi dalam aplika
 
 ## Tab Unit Kerja
 
-> 🔒 Tersedia untuk admin. Admin biasa hanya dapat mengubah unit dalam cakupannya; Super Admin dapat mengelola lintas unit.
+> 🔒 Hanya tersedia untuk **Super Admin**, yang mengelola data unit kerja lintas unit.
 
 Tab ini menampilkan daftar unit kerja yang terdaftar di sistem.
 

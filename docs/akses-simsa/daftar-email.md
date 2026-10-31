@@ -9,7 +9,7 @@ SIMSA tidak menyediakan pendaftaran mandiri. Super Admin menyiapkan akun pribadi
 3. Terima kata sandi awal melalui saluran internal yang disetujui. Masuk menggunakan email dan kata sandi tersebut.
 4. Periksa bahwa menu serta data yang dapat Anda lihat sesuai tugas dan unit kerja.
 
-**Admin Dirjen** mengelola unit Ditjen; **Admin Sesditjen** mengelola unit Sesditjen. **Staf** membaca surat dan arsip pada unit penugasannya, bukan mencatat atau mengubahnya. Google hanya dapat digunakan bila integrasinya aktif dan email sesuai akun yang telah dibuat.
+Peran yang dapat ditetapkan hanya **Super Admin** (administrasi lintas unit) dan **Admin Unit Kerja** (mengelola satu unit kerja yang ditetapkan). Akun lama dengan peran Admin Dirjen, Admin Sesditjen, Staff, atau Auditor tetap berlaku sampai Super Admin menetapkan peran baru. Google hanya dapat digunakan bila integrasinya aktif dan email sesuai akun yang telah dibuat.
 
 Jangan memakai akun uji bersama untuk pekerjaan resmi. Perubahan personel ditindaklanjuti dengan perubahan peran/unit atau penonaktifan akun oleh Super Admin.
 

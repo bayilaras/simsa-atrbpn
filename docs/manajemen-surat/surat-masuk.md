@@ -116,10 +116,10 @@ Halaman detail menampilkan semua informasi surat, termasuk lampiran yang bisa di
 
 | Tombol | Fungsi | Akses |
 |--------|--------|-------|
-| **Edit** | Ubah data surat | Staff, Admin |
-| **Distribusikan** | Kirim surat ke unit lain | Staff, Admin |
-| **Arsipkan** | Pindahkan ke arsip | Staff, Admin |
-| **Hapus** | Hapus surat | Admin saja |
+| **Edit** | Ubah data surat | Super Admin, Admin Unit Kerja |
+| **Distribusikan** | Kirim surat ke unit lain | Super Admin, Admin Unit Kerja |
+| **Arsipkan** | Pindahkan ke arsip | Super Admin, Admin Unit Kerja |
+| **Hapus** | Hapus surat | Super Admin, Admin Unit Kerja |
 
 - **Alur Surat**: menampilkan rangkaian, disposisi, dan tindak lanjut surat ini (lihat [Rangkaian Surat](rangkaian-surat.md)).
 

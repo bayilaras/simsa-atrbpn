@@ -28,7 +28,7 @@ Alur belajar yang disarankan untuk hari pertama:
 2. Kenali Dashboard, sidebar, pencarian, notifikasi, dan menu pengguna.
 3. Cari satu surat atau arsip contoh dan baca halaman detailnya.
 4. Pelajari pekerjaan harian sesuai role pada bagian [alur per peran](#4-alur-belajar-berdasarkan-peran).
-5. Admin mencatat metadata atau mengimpor daftar pada unit yang benar; staf mencari dan memeriksa data. Untuk latihan, gunakan data latihan yang ditetapkan operator.
+5. Admin mencatat metadata atau mengimpor daftar pada unit yang benar, lalu mencari dan memeriksa hasilnya. Untuk latihan, gunakan data latihan yang ditetapkan operator.
 6. Keluar dari aplikasi setelah selesai, terutama pada komputer bersama.
 
 ### Login email dan kata sandi
@@ -85,12 +85,11 @@ Gunakan filter lokal pada halaman Surat, Arsip, Laporan, Peminjaman, atau Audit 
 
 | Role | Penggunaan utama |
 |---|---|
-| **Belum aktif** | Hanya melihat Dashboard pemberitahuan aktivasi; minta admin menetapkan role dan unit kerja. |
-| **Staf** | Melihat surat masuk/keluar dan arsip aktif, membuka detail yang diizinkan, mencari data, meminta akses rekod terkendali, serta melihat laporan. Tidak dapat mengubah data. |
-| **Admin Dirjen** | Mengelola operasional surat, arsip, distribusi, dosir, klasifikasi/JRA, retensi, penyusutan, layanan fisik, media, laporan, dan tahapan tata kelola sesuai pemisahan tugas. |
-| **Admin Sesditjen** | Kewenangan operasional setara Admin Dirjen, dengan lingkup unit kerja yang ditetapkan. |
-| **Super Admin** | Seluruh kewenangan admin, pengelolaan pengguna dan pengaturan, keputusan akses, filter lintas unit, serta aktivasi versi aturan. |
-| **Auditor** | Dashboard, Persetujuan Akses miliknya, Versi Aturan, dan Tata Kelola Retensi dalam cakupan pengawasan/baca-saja. Audit Log global saat ini hanya tersedia bagi Super Admin. |
+| **Belum aktif** | Hanya melihat Dashboard pemberitahuan aktivasi; minta Super Admin menetapkan role dan unit kerja. |
+| **Admin Unit Kerja** | Mengelola operasional surat, arsip, distribusi, dosir, retensi, penyusutan, layanan fisik, media, laporan, dan tahapan tata kelola pada unit kerja yang ditetapkan, sesuai pemisahan tugas. Master klasifikasi/JRA, Autentikasi, Audit Log, dan Manajemen Pengguna dikelola Super Admin. |
+| **Super Admin** | Seluruh kewenangan admin untuk semua unit, pengelolaan pengguna dan pengaturan, master klasifikasi/JRA, Audit Log, keputusan akses, filter lintas unit, serta aktivasi versi aturan. |
+
+Super Admin hanya dapat memilih dua role tersebut. Akun lama tetap mempertahankan hak aksesnya sampai Super Admin menetapkan role baru. Admin Dirjen dan Admin Sesditjen lama tetap terbatas pada unit semula; akun Staff dan Auditor lama tidak otomatis mendapat kewenangan menulis.
 
 Prinsip yang harus selalu dipakai:
 
@@ -102,7 +101,7 @@ Prinsip yang harus selalu dipakai:
 
 ## 4. Alur belajar berdasarkan peran
 
-### Staf
+### Semua pengguna
 
 1. Buka Dashboard dan baca notifikasi.
 2. Pelajari daftar serta detail Surat Masuk dan Surat Keluar.
@@ -121,17 +120,17 @@ Prinsip yang harus selalu dipakai:
 
 ### Arsiparis/admin kearsipan
 
-1. Jaga master klasifikasi, JRA, dosir, dan lokasi simpan.
+1. Jaga dosir dan lokasi simpan. Perubahan master klasifikasi dan JRA dilakukan Super Admin melalui **Versi Aturan**.
 2. Catat peristiwa pemicu retensi beserta bukti.
 3. Minta petugas berbeda memverifikasi bukti pemicu.
 4. Gunakan appraisal untuk JRA manual, Dinilai Kembali, atau pengecualian komponen.
 5. Terapkan legal hold bila ada sengketa, audit, pemeriksaan, atau kebutuhan lain yang sah.
 6. Buat usulan penyusutan atau manifest permanen hanya setelah semua prasyarat terpenuhi.
 
-### Penelaah dan auditor
+### Penelaah
 
 1. Periksa sumber, identitas rekod, alasan, bukti, checksum, tanggal, dan jejak pelaku.
-2. Petugas penelaah yang ditunjuk dan memiliki izin keputusan dapat menolak atau mengembalikan pekerjaan yang bukti/alasannya belum memadai. Peran auditor sendiri tidak memberi hak mengubah rekod sumber.
+2. Petugas penelaah yang ditunjuk dan memiliki izin keputusan dapat menolak atau mengembalikan pekerjaan yang bukti/alasannya belum memadai.
 3. Jangan menelaah pekerjaan yang Anda buat sendiri.
 4. Gunakan riwayat dan jejak versi yang tersedia dalam cakupan akses; Audit Log global saat ini hanya tersedia bagi Super Admin.
 
@@ -262,10 +261,10 @@ Versi aktif tidak diedit langsung. Alur yang benar:
 3. Sistem menghitung informasi dokumen sumber dan SHA-256; jangan mengganti bukti itu dengan nilai yang diketik sendiri.
 4. Edit/impor isi draft, isi manifest kelengkapan halaman, periksa perbedaan dan dampak.
 5. Jalankan validasi sampai tidak ada kesalahan.
-6. Laksanakan tahapan **Ajukan > Telaah > Setujui > Aktifkan** dengan akun berbeda sesuai pemisahan tugas.
+6. Pilih **Aktifkan**. Tahap ini tidak memerlukan akun penelaah atau penyetuju terpisah; sistem tetap memeriksa sumber, integritas, dan tanggal berlaku saat aktivasi.
 7. Setelah aktif, aturan lama tetap melekat pada arsip lama; jangan melakukan perubahan massal tanpa rekonsiliasi yang dapat diaudit.
 
-Auditor dapat membaca versi, PDF sumber yang tersedia, validasi, dan jejak audit. Aktivasi versi hanya dilakukan Super Admin.
+Menu **Versi Aturan**, termasuk PDF sumber, hasil validasi, dan jejak audit versi, hanya tersedia bagi Super Admin.
 
 ## 9. Retensi, appraisal, pemicu, dan legal hold
 
@@ -384,7 +383,7 @@ File ekspor adalah salinan kerja. Lindungi, batasi distribusi, dan hapus salinan
 
 ### Audit Log
 
-Admin dan Auditor membuka **Administrasi > Audit Log** untuk:
+Super Admin membuka **Administrasi > Audit Log** untuk:
 
 - mencari pengguna/email/ID;
 - memfilter tipe entitas dan aksi;

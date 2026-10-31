@@ -11,20 +11,22 @@ Hanya pengguna aktif dengan peran **Super Admin** dapat membuka **Manajemen Peng
 
 Metode login mengikuti penyedia autentikasi yang dikonfigurasi operator. Akun Better Auth dapat memakai email/kata sandi jika dibuat dengan kata sandi. Google hanya dapat digunakan jika integrasinya aktif dan identitas email sesuai. Jangan menganggap setiap akun baru otomatis dapat masuk melalui Google.
 
+Pilihan peran hanya dua:
+
 | Peran | Ruang lingkup |
 |---|---|
-| `super_admin` | Administrasi lintas unit; unit nominal dikosongkan oleh sistem. |
-| `admin_dirjen` | Mandat tetap unit `ditjen`. |
-| `admin_sesditjen` | Mandat tetap unit `sesditjen`. |
-| `staff` | Membaca surat/arsip pada unit yang ditugaskan; tindakan layanan mengikuti izin modul. Tidak boleh mengubah arsip terjaga atau penyusutan. |
-| `auditor` | Akses audit sesuai unit mandat yang diberikan. |
-| `user` | Akun dengan akses paling terbatas; bukan pengganti peran petugas. |
+| **Super Admin** | Administrasi lintas unit; unit kerja dikosongkan oleh sistem. |
+| **Admin Unit Kerja** | Mengelola surat, arsip, dan fitur operasional pada satu unit kerja. Unit kerja wajib dipilih. |
 
-Unit kerja bukan sekadar isian pelengkap. Petugas dan auditor yang belum ditugaskan pada unit tidak mendapatkan akses lintas unit. Arsip terbatas/rahasia juga mengikuti pemberian akses per arsip; peran umum tidak menjamin akses ke setiap dokumen.
+Akun lama tetap mempertahankan hak aksesnya sampai Super Admin menetapkan peran baru. Admin Dirjen dan Admin Sesditjen lama tetap terbatas pada unit semula; akun Staff dan Auditor lama tidak otomatis mendapat kewenangan menulis. Pada dialog **Ubah Peran/Unit**, peran lama tampil dengan keterangan *(peran lama)* dan tidak tersedia untuk akun baru.
+
+Akun yang menunggu persetujuan tampil dengan peran **Pengguna** dan belum memiliki akses data. Pilih **Menunggu persetujuan**, klik **Setujui akses**, lalu tetapkan peran dan unit kerjanya.
+
+Unit kerja bukan sekadar isian pelengkap. Akun selain Super Admin yang belum ditugaskan pada unit tidak mendapatkan akses data. Arsip terbatas/rahasia juga mengikuti pemberian akses per arsip; peran umum tidak menjamin akses ke setiap dokumen.
 
 ## Mengubah dan menonaktifkan
 
-Cari pengguna, pilih **Edit**, ubah peran/unit/status sesuai penugasan, lalu simpan. Sistem membatasi perubahan yang akan menghilangkan Super Admin aktif terakhir dan membatalkan sesi yang terdampak perubahan akses.
+Cari pengguna, buka menu tindakan, pilih **Ubah Peran/Unit**, ubah peran/unit/status sesuai penugasan, lalu simpan. Sistem membatasi perubahan yang akan menghilangkan Super Admin aktif terakhir dan membatalkan sesi yang terdampak perubahan akses.
 
 Gunakan **Nonaktifkan** untuk menghentikan akses. Data identitas dan riwayat aktivitas tetap dipertahankan; tindakan ini bukan penghapusan permanen pengguna. Untuk mengaktifkan kembali, gunakan **Aktifkan** setelah penugasannya diperiksa.
 
