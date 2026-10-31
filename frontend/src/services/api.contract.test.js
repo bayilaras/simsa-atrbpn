@@ -47,6 +47,16 @@ describe('ApiClient transport contracts', () => {
         expect(fetchMock.mock.calls.map(([, config]) => config.cache)).toEqual(['no-store', 'no-store']);
     });
 
+    it('lets reference catalogs revalidate a cached copy instead of downloading it again', async () => {
+        const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ data: [] }) });
+        vi.stubGlobal('fetch', fetchMock);
+
+        await api.get('/api/klasifikasi', {}, { cache: 'no-cache' });
+        await api.get('/api/klasifikasi', {}, { cache: 'default' });
+
+        expect(fetchMock.mock.calls.map(([, config]) => config.cache)).toEqual(['no-cache', 'no-store']);
+    });
+
     it('still rejects private-file errors when a raw response is requested', async () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
             ok: false, status: 403, headers: new Headers(),
@@ -174,7 +184,7 @@ describe('ApiClient bounded operation lifetime', () => {
     it('bounds shared CSRF bootstrap and allows a fresh bootstrap after the hung one expires', async () => {
         document.cookie = 'csrf-token=; Max-Age=0; path=/';
         const fetchMock = vi.fn().mockImplementationOnce(pending).mockImplementation(async url => {
-            if (url.endsWith('/api/health')) document.cookie = `csrf-token=${'a'.repeat(64)}; path=/`;
+            if (url.endsWith('/api/capabilities')) document.cookie = `csrf-token=${'a'.repeat(64)}; path=/`;
             return success();
         });
         vi.stubGlobal('fetch', fetchMock);
@@ -183,7 +193,7 @@ describe('ApiClient bounded operation lifetime', () => {
         await vi.advanceTimersByTimeAsync(DEFAULT_API_TIMEOUT_MS);
         await rejection;
         expect(fetchMock).toHaveBeenCalledOnce();
-        expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/health$/);
+        expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/capabilities$/);
         await expect(client.post('/api/record', {})).resolves.toEqual({ success: true });
         expect(fetchMock).toHaveBeenCalledTimes(3);
     });
@@ -203,7 +213,7 @@ describe('ApiClient bounded operation lifetime', () => {
         document.cookie = `csrf-token=${'a'.repeat(64)}; path=/`;
         resolveBootstrap(success());
         await expect(second).resolves.toEqual({ success: true });
-        expect(fetchMock.mock.calls.map(call => call[0])).toEqual(['https://example.test/api/health', 'https://example.test/api/second']);
+        expect(fetchMock.mock.calls.map(call => call[0])).toEqual(['https://example.test/api/capabilities', 'https://example.test/api/second']);
         expect(vi.getTimerCount()).toBe(0);
     });
 

@@ -5,18 +5,34 @@ export function createAuthService({
     legacyClient = authClient,
     clearStorage = clearOfflineStorage,
 } = {}) {
+    // A session read started at boot, while /api/capabilities is still being
+    // checked. Only the first getSession() call uses it; later calls read
+    // fresh, and signing in, up or out discards an unused one.
+    let prefetchedSession = null;
+
+    async function readSession() {
+        try {
+            const session = await legacyClient.getSession();
+            return session.data;
+        } catch (error) {
+            console.error('Failed to get session:', error);
+            return null;
+        }
+    }
+
     return {
+        prefetchSession() {
+            if (!prefetchedSession) prefetchedSession = readSession();
+        },
+
         async getSession() {
-            try {
-                const session = await legacyClient.getSession();
-                return session.data;
-            } catch (error) {
-                console.error('Failed to get session:', error);
-                return null;
-            }
+            const prefetched = prefetchedSession;
+            prefetchedSession = null;
+            return prefetched ?? readSession();
         },
 
         async signInWithGoogle() {
+            prefetchedSession = null;
             try {
                 const result = await legacyClient.signIn.social({
                     provider: 'google',
@@ -31,6 +47,7 @@ export function createAuthService({
         },
 
         async signInWithEmail(email, password) {
+            prefetchedSession = null;
             try {
                 const result = await legacyClient.signIn.email({ email, password });
                 if (result.error) throw new Error(result.error.message || 'Login failed');
@@ -42,6 +59,7 @@ export function createAuthService({
         },
 
         async signUp(email, password, name) {
+            prefetchedSession = null;
             try {
                 const result = await legacyClient.signUp.email({ email, password, name });
                 if (result.error) throw new Error(result.error.message || 'Sign up failed');
@@ -53,6 +71,7 @@ export function createAuthService({
         },
 
         async signOut() {
+            prefetchedSession = null;
             // Drop local drafts immediately, even while remote logout is pending.
             const storageCleanup = clearStorage();
             let signOutError = null;

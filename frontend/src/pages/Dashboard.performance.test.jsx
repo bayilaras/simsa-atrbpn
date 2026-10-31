@@ -23,7 +23,14 @@ vi.mock('@/services/dashboard.service', () => ({ default: {
 const endpointNames = ['getStats', 'getExpiringArchives', 'getUnitKerjaComparison', 'getRecentActivity', 'getWidgetData']
 const visibilityDescriptor = Object.getOwnPropertyDescriptor(document, 'visibilityState')
 
+// Focus and visibility refreshes wait at least a minute after the last load;
+// the clock only moves when a test says so.
+function passFocusRefreshInterval() {
+    vi.setSystemTime(Date.now() + 61_000)
+}
+
 beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
     vi.clearAllMocks()
     metrics.user = { id: 'performance-reader', name: 'Siti', role: 'staff', unitKerjaId: 'unit-a' }
     dashboardService.getStats.mockResolvedValue(metrics.stats)
@@ -37,6 +44,7 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup()
+    vi.useRealTimers()
     if (visibilityDescriptor) Object.defineProperty(document, 'visibilityState', visibilityDescriptor)
     else delete document.visibilityState
     vi.unstubAllGlobals()
@@ -54,6 +62,7 @@ describe('dashboard refresh request coalescing', () => {
         await showDashboard()
         let finishStats
         dashboardService.getStats.mockImplementationOnce(() => new Promise(resolve => { finishStats = resolve }))
+        passFocusRefreshInterval()
         act(() => {
             window.dispatchEvent(new Event('focus'))
             document.dispatchEvent(new Event('visibilitychange'))
@@ -68,15 +77,30 @@ describe('dashboard refresh request coalescing', () => {
         expect(await screen.findByText('73')).toBeInTheDocument()
     })
 
-    it('starts a fresh load on the next focus after the previous refresh completed', async () => {
+    it('starts a fresh load on the next focus once the previous load is a minute old', async () => {
         await showDashboard()
         dashboardService.getStats.mockResolvedValueOnce({ ...metrics.stats, totalMasuk: 81 })
+        passFocusRefreshInterval()
         fireEvent.focus(window)
         expect(await screen.findByText('81')).toBeInTheDocument()
         dashboardService.getStats.mockResolvedValueOnce({ ...metrics.stats, totalMasuk: 82 })
+        passFocusRefreshInterval()
         fireEvent.focus(window)
         expect(await screen.findByText('82')).toBeInTheDocument()
         for (const name of endpointNames) expect(dashboardService[name]).toHaveBeenCalledTimes(3)
+    })
+
+    it('skips focus and visibility refreshes within a minute of the last load', async () => {
+        await showDashboard()
+        vi.setSystemTime(Date.now() + 59_000)
+        act(() => {
+            window.dispatchEvent(new Event('focus'))
+            document.dispatchEvent(new Event('visibilitychange'))
+        })
+        for (const name of endpointNames) expect(dashboardService[name]).toHaveBeenCalledOnce()
+        vi.setSystemTime(Date.now() + 2_000)
+        act(() => { window.dispatchEvent(new Event('focus')) })
+        await waitFor(() => { for (const name of endpointNames) expect(dashboardService[name]).toHaveBeenCalledTimes(2) })
     })
 
     it.each(['user', 'unit'])('keeps a new %s request separate when an older scope finishes', async changedScope => {
@@ -86,6 +110,7 @@ describe('dashboard refresh request coalescing', () => {
         dashboardService.getStats
             .mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
             .mockImplementationOnce(() => new Promise(resolve => { finishCurrent = resolve }))
+        passFocusRefreshInterval()
         fireEvent.focus(window)
         metrics.user = changedScope === 'user'
             ? { ...metrics.user, id: 'another-reader' }

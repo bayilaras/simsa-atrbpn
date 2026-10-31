@@ -276,7 +276,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
         setError(null)
         setAllData([])
         try {
-            const result = await api.get('/api/klasifikasi')
+            const result = await api.get('/api/klasifikasi', {}, { cache: 'no-cache' })
             if (request !== classificationRequest.current) return
             if (result.success && Array.isArray(result.data)) {
                 setAllData(result.data)
@@ -356,7 +356,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
         setAllJRA([])
         setJraErrors((previous) => ({ ...previous, all: null }))
         try {
-            const result = await api.get('/api/jra')
+            const result = await api.get('/api/jra', {}, { cache: 'no-cache' })
             if (request !== allJraRequest.current) return
             if (result.success && Array.isArray(result.data)) {
                 setAllJRA(result.data || [])

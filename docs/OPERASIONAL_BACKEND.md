@@ -22,6 +22,13 @@ pesan exception tidak otomatis masuk ke `msg`. Teks log langsung dan keluaran
 `console` lama tetap perlu menggunakan pesan aman di lokasi pemanggilannya;
 pelindung ini bukan penyaring semua data sensitif secara umum.
 
+Di Vercel, API dimuat dari satu bundel `dist-vercel/app.js` (tidak di-minify)
+agar cold start tidak membaca ribuan modul. Baris stack pada log Runtime menunjuk
+ke berkas bundel tersebut. Paket yang membaca berkasnya sendiri atau memuat
+library dokumen (PDF, Excel, QR, email, OCR, logger) tetap eksternal; daftarnya
+ada di `backend/scripts/build-vercel.mjs`. Ekspor, impor, QR, cetak PDF, dan
+pengiriman email pertama pada setiap instance memuat library-nya saat itu juga.
+
 ## Membaca metrik
 
 Setelah login sebagai **Super Admin**, buka `/api/operations/metrics` pada alamat

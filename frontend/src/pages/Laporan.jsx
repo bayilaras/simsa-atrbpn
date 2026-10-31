@@ -16,18 +16,80 @@ import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
 import { canExportReports } from '@/lib/provisioning-access';
 import { FileSpreadsheet, FileText, Download, BarChart3, Mail, Send, Archive, BookOpen, TrendingUp, FileImage, Film, FileAudio, Loader2 } from 'lucide-react';
+import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import {
-    BarChart,
-    Bar,
-    XAxis,
-    YAxis,
-    CartesianGrid,
+    Chart as ChartJS,
+    CategoryScale,
+    LinearScale,
+    BarElement,
     Tooltip,
     Legend,
-    ResponsiveContainer,
-    LineChart,
-    Line,
-} from 'recharts';
+} from 'chart.js';
+import { Bar } from 'react-chartjs-2';
+
+// Laporan can be the first chart page a session opens, so it registers the
+// chart.js pieces it needs itself instead of relying on Dashboard.
+ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
+
+const MONTHLY_SERIES = [
+    { key: 'masuk', label: 'Surat Masuk', color: '#3b82f6' },
+    { key: 'keluar', label: 'Surat Keluar', color: '#10b981' },
+];
+
+const monthlyChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+        legend: {
+            position: 'bottom',
+            labels: {
+                usePointStyle: true,
+                boxWidth: 8,
+                padding: 20,
+                font: { size: 12, family: 'Inter Variable, sans-serif' },
+            },
+        },
+        tooltip: {
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            titleColor: '#1e293b',
+            bodyColor: '#475569',
+            borderColor: '#e2e8f0',
+            borderWidth: 1,
+            padding: 10,
+            cornerRadius: 8,
+        },
+    },
+    scales: {
+        y: {
+            beginAtZero: true,
+            grid: { color: '#e2e8f0' },
+            border: { display: false, dash: [3, 3] },
+            ticks: { color: '#64748b', font: { size: 12 }, precision: 0 },
+        },
+        x: {
+            grid: { display: false },
+            border: { display: false },
+            ticks: { color: '#64748b', font: { size: 12 } },
+        },
+    },
+    interaction: {
+        mode: 'index',
+        intersect: false,
+    },
+};
+
+function monthlyChartData(monthlyTrend = []) {
+    return {
+        labels: monthlyTrend.map((item) => item.month),
+        datasets: MONTHLY_SERIES.map((series) => ({
+            label: series.label,
+            data: monthlyTrend.map((item) => item[series.key] ?? 0),
+            backgroundColor: series.color,
+            borderRadius: 4,
+            maxBarThickness: 50,
+        })),
+    };
+}
 
 export default function Laporan() {
     const { user } = useAuth();
@@ -35,6 +97,7 @@ export default function Laporan() {
     const unitScope = useRequiredUnitKerjaScope(user);
     const unitKerjaId = unitScope.unitKerjaId;
     const canExport = canExportReports(user?.role);
+    const reducedMotion = useReducedMotion();
 
     const [activeTab, setActiveTab] = useState('summary');
     const [loading, setLoading] = useState(false);
@@ -386,30 +449,10 @@ export default function Laporan() {
                                         role="img"
                                         aria-label={`Grafik perbandingan surat masuk dan surat keluar setiap bulan pada tahun ${year}`}
                                     >
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <BarChart data={summaryData.monthlyTrend} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                                <XAxis
-                                                    dataKey="month"
-                                                    axisLine={false}
-                                                    tickLine={false}
-                                                    tick={{ fill: '#64748b', fontSize: 12 }}
-                                                    dy={10}
-                                                />
-                                                <YAxis
-                                                    axisLine={false}
-                                                    tickLine={false}
-                                                    tick={{ fill: '#64748b', fontSize: 12 }}
-                                                />
-                                                <Tooltip
-                                                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                                    cursor={{ fill: '#f1f5f9' }}
-                                                />
-                                                <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                                                <Bar dataKey="masuk" fill="#3b82f6" name="Surat Masuk" radius={[4, 4, 0, 0]} maxBarSize={50} />
-                                                <Bar dataKey="keluar" fill="#10b981" name="Surat Keluar" radius={[4, 4, 0, 0]} maxBarSize={50} />
-                                            </BarChart>
-                                        </ResponsiveContainer>
+                                        <Bar
+                                            data={monthlyChartData(summaryData.monthlyTrend)}
+                                            options={{ ...monthlyChartOptions, animation: reducedMotion ? false : undefined }}
+                                        />
                                     </div>
                                 </CardContent>
                             </Card>

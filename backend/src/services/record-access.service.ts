@@ -14,6 +14,7 @@ import {
     resolveKonteksBaca,
     SECURITY_CLASSES,
     type JenisRekamanRangkaian,
+    type KonteksBaca,
 } from './access/visibility-spec';
 
 // Impor lama `normalizeSecurityClassification` dari modul ini tetap berlaku.
@@ -368,18 +369,20 @@ export const recordAccessService = {
     /**
      * Keputusan baca batch (read-only). Pemilik dinilai persis seperti check();
      * bila gagal, jangkauan pengawas/peserta dihitung ulang setiap panggilan.
-     * Kueri: konteks (≤1) + metadata per tipe (≤2) + grant (≤1).
+     * Kueri: konteks (≤1, nol bila `konteks` untuk `user` yang sama diberikan)
+     * + metadata per tipe (≤2) + grant (≤1).
      */
     async checkMany(
         user: RecordUser | undefined,
         refs: ReadRef[],
         executor: ReadExecutor = db,
+        konteks?: KonteksBaca,
     ): Promise<Map<string, ReadAccessResult>> {
         const unique = [...new Map(refs.map(ref => [readRefKey(ref), ref])).values()];
         const results = new Map<string, ReadAccessResult>();
         if (unique.length === 0) return results;
 
-        const ctx = await resolveKonteksBaca(user, executor);
+        const ctx = konteks && konteks.user === user ? konteks : await resolveKonteksBaca(user, executor);
         const metadata = new Map<string, ReadMetadataRow>();
         for (const type of ['surat_masuk', 'surat_keluar'] as const) {
             const ids = unique.filter(ref => ref.type === type).map(ref => ref.id);

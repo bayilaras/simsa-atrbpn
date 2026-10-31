@@ -81,7 +81,8 @@ describe('dashboard statistics SQL', () => {
     it('baseline contract retains all-year totals, archive subtypes and yearly breakdowns', async () => {
         const result = await service.getStats('unit-a', year);
         expect(result).toMatchObject({ totalMasuk: 2, totalKeluar: 9,
-            totalArsip: 4, arsipMasuk: 2, arsipKeluar: 1, segmenKadaluarsa: 0 });
+            totalArsip: 4, arsipMasuk: 2, arsipKeluar: 1 });
+        expect(result).not.toHaveProperty('segmenKadaluarsa');
         expect(result.monthlyTrend[month - 1]).toMatchObject({ masuk: 2, keluar: 7 });
         expect(result.statusBreakdown.keluar).toEqual([{ status: 'Surat Dinas', count: 8 }]);
     });
@@ -122,9 +123,13 @@ describe('dashboard statistics SQL', () => {
             arsipMasuk: 0, arsipKeluar: 0, masukBulanIni: 0, keluarBulanIni: 0 });
     });
 
-    it('limits ordinary statistics to seven SQL queries plus the unchanged canonical expiry evaluation', async () => {
+    it('limits ordinary statistics to seven SQL queries and skips the canonical expiry evaluation', async () => {
+        const { arsipService } = await import('../services/arsip.service');
+        vi.mocked(arsipService.getExpiring).mockClear();
         await service.getStats('unit-a', year, ['biasa']);
         expect(holder.queries).toBe(7);
+        // The expiring list has its own endpoint; the stats card never read this count.
+        expect(arsipService.getExpiring).not.toHaveBeenCalled();
     });
 });
 

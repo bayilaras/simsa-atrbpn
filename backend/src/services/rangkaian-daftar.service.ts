@@ -78,15 +78,13 @@ export function lingkupRangkaianSql(ctx: KonteksBaca, alias = 'r'): SQL {
     return sql`(${sql.join(bagian, sql` OR `)})`;
 }
 
-async function lingkupSql(user: PenggunaDaftar): Promise<SQL> {
-    return lingkupRangkaianSql(await resolveKonteksBaca(user, db));
-}
-
 /**
  * Hitung anggota terbaca (checkMany, mode baca) per rangkaian dengan jendela dan urutan
  * yang sama dengan P2 getDetail (induk → ditambahkan_at → id, BATAS_NODE_DETAIL, tanpa terhapus).
  */
-async function hitungAnggotaTerbaca(user: PenggunaDaftar, rangkaianIds: string[]): Promise<Map<string, number>> {
+async function hitungAnggotaTerbaca(
+    user: PenggunaDaftar, ctx: KonteksBaca, rangkaianIds: string[],
+): Promise<Map<string, number>> {
     const hasil = new Map<string, number>();
     for (const rangkaianId of rangkaianIds) {
         const anggota = barisDari<{ jenis: 'surat_masuk' | 'surat_keluar'; surat_id: string }>(await db.execute(sql`
@@ -100,7 +98,7 @@ async function hitungAnggotaTerbaca(user: PenggunaDaftar, rangkaianIds: string[]
              ORDER BY (a.peran = 'induk') DESC, a.ditambahkan_at, a.id
              LIMIT ${BATAS_NODE_DETAIL}`));
         const akses = anggota.length
-            ? await recordAccessService.checkMany(user, anggota.map(row => ({ type: row.jenis, id: row.surat_id })))
+            ? await recordAccessService.checkMany(user, anggota.map(row => ({ type: row.jenis, id: row.surat_id })), db, ctx)
             : new Map<string, ReadAccessResult>();
         // Sama dengan `terlihat` getDetail: allowed && via.
         hasil.set(rangkaianId, anggota.filter((row) => {
@@ -113,7 +111,9 @@ async function hitungAnggotaTerbaca(user: PenggunaDaftar, rangkaianIds: string[]
 
 export const rangkaianDaftarService = {
     async list(user: PenggunaDaftar, filter: DaftarRangkaianFilter) {
-        const where: SQL[] = [sql`r.status <> 'digabung'`, await lingkupSql(user)];
+        // Satu konteks baca untuk lingkup, setiap checkMany, dan tier per baris di halaman ini.
+        const ctx = await resolveKonteksBaca(user, db);
+        const where: SQL[] = [sql`r.status <> 'digabung'`, lingkupRangkaianSql(ctx)];
         where.push(filter.asal ? sql`r.asal = ${filter.asal}` : sql`r.asal <> 'data_lama'`);
         if (filter.status) where.push(sql`r.status = ${filter.status}`);
         if (filter.unitPengolahId) where.push(sql`r.unit_pengolah_id = ${filter.unitPengolahId}`);
@@ -151,7 +151,7 @@ export const rangkaianDaftarService = {
             else if (row.induk_surat_keluar_id) indukRef.set(row.id, { type: 'surat_keluar', id: row.induk_surat_keluar_id });
         }
         const akses: Map<string, ReadAccessResult> = indukRef.size
-            ? await recordAccessService.checkMany(user, [...indukRef.values()])
+            ? await recordAccessService.checkMany(user, [...indukRef.values()], db, ctx)
             : new Map();
         const indukTerbaca = (rowId: string) => {
             const ref = indukRef.get(rowId);
@@ -160,13 +160,17 @@ export const rangkaianDaftarService = {
         };
 
         // FR:35: tautan/aksi memakai mode baca — rangkaian yang tercantum (lingkup list) belum tentu dapat dibuka (GET /:id).
+        // Baris daftar tidak pernah 'digabung', jadi baris yang sudah dimuat adalah ujung rantainya.
         const tingkat = new Map<string, Awaited<ReturnType<typeof tingkatAksesRangkaian>>>();
-        for (const row of rows) tingkat.set(row.id, await tingkatAksesRangkaian(user, row.id, db));
+        for (const row of rows) {
+            tingkat.set(row.id, await tingkatAksesRangkaian(user, row.id, db, ctx,
+                { id: row.id, status: row.status, unitPencatatId: row.unit_pencatat_id }));
+        }
 
         // B-I1: jumlah anggota tidak boleh membocorkan bentuk rantai kepada pembaca tanpa tier level
         // rangkaian (A-I3). Tier 'anggota' = hitung anggota terbaca pada jendela getDetail.
         const jumlahTerbaca = await hitungAnggotaTerbaca(
-            user, rows.filter(row => tingkat.get(row.id) === 'anggota').map(row => row.id),
+            user, ctx, rows.filter(row => tingkat.get(row.id) === 'anggota').map(row => row.id),
         );
         const jumlahAnggota = (row: BarisRangkaian): number | null => {
             const t = tingkat.get(row.id) ?? null;

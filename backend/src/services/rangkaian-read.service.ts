@@ -296,7 +296,7 @@ async function muatTerkait(executor: ReadExecutor, rangkaianId: string): Promise
 async function tingkatRangkaian(
     executor: ReadExecutor,
     ctx: KonteksBaca,
-    rs: BarisRangkaian,
+    rs: Pick<BarisRangkaian, 'id' | 'unitPencatatId'>,
 ): Promise<AksesRangkaian | null> {
     if (ctx.user?.role === 'super_admin') return 'owner';
     if (ctx.pengawas && dalamCakupanPengawas(rs.unitPencatatId)) return 'pengawas';
@@ -344,14 +344,31 @@ export async function tingkatRangkaianPenuh(
     return tingkatRangkaian(executor, konteks ?? await resolveKonteksBaca(user, executor), rs);
 }
 
+/** Baris rangkaian_surat yang sudah dimuat pemanggil daftar. */
+export interface RangkaianTermuat {
+    id: string;
+    status: string;
+    unitPencatatId: string;
+}
+
+/**
+ * `konteks` dan `termuat` hanya penghemat kueri untuk pemanggil daftar yang
+ * sudah memilikinya; keputusan tidak berubah. `konteks` dipakai hanya bila
+ * dibuat untuk `user` yang sama. Baris `termuat` yang bukan 'digabung' adalah
+ * ujung rantainya sendiri; baris digabung tetap mengikuti rantai seperti getDetail.
+ */
 export async function tingkatAksesRangkaian(
     user: RecordUser | undefined,
     rangkaianId: string,
     executor: ReadExecutor = db,
+    konteks?: KonteksBaca,
+    termuat?: RangkaianTermuat,
 ): Promise<AksesRangkaian | 'anggota' | null> {
-    const rs = await ujungRantaiGabung(executor, rangkaianId);
+    const rs = termuat && termuat.status !== 'digabung'
+        ? termuat
+        : await ujungRantaiGabung(executor, rangkaianId);
     if (!rs) return null;
-    const ctx = await resolveKonteksBaca(user, executor);
+    const ctx = konteks && konteks.user === user ? konteks : await resolveKonteksBaca(user, executor);
     const tingkat = await tingkatRangkaian(executor, ctx, rs);
     if (tingkat) return tingkat;
     const anggota = await muatAnggota(executor, rs.id);
@@ -359,6 +376,7 @@ export async function tingkatAksesRangkaian(
         user,
         anggota.slice(0, BATAS_NODE_DETAIL).map(row => ({ type: row.jenis, id: row.suratId })),
         executor,
+        ctx,
     );
     return [...akses.values()].some(a => a.allowed) ? 'anggota' : null;
 }
@@ -418,6 +436,7 @@ export const rangkaianReadService = {
             user,
             dipakai.map(row => ({ type: row.jenis, id: row.suratId })),
             executor,
+            ctx,
         );
         const aksesAnggota = (row: BarisAnggota): ReadAccessResult | undefined =>
             akses.get(readRefKey({ type: row.jenis, id: row.suratId }));

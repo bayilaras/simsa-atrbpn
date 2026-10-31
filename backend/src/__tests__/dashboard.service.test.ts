@@ -81,8 +81,10 @@ describe('DashboardService', () => {
             const result = await dashboardService.getStats();
             expect(result).toMatchObject({ totalMasuk: 50, totalKeluar: 30,
                 totalArsip: 25, arsipMasuk: 15, arsipKeluar: 10,
-                masukBulanIni: 8, keluarBulanIni: 4, segmenKadaluarsa: 0 });
+                masukBulanIni: 8, keluarBulanIni: 4 });
             expect(result).toHaveProperty('monthlyTrend');
+            expect(result).not.toHaveProperty('segmenKadaluarsa');
+            expect(arsipService.getExpiring).not.toHaveBeenCalled();
         });
 
         it('should accept optional unitKerjaId filter', async () => {
@@ -204,13 +206,14 @@ describe('DashboardService', () => {
 
     describe('getWidgetData retention lifecycle', () => {
         it('uses explicit triggers and excludes held/missing-trigger records from lifecycle statuses', async () => {
+            canonicalEvaluationSpy.mockClear();
+            // Held (event-3) and missing-trigger records are counted in SQL only.
+            enqueue([{ total: 5, held: 1, missingTrigger: 1, unverifiedRules: 0 }]); // lifecycle counters
             enqueue([
                 { currentRetentionTriggerEventId: 'event-1', retentionTriggerDate: '2090-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', legalHold: false, ruleProvenanceStatus: 'verified' },
                 { currentRetentionTriggerEventId: 'event-2', retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', legalHold: false, ruleProvenanceStatus: 'verified' },
-                { currentRetentionTriggerEventId: 'event-3', retentionTriggerDate: '2000-01-01', retensiAktif: '1 tahun', retensiInaktif: '1 tahun', legalHold: true, ruleProvenanceStatus: 'verified' },
-                { retentionTriggerDate: null, retensiAktif: '1 tahun', retensiInaktif: '1 tahun', legalHold: false, ruleProvenanceStatus: 'verified' },
                 { currentRetentionTriggerEventId: 'event-4', retentionTriggerDate: '2026-01-01', retensiAktif: null, retensiInaktif: null, legalHold: false, ruleProvenanceStatus: 'verified' },
-            ]); // lifecycle data
+            ]); // evaluable lifecycle evidence
             enqueue([]); // storage
             enqueue([{ count: 0 }]); // lending borrowed
             enqueue([{ count: 0 }]); // lending overdue
@@ -229,9 +232,10 @@ describe('DashboardService', () => {
                 held: 1,
                 missingTrigger: 1,
                 manualReview: 1,
+                unverifiedRules: 0,
                 total: 5,
             });
-            expect(canonicalEvaluationSpy).toHaveBeenCalled();
+            expect(canonicalEvaluationSpy).toHaveBeenCalledTimes(3);
         });
     });
 });

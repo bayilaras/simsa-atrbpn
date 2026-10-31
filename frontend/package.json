@@ -28,7 +28,6 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.4.0",
-    "framer-motion": "^14.6.0",
     "lucide-react": "^0.563.0",
     "radix-ui": "^1.8.1",
     "react": "^19.3.1",
@@ -36,7 +35,6 @@
     "react-day-picker": "^10.0.2",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.4",
-    "recharts": "^3.10.1",
     "tailwind-merge": "^3.7.0",
     "tailwindcss": "^4.3.3"
   },

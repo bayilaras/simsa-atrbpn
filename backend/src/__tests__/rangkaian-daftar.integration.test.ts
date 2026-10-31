@@ -1,6 +1,8 @@
 // backend/src/__tests__/rangkaian-daftar.integration.test.ts
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PGlite } from '@electric-sql/pglite';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { drizzle } from 'drizzle-orm/pglite';
 import * as schema from '../db/schema';
 import {
@@ -173,5 +175,22 @@ describe('GET /api/rangkaian — jangkauan daftar Berkas Rangkaian', () => {
         }
         const superHasil = await daftar.list(pengguna.superAdmin, { page: 1, limit: 50 });
         expect(superHasil.data.find(row => row.id === r.R4.id)).toMatchObject({ jumlahAnggota: 2 });
+    });
+
+    it('satu konteks baca per halaman; baris rangkaian yang tercantum tidak dimuat ulang per baris', async () => {
+        const dialect = new PgDialect();
+        const execute = vi.spyOn(holder.db, 'execute');
+        try {
+            for (const user of [pengguna.tu, pengguna.bppt, pengguna.ktpp]) {
+                execute.mockClear();
+                const hasil = await daftar.list(user, { page: 1, limit: 50 });
+                expect(hasil.data.length, user.unitKerjaId).toBeGreaterThan(0);
+                const kueri = execute.mock.calls.map(([q]) => dialect.sqlToQuery(q as SQL).sql);
+                expect(kueri.filter(teks => teks.includes('is_unit_pengawas AS "pengawas"')), user.unitKerjaId).toHaveLength(1);
+                expect(kueri.filter(teks => /FROM rangkaian_surat rs\s+JOIN unit_kerja up/.test(teks)), user.unitKerjaId).toHaveLength(0);
+            }
+        } finally {
+            execute.mockRestore();
+        }
     });
 });

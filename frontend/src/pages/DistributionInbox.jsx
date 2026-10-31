@@ -33,6 +33,8 @@ import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 import { PenyelesaianDialog } from '@/components/distribusi/PenyelesaianDialog'
 import { buildTindakLanjutState } from '@/lib/tindak-lanjut'
+import { usePaginatedResource } from '@/hooks/use-paginated-resource'
+import { ResourcePagination } from '@/components/ResourcePagination'
 
 const statusConfig = {
     sent: { label: 'Menunggu', variant: 'outline', icon: Clock, className: 'text-yellow-600 dark:text-yellow-400 border-yellow-200 bg-yellow-50 dark:bg-yellow-500/15' },
@@ -44,14 +46,15 @@ const statusConfig = {
 /** Disposisi yang boleh dibuka dialog Penyelesaian: terbaca dan masih sent/received. */
 const dapatDiselesaikan = (row) => Boolean(row) && !row.masked && (row.status === 'sent' || row.status === 'received')
 
+// Matches the inbox/outbox endpoint default page size.
+const PAGE_SIZE = 20
+
 export default function DistributionInbox() {
     const { toast } = useToast()
     const { user } = useAuth()
     const [activeTab, setActiveTab] = useState('inbox')
-    const [inboxData, setInboxData] = useState([])
-    const [outboxData, setOutboxData] = useState([])
-    const [stats, setStats] = useState(null)
-    const [loading, setLoading] = useState(true)
+    const [statsSnapshot, setStatsSnapshot] = useState(null)
+    const [statsRevision, setStatsRevision] = useState(0)
     const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
     const [selectedDistribution, setSelectedDistribution] = useState(null)
     const [rejectReason, setRejectReason] = useState('')
@@ -66,47 +69,60 @@ export default function DistributionInbox() {
     const unitScope = useRequiredUnitKerjaScope(user)
     const unitKerjaId = unitScope.unitKerjaId
 
-    const loadData = useCallback(async () => {
-        if (!unitKerjaId) {
-            setInboxData([])
-            setOutboxData([])
-            setStats(null)
-            setLoading(false)
-            return
-        }
-        setLoading(true)
-        try {
-            const [inboxRes, outboxRes, statsRes] = await Promise.all([
-                distributionService.getInbox(unitKerjaId, lewatBatas ? { lewatBatas: true } : {}),
-                distributionService.getOutbox(unitKerjaId),
-                distributionService.getStats(unitKerjaId),
-            ])
-
-            setInboxData(inboxRes)
-            setOutboxData(outboxRes)
-            setStats(statsRes)
-        } catch (error) {
-            console.error('Error loading distribution data:', error)
-            toast({
-                title: 'Error',
-                description: 'Gagal memuat data distribusi',
-                variant: 'destructive',
-            })
-        } finally {
-            setLoading(false)
-        }
-    }, [lewatBatas, toast, unitKerjaId])
+    // Each box owns its page and filter: paging the inbox or toggling
+    // lewatBatas reloads only the inbox, not the outbox or the counters.
+    const fetchInboxPage = useCallback(({ page, limit }) => distributionService.getInbox(unitKerjaId, {
+        ...(lewatBatas ? { lewatBatas: true } : {}), page, limit,
+    }), [lewatBatas, unitKerjaId])
+    const fetchOutboxPage = useCallback(({ page, limit }) => distributionService.getOutbox(unitKerjaId, { page, limit }), [unitKerjaId])
+    const inbox = usePaginatedResource(fetchInboxPage, {
+        queryKey: `${unitKerjaId}:${lewatBatas}`, enabled: Boolean(unitKerjaId), pageSize: PAGE_SIZE,
+    })
+    const outbox = usePaginatedResource(fetchOutboxPage, {
+        queryKey: unitKerjaId || '', enabled: Boolean(unitKerjaId), pageSize: PAGE_SIZE,
+    })
+    const inboxData = inbox.rows
+    const outboxData = outbox.rows
 
     useEffect(() => {
-        loadData()
-    }, [loadData])
+        if (!unitKerjaId) return
+        let active = true
+        Promise.resolve().then(() => distributionService.getStats(unitKerjaId)).then((data) => {
+            if (active) setStatsSnapshot({ unitKerjaId, revision: statsRevision, data })
+        }).catch((error) => {
+            if (!active) return
+            console.error('Error loading distribution stats:', error)
+            setStatsSnapshot({ unitKerjaId, revision: statsRevision, data: null })
+            toast({
+                title: 'Error',
+                description: 'Gagal memuat ringkasan distribusi',
+                variant: 'destructive',
+            })
+        })
+        return () => { active = false }
+    }, [statsRevision, toast, unitKerjaId])
+    // Counters stay visible while they are refreshed for the same unit.
+    const stats = unitKerjaId && statsSnapshot?.unitKerjaId === unitKerjaId ? statsSnapshot.data : null
+    const statsLoading = Boolean(unitKerjaId) && (statsSnapshot?.unitKerjaId !== unitKerjaId || statsSnapshot.revision !== statsRevision)
+    const loading = inbox.loading || outbox.loading || statsLoading
+
+    // Inbox actions change the inbox rows and the counters, not the outbox.
+    const reloadInbox = inbox.reload
+    const refreshInbox = useCallback(() => {
+        reloadInbox()
+        setStatsRevision((value) => value + 1)
+    }, [reloadInbox])
+    const loadData = () => {
+        refreshInbox()
+        outbox.reload()
+    }
 
     // Tautan lama /distribusi?penyelesaian=<id> (detail surat kini membuka dialog
     // sendiri, F-I2). Fallback: baris di halaman ini, atau GET /distributions/:id
     // bila tidak ada di halaman kotak yang sedang dimuat; hanya sent/received.
     useEffect(() => {
         const id = searchParams.get('penyelesaian')
-        if (!id || loading) return
+        if (!id || inbox.loading) return
         setSearchParams({}, { replace: true })
         const tolak = () => toast({ title: 'Disposisi tidak dapat diselesaikan', description: 'Disposisi tidak ditemukan, sudah selesai/ditolak, atau belum dapat Anda baca.', variant: 'destructive' })
         const baris = inboxData.find((item) => item.id === id)
@@ -118,7 +134,7 @@ export default function DistributionInbox() {
         distributionService.getById(id)
             .then((row) => (dapatDiselesaikan(row) ? setPenyelesaianTarget(row) : tolak()))
             .catch(tolak)
-    }, [inboxData, loading, searchParams, setSearchParams, toast])
+    }, [inboxData, inbox.loading, searchParams, setSearchParams, toast])
 
     const bukaTindakLanjut = (item) => navigate('/surat/keluar/tambah', {
         state: buildTindakLanjutState('surat_masuk', {
@@ -132,7 +148,7 @@ export default function DistributionInbox() {
         try {
             await distributionService.receive(distributionId, unitKerjaId)
             toast({ title: 'Berhasil', description: 'Surat berhasil diterima' })
-            loadData()
+            refreshInbox()
         } catch (error) {
             toast({
                 title: 'Error',
@@ -161,7 +177,7 @@ export default function DistributionInbox() {
             setRejectDialogOpen(false)
             setRejectReason('')
             setSelectedDistribution(null)
-            loadData()
+            refreshInbox()
         } catch (error) {
             toast({
                 title: 'Error',
@@ -305,14 +321,20 @@ export default function DistributionInbox() {
                         </TabsTrigger>
                     </TabsList>
 
-                    <div className="relative w-full sm:w-[300px]">
-                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                            placeholder={`Cari surat di ${activeTab === 'inbox' ? 'kotak masuk' : 'kotak keluar'}...`}
-                            className="pl-9 bg-background/50 focus:bg-background transition-colors"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
+                    <div className="w-full space-y-1 sm:w-[300px]">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                                placeholder={`Cari surat di ${activeTab === 'inbox' ? 'kotak masuk' : 'kotak keluar'}...`}
+                                className="pl-9 bg-background/50 focus:bg-background transition-colors"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                aria-describedby="distribusi-cakupan-cari"
+                            />
+                        </div>
+                        <p id="distribusi-cakupan-cari" className="text-xs text-muted-foreground">
+                            Pencarian hanya menyaring halaman yang sedang ditampilkan.
+                        </p>
                     </div>
                     {activeTab === 'inbox' && (
                         <label className="flex items-center gap-2 text-sm">
@@ -348,10 +370,16 @@ export default function DistributionInbox() {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {loading ? (
+                                    {inbox.loading ? (
                                         <TableRow>
                                             <TableCell colSpan={9} className="p-0">
                                                 <TableSkeleton rows={5} columns={9} />
+                                            </TableCell>
+                                        </TableRow>
+                                    ) : inbox.error ? (
+                                        <TableRow>
+                                            <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
+                                                Kotak masuk belum dapat dimuat.
                                             </TableCell>
                                         </TableRow>
                                     ) : filteredInbox.length === 0 ? (
@@ -365,7 +393,7 @@ export default function DistributionInbox() {
                                         </TableRow>
                                     ) : filteredInbox.map((item, index) => (
                                         <TableRow key={item.id} className="group hover:bg-muted/30 transition-colors">
-                                            <TableCell data-label="No." className="text-center font-medium text-xs text-muted-foreground">{index + 1}</TableCell>
+                                            <TableCell data-label="No." className="text-center font-medium text-xs text-muted-foreground">{(inbox.page - 1) * PAGE_SIZE + index + 1}</TableCell>
                                             <TableCell data-label="Nomor Surat">
                                                 {item.masked ? (
                                                     <Badge variant="outline" className="text-muted-foreground">Dikecualikan</Badge>
@@ -434,6 +462,9 @@ export default function DistributionInbox() {
                                     ))}
                                 </TableBody>
                             </Table>
+                            <div className="px-4 pb-4">
+                                <ResourcePagination resource={inbox} label="kotak masuk" />
+                            </div>
                         </CardContent>
                     </Card>
                 </TabsContent>
@@ -462,10 +493,16 @@ export default function DistributionInbox() {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {loading ? (
+                                    {outbox.loading ? (
                                         <TableRow>
                                             <TableCell colSpan={7} className="p-0">
                                                 <TableSkeleton rows={5} columns={7} />
+                                            </TableCell>
+                                        </TableRow>
+                                    ) : outbox.error ? (
+                                        <TableRow>
+                                            <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
+                                                Kotak keluar belum dapat dimuat.
                                             </TableCell>
                                         </TableRow>
                                     ) : filteredOutbox.length === 0 ? (
@@ -479,7 +516,7 @@ export default function DistributionInbox() {
                                         </TableRow>
                                     ) : filteredOutbox.map((item, index) => (
                                         <TableRow key={item.id} className="group hover:bg-muted/30 transition-colors">
-                                            <TableCell data-label="No." className="text-center font-medium text-xs text-muted-foreground">{index + 1}</TableCell>
+                                            <TableCell data-label="No." className="text-center font-medium text-xs text-muted-foreground">{(outbox.page - 1) * PAGE_SIZE + index + 1}</TableCell>
                                             <TableCell data-label="Nomor Surat">
                                                 <code className="text-xs bg-muted px-1.5 py-0.5 rounded border border-border">
                                                     {item.surat?.nomorSurat || '-'}
@@ -504,6 +541,9 @@ export default function DistributionInbox() {
                                     ))}
                                 </TableBody>
                             </Table>
+                            <div className="px-4 pb-4">
+                                <ResourcePagination resource={outbox} label="kotak keluar" />
+                            </div>
                         </CardContent>
                     </Card>
                 </TabsContent>
@@ -514,7 +554,7 @@ export default function DistributionInbox() {
                 onOpenChange={(value) => { if (!value) setPenyelesaianTarget(null) }}
                 distribusi={penyelesaianTarget}
                 unitKerjaId={unitKerjaId}
-                onSelesai={loadData}
+                onSelesai={refreshInbox}
             />
 
             {/* Reject Dialog */}

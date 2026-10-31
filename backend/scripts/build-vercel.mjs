@@ -31,6 +31,16 @@ const result = spawnSync(process.execPath, [npm, 'run', 'build', '--', '--out-di
     cwd: project, stdio: 'inherit', windowsHide: true, shell: false,
 });
 if (result.error || result.status !== 0) throw new Error('Backend Vercel build failed');
+// Unbundled, a cold start resolves and reads about 800 dependency files one by
+// one. Bundle them into app.js in place, so import.meta.url paths (the OCR
+// worker entry) still resolve. Native bindings, packages that load files
+// relative to their own location and the libraries loaded on first use stay
+// external; their literal specifiers let the function tracer ship them.
+await build({ entryPoints: [join(output, 'app.js')], outfile: join(output, 'app.js'), allowOverwrite: true,
+    bundle: true, platform: 'node', format: 'esm', target: 'node24',
+    banner: { js: "import { createRequire as __simsaCreateRequire } from 'node:module'; const require = __simsaCreateRequire(import.meta.url);" },
+    external: ['@napi-rs/canvas*', 'pdfjs-dist', 'pg-native', 'tesseract.js', 'pino', 'pdfkit', 'exceljs', 'qrcode',
+        'nodemailer', '@vercel/functions/oidc'] });
 // Bundle shared validators at build time so function runtime never relies on
 // files outside the backend project. Include repository sources during build.
 await build({ entryPoints: [join(project, 'lib/vercel-runtime.mjs')],

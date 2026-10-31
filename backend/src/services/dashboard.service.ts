@@ -15,7 +15,7 @@ import { storageLocations } from '../db/schema/storage-locations.js';
 import { penyusutanArsip, penyusutanItems } from '../db/schema/penyusutan.js';
 import { arsipVital } from '../db/schema/arsip-vital.js';
 import { arsipTerjaga } from '../db/schema/arsip-terjaga.js';
-import { sql, eq, and, gte, lte, lt, count, inArray, or, isNull } from 'drizzle-orm';
+import { sql, eq, and, gte, lte, lt, count, inArray, or, isNull, isNotNull } from 'drizzle-orm';
 import { createLogger } from '../utils/logger.js';
 import { arsipService } from './arsip.service.js';
 import {
@@ -76,7 +76,6 @@ interface DashboardStats {
     totalArsip: number;
     arsipMasuk: number;
     arsipKeluar: number;
-    segmenKadaluarsa: number;
     masukBulanIni: number;
     keluarBulanIni: number;
     monthlyTrend: MonthlyStats[];
@@ -106,7 +105,6 @@ export const dashboardService = {
             [totalMasukResult],
             [totalKeluarResult],
             [archiveCounts],
-            expiringArchives,
             masukMonthlyRaw,
             keluarMonthlyRaw,
             masukStatusBreakdown,
@@ -135,9 +133,6 @@ export const dashboardService = {
                     unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined,
                     archiveClass,
                 )),
-
-            // Expiring archives (next 30 days), verified from canonical snapshots.
-            arsipService.getExpiring(unitKerjaId, 30, securityClassifications),
 
             // Monthly trend: 1 aggregated query per table instead of 24 sequential queries
             db.select({
@@ -205,7 +200,6 @@ export const dashboardService = {
             totalArsip: archiveCounts?.total || 0,
             arsipMasuk: archiveCounts?.masuk || 0,
             arsipKeluar: archiveCounts?.keluar || 0,
-            segmenKadaluarsa: expiringArchives.length,
             // Reuse the calendar-month buckets instead of rescanning each table.
             // A local Date converted to UTC used to omit the month's final day.
             masukBulanIni: (masukByMonth.get(currentMonth) || 0) as number,
@@ -424,7 +418,8 @@ export const dashboardService = {
             const terjagaUnitFilter = unitKerjaId ? [eq(arsipTerjaga.unitKerjaId, unitKerjaId)] : [];
 
             const [
-                // Archive Lifecycle — evaluated from an explicit retention trigger
+                // Archive Lifecycle — counted in SQL, then evaluated from an explicit retention trigger
+                [lifecycleCounts],
                 arsipLifecycleData,
                 // Storage Capacity
                 storageData,
@@ -440,9 +435,22 @@ export const dashboardService = {
                 // Media Breakdown
                 mediaData,
             ] = await Promise.all([
-                // 1. Fetch only the fields required for a single, shared lifecycle
-                // evaluation. Held and missing-trigger records are never classified as
-                // active/inactive/expired.
+                // 1a. Held and missing-trigger records are never classified as
+                // active/inactive/expired, and unverified rule provenance never reaches
+                // the canonical evaluation, so these buckets need no rule evidence.
+                db.select({
+                    total: count(),
+                    held: sql<number>`count(*) filter (where ${arsip.legalHold})::int`,
+                    missingTrigger: sql<number>`count(*) filter (where not ${arsip.legalHold}
+                        and ${arsip.currentRetentionTriggerEventId} is null)::int`,
+                    unverifiedRules: sql<number>`count(*) filter (where not ${arsip.legalHold}
+                        and ${arsip.currentRetentionTriggerEventId} is not null
+                        and ${arsip.ruleProvenanceStatus} is distinct from 'verified')::int`,
+                }).from(arsip)
+                    .where(and(...arsipUnitFilter, archiveClass)),
+
+                // 1b. Fetch the fields of a single, shared lifecycle evaluation only
+                // for the archives that reach it.
                 db.select({
                     id: arsip.id,
                     retentionTriggerDate: arsip.retentionTriggerDate,
@@ -471,7 +479,13 @@ export const dashboardService = {
                     .leftJoin(retentionTriggerVerifications, CURRENT_RETENTION_VERIFICATION_JOIN)
                     .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
                     .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
-                    .where(and(...arsipUnitFilter, archiveClass)),
+                    .where(and(
+                        ...arsipUnitFilter,
+                        archiveClass,
+                        eq(arsip.legalHold, false),
+                        isNotNull(arsip.currentRetentionTriggerEventId),
+                        eq(arsip.ruleProvenanceStatus, 'verified'),
+                    )),
 
                 // 2. Storage Capacity — top-level locations (gedung) with aggregate capacity
                 db.select({
@@ -610,33 +624,19 @@ export const dashboardService = {
                 count: penyusutanMap.get(status) || 0,
             }));
 
-            // Calculate lifecycle counts through the same trigger-aware logic used by
-            // retention candidates and penyusutan workflows.
+            // Calculate the remaining lifecycle counts through the same trigger-aware logic
+            // used by retention candidates and penyusutan workflows. The SQL buckets (1a)
+            // and the evaluated rows (1b) partition the same archive scope.
             let aktifCount = 0;
             let inaktifCount = 0;
             let kadaluarsaCount = 0;
-            let belumDitentukan = 0;
-            let heldCount = 0;
-            let missingTriggerCount = 0;
+            let belumDitentukan = lifecycleCounts?.unverifiedRules || 0;
+            const heldCount = lifecycleCounts?.held || 0;
+            const missingTriggerCount = lifecycleCounts?.missingTrigger || 0;
             let manualReviewCount = 0;
-            let unverifiedRulesCount = 0;
+            let unverifiedRulesCount = lifecycleCounts?.unverifiedRules || 0;
 
             for (const archive of arsipLifecycleData) {
-                if (archive.legalHold) {
-                    heldCount += 1;
-                    continue;
-                }
-                if (!archive.currentRetentionTriggerEventId) {
-                    missingTriggerCount += 1;
-                    continue;
-                }
-
-                if (archive.ruleProvenanceStatus !== 'verified') {
-                    unverifiedRulesCount += 1;
-                    belumDitentukan += 1;
-                    continue;
-                }
-
                 const evaluation = arsipService.evaluateCanonicalRetention(archive);
                 if (!evaluation.verified) {
                     unverifiedRulesCount += 1;
@@ -658,7 +658,7 @@ export const dashboardService = {
                 if (status === 'kadaluarsa') kadaluarsaCount += 1;
             }
 
-            const totalArsip = arsipLifecycleData.length;
+            const totalArsip = lifecycleCounts?.total || 0;
 
             return {
                 archiveLifecycle: {

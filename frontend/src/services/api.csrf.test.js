@@ -35,12 +35,12 @@ describe('ApiClient CSRF token boundaries', () => {
         await expect(api.post('/api/example', { value: 1 })).resolves.toEqual({ success: true });
 
         expect(fetchMock).toHaveBeenCalledTimes(2);
-        expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/health$/);
+        expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/capabilities$/);
         expect(fetchMock.mock.calls[0][1]).toEqual({ method: 'GET', credentials: 'include', signal: expect.any(AbortSignal) });
         expect(fetchMock.mock.calls[1][1].headers['X-CSRF-Token']).toBe(COOKIE_TOKEN);
     });
 
-    it('uses a valid decoded cookie without fetching health', async () => {
+    it('uses a valid decoded cookie without a bootstrap request', async () => {
         document.cookie = `csrf-token=${'%61%31'.repeat(32)}; path=/`;
         const fetchMock = vi.fn().mockResolvedValue(success());
         vi.stubGlobal('fetch', fetchMock);

@@ -13,10 +13,9 @@ function scopedPath(path, unitKerjaId) {
 }
 
 export const penyusutanService = {
-    // List all penyusutan batches
+    // One page of penyusutan batches: `{ data, pagination }`
     async findAll(params = {}) {
-        const response = await api.get(BASE_URL, { ...params, unitKerjaId: requireUnitKerjaId(params.unitKerjaId) });
-        return response.data || [];
+        return api.get(BASE_URL, { ...params, unitKerjaId: requireUnitKerjaId(params.unitKerjaId) });
     },
 
     // Get batch detail with items
