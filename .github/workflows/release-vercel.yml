@@ -91,7 +91,7 @@ jobs:
             echo "frontend=$([ "$COMPONENTS" != backend ] && echo true || echo false)"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.request.outputs.commit_sha }}
           persist-credentials: false
@@ -163,7 +163,7 @@ jobs:
       deployment_id: ${{ steps.check.outputs.deployment_id }}
       serving: ${{ steps.check.outputs.serving }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.source.outputs.commit_sha }}
           persist-credentials: false
@@ -264,7 +264,7 @@ jobs:
       deployment_id: ${{ steps.check.outputs.deployment_id }}
       serving: ${{ steps.check.outputs.serving }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.source.outputs.commit_sha }}
           persist-credentials: false
@@ -375,7 +375,7 @@ jobs:
       BACKEND_REPLACES: ${{ needs.backend-candidate.outputs.serving }}
       FRONTEND_REPLACES: ${{ needs.frontend-candidate.outputs.serving }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.source.outputs.commit_sha }}
           persist-credentials: false
