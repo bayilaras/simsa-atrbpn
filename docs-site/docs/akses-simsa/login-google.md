@@ -66,7 +66,7 @@ Langkah ini hanya untuk akun baru.
 > Bisa. SIMSA menautkan identitas Google ke akun tersebut bila emailnya sama dan sudah terverifikasi di Google. Peran dan unit kerja akun tidak berubah, dan kata sandi SIMSA yang sudah ada tetap dapat dipakai.
 
 **Q: Apakah akun yang dibuat lewat Google memiliki kata sandi SIMSA?**
-> Tidak. Kata sandinya dikelola di akun Google, sehingga akun tersebut masuk dengan **Masuk dengan Google**.
+> Tidak. Kata sandinya dikelola di akun Google. Bila perlu masuk dengan email dan kata sandi, minta Super Admin mengatur kata sandi melalui [Atur Ulang Kata Sandi](../administrasi/user-management.md#atur-ulang-kata-sandi).
 
 **Q: Halaman Google tidak terbuka atau kembali ke halaman login?**
 > Pastikan cookie dan redirect diizinkan, lalu gunakan alamat SIMSA resmi. Bila tetap gagal, minta pengelola memeriksa konfigurasi OAuth dan provisioning akun.

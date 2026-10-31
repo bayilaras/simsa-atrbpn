@@ -37,7 +37,7 @@ Alur belajar yang disarankan untuk hari pertama:
 2. Isi **Email kedinasan** dan **Kata sandi**, lalu klik **Masuk**.
 3. Setelah masuk, periksa peran dan unit kerja Anda sebelum mencatat data.
 
-Aplikasi tidak menyediakan pendaftaran mandiri dengan email dan kata sandi. Super Admin membuat akun melalui **Administrasi → Manajemen Pengguna → Tambah Pengguna**. Jangan membagikan akun uji untuk pekerjaan resmi.
+Aplikasi tidak menyediakan pendaftaran mandiri dengan email dan kata sandi. Super Admin membuat akun melalui **Administrasi → Manajemen Pengguna → Tambah Pengguna**. Jangan membagikan akun uji untuk pekerjaan resmi. Bila lupa kata sandi, minta Super Admin mengatur ulangnya, lalu ganti kata sandi itu di **Pengaturan → Profil → Ubah Kata Sandi**.
 
 ### Login Google bila tersedia
 
