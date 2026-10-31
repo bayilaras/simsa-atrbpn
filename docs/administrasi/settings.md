@@ -26,18 +26,6 @@ Tab ini tersedia untuk **semua pengguna** yang login.
 
 > 💡 Perubahan nama akan langsung berlaku di seluruh sistem.
 
-### Ubah Kata Sandi
-
-Kartu **Ubah Kata Sandi** ada di bawah profil dan berlaku untuk akun yang masuk dengan email dan kata sandi.
-
-1. Isi **Kata sandi saat ini**.
-2. Isi **Kata sandi baru** (8 sampai 128 karakter dan berbeda dari kata sandi saat ini), lalu ulangi pada **Konfirmasi kata sandi baru**.
-3. Klik **"Simpan Kata Sandi"**.
-
-> 💡 Setelah berhasil, sesi di perangkat lain ditutup; perangkat yang sedang Anda pakai tetap masuk. Pesan *Kata sandi saat ini salah.* berarti isian pertama keliru. Setelah terlalu banyak percobaan, tunggu beberapa menit.
-
-Akun yang hanya masuk dengan Google tidak memiliki kata sandi SIMSA, sehingga kartu ini hanya menampilkan keterangan tanpa formulir. Bila perlu masuk dengan email dan kata sandi, atau lupa kata sandi saat ini, minta Super Admin memakai [Atur Ulang Kata Sandi](user-management.md#atur-ulang-kata-sandi).
-
 ---
 
 ## Tab Preferensi

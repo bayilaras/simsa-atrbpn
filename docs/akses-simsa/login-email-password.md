@@ -17,14 +17,6 @@ Login Google hanya digunakan jika integrasinya sudah dikonfigurasi. Aplikasi tid
 - Jika halaman tidak dapat dibuka, sampaikan waktu kejadian dan pesan yang tampil kepada operator.
 - Jika akun belum memiliki peran/unit yang benar, minta Super Admin menyesuaikannya dengan penugasan.
 
-## Lupa kata sandi
-
-SIMSA tidak mengirim email untuk mengatur ulang kata sandi. Di bawah kolom **Kata sandi** tertulis *Lupa kata sandi? Hubungi Super Admin untuk mengatur ulang kata sandi Anda.*
-
-1. Minta Super Admin memakai [Atur Ulang Kata Sandi](../administrasi/user-management.md#atur-ulang-kata-sandi). Super Admin menyampaikan kata sandi baru secara langsung, dan semua sesi Anda ditutup.
-2. Bila email akun Anda juga akun Google, Anda tetap dapat masuk dengan **Masuk dengan Google**. Cara ini tidak memulihkan kata sandi, karena mengubah kata sandi memerlukan kata sandi saat ini.
-3. Setelah masuk dengan kata sandi dari Super Admin, ganti kata sandi itu di [Pengaturan → Profil → Ubah Kata Sandi](../administrasi/settings.md#ubah-kata-sandi).
-
 Setelah selesai, buka menu avatar dan pilih **Keluar**, terutama pada komputer bersama.
 
 [Pengelolaan akun](../administrasi/user-management.md) · [Login Google](login-google.md)
