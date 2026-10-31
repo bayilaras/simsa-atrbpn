@@ -32,9 +32,11 @@ export const updateUserSchema = z.object({
     nip: z.string().max(30).nullable().optional(),
 });
 
-// Params with userId
+// Params with userId. uuid() also accepts upper-case hex; Postgres returns
+// ids in lower case, and the self checks and accounts.account_id (text)
+// compare the string as written.
 export const userIdParamSchema = z.object({
-    userId: z.string().uuid(),
+    userId: z.string().uuid().transform(value => value.toLowerCase()),
 });
 
 // Create user body

@@ -5,7 +5,7 @@ import express from 'express';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as schema from '../db/schema';
-import { hashCredentialPassword } from '../config/password-hashing.js';
+import { hashCredentialPassword, verifyCredentialPassword } from '../config/password-hashing.js';
 import { bootRangkaianDatabase } from './helpers/rangkaian-pglite.js';
 
 const holder = vi.hoisted(() => ({ db: null as any }));
@@ -21,15 +21,19 @@ const PASSWORD = {
     superAdmin: 'synthetic-super-admin-password',
     unit: 'synthetic-unit-old-password',
     inactive: 'synthetic-inactive-old-password',
+    upperCase: 'synthetic-upper-case-old-password',
     reset: 'synthetic-reset-password-01',
 } as const;
+// Every id has hex letters, so an upper-cased id differs from the stored one.
 const USER = {
-    superAdmin: '10000000-0000-4000-8000-000000000701',
-    unit: '10000000-0000-4000-8000-000000000702',
-    google: '10000000-0000-4000-8000-000000000703',
-    pending: '10000000-0000-4000-8000-000000000704',
-    inactive: '10000000-0000-4000-8000-000000000705',
-    missing: '10000000-0000-4000-8000-000000000799',
+    superAdmin: '10000000-0000-4000-8000-0000000007a1',
+    unit: '10000000-0000-4000-8000-0000000007a2',
+    google: '10000000-0000-4000-8000-0000000007a3',
+    pending: '10000000-0000-4000-8000-0000000007a4',
+    inactive: '10000000-0000-4000-8000-0000000007a5',
+    upperCase: '10000000-0000-4000-8000-0000000007a6',
+    googleUpperCase: '10000000-0000-4000-8000-0000000007a7',
+    missing: '10000000-0000-4000-8000-0000000007ff',
 } as const;
 const EMAIL = {
     superAdmin: 'super-admin@example.test',
@@ -37,6 +41,8 @@ const EMAIL = {
     google: 'google-saja@example.test',
     pending: 'menunggu@example.test',
     inactive: 'nonaktif@example.test',
+    upperCase: 'huruf-besar@example.test',
+    googleUpperCase: 'google-huruf-besar@example.test',
 } as const;
 
 function cookieHeader(response: Response): string {
@@ -115,23 +121,29 @@ describe('Super Admin password reset', () => {
                 ($2, $7, 'Admin Unit', 'admin_unit', 'sesditjen', true, true),
                 ($3, $8, 'Pengguna Google', 'admin_unit', 'sesditjen', true, true),
                 ($4, $9, 'Menunggu Persetujuan', 'user', NULL, true, true),
-                ($5, $10, 'Pengguna Nonaktif', 'admin_unit', 'sesditjen', false, true)
+                ($5, $10, 'Pengguna Nonaktif', 'admin_unit', 'sesditjen', false, true),
+                ($11, $13, 'Pengguna Huruf Besar', 'admin_unit', 'sesditjen', true, true),
+                ($12, $14, 'Pengguna Google Huruf Besar', 'admin_unit', 'sesditjen', true, true)
         `, [USER.superAdmin, USER.unit, USER.google, USER.pending, USER.inactive,
-            EMAIL.superAdmin, EMAIL.unit, EMAIL.google, EMAIL.pending, EMAIL.inactive]);
+            EMAIL.superAdmin, EMAIL.unit, EMAIL.google, EMAIL.pending, EMAIL.inactive,
+            USER.upperCase, USER.googleUpperCase, EMAIL.upperCase, EMAIL.googleUpperCase]);
         await database.query(`
             INSERT INTO accounts (user_id, issuer, account_id, provider_id, password) VALUES
-                ($1::uuid, 'local:credential', $1::text, 'credential', $4),
-                ($2::uuid, 'local:credential', $2::text, 'credential', $5),
-                ($3::uuid, 'local:credential', $3::text, 'credential', $6)
-        `, [USER.superAdmin, USER.unit, USER.inactive,
+                ($1::uuid, 'local:credential', $1::text, 'credential', $5),
+                ($2::uuid, 'local:credential', $2::text, 'credential', $6),
+                ($3::uuid, 'local:credential', $3::text, 'credential', $7),
+                ($4::uuid, 'local:credential', $4::text, 'credential', $8)
+        `, [USER.superAdmin, USER.unit, USER.inactive, USER.upperCase,
             await hashCredentialPassword(PASSWORD.superAdmin),
             await hashCredentialPassword(PASSWORD.unit),
-            await hashCredentialPassword(PASSWORD.inactive)]);
+            await hashCredentialPassword(PASSWORD.inactive),
+            await hashCredentialPassword(PASSWORD.upperCase)]);
         await database.query(`
             INSERT INTO accounts (user_id, account_id, provider_id) VALUES
                 ($1::uuid, 'google-subject-reset', 'google'),
-                ($2::uuid, 'google-subject-pending', 'google')
-        `, [USER.google, USER.pending]);
+                ($2::uuid, 'google-subject-pending', 'google'),
+                ($3::uuid, 'google-subject-upper-case', 'google')
+        `, [USER.google, USER.pending, USER.googleUpperCase]);
 
         holder.db = drizzle(database, { schema });
         auth = await configuredAuth();
@@ -276,15 +288,63 @@ describe('Super Admin password reset', () => {
         expect((await currentSession(cookieHeader(signedIn)))?.user?.id).toBe(USER.google);
     });
 
-    it('resets an inactive account without letting it sign in before reactivation', async () => {
+    it('resets an inactive account; the new password works only after reactivation', async () => {
+        const [before] = await credentialRows(USER.inactive);
         await resetRequest(USER.inactive, superAdminCookie).expect(200);
         const [row] = await credentialRows(USER.inactive);
-        expect(row.password).toBeTruthy();
+        expect(row.password).not.toBe(before.password);
+        expect(await verifyCredentialPassword({ hash: row.password!, password: PASSWORD.reset })).toBe(true);
 
         expect((await signIn(EMAIL.inactive, PASSWORD.reset)).status).not.toBe(200);
         const sessions = await database.query<{ count: number }>(
             'SELECT count(*)::int AS count FROM sessions WHERE user_id = $1', [USER.inactive],
         );
         expect(sessions.rows[0].count).toBe(0);
+
+        await database.query('UPDATE users SET is_active = true WHERE id = $1', [USER.inactive]);
+        expect((await signIn(EMAIL.inactive, PASSWORD.inactive)).status).toBe(401);
+        expect((await signIn(EMAIL.inactive, PASSWORD.reset)).status).toBe(200);
+    });
+
+    // Postgres compares uuid columns regardless of case, but Better Auth
+    // signs in with the credential whose account_id (text) equals the stored id.
+    it('treats an upper-case id in the path as the stored account', async () => {
+        expect(USER.superAdmin.toUpperCase()).not.toBe(USER.superAdmin);
+        const self = await resetRequest(USER.superAdmin.toUpperCase(), superAdminCookie).expect(400);
+        expect(self.body.error).toMatch(/Ubah Kata Sandi/);
+        expect(await credentialRows(USER.superAdmin)).toHaveLength(1);
+        expect((await currentSession(superAdminCookie))?.user?.id).toBe(USER.superAdmin);
+
+        const response = await resetRequest(USER.upperCase.toUpperCase(), superAdminCookie).expect(200);
+        expect(response.body.data).toMatchObject({ userId: USER.upperCase, credentialCreated: false });
+        expect(await credentialRows(USER.upperCase)).toEqual([
+            { issuer: 'local:credential', account_id: USER.upperCase, password: expect.any(String) },
+        ]);
+        expect((await signIn(EMAIL.upperCase, PASSWORD.upperCase)).status).toBe(401);
+        expect((await signIn(EMAIL.upperCase, PASSWORD.reset)).status).toBe(200);
+
+        const audit = await database.query<{ changes: any }>(
+            'SELECT changes FROM audit_log WHERE entity_id = $1', [USER.upperCase],
+        );
+        expect(audit.rows).toHaveLength(1);
+        expect(audit.rows[0].changes.after).toMatchObject({ credentialAccount: 'diperbarui' });
+    });
+
+    it('writes the stored id when the service itself gets an upper-case one', async () => {
+        const { userManagementService, SELF_PASSWORD_RESET_MESSAGE } = await import('../services/user-management.service.js');
+        const auditContext = { userId: USER.superAdmin, userEmail: EMAIL.superAdmin, ipAddress: '203.0.113.1' };
+
+        await expect(userManagementService.resetPassword(USER.superAdmin.toUpperCase(), PASSWORD.reset, auditContext))
+            .rejects.toThrow(SELF_PASSWORD_RESET_MESSAGE);
+        expect((await currentSession(superAdminCookie))?.user?.id).toBe(USER.superAdmin);
+
+        const result = await userManagementService.resetPassword(
+            USER.googleUpperCase.toUpperCase(), PASSWORD.reset, auditContext,
+        );
+        expect(result).toEqual({ userId: USER.googleUpperCase, credentialCreated: true, revokedSessions: 0 });
+        expect(await credentialRows(USER.googleUpperCase)).toEqual([
+            { issuer: 'local:credential', account_id: USER.googleUpperCase, password: expect.any(String) },
+        ]);
+        expect((await signIn(EMAIL.googleUpperCase, PASSWORD.reset)).status).toBe(200);
     });
 });

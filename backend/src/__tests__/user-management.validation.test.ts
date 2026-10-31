@@ -139,6 +139,14 @@ describe('userIdParamSchema', () => {
         expect(result.success).toBe(true);
     });
 
+    it('lower-cases an upper-case UUID so it matches the stored id', () => {
+        const result = userIdParamSchema.safeParse({
+            userId: '550E8400-E29B-41D4-A716-446655440000',
+        });
+        expect(result.success).toBe(true);
+        if (result.success) expect(result.data.userId).toBe('550e8400-e29b-41d4-a716-446655440000');
+    });
+
     it('rejects non-UUID string', () => {
         const result = userIdParamSchema.safeParse({
             userId: 'not-a-uuid',

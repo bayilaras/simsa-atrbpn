@@ -516,11 +516,6 @@ export const userManagementService = {
             await lockAuthorizationMandatesExclusive(tx);
             const actor = await requireActiveSuperAdminActor(tx, auditContext);
 
-            // Changing one's own password must prove the current one.
-            if (actor.id === userId) {
-                throw new ValidationError(SELF_PASSWORD_RESET_MESSAGE);
-            }
-
             const [target] = await tx
                 .select({ id: users.id, role: users.role, isActive: users.isActive })
                 .from(users)
@@ -528,6 +523,15 @@ export const userManagementService = {
                 .limit(1)
                 .for('update');
             if (!target) return null;
+
+            // The uuid lookup ignores case but accounts.account_id is text:
+            // compare and write the stored id, never the id as requested.
+            const targetId = target.id;
+
+            // Changing one's own password must prove the current one.
+            if (actor.id === targetId) {
+                throw new ValidationError(SELF_PASSWORD_RESET_MESSAGE);
+            }
 
             // A pending identity has no approved mandate yet; approval stays
             // the first decision. Inactive accounts are allowed: they cannot
@@ -540,9 +544,9 @@ export const userManagementService = {
             // Better Auth looks the credential up by (user, 'credential',
             // account_id = user id), as createUser and migration 0015 write it.
             const credentialWhere = and(
-                eq(accounts.userId, userId),
+                eq(accounts.userId, targetId),
                 eq(accounts.providerId, 'credential'),
-                eq(accounts.accountId, userId),
+                eq(accounts.accountId, targetId),
             );
             const updatedCredentials = await tx
                 .update(accounts)
@@ -553,9 +557,9 @@ export const userManagementService = {
             if (credentialCreated) {
                 // Google-only identity: add the same credential row createUser writes.
                 await tx.insert(accounts).values({
-                    userId,
+                    userId: targetId,
                     issuer: 'local:credential',
-                    accountId: userId,
+                    accountId: targetId,
                     providerId: 'credential',
                     password: passwordHash,
                 });
@@ -563,7 +567,7 @@ export const userManagementService = {
 
             const revokedSessions = await tx
                 .delete(sessions)
-                .where(eq(sessions.userId, userId))
+                .where(eq(sessions.userId, targetId))
                 .returning({ id: sessions.id });
 
             // Never record the password or its hash.
@@ -571,7 +575,7 @@ export const userManagementService = {
                 ...auditContext,
                 action: 'update',
                 entityType: 'user',
-                entityId: userId,
+                entityId: targetId,
                 changes: {
                     fields: ['password'],
                     after: {
@@ -583,7 +587,7 @@ export const userManagementService = {
             }, tx);
 
             return {
-                userId,
+                userId: targetId,
                 credentialCreated,
                 revokedSessions: revokedSessions.length,
             };
