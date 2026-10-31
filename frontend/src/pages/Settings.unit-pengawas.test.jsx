@@ -18,6 +18,7 @@ vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }
 vi.mock('@/context/theme-context', () => ({ useTheme: () => ({ setTheme: mocks.setTheme }) }))
 vi.mock('@/hooks/use-required-unit-kerja-scope', () => ({ useRequiredUnitKerjaScope: () => mocks.scope }))
 vi.mock('@/components/RequiredUnitKerjaScope', () => ({ RequiredUnitKerjaScope: () => null }))
+vi.mock('@/components/ChangePasswordCard', () => ({ ChangePasswordCard: () => null }))
 vi.mock('@/services/settings.service', () => ({
     settingsService: {
         getAllUnitKerja: mocks.getAll,

@@ -19,6 +19,7 @@ import { User, Building2, FileText, Save, Loader2, Settings2, Palette } from 'lu
 import { PageHeader } from '@/components/PageHeader';
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
+import { ChangePasswordCard } from '@/components/ChangePasswordCard';
 
 export default function Settings() {
     const { user, canWrite } = useAuth();
@@ -266,7 +267,7 @@ export default function Settings() {
                 </TabsList>
 
                 {/* Profile Tab */}
-                <TabsContent value="profile" className="mt-0">
+                <TabsContent value="profile" className="mt-0 space-y-6">
                     <Card className="border-border/60 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden">
                         <CardHeader className="bg-muted/50 border-b border-border pb-4">
                             <CardTitle className="text-xl text-foreground">Profil Pengguna</CardTitle>
@@ -330,6 +331,8 @@ export default function Settings() {
                             </div>
                         </CardContent>
                     </Card>
+
+                    <ChangePasswordCard />
                 </TabsContent>
 
                 <TabsContent value="preferences" className="mt-0">
