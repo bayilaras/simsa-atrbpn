@@ -454,6 +454,7 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'GET /unit-kerja': 'bukan-rekaman',
         'GET /:userId': 'bukan-rekaman',
         'PUT /:userId': 'bukan-rekaman',
+        'POST /:userId/password': 'bukan-rekaman',
         'DELETE /:userId': 'bukan-rekaman',
     },
 };
