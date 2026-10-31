@@ -37,6 +37,8 @@ Jalankan `node scripts/operations-recovery.mjs run`. Keluaran standar hanya lapo
 
 Batas di atas menjaga kuota Blob paket Vercel Hobby. Setiap run, terjadwal maupun manual, mengunduh ulang semua objek unik dengan `cache=0`; tiap unduhan dihitung sebagai satu *simple operation* ditambah transfer data Blob. Hobby menyediakan 10 GB transfer Blob dan 10.000 *simple operations* per 30 hari. Bila terlampaui, akses Blob diblokir 30 hari, sehingga unggah, unduh, pemindaian, dan backup produksi ikut berhenti. Dengan backup penuh harian (ditambah run manual seperti pada Oktober 2026), 160 MiB objek unik memakai sekitar 6–7 GB transfer per bulan, dan 100 objek memakai sekitar 7.800–8.500 operasi termasuk pemakaian aplikasi lain.
 
+Sisa ruang saat ini lebih kecil dari satu batch unggah massal. Pada 31 Oktober 2026 terdapat 19 objek unik berukuran sekitar 74,1 MiB, jadi sisanya sekitar 85,9 MiB, sedangkan satu batch unggah massal yang diizinkan aplikasi bisa mencapai 50 berkas / 100 MiB. Satu unggahan massal penuh sudah cukup membuat backup harian berikutnya gagal, padahal rasio pemakaian baru 46%. Karena itu peringatan sisa ruang sudah aktif pada setiap run sampai pemilik memutuskan langkah di bawah.
+
 Bila batas terlampaui, run gagal pada tahap `document_inventory` (`DOCUMENT_BYTES_OUTSIDE_BUDGET`, `DOCUMENT_OBJECTS_OUTSIDE_BUDGET`, atau `DOCUMENT_COUNT_OUTSIDE_BUDGET`) sebelum GET dokumen pertama. Database terenkripsi dan kunci terbungkus sudah tersimpan di artefak, tetapi status backup merah. Artefak itu tidak berisi manifest dokumen, sehingga `operations-recovery-extract.mjs` dan `restore-delivery` gagal pada bagian dokumen; pakai artefak hijau terakhir sampai batas ditinjau.
 
 Menaikkan batas memerlukan keputusan pemilik: pindah ke paket Pro (misalnya 1 GiB dan 1.000 objek, dengan `timeout-minutes` 60), atau mengubah desain menjadi backup dokumen penuh mingguan ditambah inkremental harian. Selama masih Hobby, batasi run manual `workflow_dispatch` karena tiap run adalah pengunduhan penuh.
@@ -74,7 +76,7 @@ node scripts/operations-recovery-extract.mjs --bundle "$HOME\Downloads\simsa-rec
 Remove-Item Env:BACKUP_ENCRYPTION_PASSPHRASE
 ```
 
-Setiap run terjadwal juga mencatat `documentBudget` di laporan run: jumlah referensi, objek unik, dan ukuran objek unik terhadap batas 1.000 / 100 / 160 MiB. Mulai 75% dari salah satu batas, GitHub Actions menampilkan peringatan "SIMSA backup mendekati batas". Peringatan memakai perhitungan yang sama dengan pemeriksaan keras, jadi muncul sebelum backup gagal. Tinjau kuota Blob (lihat [Batas dokumen dan kuota Blob](#batas-dokumen-dan-kuota-blob)) sebelum menaikkan batas.
+Setiap run terjadwal juga mencatat `documentBudget` di laporan run: jumlah referensi, objek unik, dan ukuran objek unik terhadap batas 1.000 / 100 / 160 MiB, beserta sisa ruang masing-masing. GitHub Actions menampilkan peringatan "SIMSA backup mendekati batas" bila pemakaian mencapai 75% dari salah satu batas (`ratioWarning`) **atau** sisa ruang lebih kecil dari satu batch unggah massal, yaitu 50 berkas / 100 MiB (`headroomWarning`). Peringatan ini bukan jaminan bahwa backup tidak akan langsung gagal: beberapa batch dalam satu hari tetap bisa melewati batas sebelum run berikutnya. Run yang gagal karena batas tetap mencatat `documentBudget` dan menampilkan anotasi error "SIMSA backup melewati batas dokumen" berisi angka pemakaiannya. Tinjau kuota Blob (lihat [Batas dokumen dan kuota Blob](#batas-dokumen-dan-kuota-blob)) sebelum menaikkan batas.
 
 ## Memulihkan artefak delivery yang sudah diunduh
 

@@ -18,20 +18,39 @@ const MAX_OBJECTS = 100;
 const MAX_COUNT = 1000;
 // One envelope seals one document; the manifest and wrapped keys are far smaller.
 const MAX_ENVELOPE = MAX_OBJECT + 28;
-// Early warning before a scheduled backup hits the hard document budget.
-export const DOCUMENT_BUDGET = Object.freeze({ maxReferences: MAX_COUNT, maxObjects: MAX_OBJECTS, maxObjectBytes: MAX_OBJECT, maxTotalBytes: MAX_TOTAL, warningRatio: 0.75 });
+// Largest single user action: one confirmed bulk-upload batch, mirroring
+// BULK_UPLOAD_LIMITS in the backend bulk-upload service and the upload hook.
+const BULK_UPLOAD_BATCH = Object.freeze({ objects: 50, bytes: 100 * 1024 * 1024 });
+export const DOCUMENT_BUDGET = Object.freeze({ maxReferences: MAX_COUNT, maxObjects: MAX_OBJECTS, maxObjectBytes: MAX_OBJECT, maxTotalBytes: MAX_TOTAL,
+  warningRatio: 0.75, bulkUploadBatch: BULK_UPLOAD_BATCH });
 function uniqueDocuments(references) {
   const unique = new Map();
   for (const ref of references) { const prior = unique.get(ref.url);
     check(!prior || prior.sha256 === ref.sha256 && prior.sizeBytes === ref.sizeBytes, 'CONFLICTING_DOCUMENT_REFERENCES'); if (!prior) unique.set(ref.url, ref); }
   return [...unique.values()];
 }
-// Measured exactly like the hard check in documentReferences, so the warning predicts that failure.
+// Measured like the hard check in documentReferences. A ratio alone cannot
+// predict that failure: one bulk-upload batch between two daily runs can take
+// usage from below the ratio straight past a limit. The headroom warning
+// therefore also fires whenever the room left is smaller than one batch.
 export function documentBudgetUsage(references) {
   const objects = uniqueDocuments(references), bytes = objects.reduce((sum, ref) => sum + ref.sizeBytes, 0);
   const referencesRatio = references.length / MAX_COUNT, objectsRatio = objects.length / MAX_OBJECTS, bytesRatio = bytes / MAX_TOTAL;
+  const referencesHeadroom = MAX_COUNT - references.length, objectsHeadroom = MAX_OBJECTS - objects.length, bytesHeadroom = MAX_TOTAL - bytes;
+  const ratioWarning = Math.max(referencesRatio, objectsRatio, bytesRatio) >= DOCUMENT_BUDGET.warningRatio;
+  const headroomWarning = referencesHeadroom < BULK_UPLOAD_BATCH.objects || objectsHeadroom < BULK_UPLOAD_BATCH.objects || bytesHeadroom < BULK_UPLOAD_BATCH.bytes;
   return { references: references.length, objects: objects.length, bytes, maxReferences: MAX_COUNT, maxObjects: MAX_OBJECTS, maxTotalBytes: MAX_TOTAL,
-    referencesRatio, objectsRatio, bytesRatio, warning: Math.max(referencesRatio, objectsRatio, bytesRatio) >= DOCUMENT_BUDGET.warningRatio };
+    referencesRatio, objectsRatio, bytesRatio, referencesHeadroom, objectsHeadroom, bytesHeadroom, ratioWarning, headroomWarning, warning: ratioWarning || headroomWarning };
+}
+const mib = bytes => (bytes / (1024 * 1024)).toFixed(1);
+// GitHub Actions annotation for a usage record, or null when nothing needs attention.
+// Numbers only (no '%', no newline), so the workflow command needs no escaping.
+export function documentBudgetAnnotation(usage, { failed = false } = {}) {
+  if (!failed && !usage.warning) return null;
+  const numbers = `${usage.objects}/${usage.maxObjects} objek unik, ${mib(usage.bytes)}/${mib(usage.maxTotalBytes)} MiB, ${usage.references}/${usage.maxReferences} referensi`;
+  if (failed) return `::error title=SIMSA backup melewati batas dokumen::${numbers}. Dokumen tidak dicadangkan pada run ini. Lihat docs/OPERATIONS_RECOVERY.md.`;
+  const batch = usage.headroomWarning ? ` Sisa ruang (${usage.objectsHeadroom} objek, ${mib(usage.bytesHeadroom)} MiB) lebih kecil dari satu batch unggah massal (${BULK_UPLOAD_BATCH.objects} berkas, ${mib(BULK_UPLOAD_BATCH.bytes)} MiB); satu unggahan massal dapat membuat backup berikutnya gagal tanpa peringatan lain.` : '';
+  return `::warning title=SIMSA backup mendekati batas::${numbers}.${batch} Tinjau kuota Blob dan batas di docs/OPERATIONS_RECOVERY.md.`;
 }
 export function seal(bytes, key, context) {
   check(Buffer.isBuffer(key) && key.length === 32, 'INVALID_KEY');
@@ -85,7 +104,9 @@ export function documentReferences(attachments, ruleSets, {captureMissingHashes=
   for (const ref of refs) check(/^[a-f0-9-]{36}$/i.test(ref.id) && (/^[a-f0-9]{64}$/.test(ref.sha256 || '') || captureMissingHashes && ref.sha256 == null)
     && Number.isSafeInteger(ref.sizeBytes) && ref.sizeBytes > 0 && ref.sizeBytes <= MAX_OBJECT && ref.storageAccess === 'private', 'DOCUMENT_METADATA_INCOMPLETE');
   const usage = documentBudgetUsage(refs);
-  check(usage.objects <= MAX_OBJECTS, 'DOCUMENT_OBJECTS_OUTSIDE_BUDGET'); check(usage.bytes <= MAX_TOTAL, 'DOCUMENT_BYTES_OUTSIDE_BUDGET');
+  // The usage record (counts and sizes only) travels with the failure so a red run still reports its numbers.
+  const over = usage.objects > MAX_OBJECTS ? 'DOCUMENT_OBJECTS_OUTSIDE_BUDGET' : usage.bytes > MAX_TOTAL ? 'DOCUMENT_BYTES_OUTSIDE_BUDGET' : null;
+  if (over) throw Object.assign(new Error(over), { safeCode: over, documentBudget: usage });
   return refs;
 }
 async function exclusiveDirectory(path) {

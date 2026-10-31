@@ -83,14 +83,17 @@ test('file names are sanitized and fall back to the stored object name', () => {
   assert.equal(documentFileName({ ...row, url: 'not a url', fileName: '' }), `${'e'.repeat(64)}.pdf`);
 });
 
-test('document budget counts unique stored objects and warns at 75 percent of any hard limit', () => {
+test('document budget counts unique stored objects and warns at 75 percent or below one bulk-upload batch of room', () => {
   const mib = 1024 * 1024, ref = (sizeBytes, name) => ({ url: `https://teststore123.private.blob.vercel-storage.com/${name}.pdf`, sha256: sha256(String(name)), sizeBytes });
   assert.equal(documentBudgetUsage([ref(1, 'a')]).warning, false);
   const shared = documentBudgetUsage([ref(40 * mib, 'a'), ref(40 * mib, 'a'), ref(40 * mib, 'b'), ref(40 * mib, 'b')]);
-  assert.deepEqual([shared.references, shared.objects, shared.bytes, shared.bytesRatio, shared.warning], [4, 2, 80 * mib, 0.5, false]);
-  assert.equal(documentBudgetUsage([ref(40 * mib, 'a'), ref(40 * mib, 'b'), ref(40 * mib, 'c')]).warning, true);
-  assert.equal(documentBudgetUsage(Array.from({ length: 75 }, (_, n) => ref(1, n))).warning, true);
-  assert.equal(documentBudgetUsage(Array.from({ length: 750 }, () => ref(1, 'a'))).warning, true);
+  assert.deepEqual([shared.references, shared.objects, shared.bytes, shared.bytesRatio, shared.ratioWarning], [4, 2, 80 * mib, 0.5, false]);
+  // 80 MiB of room is less than one 100 MiB bulk-upload batch, so the overall warning is already on.
+  assert.deepEqual([shared.bytesHeadroom, shared.headroomWarning, shared.warning], [80 * mib, true, true]);
+  assert.equal(documentBudgetUsage([ref(40 * mib, 'a'), ref(40 * mib, 'b'), ref(40 * mib, 'c')]).ratioWarning, true);
+  assert.equal(documentBudgetUsage(Array.from({ length: 75 }, (_, n) => ref(1, n))).ratioWarning, true);
+  const references = documentBudgetUsage(Array.from({ length: 750 }, () => ref(1, 'a')));
+  assert.deepEqual([references.ratioWarning, references.headroomWarning, references.warning], [true, false, true]);
   assert.equal(documentReferences([attachment], [])[0].fileName, attachment.file_name);
 });
 
