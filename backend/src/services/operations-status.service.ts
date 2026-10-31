@@ -12,12 +12,17 @@ const date = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2
 const count = (value: unknown) => Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : 0;
 const validCount = (value: unknown) => (typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value)))
     && Number.isSafeInteger(Number(value)) && Number(value) >= 0;
-// The fixity worker runs from a best-effort GitHub schedule (twice a day,
-// often started hours late). A file that falls due minutes after a run starts
-// waits for the next run, so both counters tolerate one missed run plus that
-// delay instead of turning the hourly monitor red between runs.
-const FIXITY_ENROLLMENT_GRACE_HOURS = 26;
-const FIXITY_OVERDUE_GRACE_HOURS = 26;
+// The fixity worker runs from a best-effort GitHub schedule (00:45 and 12:45
+// UTC). A file that falls due or is released just after a run starts waits
+// for the next run, or 24 hours if GitHub drops that run. GitHub has started
+// the 00:45 run anywhere between 05:00 and 07:07 UTC, and checkout, npm ci and
+// tests take up to 5 minutes, so the run after a dropped one may reach the
+// file 24 h + 2 h 07 min + 5 min = 26 h 12 min later. A due file can also be
+// the last of 20 reads that each hit the 60 s deadline: 26 h 32 min. 28 hours
+// leaves 1 h 28 min for later starts than observed, so one dropped run stays
+// healthy and two in a row are reported. Enrollment runs before any read.
+const FIXITY_ENROLLMENT_GRACE_HOURS = 28;
+const FIXITY_OVERDUE_GRACE_HOURS = 28;
 const QUEUE_KEYS = ['scanWaiting', 'scanOverdue', 'scanErrors', 'fixityOverdue', 'fixityErrors', 'fixityUnscheduled', 'mismatched'];
 
 export function evaluateRecoveryCheck(id: 'backup' | 'restore', evidence: unknown, now: number): Check {
