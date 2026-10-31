@@ -6,8 +6,9 @@ Cara Login ke SIMSA menggunakan akun Google kamu.
 
 ## Syarat:
 
-- ✅ Kamu punya akun Google aktif dengan email yang **sudah diprovisi oleh Super Admin SIMSA**.
-- ✅ Akun tersebut belum dinonaktifkan dan sudah memiliki role serta unit kerja.
+- ✅ Kamu punya akun Google aktif dengan email terverifikasi.
+- ✅ Bila email tersebut sudah terdaftar di SIMSA, akunnya belum dinonaktifkan.
+- ✅ Bila email belum terdaftar, login pertama membuat akun yang **menunggu persetujuan Super Admin**. Akses baru tersedia setelah disetujui (lihat [Langkah 5](#langkah-5-tunggu-persetujuan-super-admin)).
 
 ---
 
@@ -23,7 +24,7 @@ Cara Login ke SIMSA menggunakan akun Google kamu.
 1. Di bagian bawah form login, cari tombol **"Masuk dengan Google"**.
 
 :::tip Tampilan Tombol Google
-Di bagian bawah form login, terdapat pembatas **"Atau lanjutkan dengan"** dan tombol **"Masuk dengan Google"**. Klik tombol ini untuk membuka autentikasi Google.
+Di bawah form login, terdapat pembatas **"atau"** dan tombol **"Masuk dengan Google"**. Di bawah tombol tertulis *Akun Google baru perlu persetujuan administrator.* Klik tombol ini untuk membuka autentikasi Google.
 :::
 
 2. Klik tombol tersebut.
@@ -40,18 +41,32 @@ Di bagian bawah form login, terdapat pembatas **"Atau lanjutkan dengan"** dan to
 
 ## Langkah 4: Login Berhasil
 
-1. Setelah verifikasi selesai, kamu akan **otomatis diarahkan ke Dashboard** SIMSA.
-2. SIMSA hanya menautkan identitas Google ke akun yang sudah diprovisi. Login ditolak bila email belum terdaftar, belum memiliki role/unit, atau dinonaktifkan.
+1. Jika email Google kamu sudah terdaftar di SIMSA dan akunnya aktif, kamu akan **otomatis diarahkan ke Dashboard** SIMSA. Peran dan unit kerja akun tidak berubah.
+2. Jika ini login Google pertama dengan email yang belum terdaftar, SIMSA membuat akun baru tanpa peran dan unit kerja. Lanjutkan ke Langkah 5.
+3. Login ditolak bila akun dinonaktifkan.
+
+---
+
+## Langkah 5: Tunggu Persetujuan Super Admin
+
+Langkah ini hanya untuk akun baru.
+
+1. SIMSA menampilkan halaman **Menunggu persetujuan administrator**. Dashboard, menu data, dan arsip belum dapat dibuka.
+2. Hubungi Super Admin dan sebutkan email Google yang kamu pakai. Super Admin menyetujui akun dengan menetapkan peran, serta unit kerja untuk **Admin Unit Kerja**.
+3. Setelah disetujui, sesi lama ditutup. Klik **Periksa ulang akses** atau **Keluar**, lalu masuk lagi dengan **Masuk dengan Google**.
 
 ---
 
 ## ❓ FAQ
 
 **Q: Apakah saya perlu daftar dulu sebelum login via Google?**
-> Akun harus diprovisi oleh Super Admin terlebih dahulu. SIMSA tidak membuat akun baru secara otomatis dari login Google.
+> Tidak harus. Login Google pertama dengan email yang belum terdaftar membuat akun berstatus **Menunggu persetujuan**. Akun itu belum dapat membuka data sampai Super Admin menyetujuinya dan menetapkan peran serta unit kerja.
 
-**Q: Saya sudah daftar dengan email yang sama, apakah bisa login via Google?**
-> Bisa jika akun tersebut dibuat oleh Super Admin, aktif, serta sudah memiliki role dan unit kerja. Hubungi Super Admin jika penautan akun belum tersedia.
+**Q: Saya sudah punya akun SIMSA dengan email yang sama, apakah bisa login via Google?**
+> Bisa. SIMSA menautkan identitas Google ke akun tersebut bila emailnya sama dan sudah terverifikasi di Google. Peran dan unit kerja akun tidak berubah, dan kata sandi SIMSA yang sudah ada tetap dapat dipakai.
+
+**Q: Apakah akun yang dibuat lewat Google memiliki kata sandi SIMSA?**
+> Tidak. Kata sandinya dikelola di akun Google. Bila perlu masuk dengan email dan kata sandi, minta Super Admin mengatur kata sandi melalui [Atur Ulang Kata Sandi](../administrasi/user-management.md#atur-ulang-kata-sandi).
 
 **Q: Halaman Google tidak terbuka atau kembali ke halaman login?**
 > Pastikan cookie dan redirect diizinkan, lalu gunakan alamat SIMSA resmi. Bila tetap gagal, minta pengelola memeriksa konfigurasi OAuth dan provisioning akun.

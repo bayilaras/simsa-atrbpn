@@ -37,7 +37,7 @@ Alur belajar yang disarankan untuk hari pertama:
 2. Isi **Email kedinasan** dan **Kata sandi**, lalu klik **Masuk**.
 3. Setelah masuk, periksa peran dan unit kerja Anda sebelum mencatat data.
 
-Aplikasi tidak menyediakan pendaftaran mandiri. Super Admin membuat akun melalui **Administrasi → Manajemen Pengguna → Tambah Pengguna**. Jangan membagikan akun uji untuk pekerjaan resmi.
+Aplikasi tidak menyediakan pendaftaran mandiri dengan email dan kata sandi. Super Admin membuat akun melalui **Administrasi → Manajemen Pengguna → Tambah Pengguna**. Jangan membagikan akun uji untuk pekerjaan resmi. Bila lupa kata sandi, minta Super Admin mengatur ulangnya, lalu ganti kata sandi itu di **Pengaturan → Profil → Ubah Kata Sandi**.
 
 ### Login Google bila tersedia
 
@@ -46,7 +46,7 @@ Aplikasi tidak menyediakan pendaftaran mandiri. Super Admin membuat akun melalui
 3. Pilih akun Google dengan email yang sama seperti akun yang diprovisi Super Admin.
 4. Selesaikan autentikasi Google. Setelah berhasil, Anda kembali ke Dashboard SIMSA.
 
-Login Google hanya digunakan ketika integrasinya sudah dikonfigurasi dan **tidak membuat akun baru secara otomatis**. Jika email belum diprovisi, salah penulisan, dinonaktifkan, atau belum diberi role, hubungi Super Admin.
+Login Google hanya digunakan ketika integrasinya sudah dikonfigurasi. Email Google yang belum terdaftar menjadi akun **Menunggu persetujuan** tanpa akses data sampai Super Admin menetapkan peran dan unit kerjanya; setelah disetujui, masuk kembali. Jika akun dinonaktifkan atau peran/unitnya belum benar, hubungi Super Admin.
 
 ### Sesi dan keluar aplikasi
 
