@@ -118,50 +118,6 @@ describe('OCR Metadata Extraction', () => {
             expect(result.extractedText.length).toBeLessThanOrEqual(50000);
         });
     });
-
-    describe('serializeMetadata and parseMetadata', () => {
-        it('should serialize metadata to JSON', () => {
-            const metadata = {
-                nomorSurat: 'ND-123',
-                perihal: 'Test',
-                tanggalSurat: '2026-01-01',
-                pengirim: 'Test Sender',
-                extractedText: 'Full text content',
-                penerima: 'Test Recipient',
-                tembusan: ['CC 1', 'CC 2'],
-                lampiran: '1 berkas',
-                sifatSurat: 'SEGERA',
-                klasifikasiKeamanan: 'BIASA',
-                jenisSurat: 'Nota Dinas',
-                keywords: ['keyword1', 'keyword2'],
-                summary: 'Test summary'
-            };
-
-            const serialized = ocrService.serializeMetadata(metadata);
-            expect(typeof serialized).toBe('string');
-
-            const parsed = JSON.parse(serialized);
-            expect(parsed.penerima).toBe('Test Recipient');
-            expect(parsed.tembusan).toEqual(['CC 1', 'CC 2']);
-            expect(parsed.keywords).toEqual(['keyword1', 'keyword2']);
-        });
-
-        it('should parse serialized metadata', () => {
-            const json = JSON.stringify({
-                penerima: 'Test',
-                keywords: ['a', 'b']
-            });
-
-            const parsed = ocrService.parseMetadata(json);
-            expect(parsed.penerima).toBe('Test');
-            expect(parsed.keywords).toEqual(['a', 'b']);
-        });
-
-        it('should handle invalid JSON gracefully', () => {
-            const parsed = ocrService.parseMetadata('invalid json');
-            expect(parsed).toEqual({});
-        });
-    });
 });
 
 describe('OCR Date Extraction', () => {

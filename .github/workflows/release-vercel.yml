@@ -1,6 +1,6 @@
 name: Release SIMSA to Vercel (manual, approved)
 
-# Automates the manual release recorded in docs/HASIL_RILIS_C55_C52 and C56_C53:
+# Automates the manual release recorded in docs/rilis/HASIL_RILIS_C55_C52 and C56_C53:
 # frozen `git archive` source + manifest, backend then frontend candidates with
 # `--prod --skip-domain` and the build-time source gate, smoke checks, and
 # promotion only after a reviewer approves the protected `production`

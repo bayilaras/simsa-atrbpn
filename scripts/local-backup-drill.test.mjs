@@ -1,14 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { randomBytes } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { dirname, resolve, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EventEmitter } from 'node:events';
 import {
   FORMAT, MAGIC, MAX_ARCHIVE_BYTES, sha256, strictPath, inside, validateOutputParent,
   parseArguments, sterileEnvironment, assertPort, assertClusterIdentity,
-  encryptBuffer, decryptBuffer, validateManifest, normalizeEvidence, extractBackupGuard,
+  encryptBuffer, decryptBuffer, validateManifest, normalizeEvidence,
   WINDOWS_ACL_PROBE_SCRIPT, assertWindowsPrivateAcl,
   LOCAL_POSTGRES_ISOLATION_CONFIG, nativePostgresOptions,
   CLUSTER_IDENTITY_SQL, awaitPostgresLauncherExit,
@@ -287,13 +286,3 @@ test('evidence only normalizes platform CRLF and rejects noise/truncation/missin
   }
 });
 
-test('uses exactly the current workflow read-only backup guard and rejects ambiguity', () => {
-  const workflow = readFileSync(resolve(root, '.github/workflows/backup-cloud-sql.yml'), 'utf8');
-  const guard = extractBackupGuard(workflow);
-  assert.match(guard, /membership_closure_state/);
-  assert.match(guard, /AND NOT membership\.set_option/);
-  assert.match(guard, /NOT pg_has_role\(current_user, 'pg_write_all_data'/);
-  assert.match(guard, /expected_postgres_major/);
-  assert.throws(() => extractBackupGuard(''));
-  assert.throws(() => extractBackupGuard(workflow + '\n' + workflow));
-});

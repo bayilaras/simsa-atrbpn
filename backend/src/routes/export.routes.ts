@@ -20,13 +20,6 @@ router.use(permissionMiddleware('reports', 'export'));
 
 // ============== SURAT MASUK EXPORTS ==============
 
-/**
- * @swagger
- * /api/export/surat-masuk/excel:
- *   get:
- *     summary: Export Surat Masuk to Excel (Google Spreadsheet format)
- *     tags: [Export]
- */
 router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
     try {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
@@ -63,13 +56,6 @@ router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
     }
 });
 
-/**
- * @swagger
- * /api/export/surat-masuk/pdf:
- *   get:
- *     summary: Export Surat Masuk to PDF
- *     tags: [Export]
- */
 router.get('/surat-masuk/pdf', async (req: AuthRequest, res: Response) => {
     try {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
@@ -108,13 +94,6 @@ router.get('/surat-masuk/pdf', async (req: AuthRequest, res: Response) => {
 
 // ============== SURAT KELUAR EXPORTS ==============
 
-/**
- * @swagger
- * /api/export/surat-keluar/excel:
- *   get:
- *     summary: Export Surat Keluar to Excel (Google Spreadsheet format)
- *     tags: [Export]
- */
 router.get('/surat-keluar/excel', async (req: AuthRequest, res: Response) => {
     try {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
@@ -150,13 +129,6 @@ router.get('/surat-keluar/excel', async (req: AuthRequest, res: Response) => {
     }
 });
 
-/**
- * @swagger
- * /api/export/surat-keluar/pdf:
- *   get:
- *     summary: Export Surat Keluar to PDF
- *     tags: [Export]
- */
 router.get('/surat-keluar/pdf', async (req: AuthRequest, res: Response) => {
     try {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
@@ -194,20 +166,6 @@ router.get('/surat-keluar/pdf', async (req: AuthRequest, res: Response) => {
 
 // ============== ARSIP EXPORTS ==============
 
-/**
- * @swagger
- * /api/export/arsip/excel:
- *   get:
- *     summary: Export Arsip to Excel (Formulir 4 or 6 per Permen ATRBPN 2/2026)
- *     tags: [Export]
- *     parameters:
- *       - in: query
- *         name: formulirType
- *         schema:
- *           type: string
- *           enum: [formulir4, formulir6]
- *         description: Formulir type (formulir4=Arsip Aktif, formulir6=Arsip Inaktif Kertas)
- */
 router.get('/arsip/excel', async (req: AuthRequest, res: Response) => {
     try {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
@@ -241,13 +199,6 @@ router.get('/arsip/excel', async (req: AuthRequest, res: Response) => {
     }
 });
 
-/**
- * @swagger
- * /api/export/arsip/pdf:
- *   get:
- *     summary: Export Arsip to PDF (Formulir 4 or 6 per Permen ATRBPN 2/2026)
- *     tags: [Export]
- */
 router.get('/arsip/pdf', async (req: AuthRequest, res: Response) => {
     try {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;

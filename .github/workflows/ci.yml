@@ -31,7 +31,6 @@ jobs:
           cache-dependency-path: |
             backend/package-lock.json
             frontend/package-lock.json
-            docs-site/package-lock.json
 
       - name: Install backend dependencies
         run: npm ci
@@ -64,11 +63,7 @@ jobs:
         run: npm ci
         working-directory: frontend
 
-      - name: Install documentation dependencies
-        run: npm ci
-        working-directory: docs-site
-
-      - name: Test same-origin demo launcher, manifest, and hosting boundaries
+      - name: Test repository scripts, deployment and release tooling contracts
         # Only the focused root test scripts run here; the complete frontend
         # and backend suites remain in their existing required jobs below.
         run: npm test
@@ -81,130 +76,6 @@ jobs:
         run: npm run build
         working-directory: backend
 
-      - name: Build isolated API and maintenance container targets
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker build --check --file backend/Dockerfile backend
-          docker build --target runtime --tag simsa-api:${{ github.sha }} --file backend/Dockerfile backend
-          docker build --target maintenance --tag simsa-maintenance:${{ github.sha }} --file backend/Dockerfile backend
-          docker run --rm --entrypoint node simsa-api:${{ github.sha }} --check dist/index.js
-          docker run --rm --entrypoint node simsa-api:${{ github.sha }} --input-type=module -e \
-            "await import('better-auth'); await import('better-auth/adapters/drizzle'); await import('better-auth/crypto')"
-          docker run --rm --entrypoint sh simsa-api:${{ github.sha }} -c '
-            for forbidden in \
-              src drizzle.config.ts \
-              node_modules/drizzle-kit node_modules/vitest node_modules/@vitest \
-              node_modules/vite node_modules/vite-node node_modules/tsx \
-              node_modules/.bin/drizzle-kit node_modules/.bin/vitest \
-              node_modules/.bin/vite node_modules/.bin/vite-node node_modules/.bin/tsx
-            do
-              if [ -e "$forbidden" ] || [ -L "$forbidden" ]; then
-                echo "Forbidden maintenance/test path in API image: $forbidden" >&2
-                exit 1
-              fi
-            done
-          '
-          docker run --rm --entrypoint sh simsa-maintenance:${{ github.sha }} -c '
-            for required in \
-              drizzle.config.ts \
-              src/db/migrations/0033_final_object_orphan_queue.sql \
-              src/db/migrations/0034_scheduled_file_fixity.sql \
-              src/db/migrations/0035_disposition_lifecycle_evidence.sql \
-              src/db/migrations/0036_terjaga_reporting_evidence.sql \
-              src/db/migrations/0037_preservation_activity_evidence.sql \
-              src/db/migrations/0038_arsip_direct_upload.sql \
-              src/db/migrations/0039_shared_rate_limits.sql \
-              src/db/grants/0001_bootstrap_cloud_sql_roles.sql \
-              src/db/grants/0002_converge_application_grants.sql \
-              src/db/grants/0003_optional_pg_trgm.sql \
-              scripts/apply-database-grant-convergence.mjs
-            do
-              if [ ! -f "$required" ]; then
-                echo "Required maintenance path is missing: $required" >&2
-                exit 1
-              fi
-            done
-            for executable in node_modules/.bin/drizzle-kit node_modules/.bin/tsx
-            do
-              if [ ! -x "$executable" ]; then
-                echo "Required maintenance executable is missing: $executable" >&2
-                exit 1
-              fi
-            done
-            command -v psql >/dev/null || {
-              echo "Required maintenance executable is missing: psql" >&2
-              exit 1
-            }
-          '
-
-      - name: Build and inspect metadata-only demo image
-        shell: bash
-        run: |
-          set -euo pipefail
-          image="simsa-metadata-demo:${{ github.sha }}"
-          docker build --check --file Dockerfile.demo .
-          # These are inert public Web identifiers, never Firebase credentials.
-          # This build does not contact Firebase or provision a cloud resource.
-          docker build --target runtime --tag "$image" --file Dockerfile.demo \
-            --build-arg VITE_FIREBASE_API_KEY=ci-public-api-key \
-            --build-arg VITE_FIREBASE_AUTH_DOMAIN=simsa-ci.firebaseapp.com \
-            --build-arg VITE_FIREBASE_PROJECT_ID=simsa-ci \
-            --build-arg VITE_FIREBASE_APP_ID=1:123456789:web:abcdef123456 \
-            --build-arg VITE_FIREBASE_APP_CHECK_SITE_KEY=ci-public-site-key \
-            .
-          test "$(docker image inspect --format '{{json .Config.Cmd}}' "$image")" = '["node","dist/index.js"]'
-          docker run --rm --network none --entrypoint node "$image" --check dist/index.js
-          docker run --rm --network none --entrypoint node "$image" --input-type=module -e '
-            import assert from "node:assert/strict";
-            import { lstatSync, readFileSync } from "node:fs";
-            assert.notEqual(process.getuid(), 0, "Demo image must run as a non-root user");
-            assert.equal(process.cwd(), "/app/backend");
-            for (const [name, expected] of Object.entries({
-              NODE_ENV: "production",
-              SIMSA_APP_MODE: "metadata-demo",
-              SIMSA_CLOUD_PLATFORM: "gcp",
-              SIMSA_FRONTEND_DIST: "/app/frontend-dist",
-              APP_PROFILE: "internal",
-              AUTH_PROVIDER: "firebase",
-              OBJECT_STORAGE_PROVIDER: "disabled",
-              SRIKANDI_ENABLED: "false",
-              MALWARE_SCANNER_MODE: "disabled",
-              MALWARE_SCAN_WORKER_ENABLED: "false",
-            })) assert.equal(process.env[name], expected, `Unexpected image default: ${name}`);
-            assert.equal(process.env.SIMSA_DEMO_DATA_ACKNOWLEDGED, undefined,
-              "Synthetic-data acknowledgement must be supplied at deployment, never baked in");
-            const manifest = JSON.parse(readFileSync("/app/frontend-dist/simsa-build.json", "utf8"));
-            assert.deepEqual(manifest, {
-              schemaVersion: 1,
-              mode: "metadata-demo",
-              syntheticDataOnly: true,
-              api: "same-origin",
-              authProvider: "firebase",
-              storageProvider: "disabled",
-              firebase: {
-                projectId: "simsa-ci",
-                authDomain: "simsa-ci.firebaseapp.com",
-                appId: "1:123456789:web:abcdef123456",
-              },
-            });
-            for (const asset of ["index.html", "sw.js"]) {
-              assert.ok(lstatSync(`/app/frontend-dist/${asset}`).isFile(), `Missing built asset: ${asset}`);
-            }
-            for (const forbidden of [
-              "src", "scripts", "drizzle.config.ts", ".env", ".env.local", ".env.production",
-              "node_modules/drizzle-kit", "node_modules/vitest", "node_modules/@vitest",
-              "node_modules/vite", "node_modules/vite-node", "node_modules/tsx",
-              "node_modules/.bin/drizzle-kit", "node_modules/.bin/vitest",
-              "node_modules/.bin/vite", "node_modules/.bin/vite-node", "node_modules/.bin/tsx",
-              "/app/frontend-dist/src", "/app/frontend-dist/node_modules",
-              "/app/frontend-dist/.env", "/app/frontend-dist/.env.production",
-            ]) {
-              assert.equal(lstatSync(forbidden, { throwIfNoEntry: false }), undefined,
-                `Forbidden source, environment, or maintenance/test path in demo image: ${forbidden}`);
-            }
-          '
-
       - name: Lint frontend
         run: npm run lint
         working-directory: frontend
@@ -212,45 +83,6 @@ jobs:
       - name: Build frontend
         run: npx vite build
         working-directory: frontend
-
-      - name: Build Firebase and Cloud Storage frontend profile
-        run: npx vite build
-        working-directory: frontend
-        env:
-          VITE_AUTH_PROVIDER: firebase
-          VITE_STORAGE_PROVIDER: gcs
-          # Public Firebase Web identifiers are compile-time configuration,
-          # not credentials. CI uses inert values so the provider-specific
-          # modules and environment guards are compiled on every change.
-          VITE_FIREBASE_API_KEY: ci-public-api-key
-          VITE_FIREBASE_AUTH_DOMAIN: simsa-ci.firebaseapp.com
-          VITE_FIREBASE_PROJECT_ID: simsa-ci
-          VITE_FIREBASE_APP_ID: 1:123456789:web:ci
-          VITE_FIREBASE_APP_CHECK_SITE_KEY: ci-public-site-key
-
-      - name: Validate worker Compose definitions
-        run: |
-          docker compose --env-file .env.example -f compose.yml --profile '*' config --quiet
-          docker compose --env-file .env.example -f compose.yml -f compose.local.yml --profile '*' config --quiet
-        working-directory: deploy/workers
-
-      - name: Validate production worker image preflight
-        run: |
-          digest=$(printf 'a%.0s' {1..64})
-          SIMSA_WORKER_IMAGE="ghcr.io/example/simsa-worker@sha256:${digest}" \
-            sh ./preflight-worker-image.sh --format-only
-          if SIMSA_WORKER_IMAGE="ghcr.io/example/simsa-worker:latest" \
-            sh ./preflight-worker-image.sh --format-only; then
-            echo "::error::Worker preflight unexpectedly accepted a mutable tag."
-            exit 1
-          fi
-        working-directory: deploy/workers
-
-      - name: Build and inspect worker image
-        run: |
-          docker build --check --file backend/Dockerfile.worker backend
-          docker build --file backend/Dockerfile.worker --tag simsa-worker:${{ github.sha }} backend
-          docker run --rm --entrypoint node simsa-worker:${{ github.sha }} --check dist/workers/malware-scan.js
 
       - name: Verify production uses the same-origin API proxy
         run: |
@@ -268,6 +100,27 @@ jobs:
           rm -f api-proxy-guard-staging.log
         working-directory: frontend
 
+  # Situs dokumentasi (proyek Vercel simsa-atrbpn) dibangun paralel tanpa
+  # menahan job tes. Job ini selalu berjalan; bukan required check.
+  docs-build:
+    name: Documentation Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+
+      - name: Install documentation dependencies
+        run: npm ci
+        working-directory: docs-site
+
       - name: Build documentation
         run: npm run build
         working-directory: docs-site
@@ -281,11 +134,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Validate GCP release and Cloud SQL backup safety gates
+      - name: Self-test release gate and migration manifest helpers
         run: |
-          python3 .github/scripts/validate-gcp-backend-release-workflow.py
-          python3 .github/scripts/validate-gcp-database-maintenance-workflow.py
-          python3 .github/scripts/validate-cloud-sql-backup-workflow.py
+          python3 .github/scripts/check-gcp-backend-production-gate.py --self-test
+          python3 .github/scripts/test-migration-manifest.py
 
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -305,6 +157,8 @@ jobs:
           CLAMAV_PORT: '3310'
           CLAMAV_SMOKE_WAIT_MS: '360000'
           CLAMAV_SMOKE_POLL_MS: '2000'
+          # Keep in sync with docs/OPERASI_ANTIVIRUS_BITSTREAM.md.
+          CLAMAV_IMAGE: clamav/clamav:1.5-debian13-slim@sha256:967334b92d1782e4d1314ddf903ae537d26792d21c9a39adecb8ac9757980514
         run: |
           set -Eeuo pipefail
           container="simsa-clamav-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -319,20 +173,11 @@ jobs:
           }
           trap cleanup EXIT
 
-          clamav_image=$(docker compose \
-            --env-file deploy/workers/.env.example \
-            -f deploy/workers/compose.yml \
-            config --images | awk '/^clamav\/clamav:/{ print; exit }')
-          if [ -z "$clamav_image" ]; then
-            echo "::error::Could not resolve the pinned ClamAV image from Compose."
-            exit 1
-          fi
-
           docker run --detach \
             --name "$container" \
             --publish 127.0.0.1:3310:3310 \
             --env CLAMD_CONF_StreamMaxLength=52428800 \
-            "$clamav_image"
+            "$CLAMAV_IMAGE"
 
           npm --prefix backend run smoke:clamav
           docker restart --time 30 "$container"
@@ -438,8 +283,7 @@ jobs:
               --set backup_principal=simsa_ci_backup \
               --file /grants/0001_bootstrap_cloud_sql_roles.sql
           # Langkah privileged pg_trgm (migrasi 0049) oleh administrator grant,
-          # terpisah dari 0001 karena drill restore Cloud SQL menjalankan ulang
-          # 0001 dan membandingkan bukti extension secara persis.
+          # berkas terpisah dari 0001 seperti langkah 0003 pada runbook Neon.
           docker run --rm --network host \
             --env PGPASSWORD \
             --volume "$GITHUB_WORKSPACE/backend/src/db/grants:/grants:ro" \
@@ -894,35 +738,6 @@ jobs:
         run: npx vitest run --reporter=verbose
         working-directory: frontend
 
-      - name: Setup Java for isolated Firebase emulators
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - name: Install Firebase Spark edition dependencies
-        run: npm ci
-        working-directory: spark
-
-      - name: Typecheck and test Firebase Spark edition
-        run: |
-          npm run typecheck
-          npm test
-          npm run build:emulator
-        working-directory: spark
-
-      - name: Verify Firestore rules and repository against isolated emulators
-        # No credentials/secrets or live Firebase project. Failure gates the
-        # existing required Frontend Tests check, not an optional new check.
-        run: npm run test:emulator
-        working-directory: spark
-
-      - name: Rehearse encrypted Spark metadata backup and independent local restore
-        # Dedicated empty demo namespaces, no live credentials or projects.
-        # Accounts restore disabled; this is not a production Auth backup gate.
-        run: npm run backup:drill
-        working-directory: spark
-
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest
@@ -938,7 +753,7 @@ jobs:
 
       # Kebijakan audit (lihat .github/npm-audit-allowlist.json):
       # - backend: semua dependensi, tanpa pengecualian;
-      # - frontend & Spark: gerbang pada dependensi produksi (--omit=dev);
+      # - frontend: gerbang pada dependensi produksi (--omit=dev);
       #   audit penuh tetap dicetak sebagai informasi;
       # - docs-site: semua dependensi, dengan pengecualian sementara bertanggal
       #   kedaluwarsa untuk advisori yang belum memiliki versi perbaikan.
@@ -955,14 +770,6 @@ jobs:
         continue-on-error: true
         run: npm audit --audit-level=high
         working-directory: frontend
-
-      - name: Audit Firebase Spark edition (dependensi produksi)
-        run: node .github/scripts/npm-audit-gate.mjs spark --omit=dev
-
-      - name: Audit Firebase Spark edition (semua dependensi, informasi)
-        continue-on-error: true
-        run: npm audit --audit-level=high
-        working-directory: spark
 
       - name: Audit documentation
         run: node .github/scripts/npm-audit-gate.mjs docs-site

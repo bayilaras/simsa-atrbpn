@@ -72,10 +72,6 @@ export class EmailService {
         }
     }
 
-    getConfigurationStatus() {
-        return getEmailConfigurationStatus(this.config);
-    }
-
     async sendEmail(options: EmailOptions): Promise<EmailDeliveryResult> {
         if (!this.transporter) {
             log.warn({ to: options.to, subject: options.subject }, 'Email not sent: SMTP is not configured');

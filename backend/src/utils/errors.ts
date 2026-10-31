@@ -58,12 +58,6 @@ export class PayloadTooLargeError extends AppError {
     }
 }
 
-export class RateLimitError extends AppError {
-    constructor(message: string = 'Terlalu banyak permintaan. Coba lagi nanti.') {
-        super(message, 429);
-    }
-}
-
 export class ServiceUnavailableError extends AppError {
     constructor(message: string = 'Layanan sementara tidak tersedia. Silakan coba lagi.') {
         super(message, 503);

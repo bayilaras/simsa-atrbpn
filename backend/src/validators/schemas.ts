@@ -5,7 +5,6 @@ import {
     MAX_NOTIFICATION_READ_IDS,
     NOTIFICATION_ID_PATTERN,
 } from '../utils/notification-id.js';
-import { parseGcsLocator } from '../storage/locator.js';
 import { jakartaDate } from '../utils/jakarta-date.js';
 import { KATEGORI_PERLU_DILENGKAPI } from '../services/perlu-dilengkapi.constants.js';
 
@@ -24,8 +23,6 @@ const optionalNomorSuratSchema = z.preprocess(
     z.string().trim().min(1, 'Nomor surat is required').max(255).optional(),
 );
 
-export const timestampSchema = z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/));
-
 export type SuratBlobFolder = 'surat-masuk' | 'surat-keluar';
 
 /** Accept only canonical private object locators created for the expected record type. */
@@ -33,22 +30,6 @@ export function privateObjectLocatorSchema(folder: SuratBlobFolder) {
     return z.string()
         .max(2048, 'File URL is too long')
         .superRefine((value, ctx) => {
-            if (value.startsWith('gs://')) {
-                try {
-                    const { objectName } = parseGcsLocator(value);
-                    const expectedPrefix = `${folder}/`;
-                    if (!objectName.startsWith(expectedPrefix) || objectName.length <= expectedPrefix.length) {
-                        throw new Error('Unexpected object namespace');
-                    }
-                    return;
-                } catch {
-                    ctx.addIssue({
-                        code: 'custom',
-                        message: `filePath must be a canonical private object under ${folder}/`,
-                    });
-                    return;
-                }
-            }
             try {
                 const url = new URL(value);
                 const decodedPath = decodeURIComponent(url.pathname);
@@ -83,9 +64,6 @@ export function privateObjectLocatorSchema(folder: SuratBlobFolder) {
             }
         });
 }
-
-/** @deprecated Use privateObjectLocatorSchema; retained for extension compatibility. */
-export const privateVercelBlobUrlSchema = privateObjectLocatorSchema;
 
 // Pagination query schema
 export const paginationSchema = z.object({
@@ -429,26 +407,8 @@ function rejectDirectRetentionTrigger(
     }
 }
 
-const baseArsipSchema = z.object({
-    unitKerjaId: z.string().min(1, 'Unit kerja is required').max(50),
-    kodeSurat: z.string().min(1, 'Kode surat is required').max(100),
-    deskripsi: z.string().min(1, 'Deskripsi is required').max(2000),
-    jenisSurat: z.enum(['masuk', 'keluar']),
-    sumberSuratId: uuidSchema.optional(),
-    klasifikasiId: uuidSchema.optional(),
-    retentionPeriod: z.coerce.number().int().min(1).max(100).optional().default(5),
-    tanggalMulai: dateSchema.optional(),
-    tanggalBerakhir: dateSchema.optional(),
-    lokasiPenyimpanan: z.string().max(255).optional(),
-    catatan: z.string().max(2000).optional(),
-    klasifikasiKeamanan: z.enum(['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']).optional().default('biasa'),
-    ...retentionMetadataFields,
-});
-
-export const createArsipSchema = baseArsipSchema.superRefine(rejectDirectRetentionTrigger);
-
-// This is an edit command for actual arsip columns, independent of the legacy
-// registration DTO above. No omitted property may introduce a stored value.
+// This is an edit command for actual arsip columns. No omitted property may
+// introduce a stored value.
 export const updateArsipSchema = z.object({
     nomorBerkas: z.string().trim().min(1).max(100).optional(),
     uraianBerkas: z.string().trim().min(1).max(2000).optional(),
@@ -504,14 +464,6 @@ export const updateArsipVitalSchema = createArsipVitalSchema.partial()
     .omit({ arsipId: true, unitKerjaId: true })
     .extend({ statusProteksi: createArsipVitalSchema.shape.statusProteksi.removeDefault().optional() });
 
-export const queryArsipVitalSchema = paginationSchema.extend({
-    unitKerjaId: z.string().optional(),
-    kategoriVital: z.enum(['hak_keperdataan', 'operasional', 'keuangan', 'keamanan']).optional(),
-    tingkatKekritisan: z.enum(['sangat_kritis', 'kritis', 'penting']).optional(),
-    statusProteksi: z.enum(['terlindungi', 'perlu_review', 'belum_diproteksi']).optional(),
-    search: z.string().max(255).optional(),
-});
-
 // Arsip Terjaga schemas
 export const createArsipTerjagaSchema = z.object({
     arsipId: uuidSchema,
@@ -531,14 +483,6 @@ export const updateArsipTerjagaSchema = createArsipTerjagaSchema.partial()
         periodePelaporanHari: createArsipTerjagaSchema.shape.periodePelaporanHari.removeDefault().optional(),
     }).strict();
 
-export const queryArsipTerjagaSchema = paginationSchema.extend({
-    unitKerjaId: z.string().optional(),
-    kategoriTerjaga: z.enum(['kepulauan', 'perjanjian_internasional', 'masalah_strategis', 'kekayaan_negara', 'hak_keperdataan', 'pertanahan', 'batas_wilayah']).optional(),
-    statusPelaporan: z.enum(['belum_dilaporkan', 'dicatat', 'dikirim', 'diterima', 'bukti_diverifikasi']).optional(),
-    statusKepatuhan: z.enum(['terlambat', 'belum_dinilai']).optional(),
-    search: z.string().max(255).optional(),
-});
-
 // Type exports
 export type CreateSuratMasuk = z.infer<typeof createSuratMasukSchema>;
 export type UpdateSuratMasuk = z.infer<typeof updateSuratMasukSchema>;
@@ -548,17 +492,14 @@ export type CreateSuratKeluar = z.infer<typeof createSuratKeluarSchema>;
 export type UpdateSuratKeluar = z.infer<typeof updateSuratKeluarSchema>;
 export type QuerySuratKeluar = z.infer<typeof querySuratKeluarSchema>;
 
-export type CreateArsip = z.infer<typeof createArsipSchema>;
 export type UpdateArsip = z.infer<typeof updateArsipSchema>;
 export type QueryArsip = z.infer<typeof queryArsipSchema>;
 
 export type CreateArsipVital = z.infer<typeof createArsipVitalSchema>;
 export type UpdateArsipVital = z.infer<typeof updateArsipVitalSchema>;
-export type QueryArsipVital = z.infer<typeof queryArsipVitalSchema>;
 
 export type CreateArsipTerjaga = z.infer<typeof createArsipTerjagaSchema>;
 export type UpdateArsipTerjaga = z.infer<typeof updateArsipTerjagaSchema>;
-export type QueryArsipTerjaga = z.infer<typeof queryArsipTerjagaSchema>;
 // Autentikasi schemas
 export const createAutentikasiSchema = z.object({
     nomorBeritaAcara: z.string().min(1, 'Nomor berita acara is required').max(100),
@@ -614,12 +555,6 @@ export const updateDosirSchema = z.object({
     message: 'Tanggal selesai tidak boleh sebelum tanggal mulai.',
 });
 
-export const queryDosirSchema = paginationSchema.extend({
-    status: z.enum(['open', 'closed', 'archived']).optional(),
-    kategori: z.string().max(100).optional(),
-    search: z.string().max(255).optional(),
-});
-
 export const queryArchiveLendingSchema = paginationSchema.extend({
     status: z.enum(['borrowed', 'returned', 'overdue']).optional(),
     lendingType: z.enum(['arsip', 'box']).optional(),
@@ -637,7 +572,6 @@ export const linkSuratToDosirSchema = z.object({
 
 export type CreateDosir = z.infer<typeof createDosirSchema>;
 export type UpdateDosir = z.infer<typeof updateDosirSchema>;
-export type QueryDosir = z.infer<typeof queryDosirSchema>;
 export type LinkSuratToDosir = z.infer<typeof linkSuratToDosirSchema>;
 
 // ==================== Distribution schemas ====================
@@ -684,14 +618,8 @@ export const processDistributionSchema = z.union([
 ]);
 export type ProcessDistributionInput = z.infer<typeof processDistributionSchema>;
 
-export const queryDistributionSchema = paginationSchema.extend({
-    unitKerjaId: z.string().max(50).optional(),
-    status: z.enum(['sent', 'received', 'processed', 'rejected']).optional(),
-});
-
 export type CreateDistribution = z.infer<typeof createDistributionSchema>;
 export type RejectDistribution = z.infer<typeof rejectDistributionSchema>;
-export type QueryDistribution = z.infer<typeof queryDistributionSchema>;
 
 export const selesaiRangkaianSchema = z.object({ catatan: alasanText }).strict();
 export const berkaskanSchema = z.object({
@@ -750,10 +678,6 @@ export const createPenyusutanSchema = z.object({
     }
 });
 
-export const updatePenyusutanStatusSchema = z.object({
-    catatan: z.string().max(2000).optional(),
-});
-
 export const removePenyusutanItemsSchema = z.object({
     arsipIds: z.array(uuidSchema).min(1, 'Minimal satu arsip harus dipilih'),
 });
@@ -766,17 +690,9 @@ export const legalHoldActionSchema = z.object({
         .max(2000, 'Alasan legal hold maksimal 2000 karakter'),
 });
 
-export const calculateRetentionDatesSchema = z.object({
-    retentionTriggerDate: dateSchema,
-    retensiAktif: z.string().max(50).optional().nullable(),
-    retensiInaktif: z.string().max(50).optional().nullable(),
-});
-
 export type CreatePenyusutan = z.infer<typeof createPenyusutanSchema>;
-export type UpdatePenyusutanStatus = z.infer<typeof updatePenyusutanStatusSchema>;
 export type RemovePenyusutanItems = z.infer<typeof removePenyusutanItemsSchema>;
 export type LegalHoldAction = z.infer<typeof legalHoldActionSchema>;
-export type CalculateRetentionDates = z.infer<typeof calculateRetentionDatesSchema>;
 
 // ==================== Storage Location schemas ====================
 

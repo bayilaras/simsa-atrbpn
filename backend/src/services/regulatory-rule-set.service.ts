@@ -37,7 +37,6 @@ import {
     clientBlobUploadService,
     type ClaimClientBlobUpload,
 } from './client-blob-upload.service.js';
-import { parseGcsLocator, toGcsLocator } from '../storage/locator.js';
 import {
     durableFinalObjectService,
     type FinalObjectWrite,
@@ -725,28 +724,9 @@ function sourceLocatorFingerprint(
 /**
  * Validate that a private object locator is bound specifically to this rule
  * set. This rejects public/signed URLs, encoded separators, and cross-rule-set
- * substitution for both the legacy Blob store and Cloud Storage.
+ * substitution.
  */
 export function assertRegulatorySourceBlobLocator(ruleSetId: string, candidate: string): string {
-    if (candidate.startsWith('gs://')) {
-        try {
-            const parsed = parseGcsLocator(candidate);
-            const segments = parsed.objectName.split('/');
-            if (
-                segments.length !== 3
-                || segments[0] !== 'regulatory-sources'
-                || segments[1] !== ruleSetId.toLowerCase()
-                || !segments[2]
-                || /[\\/\u0000-\u001f\u007f]/.test(segments[2])
-            ) {
-                throw new Error('Unexpected regulatory namespace');
-            }
-            return toGcsLocator(parsed.bucket, parsed.objectName);
-        } catch {
-            throw new ValidationError('Locator Cloud Storage PDF sumber tidak valid atau tidak terikat pada versi aturan ini.');
-        }
-    }
-
     let url: URL;
     try {
         url = new URL(candidate);
@@ -797,13 +777,10 @@ export function assertRegulatorySourceObjectGeneration(
     generation: string | null | undefined,
 ): string | undefined {
     if (blobUrl.startsWith('gs://')) {
-        if (!generation || !/^\d+$/.test(generation)) {
-            throw new ValidationError('Generasi immutable PDF sumber Cloud Storage tidak tersedia.');
-        }
-        return generation;
+        throw new ValidationError('Locator Cloud Storage PDF sumber tidak didukung.');
     }
     if (generation) {
-        throw new ValidationError('Generasi Cloud Storage tidak boleh dipasang pada sumber non-GCS.');
+        throw new ValidationError('Generasi objek tidak boleh dipasang pada sumber Vercel Blob.');
     }
     return undefined;
 }
@@ -1258,10 +1235,6 @@ export class RegulatoryRuleSetService {
                     reason: input.changeSummary || 'Membuat edisi kerja dari aturan aktif.',
                 }], governanceContext(actorId, auditContext));
 
-                if (copiedSourceWrite) {
-                    await durableFinalObjectService.markReferenced(tx, copiedSourceWrite);
-                }
-
                 return {
                     ruleSet: presentRuleSet(draft),
                     clonedFrom: presentRuleSet(active),
@@ -1544,9 +1517,7 @@ export class RegulatoryRuleSetService {
                 verifiedAt: null,
                 malwareScanStatus: 'not_scanned',
                 stored: true,
-                storageProvider: source.blobUrl.startsWith('gs://')
-                    ? 'gcs-private'
-                    : 'vercel-private-blob',
+                storageProvider: 'vercel-private-blob',
                 storageLocatorFingerprint: sourceLocatorFingerprint(
                     source.blobUrl,
                     source.objectGeneration,
@@ -1602,11 +1573,7 @@ export class RegulatoryRuleSetService {
                 objectGeneration: assertRegulatorySourceObjectGeneration(blobUrl, stored.generation) ?? null,
             }, actorId, auditContext, 'server_upload_verify_private_blob');
         } catch (error) {
-            if (blobUrl.startsWith('gs://')) {
-                await blobStorageService.deleteFileGeneration(blobUrl, stored.generation);
-            } else {
-                await blobStorageService.deleteFile(blobUrl);
-            }
+            await blobStorageService.deleteFile(blobUrl);
             throw error;
         }
     }

@@ -82,11 +82,11 @@ export function sanitizedNeonFailure(error) {
   // Provider errors can include CREATE ROLE SQL (and passwords). Never log
   // message, detail, stack, query, connection configuration, or the input URL.
   const code = typeof error?.code === 'string' && /^[A-Z0-9]{5}$/.test(error.code) ? error.code : 'CONFIG_OR_POLICY';
-  return `Neon operation failed (${code}). No connection details were printed. Check the selected target, credentials, role boundary and docs/DEPLOY_RENDER_NEON.md; do not retry bootstrap on a populated target.`;
+  return `Neon operation failed (${code}). No connection details were printed. Check the selected target, credentials, role boundary and docs/PENYIAPAN_DATABASE_NEON.md; do not retry bootstrap on a populated target.`;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  if (process.argv.slice(2).join(' ') === '--help') console.log('Node 24, explicit private --env-file: neon-database.mjs preflight-empty | bootstrap --apply | migrate --apply | verify-runtime | first-admin --apply --attest-email-owner. No source data is imported. See docs/DEPLOY_RENDER_NEON.md.');
+  if (process.argv.slice(2).join(' ') === '--help') console.log('Node 24, explicit private --env-file: neon-database.mjs preflight-empty | bootstrap --apply | migrate --apply | verify-runtime | first-admin --apply --attest-email-owner. No source data is imported. See docs/PENYIAPAN_DATABASE_NEON.md.');
   else {
     try { console.log(JSON.stringify(await runNeonOperation(neonOperation(process.argv.slice(2), process.env)))); }
     catch (error) { console.error(sanitizedNeonFailure(error)); process.exitCode = 1; }

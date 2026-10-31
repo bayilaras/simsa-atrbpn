@@ -1,6 +1,6 @@
 # Backup Neon terenkripsi dan uji pemulihan
 
-**Status 12 September 2026:** database aktif sudah dimigrasikan menjadi 40 entri. Backup 39 sebelum upgrade dan backup 40 sesudahnya tersimpan dengan helper masing-masing. Gunakan helper sumber yang cocok dengan manifest; jangan memakai helper39 untuk backup database40. Detail snapshot, pengujian, dan bukti ada pada [laporan migrasi 0039](MIGRASI_0039_2026-09-12.md).
+**Status 12 September 2026:** database aktif sudah dimigrasikan menjadi 40 entri. Backup 39 sebelum upgrade dan backup 40 sesudahnya tersimpan dengan helper masing-masing. Gunakan helper sumber yang cocok dengan manifest; jangan memakai helper39 untuk backup database40. Detail snapshot, pengujian, dan bukti ada pada [laporan migrasi 0039](riwayat/MIGRASI_0039_2026-09-12.md).
 
 Perintah ini membuat **backup database sesuai permintaan operator**. Tidak ada jadwal otomatis, unggahan ke object storage, secret GitHub, atau perubahan layanan hosting. Komputer cukup hidup selama perintah berjalan; hal ini belum memenuhi kebutuhan backup cloud otomatis tanpa operator.
 
@@ -19,7 +19,7 @@ Pemeriksaan target pada 11 September 2026 menemukan locale Neon `datcollate=C.UT
 
 Checkout yang memuat `0039_shared_rate_limits` mensyaratkan rantai penuh 40 migrasi untuk adapter runtime Neon. Untuk membuat atau memulihkan backup sumber yang masih mempunyai 39 migrasi, gunakan checkout bersih versi sumber beserta dependency/helper yang cocok, **sebelum** menjalankan migrasi baru. Jangan mengubah `verifyNeonRuntime` agar menerima schema lama sebagai runtime aplikasi baru.
 
-Setelah upgrade berhasil, backup berikutnya memakai checkout baru. Profil `pre_upgrade_0038` pada workflow Cloud SQL adalah jalur GCP terpisah, bukan opsi CLI Neon ini.
+Setelah upgrade berhasil, backup berikutnya memakai checkout baru. Profil `pre_upgrade_0038` pada collector bukti (`.github/scripts/collect-backup-evidence.sql`) bukan opsi CLI Neon ini.
 
 Bundle 39 migrasi yang diperiksa secara lokal pada 12 September 2026 cocok dengan commit `b25b418a41c88c4a913b148032f8e3dfa4934a69`: rantai migrasi dan sembilan hash helper cocok, serta hash payload terenkripsi cocok dengan manifest. Pemeriksaan lanjutan memakai helper asli juga meluluskan ACL, autentikasi manifest, GCM kedua payload, dan header PGDMP di RAM tanpa menulis plaintext atau menghubungi Neon. Hasil ini belum membuktikan restore database. Commit tersebut dapat digunakan sebagai acuan checkout terpisah untuk bundle itu; bundle lain harus dicocokkan dengan manifestnya sendiri. Simpan checkout sumber bersama prosedur pemulihan, dan lakukan restore pada PostgreSQL 18 Linux yang cocok sebelum menyatakan backup siap dipulihkan.
 
@@ -49,7 +49,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Provisioning backup gagal; jangan lanjut' }
 
 Perintah memeriksa pemilik database, struktur role, dan pin tujuan, lalu membuat `simsa_backup` dalam transaksi. Akun hanya mewarisi `simsa_backup_reader`, tanpa `ADMIN OPTION`, kemampuan `SET ROLE`, hak menulis/DDL, atau `pg_read_all_data`. Haknya terbatas pada pembacaan tabel/sequence dan penggunaan schema `public`/`drizzle`. Akun yang sudah ada **tidak di-reset**. Perubahan atribut atau membership tidak diperbaiki diam-diam.
 
-Adapter migrasi Neon memberikan kembali hak baca yang tepat setelah konvergensi grant. Jalankan migrasi berikutnya dengan checkout yang sudah mendukung akun backup opsional ini. Canonical SQL GCP tidak diubah. Pembuatan role tidak berarti backup telah dibuat atau diuji pulih.
+Adapter migrasi Neon memberikan kembali hak baca yang tepat setelah konvergensi grant. Jalankan migrasi berikutnya dengan checkout yang sudah mendukung akun backup opsional ini. SQL kanonis `backend/src/db/grants/0001_bootstrap_cloud_sql_roles.sql` tidak diubah. Pembuatan role tidak berarti backup telah dibuat atau diuji pulih.
 
 Untuk backup berikutnya gunakan file environment privat terpisah yang hanya berisi `NEON_EXPECTED_HOST`, `NEON_EXPECTED_DATABASE`, dan `NEON_BACKUP_DATABASE_URL`. Jangan memberikan kredensial administrator kepada proses backup rutin atau layanan web.
 

@@ -45,7 +45,7 @@ Semua login `simsa_*` dibuat dengan SQL oleh pemilik database: `bootstrap` di `s
 
 Peran kebijakan `simsa_api_runtime`, `simsa_event_runtime`, `simsa_worker_runtime`, `simsa_final_cleanup`, `simsa_maintenance`, `simsa_migrator`, dan `simsa_backup_reader` tidak dapat login dan tidak memiliki kredensial. Batasnya diperiksa oleh `assertNeonRoleBoundaries` setiap kali `migrate` atau `verify-runtime` berjalan.
 
-`backup-neon.yml` (env `production-backup`) dinonaktifkan sejak 29 Agustus 2026. Salinan `NEON_BACKUP_DATABASE_URL` di env tersebut sudah basi. Hapus salinan itu, atau perbarui bila workflow diaktifkan lagi.
+Backup terjadwal berjalan lewat `.github/workflows/operations-recovery.yml` (env `production-recovery`). Workflow lama `backup-neon.yml` sudah dihapus dari repository; salinan `NEON_BACKUP_DATABASE_URL` di env lama `production-backup` sudah basi dan sebaiknya dihapus.
 
 Kredensial non-database yang ikut menentukan rilis:
 
@@ -114,7 +114,7 @@ Wrapper memeriksa dependensi ini **sebelum** prompt muncul dan mencetak perintah
    3. `frontend-candidate`: sama seperti backend, didahului `npm ci` di `source/frontend`. CLI mengevaluasi `frontend/vercel.mjs` secara lokal.
    4. `promote` menunggu **persetujuan reviewer** environment `production`. Ringkasan run menampilkan ID kandidat dan deployment yang akan diganti. Setelah disetujui, job mencatat target rollback dan menolak berjalan bila produksi berubah sejak kandidat dibuat. Lalu: `vercel promote` backend → cek alias → `check-operations.mjs` (scanner-wake dan probe, hanya peringatan) → smoke backend → `vercel promote` frontend → cek alias → smoke frontend → probe akhir.
    5. **Rollback otomatis.** Bila promosi, cek alias, atau smoke produksi gagal, setiap komponen yang sedang melayani kandidatnya dipromosikan kembali ke deployment yang tercatat (frontend dulu, lalu backend). Alias kemudian diperiksa, kedua origin di-smoke, dan job gagal dengan judul *Release FAILED and was rolled back automatically*. Bila rollback otomatis sendiri gagal, ringkasan menulis `INCOMPLETE` dan mencetak perintah `vercel promote` yang harus dijalankan saat itu juga. Kegagalan probe akhir **tidak** memicu rollback: smoke sudah lulus, dan probe juga mencakup backup/fixity yang tidak diubah rilis. Job tetap gagal dan meminta pemeriksaan.
-7. **Laporan.** Tulis `docs/HASIL_RILIS_<label>_<tanggal>.md` dari ringkasan run dan artefak (`simsa-release-*`: manifest, gate, kandidat, `rollback.md`).
+7. **Laporan.** Tulis `docs/rilis/HASIL_RILIS_<label>_<tanggal>.md` dari ringkasan run dan artefak (`simsa-release-*`: manifest, gate, kandidat, `rollback.md`).
 
 Manifest dari `release-source.mjs` memakai akhir baris LF (`core.autocrlf=false` dipatok). Akibatnya, manifest ini berbeda dari manifest rilis lama yang dibuat di Windows dengan `autocrlf=true`. Contoh untuk `1f125b0`: laporan C56 mencatat `9a1392…297807f` (CRLF), sedangkan `release-source.mjs` menghasilkan `04bb9266…722d8f`. Keduanya terdiri atas 1.656 berkas. Algoritma digest identik dengan `make-manifest.py`: arsip yang sama menghasilkan `9a1392…` lagi.
 

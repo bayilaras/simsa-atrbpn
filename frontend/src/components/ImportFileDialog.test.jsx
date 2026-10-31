@@ -2,9 +2,8 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ImportFileDialog from './ImportFileDialog'
 
-const mocks = vi.hoisted(() => ({ post: vi.fn(), mode: 'full' }))
+const mocks = vi.hoisted(() => ({ post: vi.fn() }))
 vi.mock('@/services/api', () => ({ default: { post: mocks.post } }))
-vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ mode: mocks.mode }) }))
 
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 const workbook = (name = 'register.xlsx') => new File(['PK'], name, { type: XLSX })
@@ -33,7 +32,7 @@ const choose = async file => fireEvent.change(await screen.findByLabelText('Berk
 const click = name => fireEvent.click(screen.getByRole('button', { name }))
 
 describe('CSV/XLSX import dialog', () => {
-    beforeEach(() => { mocks.post.mockReset(); mocks.mode = 'full' })
+    beforeEach(() => { mocks.post.mockReset() })
     afterEach(cleanup)
 
     it('lists the workbook tabs, previews the chosen one and imports it with the same file', async () => {
@@ -235,12 +234,6 @@ describe('CSV/XLSX import dialog', () => {
         await screen.findByRole('radio', { name: '2026' })
         await choose(csv())
         expect(screen.queryByRole('radio')).not.toBeInTheDocument()
-    })
-
-    it('is not offered in mode metadata-demo', () => {
-        mocks.mode = 'metadata-demo'
-        render(<ImportFileDialog type="surat-masuk" unitKerjaId="unit-a" />)
-        expect(screen.queryByRole('button', { name: 'Impor CSV/XLSX' })).not.toBeInTheDocument()
     })
 
     it.each(['all', '', undefined])('asks for a concrete unit before opening for unit %j', unit => {

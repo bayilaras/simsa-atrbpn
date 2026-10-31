@@ -69,6 +69,10 @@ SIMSA mengelola surat dan arsip secara mandiri; integrasi SRIKANDI tidak menjadi
     <h3>🔄 Distribusi Surat</h3>
     <p>Cara mendistribusikan surat ke unit lain</p>
   </a>
+  <a href="/manajemen-surat/rangkaian-surat" className="feature-card">
+    <h3>🧵 Rangkaian Surat</h3>
+    <p>Lacak alur surat, berkaskan rangkaian, dan koreksi berkas</p>
+  </a>
 </div>
 
 ---

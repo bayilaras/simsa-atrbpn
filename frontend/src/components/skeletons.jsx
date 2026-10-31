@@ -35,41 +35,28 @@ export function DashboardSkeleton() {
     )
 }
 
-export function TableSkeleton({ rows = 5 }) {
+export function TableSkeleton({ rows = 5, columns = 5 }) {
     return (
-        <div className="space-y-4">
-            <div className="flex justify-between items-center">
-                <Skeleton className="h-10 w-[250px]" />
-                <div className="flex gap-2">
-                    <Skeleton className="h-10 w-[100px]" />
-                    <Skeleton className="h-10 w-[120px]" />
-                </div>
+        <div className="w-full space-y-3">
+            {/* Header */}
+            <div className="flex gap-4 pb-3 border-b">
+                {Array.from({ length: columns }).map((_, i) => (
+                    <div key={i} className="flex-1">
+                        <div className="h-4 bg-muted rounded animate-pulse" />
+                    </div>
+                ))}
             </div>
 
-            <div className="rounded-md border">
-                <div className="border-b p-4">
-                    <div className="flex justify-between">
-                        {Array.from({ length: 5 }).map((_, i) => (
-                            <Skeleton key={i} className="h-4 w-[100px]" />
-                        ))}
-                    </div>
-                </div>
-                <div className="divide-y">
-                    {Array.from({ length: rows }).map((_, i) => (
-                        <div key={i} className="p-4 flex justify-between items-center">
-                            <Skeleton className="h-4 w-[30px]" />
-                            <Skeleton className="h-4 w-[100px]" />
-                            <Skeleton className="h-4 w-[150px]" />
-                            <Skeleton className="h-4 w-[200px]" />
-                            <Skeleton className="h-4 w-[100px]" />
-                            <div className="flex gap-2">
-                                <Skeleton className="h-8 w-8" />
-                                <Skeleton className="h-8 w-8" />
-                            </div>
+            {/* Rows */}
+            {Array.from({ length: rows }).map((_, rowIndex) => (
+                <div key={rowIndex} className="flex gap-4 py-3">
+                    {Array.from({ length: columns }).map((_, colIndex) => (
+                        <div key={colIndex} className="flex-1">
+                            <div className="h-4 bg-muted rounded animate-pulse" />
                         </div>
                     ))}
                 </div>
-            </div>
+            ))}
         </div>
     )
 }

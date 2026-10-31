@@ -500,35 +500,6 @@ export class SuratMasukService {
         }));
     }
 
-    async hardDelete(id: string) {
-        // Permanent delete - only for super_admin or data cleanup
-        const [result] = await db
-            .delete(suratMasuk)
-            .where(eq(suratMasuk.id, id))
-            .returning();
-
-        return result;
-    }
-
-    async restore(id: string) {
-        const [result] = await db
-            .update(suratMasuk)
-            .set({
-                isDeleted: false,
-                deletedAt: null,
-                deletedBy: null,
-                updatedAt: new Date(),
-            })
-            .where(eq(suratMasuk.id, id))
-            .returning();
-
-        return result;
-    }
-
-    async archive(id: string, unitScope: RecordUnitScope) {
-        return this.update(id, { isArchived: true }, unitScope);
-    }
-
     async getNextNumber(
         unitKerjaId: string,
         context: SuratNumberContext | number = {},

@@ -20,7 +20,7 @@ export function getFrontendOrigin(): string {
     }
     // Match startup validation, and fail closed if a misconfigured route is
     // exercised without application startup (for example an isolated handler).
-    const deployed = env.NODE_ENV === 'production' || Boolean(env.VERCEL_ENV) || Boolean(process.env.K_SERVICE);
+    const deployed = env.NODE_ENV === 'production' || Boolean(env.VERCEL_ENV);
     if (deployed && configured.protocol !== 'https:') {
         throw new Error('FRONTEND_URL must use HTTPS in a deployed runtime');
     }

@@ -1,8 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { buildCloudPlatformConfig } from '../config/cloud-platform.js';
-import { verifyFirebaseSessionCsrfToken } from '../services/firebase-session.service.js';
-import { hasBearerCredential } from '../services/request-identity.service.js';
 import { usesSharedRateLimits } from '../config/rate-limits.js';
 
 /**
@@ -39,13 +37,6 @@ function generateToken(): string {
  * Must be applied early in the middleware chain.
  */
 export function csrfCookieSetter(req: Request, res: Response, next: NextFunction): void {
-    // Firebase Hosting strips all incoming cookies except __session. Firebase
-    // mode therefore returns a session-bound HMAC token instead of relying on
-    // this legacy double-submit cookie.
-    if (buildCloudPlatformConfig().authProvider === 'firebase') {
-        next();
-        return;
-    }
     // Replace malformed cookies too; otherwise a bad cookie survives refresh.
     if (!isCsrfToken(req.cookies?.[CSRF_COOKIE_NAME])) {
         const token = generateToken();
@@ -86,25 +77,6 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
     }
 
     const cloudConfig = buildCloudPlatformConfig();
-    if (cloudConfig.authProvider === 'firebase') {
-        // Explicit bearer credentials are not ambient browser authority and
-        // therefore are not vulnerable to classic cookie CSRF.
-        if (hasBearerCredential(req)) return next();
-        const sessionCookie = req.cookies?.[cloudConfig.firebaseSessionCookieName];
-        const supplied = req.headers[CSRF_HEADER_NAME] as string | undefined;
-        if (
-            typeof sessionCookie === 'string'
-            && verifyFirebaseSessionCsrfToken(sessionCookie, supplied)
-        ) {
-            return next();
-        }
-        res.status(403).json({
-            error: 'CSRF Validation Failed',
-            message: 'Missing or invalid Firebase session CSRF token.',
-        });
-        return;
-    }
-
     // Skip only the exact Blob SDK callback/token endpoint. Token generation is
     // session-authenticated and completion callbacks are signature-verified by
     // @vercel/blob. Administrative reconciliation below that path must retain

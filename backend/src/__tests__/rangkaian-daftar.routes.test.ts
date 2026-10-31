@@ -1,7 +1,6 @@
 import express from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDemoAccessMiddleware } from '../middlewares/demo-access.middleware.js';
 
 const mocks = vi.hoisted(() => ({
     user: { id: 'user-1', email: 'user@example.test', name: 'Pengguna', role: 'admin_unit', unitKerjaId: 'dir_bppt' as string | null },
@@ -51,18 +50,5 @@ describe('GET /api/rangkaian', () => {
     it('mengizinkan staff/auditor (read-only) — cakupan ditentukan layanan', async () => {
         Object.assign(mocks.user, { role: 'staff', unitKerjaId: 'sesditjen' });
         await request(app).get('/api/rangkaian').expect(200);
-    });
-});
-
-describe('allowlist demo metadata-only', () => {
-    it('meneruskan GET /api/rangkaian dan tetap menolak POST ke koleksi', async () => {
-        const demo = express();
-        let downstream = 0;
-        demo.use('/api', createDemoAccessMiddleware(true));
-        demo.use('/api', (_req, res) => { downstream += 1; res.json({ success: true }); });
-        await request(demo).get('/api/rangkaian?status=diberkaskan').expect(200);
-        expect(downstream).toBe(1);
-        await request(demo).post('/api/rangkaian').send({}).expect(403);
-        expect(downstream).toBe(1);
     });
 });

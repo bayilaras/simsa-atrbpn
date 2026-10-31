@@ -35,7 +35,7 @@ yang kodenya sedang berjalan:
   menolak rantai 0047.
 - **Backup setelah 0048/0049**: helper dari checkout P5 (commit merge P5).
 
-Workflow terjadwal `backup-neon.yml` berjalan dari branch bawaan. Sejak P5 masuk
+Workflow terjadwal `operations-recovery.yml` berjalan dari branch bawaan. Sejak P5 masuk
 `main` sampai 0048 diterapkan, rantai `main` ≠ rantai database, sehingga backup
 terjadwal harian gagal. Karena itu P5 baru di-merge ketika 0048 dapat langsung
 diterapkan (§4, CTRL-2). Bila jarak merge → 0048 melewati jadwal backup, ambil
@@ -112,7 +112,7 @@ SELECT d.id, d.surat_masuk_id, d.status, a.rangkaian_id, r.status AS status_rang
 **Keputusan gerbang rilis baris (f), sudah dikunci di migrasi ini [CTRL-2]:
 tahan 0048. Menahan 0048 berarti menahan SELURUH rilis P5, yaitu merge ke
 `main` dan deploy, bukan hanya migrasinya.** Alasannya:
-- **Backup.** `backup-neon.yml` terjadwal berjalan dari `main` dan mensyaratkan
+- **Backup.** `operations-recovery.yml` terjadwal berjalan dari `main` dan mensyaratkan
   rantai database = rantai checkout (`collect-backup-evidence.sql`, profil
   pre/post migration). Bila P5 ada di `main` sementara database tertahan di
   0047, tidak ada profil yang cocok. Backup produksi harian gagal selama

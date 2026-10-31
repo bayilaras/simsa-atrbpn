@@ -5,25 +5,14 @@ import AuthContext from '@/context/AuthContext';
 import { AppConfigContext, DISABLED_FEATURES } from '@/context/app-config-context';
 vi.mock('@/context/AuthContext', async () => ({ default: (await import('react')).createContext(null) }));
 
-const storageState = vi.hoisted(() => ({ provider: 'vercel-blob' }));
-vi.mock('@/lib/cloud-provider-config', async (importOriginal) => ({
-    ...await importOriginal(),
-    USE_FIREBASE_AUTH: true,
-    get STORAGE_PROVIDER() { return storageState.provider; },
-}));
-vi.mock('@/lib/firebase-client', () => ({
-    getFirebaseAppCheckToken: vi.fn().mockResolvedValue('test-app-check'),
-    getFirebaseLimitedUseAppCheckToken: vi.fn(),
-}));
 
-const surat = { id: 'surat/a', filePath: 'gcs://private-bucket/file.pdf', fileOriginalName: 'arsip.pdf' };
+const surat = { id: 'surat/a', filePath: 'https://store.private.blob.vercel-storage.com/surat-masuk/file.pdf', fileOriginalName: 'arsip.pdf' };
 
 describe('private file preview', () => {
     let createObjectURL;
     let revokeObjectURL;
 
     beforeEach(() => {
-        storageState.provider = 'vercel-blob';
         createObjectURL = vi.fn().mockReturnValue('blob:http://localhost:3000/private-preview');
         revokeObjectURL = vi.fn();
         vi.stubGlobal('URL', class extends URL {
@@ -38,7 +27,7 @@ describe('private file preview', () => {
         vi.unstubAllGlobals();
     });
 
-    it.each(['surat_masuk', 'surat_keluar'])('loads %s only on demand with App Check and revokes its URL on close', async (entityType) => {
+    it.each(['surat_masuk', 'surat_keluar'])('loads %s only on demand and revokes its URL on close', async (entityType) => {
         const blob = new Blob(['%PDF-1.7'], { type: 'application/pdf' });
         const fetchMock = vi.fn().mockResolvedValue({
             ok: true, status: 200, headers: new Headers(), blob: async () => blob,
@@ -53,7 +42,6 @@ describe('private file preview', () => {
         expect(await screen.findByTitle('PDF Preview')).toHaveAttribute('src', 'blob:http://localhost:3000/private-preview#toolbar=1&navpanes=0');
         expect(fetchMock).toHaveBeenCalledWith(`/api/files/${entityType}/surat%2Fa`, expect.objectContaining({
             credentials: 'include', cache: 'no-store',
-            headers: expect.objectContaining({ 'X-Firebase-AppCheck': 'test-app-check' }),
         }));
         expect(screen.getByRole('button', { name: 'Download' })).toBeEnabled();
         expect(createObjectURL).toHaveBeenCalledWith(blob);
@@ -78,7 +66,7 @@ describe('private file preview', () => {
 
         expect(await screen.findByRole('alert')).toHaveTextContent('Persetujuan hanya mengizinkan penayangan');
         expect(fetchMock).toHaveBeenLastCalledWith('/api/files/surat_masuk/surat%2Fa?download=1', expect.objectContaining({
-            credentials: 'include', headers: expect.objectContaining({ 'X-Firebase-AppCheck': 'test-app-check' }),
+            credentials: 'include',
         }));
         expect(click).not.toHaveBeenCalled();
         expect(createObjectURL).toHaveBeenCalledOnce();
@@ -148,11 +136,9 @@ describe('private file preview', () => {
     });
 
     it.each([
-        ['vercel-blob', 'surat_masuk', 'Muat dokumen'], ['vercel-blob', 'surat_masuk', 'Download'],
-        ['vercel-blob', 'surat_keluar', 'Muat dokumen'], ['vercel-blob', 'surat_keluar', 'Download'],
-        ['gcs', 'surat_masuk', 'Muat dokumen'], ['gcs', 'surat_keluar', 'Muat dokumen'],
-    ])('offers %s %s quarantine recovery after %s until the private object is released', async (provider, entityType, action) => {
-        storageState.provider = provider;
+        ['surat_masuk', 'Muat dokumen'], ['surat_masuk', 'Download'],
+        ['surat_keluar', 'Muat dokumen'], ['surat_keluar', 'Download'],
+    ])('offers %s quarantine recovery after %s until the private object is released', async (entityType, action) => {
         const fetchMock = vi.fn().mockResolvedValue({
             ok: false, status: 423, headers: new Headers(),
             json: async () => ({ error: 'File quarantined', message: 'Dokumen menunggu pemeriksaan.', scanState: 'pending' }),
@@ -208,7 +194,6 @@ describe('private file preview', () => {
             <AppConfigContext.Provider value={{
                 features: DISABLED_FEATURES,
                 capabilities: { metadata: true, files: false, externalIntegrations: false },
-                mode: 'metadata-demo',
                 compatible: true,
                 loading: false,
             }}>

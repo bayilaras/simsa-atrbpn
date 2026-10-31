@@ -1,12 +1,10 @@
 # Checklist Deployment Profil Internal SIMSA
 
-> **Target platform aktif:** backend baru menggunakan Firebase/Google Cloud.
-> Untuk provisioning, backup, maintenance database, dan promosi gunakan
-> [blueprint Firebase/GCP](infra/firebase-gcp/README.md),
-> [runbook backup Cloud SQL](../CLOUD_SQL_BACKUP_RECOVERY.md), dan
-> [runbook rilis backend GCP](../GCP_BACKEND_RELEASE.md). Butir Vercel, Neon,
-> dan Vercel Blob di bawah dipertahankan sementara hanya sebagai bukti/rollback
-> sistem lama selama cutover; jangan menerapkannya pada lingkungan GCP baru.
+> **Target platform aktif:** Vercel (`simsa-frontend`, `simsa-backend`), Neon
+> PostgreSQL, dan Vercel Blob privat. Untuk deployment, kredensial database,
+> serta backup dan pemulihan gunakan [deployment Vercel dan Neon](DEPLOY_VERCEL_NEON.md),
+> [runbook kredensial database](RUNBOOK_KREDENSIAL_DATABASE.md), dan
+> [cadangan dan pemulihan](OPERATIONS_RECOVERY.md).
 
 ## 1. Prinsip rilis
 
@@ -170,7 +168,7 @@ Langkah eksekusi:
 - [x] Setiap item OCR mengambil lease kapasitas global dari PostgreSQL sebelum diproses, memperpanjangnya berkala berdasarkan pasangan item/token selama unduh dan Tesseract, lalu melepasnya dengan token di blok `finally`; database tidak dikunci selama Tesseract berjalan. Commit hasil juga dipagari oleh claim item (`status` + `processing_started_at`) agar worker lama tidak dapat menimpa hasil claim baru. Kapasitas penuh mengembalikan `503` dan `Retry-After` tanpa menandai item gagal, sedangkan lease proses yang mati dapat diambil kembali setelah kedaluwarsa.
 - [ ] Deploy clamd dan worker sebagai proses persisten pada jaringan privat; jangan mengandalkan `setInterval` dalam fungsi Vercel/serverless. Uji EICAR, timeout, scanner mati, objek hilang, hash mismatch, dan restart worker.
 - [ ] Pastikan jaringan `scanner` tetap internal, jaringan `clamav-updates` memiliki egress untuk FreshClam, batas stream clamd sama dengan `CLAMAV_MAX_STREAM_BYTES`, image memakai digest yang disetujui, resource/log limit aktif, dan shutdown grace period lebih panjang dari deadline shutdown internal worker 30 detik; verifikasi klaim stale pulih secara fail-closed setelah penghentian paksa.
-- [ ] Terbitkan worker hanya melalui workflow rilis tanpa auto-deploy, simpan provenance dan SBOM-nya, lalu jalankan `preflight-worker-image.sh` terhadap referensi `registry/repository@sha256:<digest>` sebelum setiap `pull` dan rollout produksi.
+- [ ] Bila worker persisten dipakai, terbitkan artefaknya tanpa auto-deploy, simpan provenance dan SBOM-nya, dan rujuk image dengan digest `registry/repository@sha256:<digest>` pada setiap `pull` dan rollout produksi.
 - [ ] Uji model OCR `ind+eng` dari `OCR_TESSDATA_PATH` pada image/artifact produksi, termasuk PDF scan maksimal 10 halaman, dokumen tanpa teks bermakna, timeout unduh Blob 30 detik, restart proses, konsumsi CPU/memori, cleanup cache, saturasi lintas replica, penghormatan `Retry-After`, renewal/reklamasi lease, serta penolakan hasil worker stale. Handler Vercel menetapkan `maxDuration=300` detik: 30 detik text-layer + 180 detik scan OCR + 30 detik unduh Blob + 60 detik margin cold-start/database/cleanup; pastikan plan/runtime deployment mendukung nilai tersebut. Kalibrasi `ocr_capacity_control.max_concurrency` hanya melalui perubahan operasional database yang diaudit dan uji beban; jangan membuat override berbeda pada tiap instance. Metadata hasil OCR wajib ditinjau manusia sebelum dikonfirmasi.
 - [ ] Terapkan private object access, encryption-at-rest yang didukung platform, least privilege, lifecycle, backup, dan pemisahan admin.
 - [ ] **Kondisional — hardening storage:** integrasikan content disarm/DLP, KMS/HSM khusus, versioning, dan object lock/WORM bila kelas data, kebijakan, atau keputusan risiko mensyaratkannya; simpan bukti konfigurasi dan uji.
@@ -206,7 +204,7 @@ Langkah eksekusi:
 
 Lewati aktivasi pada bagian ini bila SRIKANDI tidak diwajibkan. Kontrol gagal-tertutup dan feature flag nonaktif tetap harus dipertahankan.
 
-- [x] Tanda tangan elektronik berada di luar ruang lingkup; endpoint legacy tidak membuat `MOCK-SIG`, tetap gagal-tertutup, dan artefak simulasi selalu dianggap tidak sah.
+- [x] Tanda tangan elektronik berada di luar ruang lingkup; endpoint legacy `/api/approval/sign` sudah dihapus dan artefak simulasi `MOCK-SIG` lama tidak pernah dianggap sah.
 - [ ] **Kondisional — SRIKANDI:** gunakan sandbox; uji idempotency, retry, dead-letter, timeout, perubahan skema, dan rekonsiliasi sesuai kontrak resmi.
 - [x] Fondasi outbox durable, snapshot versi kontrak, audit append-only, idempotency/hash conflict, lease recovery, retry/backoff/dead-letter, bounded response streaming, validasi ACK + remote ID, dan worker persisten tersedia serta disabled-by-default.
 - [ ] **Kondisional — SRIKANDI:** deploy worker pada runtime persisten; endpoint HTTP pemrosesan antrean hanya fallback diagnostik satu item.

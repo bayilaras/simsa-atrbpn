@@ -40,12 +40,12 @@ const instruments = [
     { type: 'jra' as const, id: JRA_RULE_SET_2020_ID, seed: seedJadwalRetensiArsip, asset: jraSeed },
 ];
 const deployedEnvironments = [
-    { name: 'production', NODE_ENV: 'production', K_SERVICE: '', VERCEL: '' },
-    { name: 'Cloud Run with development env', NODE_ENV: 'development', K_SERVICE: 'simsa-api', VERCEL: '' },
-    { name: 'Vercel with test env', NODE_ENV: 'test', K_SERVICE: '', VERCEL: '1' },
+    { name: 'production', NODE_ENV: 'production', VERCEL: '' },
+    { name: 'Vercel with development env', NODE_ENV: 'development', VERCEL: '1' },
+    { name: 'Vercel with test env', NODE_ENV: 'test', VERCEL: '1' },
 ];
-function environment(source: { NODE_ENV?: string; K_SERVICE?: string; VERCEL?: string }) {
-    for (const key of ['NODE_ENV', 'K_SERVICE', 'VERCEL'] as const) vi.stubEnv(key, source[key]);
+function environment(source: { NODE_ENV?: string; VERCEL?: string }) {
+    for (const key of ['NODE_ENV', 'VERCEL'] as const) vi.stubEnv(key, source[key]);
 }
 function fixture(instrument: typeof instruments[number], approved = false) {
     const item: any = {

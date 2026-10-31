@@ -459,15 +459,6 @@ describe('SuratKeluarService', () => {
         });
     });
 
-    // ── archive ──
-    describe('archive', () => {
-        it('should call update with isArchived true', async () => {
-            enqueue([{ id: '1', isArchived: true }]);
-            const res = await svc.archive('1', 'u1');
-            expect(res?.isArchived).toBe(true);
-        });
-    });
-
     // ── getNextNumber ──
     describe('getNextNumber', () => {
         it('should return next sequential number', async () => {

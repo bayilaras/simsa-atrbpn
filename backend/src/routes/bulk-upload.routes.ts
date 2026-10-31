@@ -222,37 +222,6 @@ function receiveBulkUpload(req: AuthRequest, res: Response, next: NextFunction) 
     });
 }
 
-/**
- * @swagger
- * /api/bulk-upload:
- *   post:
- *     summary: Upload multiple PDF files for OCR processing
- *     tags: [Bulk Upload]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       description: Maksimum 50 PDF, 10 MiB per file, dan 100 MiB total per batch.
- *       content:
- *         multipart/form-data:
- *           schema:
- *             type: object
- *             required:
- *               - files
- *               - unitKerjaId
- *             properties:
- *               files:
- *                 type: array
- *                 maxItems: 50
- *                 items:
- *                   type: string
- *                   format: binary
- *               unitKerjaId:
- *                 type: string
- *     responses:
- *       200:
- *         description: Upload initiated successfully
- */
 router.post(
     '/',
     authMiddleware,
@@ -360,24 +329,6 @@ router.get('/active', authMiddleware, canWriteMiddleware(), async (req: AuthRequ
     }
 });
 
-/**
- * @swagger
- * /api/bulk-upload/{batchId}:
- *   get:
- *     summary: Get batch processing status
- *     tags: [Bulk Upload]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: batchId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Batch status retrieved successfully
- */
 router.get('/:batchId', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
         const { batchId } = req.params;
@@ -455,50 +406,6 @@ router.delete('/:batchId', authMiddleware, canWriteMiddleware(), async (req: Aut
     }
 });
 
-/**
- * @swagger
- * /api/bulk-upload/{batchId}/confirm:
- *   post:
- *     summary: Confirm and save processed files as arsip records
- *     tags: [Bulk Upload]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: batchId
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - items
- *             properties:
- *               items:
- *                 type: array
- *                 items:
- *                   type: object
- *                   properties:
- *                     itemId:
- *                       type: string
- *                     nomorBerkas:
- *                       type: string
- *                     uraianBerkas:
- *                       type: string
- *                     kodeKlasifikasi:
- *                       type: string
- *                     tahun:
- *                       type: integer
- *                     jenisArsip:
- *                       type: string
- *     responses:
- *       200:
- *         description: Batch confirmed and saved successfully
- */
 router.post('/:batchId/confirm', authMiddleware, canWriteMiddleware(), async (req: AuthRequest, res: Response) => {
     try {
         const { batchId } = req.params;

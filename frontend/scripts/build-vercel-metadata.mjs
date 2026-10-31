@@ -22,6 +22,6 @@ const result = spawnSync(process.execPath, [npm, 'run', 'build', '--', '--outDir
 if (result.error || result.status !== 0) throw new Error('Frontend Vercel metadata build failed');
 const manifest = JSON.parse(readFileSync(join(output, 'simsa-build.json'), 'utf8'));
 if (manifest.mode !== 'full' || manifest.syntheticDataOnly !== false || manifest.api !== 'same-origin'
-    || manifest.authProvider !== 'better-auth' || manifest.storageProvider !== 'disabled' || manifest.firebase !== null) {
+    || manifest.authProvider !== 'better-auth' || manifest.storageProvider !== 'disabled') {
     throw new Error('Frontend Vercel manifest does not match metadata profile');
 }

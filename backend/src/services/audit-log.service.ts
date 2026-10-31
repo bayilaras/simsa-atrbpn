@@ -75,19 +75,6 @@ export const auditLogService = {
     },
 
     /**
-     * Best-effort audit for non-critical reads and legacy operations. Critical
-     * state mutations must use logActionOrThrow inside their DB transaction.
-     */
-    async logAction(data: LogActionData): Promise<void> {
-        try {
-            await auditLogService.logActionOrThrow(data);
-        } catch {
-            // Deliberately retained for non-critical callers. The failure has
-            // already been counted and logged by logActionOrThrow.
-        }
-    },
-
-    /**
      * List audit logs with filters and pagination
      */
     async listLogs(filters: AuditLogFilters = {}) {
@@ -196,61 +183,6 @@ export const auditLogService = {
                 )
             )
             .orderBy(desc(auditLog.createdAt));
-    },
-
-    /**
-     * Get action label in Indonesian
-     */
-    getActionLabel(action: string): string {
-        const labels: Record<string, string> = {
-            'create': 'Membuat',
-            'update': 'Mengubah',
-            'delete': 'Menghapus',
-            'cancel': 'Membatalkan',
-            'archive': 'Mengarsipkan',
-            'restore': 'Memulihkan',
-            'status_change': 'Mengubah Status',
-            'distribute': 'Mendistribusikan',
-            'receive_distribution': 'Menerima Distribusi',
-            'process_distribution': 'Memproses Distribusi',
-            'reject_distribution': 'Menolak Distribusi',
-            'view': 'Melihat',
-            'download': 'Mengunduh',
-            'verify_integrity': 'Memeriksa Integritas',
-            'hold': 'Menetapkan Legal Hold',
-            'release_hold': 'Melepas Legal Hold',
-            'request_access': 'Meminta Akses Rekod',
-            'approve_access': 'Menyetujui Akses Rekod',
-            'deny_access': 'Menolak Akses Rekod',
-            'revoke_access': 'Mencabut Akses Rekod',
-            'view_via_rangkaian': 'Melihat via Rangkaian',
-            'export': 'Mengekspor Data',
-            'merge': 'Menggabungkan',
-            'link': 'Menautkan',
-        };
-        return labels[action] || action;
-    },
-
-    /**
-     * Get entity type label in Indonesian
-     */
-    getEntityTypeLabel(entityType: string): string {
-        const labels: Record<string, string> = {
-            'surat_masuk': 'Surat Masuk',
-            'surat_keluar': 'Surat Keluar',
-            'arsip': 'Arsip',
-            'user': 'User',
-            'surat_distribution': 'Distribusi Surat',
-            'autentikasi': 'Autentikasi Alih Media',
-            'file_attachment': 'Lampiran Berkas',
-            'arsip_elektronik': 'Arsip Elektronik',
-            'tunjuk_silang': 'Tunjuk Silang',
-            'record_access_grant': 'Persetujuan Akses Rekod',
-            'regulatory_rule_set': 'Rule Set Regulasi',
-            'rangkaian_surat': 'Rangkaian Surat',
-            'rangkaian_relasi': 'Relasi Rangkaian',
-        };
-        return labels[entityType] || entityType;
     },
 };
 

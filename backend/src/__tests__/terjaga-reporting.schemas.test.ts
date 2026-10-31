@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createArsipTerjagaSchema, updateArsipTerjagaSchema, queryArsipTerjagaSchema } from '../validators/schemas';
+import { createArsipTerjagaSchema, updateArsipTerjagaSchema } from '../validators/schemas';
 
 const base = { arsipId: '11111111-1111-4111-8111-111111111111', unitKerjaId: 'ditjen', kategoriTerjaga: 'kepulauan' };
 describe('terjaga reporting cannot be asserted through metadata', () => {
@@ -17,9 +17,8 @@ describe('terjaga reporting cannot be asserted through metadata', () => {
         expect(createArsipTerjagaSchema.safeParse({ ...base, kategoriTerjaga }).success).toBe(true);
         expect(updateArsipTerjagaSchema.safeParse({ kategoriTerjaga }).success).toBe(true);
     });
-    it.each(['kekayaan_negara', 'hak_keperdataan', 'pertanahan', 'batas_wilayah'])('keeps %s searchable but rejects new legacy assignments', kategoriTerjaga => {
+    it.each(['kekayaan_negara', 'hak_keperdataan', 'pertanahan', 'batas_wilayah'])('rejects new legacy assignments of %s', kategoriTerjaga => {
         expect(createArsipTerjagaSchema.safeParse({ ...base, kategoriTerjaga }).success).toBe(false);
         expect(updateArsipTerjagaSchema.safeParse({ kategoriTerjaga }).success).toBe(false);
-        expect(queryArsipTerjagaSchema.safeParse({ kategoriTerjaga }).success).toBe(true);
     });
 });

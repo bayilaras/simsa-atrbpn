@@ -4,7 +4,7 @@ Gunakan akun pribadi yang dibuat Super Admin melalui **Administrasi → Manajeme
 
 ## Buka dan masuk
 
-1. Pada komputer Windows yang sudah disiapkan operator, jalankan **Mulai-SIMSA.cmd** dari folder SIMSA. Browser membuka `http://127.0.0.1:3000` setelah layanan siap. Untuk layanan bersama, gunakan alamat yang diberikan operator.
+1. Buka `https://simsa-frontend.vercel.app` di browser.
 2. Isi **Email kedinasan** dan **Kata sandi**.
 3. Klik **Masuk**. Setelah berhasil, periksa peran dan unit kerja Anda sebelum mencatat data.
 
@@ -13,8 +13,8 @@ Login Google hanya digunakan jika integrasinya sudah dikonfigurasi. Aplikasi tid
 ## Jika gagal
 
 - Periksa ejaan email, kata sandi, dan status akun bersama administrator. Jangan mengirim kata sandi atau tangkapan layar yang memperlihatkannya.
-- Jika muncul **Origin tidak diizinkan**, gunakan alamat yang dibuka launcher atau laporkan alamat halaman kepada operator. Mengganti kata sandi tidak memperbaiki kesalahan alamat ini.
-- Jika layanan lokal tidak dapat dibuka, jalankan **Cek-SIMSA.cmd** dan sampaikan hasil pemeriksaan kepada operator.
+- Jika muncul **Origin tidak diizinkan**, pastikan alamat halaman persis `https://simsa-frontend.vercel.app` atau laporkan alamat halaman kepada operator. Mengganti kata sandi tidak memperbaiki kesalahan alamat ini.
+- Jika halaman tidak dapat dibuka, sampaikan waktu kejadian dan pesan yang tampil kepada operator.
 - Jika akun belum memiliki peran/unit yang benar, minta Super Admin menyesuaikannya dengan penugasan.
 
 Setelah selesai, buka menu avatar dan pilih **Keluar**, terutama pada komputer bersama.

@@ -3,7 +3,7 @@ import { createRateLimiterStore, usesSharedRateLimits } from '../config/rate-lim
 import { PostgresRateLimitStore } from '../services/postgres-rate-limit.store.js';
 
 describe('shared rate limit runtime selection', () => {
-    it.each([{ NODE_ENV: 'production' }, { VERCEL: '1' }, { K_SERVICE: 'simsa-api' }])(
+    it.each([{ NODE_ENV: 'production' }, { VERCEL: '1' }])(
         'requires a shared store in every deployed runtime', source => {
             expect(usesSharedRateLimits(source)).toBe(true);
             expect(createRateLimiterStore('auth', { ...source, BETTER_AUTH_SECRET: 'synthetic-test-secret-'.repeat(3) }))
@@ -19,10 +19,9 @@ describe('shared rate limit runtime selection', () => {
         expect(createRateLimiterStore('auth', source)?.prefix).not.toBe(createRateLimiterStore('import', source)?.prefix);
         expect(() => createRateLimiterStore('auth', { ...source, RATE_LIMIT_KEY_SECRET: 'short' })).toThrow(/stable secret/);
     });
-    it('never falls back to an imported development secret or another auth provider', () => {
-        expect(() => createRateLimiterStore('auth', { NODE_ENV: 'production', AUTH_PROVIDER: 'firebase' })).toThrow(/stable secret/);
-        expect(() => createRateLimiterStore('auth', { NODE_ENV: 'production', AUTH_PROVIDER: 'firebase', BETTER_AUTH_SECRET: 'x'.repeat(48) })).toThrow(/stable secret/);
+    it('never falls back to an imported development secret or a retired provider secret', () => {
         expect(() => createRateLimiterStore('auth', { NODE_ENV: 'production', AUTH_PROVIDER: 'better-auth' })).toThrow(/stable secret/);
-        expect(createRateLimiterStore('auth', { NODE_ENV: 'production', AUTH_PROVIDER: 'firebase', FIREBASE_SESSION_CSRF_SECRET: 'x'.repeat(48) })).toBeInstanceOf(PostgresRateLimitStore);
+        expect(() => createRateLimiterStore('auth', { NODE_ENV: 'production', FIREBASE_SESSION_CSRF_SECRET: 'x'.repeat(48) })).toThrow(/stable secret/);
+        expect(createRateLimiterStore('auth', { NODE_ENV: 'production', BETTER_AUTH_SECRET: 'x'.repeat(48) })).toBeInstanceOf(PostgresRateLimitStore);
     });
 });

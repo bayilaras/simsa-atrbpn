@@ -517,45 +517,6 @@ export class SuratKeluarService {
         }));
     }
 
-    async hardDelete(id: string, unitScope: RecordUnitScope) {
-        // Permanent delete - only for super_admin or data cleanup
-        const [result] = await db
-            .delete(suratKeluar)
-            .where(scopedRecordByIdWhere(
-                suratKeluar.id,
-                id,
-                suratKeluar.unitKerjaId,
-                unitScope,
-            ))
-            .returning();
-
-        return result;
-    }
-
-    async restore(id: string, unitScope: RecordUnitScope) {
-        const [result] = await db
-            .update(suratKeluar)
-            .set({
-                isDeleted: false,
-                deletedAt: null,
-                deletedBy: null,
-                updatedAt: new Date(),
-            })
-            .where(scopedRecordByIdWhere(
-                suratKeluar.id,
-                id,
-                suratKeluar.unitKerjaId,
-                unitScope,
-            ))
-            .returning();
-
-        return result;
-    }
-
-    async archive(id: string, unitScope: RecordUnitScope) {
-        return this.update(id, { isArchived: true }, unitScope);
-    }
-
     async getNextNumber(
         unitKerjaId: string,
         context: SuratNumberContext | number = {},

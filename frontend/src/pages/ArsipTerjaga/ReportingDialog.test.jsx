@@ -15,7 +15,7 @@ describe('reporting evidence dialog', () => {
     it('keeps draft metadata usable while preventing unavailable evidence upload', async () => {
         service.getReports.mockResolvedValue({ data: { reports: [{ id: 'report', nomorLaporan: 'LAP-1', status: 'draft' }],
             attachments: [{ id: 'file-1', fileName: 'Pengiriman resmi.pdf', released: true }], canManage: true } })
-        render(<AppConfigContext.Provider value={{ mode: 'full', capabilities: { files: false, fileUploads: false } }}>
+        render(<AppConfigContext.Provider value={{ capabilities: { files: false, fileUploads: false } }}>
             <ReportingDialog open onOpenChange={vi.fn()} item={item} />
         </AppConfigContext.Provider>)
         expect(await screen.findByLabelText('Unggah lampiran bukti')).toBeDisabled()

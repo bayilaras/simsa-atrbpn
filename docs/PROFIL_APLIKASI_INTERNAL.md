@@ -101,6 +101,16 @@ Gunakan pernyataan yang dapat dibuktikan, misalnya:
 
 Jangan menggunakan klaim “tersertifikasi”, “sepenuhnya patuh”, “resmi terintegrasi dengan SRIKANDI”, “ditandatangani elektronik oleh SIMSA”, “WORM aktif”, atau “terpantau SIEM” tanpa bukti dan persetujuan yang berlaku.
 
+## Referensi regulasi
+
+Naskah peraturan tidak disimpan di repositori. Gunakan sumber resmi berikut:
+
+- [Permen ATR/Kepala BPN Nomor 2 Tahun 2026 tentang Kearsipan](https://jdih.atrbpn.go.id/peraturan/detail/1220/peraturan-menteri-agraria-dan-tata-ruang-kepala-badan-pertanahan-nasional-nomor-2-tahun-2026) (JDIH ATR/BPN)
+- [Permen ATR/Kepala BPN Nomor 10 Tahun 2018 tentang Klasifikasi Arsip](https://peraturan.go.id/files/bn687-2018.pdf) (peraturan.go.id)
+- [Permen ATR/Kepala BPN Nomor 8 Tahun 2020 tentang Jadwal Retensi Arsip](https://jdih.atrbpn.go.id/peraturan/detail/7/peraturan-menteri-agraria-dan-tata-ruang-kepala-badan-pertanahan-nasional-nomor-8-tahun-2020) (JDIH ATR/BPN)
+
+Katalog klasifikasi dan JRA bawaan dibangun dari dokumen sumber Permen 10/2018 dan 8/2020; nama berkas, SHA-256, dan URL sumbernya tercatat di migrasi `backend/src/db/migrations/0016_versioned_regulatory_rules.sql`.
+
 ## Acuan dokumen
 
 - [Ringkasan Implementasi dan Verifikasi](RINGKASAN_IMPLEMENTASI_DAN_VERIFIKASI.md)

@@ -10,18 +10,6 @@ const router = Router();
 // Apply auth middleware to all routes
 router.use(authMiddleware);
 
-/**
- * @swagger
- * /api/mapping/klasifikasi-jra:
- *   get:
- *     summary: Get all thematic mappings between Klasifikasi and JRA
- *     tags: [Mapping Klasifikasi-JRA]
- *     security:
- *       - cookieAuth: []
- *     responses:
- *       200:
- *         description: List of all thematic mappings
- */
 router.get('/klasifikasi-jra', async (req: AuthRequest, res: Response, next) => {
     try {
         const data = await mappingService.getAllMappings();
@@ -32,43 +20,6 @@ router.get('/klasifikasi-jra', async (req: AuthRequest, res: Response, next) => 
     }
 });
 
-/**
- * @swagger
- * /api/mapping/suggest-jra/{klasifikasiKode}:
- *   get:
- *     summary: Get suggested JRA items for a given Klasifikasi kode
- *     description: |
- *       Finds the thematic mapping for the given klasifikasi kode's prefix,
- *       then returns all JRA items that belong to the mapped JRA category.
- *       For example, 'KU.01.02' maps to prefix 'KU' → theme 'Keuangan' → JRA prefix 'F.I',
- *       returning all JRA items starting with 'F.I'.
- *     tags: [Mapping Klasifikasi-JRA]
- *     security:
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: klasifikasiKode
- *         required: true
- *         schema:
- *           type: string
- *         description: Klasifikasi kode (e.g., KU.01.02, HK, TR.01)
- *     responses:
- *       200:
- *         description: Mapping info and suggested JRA items
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 mappings:
- *                   type: array
- *                   description: The thematic mapping(s) that matched
- *                 suggestedJRA:
- *                   type: array
- *                   description: JRA items in the mapped category
- *       400:
- *         description: klasifikasiKode is required
- */
 router.get('/suggest-jra/:klasifikasiKode', async (req: AuthRequest, res: Response, next) => {
     try {
         const klasifikasiKode = req.params.klasifikasiKode as string;

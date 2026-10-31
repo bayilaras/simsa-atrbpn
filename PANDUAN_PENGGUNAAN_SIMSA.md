@@ -3,7 +3,7 @@
 **Sistem Informasi Manajemen Surat & Arsip**
 *Kementerian ATR/BPN — Dirjen PTPP*
 
-> Versi 1.2.0 (BETA) | Terakhir diperbarui: 2 Maret 2026
+> Versi 1.2.0 (BETA) | Terakhir diperbarui: 30 Oktober 2026
 
 ---
 
@@ -49,7 +49,7 @@
 
 ## 1. Pendahuluan
 
-**SIMSA** (Sistem Informasi Manajemen Surat & Arsip) adalah aplikasi web yang dirancang untuk mengelola surat masuk, surat keluar, dan arsip di lingkungan **Kementerian Agraria dan Tata Ruang / Badan Pertanahan Nasional (ATR/BPN)**, khususnya **Direktorat Jenderal Penataan Pertanahan dan Pemanfaatan Pertanahan (PTPP)**.
+**SIMSA** (Sistem Informasi Manajemen Surat & Arsip) adalah aplikasi web yang dirancang untuk mengelola surat masuk, surat keluar, dan arsip di lingkungan **Kementerian Agraria dan Tata Ruang / Badan Pertanahan Nasional (ATR/BPN)**, khususnya **Direktorat Jenderal Pengadaan Tanah dan Pengembangan Pertanahan (PTPP)**.
 
 ### Fitur Utama SIMSA
 
@@ -291,7 +291,7 @@ graph LR
     D1 --> D1a[Arsip Surat Masuk]
     D1 --> D1b[Arsip Surat Keluar]
     D --> D2["Pemberkasan Dosir 🔒"]
-    D --> D3["Jadwal Retensi 🔒"]
+    D --> D3["Jadwal Retensi 🔒🔒"]
     D --> D4["Manajemen Retensi 🔒"]
     D --> D5["Penyusutan 🔒"]
 
@@ -302,25 +302,24 @@ graph LR
     E --> E5["Arsip Terjaga 🔒"]
 
     F --> F1["Arsip Elektronik 🔒"]
-    F --> F2["Autentikasi 🔒"]
+    F --> F2["Autentikasi 🔒🔒"]
     F --> F3["Tunjuk Silang 🔒"]
 
     G --> G1[Laporan]
-    G --> G2["Audit Log 🔒"]
+    G --> G2["Audit Log 🔒🔒"]
     G --> G3["User Management 🔒🔒"]
-    G --> G4["Master Data 🔒"]
+    G --> G4["Master Data 🔒🔒"]
 
     H --> H1["Settings ⚙️"]
     H --> H2["📖 Panduan"]
 ```
 
 > [!NOTE]
-> - Menu dengan 🔒 hanya tersedia untuk **Admin** (Admin Dirjen / Admin Sesditjen) atau **Super Admin**.
+> - Menu dengan 🔒 hanya tersedia untuk **Admin Unit Kerja** atau **Super Admin**.
 > - Menu dengan 🔒🔒 hanya tersedia untuk **Super Admin** saja.
-> - **Settings** (⚙️) hanya muncul untuk **Super Admin**.
-> - Link **📖 Panduan** mengarah ke dokumentasi online (GitBook) dan tersedia untuk semua pengguna.
-> - **Staff** hanya melihat: Dashboard, Surat Masuk/Keluar (read-only), Arsip Aktif (read-only), dan Laporan.
-> - **Auditor** melihat: Dashboard dan Audit Log.
+> - **Settings** (⚙️) tersedia untuk semua pengguna; tab Unit Kerja dan Template hanya muncul untuk **Super Admin**.
+> - Link **📖 Panduan** membuka panduan di dalam aplikasi (halaman `/panduan`) dan tersedia untuk semua pengguna.
+> - Akun lama berperan **Staff** atau **Auditor** hanya dapat melihat data unit kerjanya; peran ini tidak lagi diberikan untuk akun baru.
 
 ---
 
@@ -573,7 +572,7 @@ Untuk berkas naskah surat masuk–keluar gunakan Berkas Rangkaian (5.5); Dosir t
 
 ### 6.3 Jadwal Retensi Arsip (JRA)
 
-Jadwal Retensi Arsip menentukan berapa lama arsip harus disimpan sebelum dimusnahkan atau diperpanjang.
+Jadwal Retensi Arsip menentukan berapa lama arsip harus disimpan sebelum dipindahkan, dimusnahkan, atau diserahkan.
 
 1. Klik **Jadwal Retensi** pada sidebar.
 2. Tabel menampilkan daftar JRA dengan kolom:
@@ -582,10 +581,10 @@ Jadwal Retensi Arsip menentukan berapa lama arsip harus disimpan sebelum dimusna
    - Masa Aktif (tahun)
    - Masa Inaktif (tahun)
    - Keterangan
-3. Admin dapat **menambah**, **mengedit**, atau **menghapus** jadwal retensi.
+3. Super Admin dapat **menambah**, **mengedit**, atau **menghapus** jadwal retensi.
 
 > [!IMPORTANT]
-> Hanya pengguna dengan role **Admin** yang dapat memodifikasi Jadwal Retensi Arsip.
+> Hanya **Super Admin** yang dapat memodifikasi Jadwal Retensi Arsip.
 
 ---
 
@@ -608,9 +607,9 @@ Penyusutan adalah proses mengurangi volume arsip yang telah melampaui masa reten
 flowchart LR
     A[Arsip Melampaui\nMasa Retensi] --> B[Klik Menu\n Penyusutan]
     B --> C{Tindakan}
+    C -->|Pindah| F[Pemindahan ke\nUnit Kearsipan]
     C -->|Musnah| D[Proses\nPemusnahan]
     C -->|Serah| E[Serah ke\nLembaga Arsip]
-    C -->|Perpanjang| F[Perpanjang\nMasa Retensi]
 ```
 
 1. Klik **Penyusutan** pada sidebar.
@@ -657,7 +656,7 @@ Mengelola informasi lokasi fisik penyimpanan arsip.
 3. Admin dapat **menambah**, **mengedit**, atau **menghapus** lokasi.
 
 > [!NOTE]
-> Seluruh grup menu **Layanan & Fisik** hanya tersedia untuk pengguna dengan role **Admin** (Admin Dirjen, Admin Sesditjen) atau **Super Admin**.
+> Grup menu **Layanan & Fisik** tersedia untuk **Admin Unit Kerja** dan **Super Admin**, sesuai unit kerja yang ditetapkan.
 
 ---
 
@@ -742,7 +741,7 @@ Mencatat semua aktivitas pengguna dalam sistem untuk keperluan audit dan keamana
 3. Gunakan filter untuk mempersempit pencarian log.
 
 > [!NOTE]
-> Audit Log hanya dapat diakses oleh **Admin** dan **Auditor**.
+> Audit Log hanya dapat diakses oleh **Super Admin**.
 
 ---
 
@@ -760,7 +759,7 @@ Mengelola akun pengguna sistem SIMSA.
 |-------|-----------|-------|
 | Email | Alamat email pengguna (untuk login Google) | ✅ |
 | Nama Lengkap | Nama lengkap pengguna | ✅ |
-| Role | Super Admin, Admin Dirjen, Admin Sesditjen, User | ✅ |
+| Role | Super Admin atau Admin Unit Kerja | ✅ |
 | Unit Kerja | Pilih unit kerja dari dropdown | ❌ |
 | Jabatan | Jabatan/posisi (muncul di dokumen resmi) | ❌ |
 | NIP | Nomor Induk Pegawai (untuk tanda tangan) | ❌ |
@@ -803,9 +802,9 @@ Mengelola data referensi utama yang digunakan di seluruh sistem.
 Pengaturan sistem SIMSA, termasuk profil pengguna, unit kerja, dan template surat.
 
 > [!IMPORTANT]
-> Menu **Settings** (⚙️) di sidebar **hanya muncul untuk Super Admin**. Pengguna lain dapat mengakses halaman Settings melalui menu **Profil Saya** / **Pengaturan** di dropdown user di header.
+> Menu **Pengaturan** (⚙️) di sidebar tersedia untuk semua pengguna. Tab yang muncul bergantung pada role: tab Unit Kerja dan Template hanya untuk **Super Admin**.
 
-1. Klik **Settings** (⚙️) di bagian bawah sidebar (Super Admin), atau klik avatar Anda di header lalu pilih **Pengaturan**.
+1. Klik **Pengaturan** (⚙️) di sidebar, atau klik avatar Anda di header lalu pilih **Pengaturan**.
 
 #### Tab Profil
 
@@ -840,33 +839,37 @@ Tab ini tersedia untuk **semua pengguna** yang login.
 
 SIMSA menggunakan sistem role-based access control (RBAC) untuk mengatur hak akses pengguna:
 
-| Fitur | Staff | Admin Dirjen | Admin Sesditjen | Super Admin | Auditor |
-|-------|:-----:|:------------:|:---------------:|:-----------:|:-------:|
-| Dashboard | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Surat Masuk/Keluar | 👁️ Lihat | ✅ | ✅ | ✅ | ❌ |
-| Distribusi | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Arsip Aktif | 👁️ Lihat | ✅ | ✅ | ✅ | ❌ |
-| Dosir | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Jadwal Retensi | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Manajemen Retensi | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Penyusutan | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Layanan Arsip | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Peminjaman | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Lokasi Simpan | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Arsip Vital | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Arsip Terjaga | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Arsip Elektronik | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Autentikasi Arsip | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Tunjuk Silang | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Klasifikasi Arsip | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Laporan | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Audit Log | ❌ | ✅ | ✅ | ✅ | ✅ |
-| User Management | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Settings (sidebar) | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Tab Pengawasan | ❌ | ❌ | ❌ | ✅ | ❌ |
+Super Admin hanya dapat menetapkan dua role untuk akun: **Super Admin** (seluruh unit) dan **Admin Unit Kerja** (satu unit kerja yang ditetapkan).
+
+| Fitur | Admin Unit Kerja | Super Admin |
+|-------|:----------------:|:-----------:|
+| Dashboard | ✅ | ✅ |
+| Surat Masuk/Keluar | ✅ | ✅ |
+| Distribusi | ✅ | ✅ |
+| Arsip Aktif | ✅ | ✅ |
+| Dosir | ✅ | ✅ |
+| Jadwal Retensi | ❌ | ✅ |
+| Manajemen Retensi | ✅ | ✅ |
+| Penyusutan | ✅ | ✅ |
+| Layanan Arsip | ✅ | ✅ |
+| Peminjaman | ✅ | ✅ |
+| Lokasi Simpan | ✅ | ✅ |
+| Arsip Vital | ✅ | ✅ |
+| Arsip Terjaga | ✅ | ✅ |
+| Arsip Elektronik | ✅ | ✅ |
+| Autentikasi Arsip | ❌ | ✅ |
+| Tunjuk Silang | ✅ | ✅ |
+| Klasifikasi Arsip | ❌ | ✅ |
+| Laporan | ✅ | ✅ |
+| Audit Log | ❌ | ✅ |
+| User Management | ❌ | ✅ |
+| Settings: tab Profil | ✅ | ✅ |
+| Settings: tab Unit Kerja dan Template | ❌ | ✅ |
+| Tab Pengawasan | ❌ | ✅ |
 
 > [!NOTE]
-> - 👁️ **Lihat** = Staff hanya bisa **melihat** data (read-only), **tidak bisa** menambah, mengedit, atau menghapus.
+> - Admin Unit Kerja hanya melihat dan mengelola data unit kerjanya.
+> - Akun lama berperan Admin Dirjen atau Admin Sesditjen tetap terbatas pada unit semulanya. Akun lama Staff dan Auditor hanya dapat melihat data unitnya dan tidak mendapat kewenangan menulis.
 > - Semua pengguna dapat mengakses **Profil** melalui dropdown user di header.
 
 ### Cara Kerja Filter Data per Unit Kerja
@@ -875,10 +878,7 @@ SIMSA menggunakan sistem role-based access control (RBAC) untuk mengatur hak aks
 flowchart TD
     A[User Login] --> B{Role?}
     B -->|Super Admin| C[Lihat Semua Unit Kerja\nDapat memilih filter unit]
-    B -->|Admin Dirjen| D[Hanya lihat data\nDirektorat Jenderal]
-    B -->|Admin Sesditjen| E[Hanya lihat data\nSekretariat Dirjen]
-    B -->|Staff| F[Hanya lihat data\nunit kerja sendiri]
-    B -->|Auditor| G[Hanya lihat data\nunit kerja sendiri]
+    B -->|Admin Unit Kerja| D[Hanya lihat data\nunit kerja yang ditetapkan]
 ```
 
 ---
@@ -913,8 +913,7 @@ flowchart TD
 flowchart TD
     A["📝 Buat Surat Keluar"] --> B["✏️ Isi Data & Upload Lampiran"]
     B --> C["💾 Simpan Surat Keluar"]
-    C --> D["📤 Kirim ke Penerima"]
-    D --> E["🗂️ Arsipkan Surat Keluar"]
+    C --> E["🗂️ Arsipkan Surat Keluar"]
     E --> F["⏱️ Masa Retensi Berjalan"]
 ```
 
@@ -995,14 +994,14 @@ Klik **avatar** dan **nama Anda** di pojok kanan atas header untuk membuka dropd
 |------|------------|
 | **Profil Saya** | Buka halaman Settings tab Profil |
 | **Pengaturan** | Buka halaman Settings |
-| **Panduan Pengguna** | Buka dokumentasi online (GitBook) di tab baru |
+| **Panduan Pengguna** | Buka panduan di dalam aplikasi (halaman `/panduan`) |
 | **Keluar** | Logout dari sistem |
 
 ---
 
 ### 11.5 Link Panduan di Sidebar
 
-Di bagian bawah sidebar, terdapat link **📖 Panduan** yang mengarah ke dokumentasi online SIMSA di GitBook (`https://bayilaras.gitbook.io/panduan-simsa`). Link ini tersedia untuk **semua pengguna**.
+Di bagian bawah sidebar, terdapat link **📖 Panduan** yang membuka panduan di dalam aplikasi (halaman `/panduan`). Link ini tersedia untuk **semua pengguna**.
 
 ---
 

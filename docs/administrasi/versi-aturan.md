@@ -11,7 +11,7 @@ Pemetaan tematik klasifikasi ke JRA hanya merupakan **saran pencarian**. Pemetaa
 
 ## Aktivasi awal pada deployment
 
-Perintah `seed:all`, `seed:klasifikasi`, dan `seed:jra` hanya boleh mengaktifkan baseline otomatis dalam development/test lokal. Perintah tersebut ditolak sebelum mengambil lock atau menulis data jika `NODE_ENV=production`, `K_SERVICE`, atau `VERCEL` terpasang; mode selain development/test juga ditolak. Mengubah `NODE_ENV` menjadi development pada Cloud Run atau Vercel tidak membuka pengecualian ini.
+Perintah `seed:all`, `seed:klasifikasi`, dan `seed:jra` hanya boleh mengaktifkan baseline otomatis dalam development/test lokal. Perintah tersebut ditolak sebelum mengambil lock atau menulis data jika `NODE_ENV=production` atau `VERCEL` terpasang; mode selain development/test juga ditolak. Mengubah `NODE_ENV` menjadi development pada Vercel tidak membuka pengecualian ini.
 
 Pada deployment baru, gunakan draft awal yang disediakan migrasi melalui **Master Data > Versi Aturan**. Impor butir dari manifest JSON yang telah diperiksa, unggah PDF sumber privat, verifikasi manifest kelengkapan, buat laporan dampak, lalu jalankan **Ajukan → Telaah → Setujui → Aktifkan** dengan aktor berwenang. Tahap dan bukti yang sama berlaku untuk baseline maupun edisi berikutnya: aktor verifikasi, locator privat, ukuran PDF, dan ketersediaan objek diperiksa sebelum publikasi. Hash atau nama regulasi dalam asset seed bukan persetujuan hukum.
 

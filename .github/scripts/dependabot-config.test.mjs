@@ -38,7 +38,7 @@ const gatedProjects = () => [...new Set([...read('.github/workflows/ci.yml')
 test('setiap proyek npm di gerbang audit dicakup Dependabot', () => {
     const updates = parseUpdates(read('.github/dependabot.yml'));
     const npmDirectories = updates.filter((u) => u.ecosystem === 'npm').map((u) => u.directory).sort();
-    assert.deepEqual(gatedProjects(), ['backend', 'docs-site', 'frontend', 'spark']);
+    assert.deepEqual(gatedProjects(), ['backend', 'docs-site', 'frontend']);
     assert.deepEqual(npmDirectories, gatedProjects().map((project) => `/${project}`));
 });
 

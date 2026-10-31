@@ -124,11 +124,6 @@ export class AutentikasiService {
                     changes: { after: safeResult },
                 }, tx);
 
-                // This update is committed atomically with the domain row. If
-                // anything above rolls back, the pre-write reservation stays
-                // eligible for the isolated final-cleanup principal.
-                await durableFinalObjectService.markReferenced(tx, finalWrite);
-
                 return safeResult;
             });
         } catch (error) {

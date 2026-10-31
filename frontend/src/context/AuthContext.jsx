@@ -106,13 +106,9 @@ export function AuthProvider({ children }) {
             setLoading(true);
             setError(null);
             setLogoutError(null);
-            const session = await authService.signInWithGoogle();
-            if (session?.user) {
-                // Firebase popup flow exchanges the ID token immediately. The
-                // legacy Better Auth flow returns no user and keeps redirecting.
-                setUser(normalizeAuthenticatedUserUnitScope(session.user));
-                setLoading(false);
-            }
+            // Better Auth answers with a redirect to Google; loading stays on
+            // until the browser leaves the page.
+            await authService.signInWithGoogle();
         } catch (err) {
             console.error('Sign in failed:', err);
             setError(err.message || 'Login failed');
@@ -180,12 +176,6 @@ export function AuthProvider({ children }) {
         }
     }
 
-    async function revokeSessions() {
-        await authService.revokeSessions();
-        setUser(null);
-        setIdleWarning(false);
-    }
-
     // Dismiss the idle warning and reset timer
     function dismissIdleWarning() {
         setIdleWarning(false);
@@ -216,7 +206,6 @@ export function AuthProvider({ children }) {
         signInWithEmail,
         signUp,
         signOut,
-        revokeSessions,
         checkAuth,
         hasRole,
         canWrite,

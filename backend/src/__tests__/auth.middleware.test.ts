@@ -25,7 +25,7 @@ vi.mock('../db/schema', () => ({
 }));
 
 // Import after mocking
-const { authMiddleware, optionalAuthMiddleware } = await import('../middlewares/auth.middleware');
+const { authMiddleware } = await import('../middlewares/auth.middleware');
 const { auth } = await import('../config/auth');
 const { db } = await import('../config/database');
 
@@ -209,85 +209,5 @@ describe('authMiddleware', () => {
         expect(res.status).toHaveBeenCalledWith(403);
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Unit kerja required' }));
         expect(mockNext).not.toHaveBeenCalled();
-    });
-});
-
-describe('optionalAuthMiddleware', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-    });
-
-    it('should attach user when session exists', async () => {
-        // Arrange
-        (auth.api.getSession as any).mockResolvedValue({ user: { id: 'user-1' } });
-        (db.select as any).mockReturnValue({
-            from: vi.fn().mockReturnValue({
-                where: vi.fn().mockReturnValue({
-                    limit: vi.fn().mockResolvedValue([mockUser]),
-                }),
-            }),
-        });
-
-        const req = createMockReq();
-        const res = createMockRes();
-
-        // Act
-        await optionalAuthMiddleware(req, res, mockNext);
-
-        // Assert
-        expect(mockNext).toHaveBeenCalled();
-        expect(req.user).toEqual({ ...mockUser, unitKerjaId: 'ditjen' });
-    });
-
-    it('should call next() without user when no session exists', async () => {
-        // Arrange
-        (auth.api.getSession as any).mockResolvedValue(null);
-
-        const req = createMockReq();
-        const res = createMockRes();
-
-        // Act
-        await optionalAuthMiddleware(req, res, mockNext);
-
-        // Assert
-        expect(mockNext).toHaveBeenCalled();
-        expect(req.user).toBeUndefined();
-    });
-
-    it('does not attach an incomplete archival role through optional auth', async () => {
-        (auth.api.getSession as any).mockResolvedValue({ user: { id: 'user-1' } });
-        (db.select as any).mockReturnValue({
-            from: vi.fn().mockReturnValue({
-                where: vi.fn().mockReturnValue({
-                    limit: vi.fn().mockResolvedValue([{
-                        ...mockUser,
-                        role: 'auditor',
-                        unitKerjaId: null,
-                    }]),
-                }),
-            }),
-        });
-
-        const req = createMockReq();
-        const res = createMockRes();
-        await optionalAuthMiddleware(req, res, mockNext);
-
-        expect(mockNext).toHaveBeenCalledOnce();
-        expect(req.user).toBeUndefined();
-    });
-
-    it('should silently continue on errors', async () => {
-        // Arrange
-        (auth.api.getSession as any).mockRejectedValue(new Error('Network timeout'));
-
-        const req = createMockReq();
-        const res = createMockRes();
-
-        // Act
-        await optionalAuthMiddleware(req, res, mockNext);
-
-        // Assert
-        expect(mockNext).toHaveBeenCalled();
-        expect(req.user).toBeUndefined();
     });
 });

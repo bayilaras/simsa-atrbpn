@@ -6,7 +6,6 @@ if (!testDatabaseUrl) {
     throw new Error('TEST_POSTGRES_URL must point to an isolated PostgreSQL test database.');
 }
 process.env.DATABASE_URL ||= testDatabaseUrl;
-const { STORAGE_EVENT_READINESS_SQL } = await import('../src/events/storage-finalized.app.js');
 const { DATABASE_SCHEMA_READINESS_SQL } = await import('../src/services/readiness.service.js');
 const { pool: applicationPool } = await import('../src/config/database.js');
 
@@ -344,7 +343,7 @@ describe('least-privilege PostgreSQL runtime grants', () => {
         expect(unexpected).toEqual([]);
     });
 
-    it('makes API and event readiness fail closed on non-exact membership closure', async () => {
+    it('makes API readiness fail closed on non-exact membership closure', async () => {
         const rogueRole = 'simsa_ci_readiness_rogue';
         let rogueRoleCreated = false;
         try {
@@ -356,18 +355,11 @@ describe('least-privilege PostgreSQL runtime grants', () => {
             expect(apiReadiness.schema_ready).toBe(true);
             await sql.unsafe('RESET ROLE');
 
-            await sql.unsafe(`SET ROLE ${quoteIdentifier(principals.event)}`);
-            const [eventReadiness] = await sql.unsafe<{ ready: boolean }[]>(
-                STORAGE_EVENT_READINESS_SQL,
-            );
-            expect(eventReadiness.ready).toBe(true);
-            await sql.unsafe('RESET ROLE');
-
             await sql.unsafe(`CREATE ROLE ${quoteIdentifier(rogueRole)} NOLOGIN`);
             rogueRoleCreated = true;
             await sql.unsafe(
-                `GRANT ${quoteIdentifier(rogueRole)} TO ${quoteIdentifier(principals.api)}, `
-                + `${quoteIdentifier(principals.event)} WITH INHERIT FALSE, SET TRUE`,
+                `GRANT ${quoteIdentifier(rogueRole)} TO ${quoteIdentifier(principals.api)} `
+                + 'WITH INHERIT FALSE, SET TRUE',
             );
 
             await sql.unsafe(`SET ROLE ${quoteIdentifier(principals.api)}`);
@@ -375,19 +367,11 @@ describe('least-privilege PostgreSQL runtime grants', () => {
                 DATABASE_SCHEMA_READINESS_SQL,
             );
             expect(driftedApiReadiness.schema_ready).toBe(false);
-            await sql.unsafe('RESET ROLE');
-
-            await sql.unsafe(`SET ROLE ${quoteIdentifier(principals.event)}`);
-            const [driftedEventReadiness] = await sql.unsafe<{ ready: boolean }[]>(
-                STORAGE_EVENT_READINESS_SQL,
-            );
-            expect(driftedEventReadiness.ready).toBe(false);
         } finally {
             await sql.unsafe('RESET ROLE');
             if (rogueRoleCreated) {
                 await sql.unsafe(
-                    `REVOKE ${quoteIdentifier(rogueRole)} FROM ${quoteIdentifier(principals.api)}, `
-                    + quoteIdentifier(principals.event),
+                    `REVOKE ${quoteIdentifier(rogueRole)} FROM ${quoteIdentifier(principals.api)}`,
                 );
                 await sql.unsafe(`DROP ROLE ${quoteIdentifier(rogueRole)}`);
             }

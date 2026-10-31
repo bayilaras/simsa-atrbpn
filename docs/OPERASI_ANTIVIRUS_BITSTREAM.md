@@ -94,48 +94,14 @@ npm run build
 npm run start:malware-worker
 ```
 
-Repositori juga menyediakan definisi deployment siap-validasi di
-`deploy/workers/compose.yml`. Salin `deploy/workers/.env.example` menjadi `.env`,
-isi secret yang benar, lalu jalankan dari direktori tersebut. Untuk validasi
-source lokal/staging, tambahkan override build. Host memerlukan Docker Compose
-2.33.1 atau lebih baru karena routing egress memakai `gw_priority`:
-
-```sh
-docker compose --env-file .env -f compose.yml -f compose.local.yml up -d --build clamav malware-worker
-```
-
-Produksi harus memakai image yang diterbitkan workflow GitHub Actions **Publish
-Immutable Worker Image (No Deployment)** dari commit default branch yang telah
-lulus CI. Workflow memeriksa entrypoint, menerbitkan image GHCR, lalu menempelkan
-provenance BuildKit, SBOM SPDX, dan GitHub build provenance. Workflow itu tidak
-memiliki langkah deployment. Salin referensi immutable `name@sha256:digest` dari
-job summary; jangan memakai tag commit saja.
-
-Simpan digest yang sama di `.env`, ekspor nilainya pada shell deployment, dan
-jalankan preflight sebelum setiap pull/rollout. Preflight menolak tag mutable,
-registry implisit, digest cacat, Compose lama, atau manifest yang tidak dapat
-diakses. Ekspor shell juga memastikan Compose tidak memakai nilai `.env` yang
-stale:
-
-```sh
-export SIMSA_WORKER_IMAGE='ghcr.io/owner/repository-worker@sha256:<64-lowercase-hex>'
-sh ./preflight-worker-image.sh
-docker compose --env-file .env -f compose.yml config --quiet
-docker compose --env-file .env -f compose.yml pull clamav malware-worker
-docker compose --env-file .env -f compose.yml up -d --no-build clamav malware-worker
-```
-
-Definisi itu tidak memublikasikan port ClamAV ke host; hanya malware worker yang
-berbagi jaringan scanner internal, sedangkan ClamAV juga bergabung ke jaringan
-egress terpisah untuk pembaruan FreshClam. Compose menunggu
-health check IPv4 `clamd`, menyamakan `StreamMaxLength` dengan batas aplikasi,
-serta menjalankan worker Node 24 langsung dari artifact commit backend yang
-sama dengan API. Image produksi dipatok dengan digest dan seluruh container memiliki batas
-CPU/memori serta rotasi log; perubahan digest wajib disertai uji ulang.
+Repositori tidak menyediakan paket deployment worker persisten (Compose atau
+image). Instalasi persisten menyediakan proses dan jaringan privatnya sendiri:
+jangan membuka port ClamAV ke host publik, samakan `StreamMaxLength` dengan
+batas aplikasi, dan patok image ClamAV dengan digest seperti contoh di atas;
+perubahan digest wajib disertai uji ulang.
 
 Untuk produksi dengan ClamAV aktif, worker wajib diaktifkan dan API pada Vercel
-atau Cloud Run memakai runtime `external`. Token Blob diperlukan bagi provider
-Blob; GCS memakai konfigurasinya sendiri. Host scanner eksplisit dan pengakuan
+memakai runtime `external`. Token Blob wajib tersedia. Host scanner eksplisit dan pengakuan
 jaringan tepercaya wajib pada proses yang benar-benar membuka koneksi ClamAV.
 Worker terpisah juga menolak dijalankan sebagai fungsi Vercel.
 
@@ -158,18 +124,10 @@ setelah `MALWARE_SCAN_STALE_AFTER_MS`. Hasil dari worker lama ditolak dengan
 conditional update. Setiap transisi yang diterima ditulis atomik ke `audit_log`
 tanpa menyimpan locator object storage di bukti audit.
 
-Promosi objek GCS dari karantina ke bucket akhir dijalankan melalui child process
-`dist/workers/gcs-promotion.js`. Batas `MALWARE_SCAN_PROMOTION_TIMEOUT_MS` adalah
-45.000 ms secara default. Saat batas tercapai, parent menghentikan child dan
-menunggu proses tertutup sebelum melanjutkan. Environment child memuat kebutuhan
-GCS/ADC saja, tanpa kredensial database atau autentikasi aplikasi.
-
-Penghentian proses tidak membatalkan salinan yang mungkin sudah diterima GCS.
 Hasil yang belum pasti mempertahankan klaim `scanning`; pengambilan ulang klaim
-stale mengulangi tujuan deterministik dan memeriksa generation yang ada sebelum
-mencatat hasil. Jangan mengubahnya menjadi `clean` atau menghapus objek secara
+stale memeriksa ulang berkas sebelum mencatat hasil. Jangan mengubahnya menjadi `clean` atau menghapus objek secara
 manual. Default `MALWARE_SCAN_STALE_AFTER_MS` menjadi 300.000 ms; nilainya harus
-melampaui gabungan batas download, koneksi ClamAV, scan, dan promosi GCS.
+melampaui gabungan batas download, koneksi ClamAV, dan scan.
 
 Job CI `ClamAV Clean, EICAR & Restart Smoke` memakai implementasi `INSTREAM`
 aplikasi terhadap image ClamAV Linux yang dipatok digest, memverifikasi sampel

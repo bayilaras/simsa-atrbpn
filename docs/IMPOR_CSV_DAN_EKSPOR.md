@@ -7,7 +7,7 @@ memilih satu unit tujuan lalu membuka **Impor CSV/XLSX**. Berkas diperlakukan
 persis seperti impor Google Sheets: kolom dikenali dari judulnya (tabel pada
 [Impor Google Sheets](#impor-google-sheets)), sifat surat, identitas impor,
 pemeriksaan duplikat sekaligus, impor per bagian, dan audit memakai jalur yang
-sama (`importRows`). Fitur ini tidak ditampilkan pada demo metadata. Selama
+sama (`importRows`). Selama
 pemilih unit menunjukkan "Semua Unit Kerja", tombol impor tetap tampil tetapi
 nonaktif dengan petunjuk "Pilih unit kerja terlebih dahulu".
 

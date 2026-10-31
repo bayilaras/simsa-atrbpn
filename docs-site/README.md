@@ -1,41 +1,14 @@
-# Website
+# Situs panduan SIMSA
 
-This website is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
+Situs Docusaurus untuk panduan pengguna. Gunakan Node 24 dan npm:
 
-## Installation
-
-```bash
-yarn
+```sh
+npm ci          # pasang dependensi sesuai lockfile
+npm start       # server pengembangan lokal
+npm run build   # hasil statis di build/
 ```
 
-## Local Development
-
-```bash
-yarn start
-```
-
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
-
-## Build
-
-```bash
-yarn build
-```
-
-This command generates static content into the `build` directory and can be served using any static contents hosting service.
-
-## Deployment
-
-Using SSH:
-
-```bash
-USE_SSH=true yarn deploy
-```
-
-Not using SSH:
-
-```bash
-GIT_USER=<Your GitHub username> yarn deploy
-```
-
-If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+Halaman ada di `docs/` dan urutannya di `sidebars.js`. Konfigurasi Vercel
+untuk proyek `simsa-atrbpn` ada di `vercel.json` (akar repositori) dan
+`docs-site/vercel.json`; keduanya mematikan deploy otomatis dari `main`,
+jadi publikasi dilakukan manual.

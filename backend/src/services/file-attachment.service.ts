@@ -22,7 +22,6 @@ import {
 import { requireImmutableObjectGeneration } from '../storage/locator.js';
 import { inspectBitstream } from './bitstream-integrity.js';
 import { ARCHIVE_UPLOAD_MAX_BYTES, assertPdfUpload } from '../config/archive-upload.js';
-import { isLetterAttachmentType } from './file-release-policy.js';
 
 export const ATTACHMENT_PREFLIGHT_MAX_BYTES = ARCHIVE_UPLOAD_MAX_BYTES;
 export const ATTACHMENT_PREFLIGHT_TIMEOUT_MS = 30_000;
@@ -242,22 +241,6 @@ export class FileAttachmentService {
         return attachment;
     }
 
-    /**
-     * Compatibility helper for non-transactional callers. Transactional
-     * workflows must call prepareExisting before opening their transaction and
-     * insertPrepared from inside it.
-     */
-    async registerExisting(
-        data: RegisterExistingAttachmentData,
-        executor: Pick<typeof db, 'insert'> = db,
-    ): Promise<FileAttachment> {
-        const { entityId, entityType, ...source } = data;
-        const prepared = await this.prepareExisting(source, {
-            expectedPurpose: isLetterAttachmentType(entityType) ? entityType : undefined,
-        });
-        return this.insertPrepared({ ...prepared, entityId, entityType }, executor);
-    }
-
     // Upload file and create attachment record
     async create(
         data: CreateAttachmentData,
@@ -266,8 +249,7 @@ export class FileAttachmentService {
     ): Promise<FileAttachment & { hash: string | null }> {
         assertPdfUpload(data.fileName, data.mimeType, data.buffer.length, data.buffer);
 
-        // All server-received bytes enter quarantine on GCS. The Vercel Blob
-        // compatibility provider remains immutable and unchanged.
+        // Server-received bytes stay quarantined until a clean scan is recorded.
         const blobFile = await blobStorageService.uploadUntrustedFile({
             fileName: data.fileName,
             mimeType: data.mimeType,

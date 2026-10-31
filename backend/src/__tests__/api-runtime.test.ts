@@ -22,11 +22,9 @@ afterEach(() => {
 });
 
 describe('validated API runtime lifecycle', () => {
-    function setup(mode: 'full' | 'metadata-demo', runtime: 'embedded' | 'external') {
-        vi.stubEnv('SIMSA_APP_MODE', mode);
+    function setup(runtime: 'embedded' | 'external') {
         vi.stubEnv('NODE_ENV', 'test');
         vi.stubEnv('AUTH_PROVIDER', 'better-auth');
-        vi.stubEnv('K_SERVICE', '');
         vi.stubEnv('VERCEL', '');
         const server = { close: vi.fn() };
         const listen = vi.fn((_options, callback) => { callback(); return server; });
@@ -42,26 +40,18 @@ describe('validated API runtime lifecycle', () => {
         return { listen, server, worker, logger };
     }
 
-    it('keeps local metadata demo loopback-only and does not start the embedded worker', async () => {
-        const state = setup('metadata-demo', 'embedded');
+    it('preserves the full API listener and embedded worker startup', async () => {
+        const state = setup('embedded');
         await import('../api-runtime.js');
-        expect(state.listen).toHaveBeenCalledExactlyOnceWith({ port: 3015, host: '127.0.0.1' }, expect.any(Function));
-        expect(state.worker.start).not.toHaveBeenCalled();
-        expect(state.logger.info).toHaveBeenCalledWith('Metadata demo serves no file uploads and starts no background workers');
+        expect(state.listen).toHaveBeenCalledExactlyOnceWith({ port: 3015 }, expect.any(Function));
+        expect(state.worker.start).toHaveBeenCalledOnce();
         for (const event of managedEvents) {
             expect(process.listeners(event)).toHaveLength(priorListeners.get(event)!.length + 1);
         }
     });
 
-    it('preserves the full API listener and embedded worker startup', async () => {
-        const state = setup('full', 'embedded');
-        await import('../api-runtime.js');
-        expect(state.listen).toHaveBeenCalledExactlyOnceWith({ port: 3015 }, expect.any(Function));
-        expect(state.worker.start).toHaveBeenCalledOnce();
-    });
-
     it('starts full internal metadata without a background worker or keepalive poll', async () => {
-        const state = setup('full', 'embedded');
+        const state = setup('embedded');
         vi.stubEnv('OBJECT_STORAGE_PROVIDER', 'disabled');
         await import('../api-runtime.js');
         expect(state.listen).toHaveBeenCalledExactlyOnceWith({ port: 3015 }, expect.any(Function));
@@ -69,7 +59,7 @@ describe('validated API runtime lifecycle', () => {
     });
 
     it('preserves full mode external worker assignment', async () => {
-        const state = setup('full', 'external');
+        const state = setup('external');
         await import('../api-runtime.js');
         expect(state.listen).toHaveBeenCalledOnce();
         expect(state.worker.start).not.toHaveBeenCalled();

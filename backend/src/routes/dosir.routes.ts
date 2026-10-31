@@ -56,32 +56,6 @@ function resolveDosirCollectionUnitScope(
 // Validate all :id params as UUID
 router.param('id', uuidParamValidator);
 
-/**
- * @swagger
- * /api/dosir:
- *   get:
- *     summary: Get all dosir (case files)
- *     tags: [Dosir]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *           enum: [open, closed, archived]
- *       - in: query
- *         name: kategori
- *         schema:
- *           type: string
- *       - in: query
- *         name: search
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: List of dosir
- */
 router.get('/', async (req: AuthRequest, res: Response) => {
     try {
         const { status, kategori, search, limit, offset } = req.query;
@@ -105,18 +79,6 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     }
 });
 
-/**
- * @swagger
- * /api/dosir/stats:
- *   get:
- *     summary: Get dosir statistics
- *     tags: [Dosir]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Stats by status
- */
 router.get('/stats', async (req: AuthRequest, res: Response) => {
     try {
         const unitScope = resolveDosirCollectionUnitScope(req, res);
@@ -129,18 +91,6 @@ router.get('/stats', async (req: AuthRequest, res: Response) => {
     }
 });
 
-/**
- * @swagger
- * /api/dosir/generate-kode:
- *   get:
- *     summary: Generate next kode for new dosir
- *     tags: [Dosir]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Generated kode
- */
 router.get('/generate-kode', async (req: AuthRequest, res: Response) => {
     try {
         const unitKerjaId = resolveUnitKerjaId(req);
@@ -159,24 +109,6 @@ router.get('/generate-kode', async (req: AuthRequest, res: Response) => {
     }
 });
 
-/**
- * @swagger
- * /api/dosir/{id}:
- *   get:
- *     summary: Get single dosir with linked surat
- *     tags: [Dosir]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Dosir with surat
- */
 router.get('/:id', async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
@@ -205,24 +137,6 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
     }
 });
 
-/**
- * @swagger
- * /api/dosir/{id}/timeline:
- *   get:
- *     summary: Get chronological timeline of surat in dosir
- *     tags: [Dosir]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Chronological timeline
- */
 router.get('/:id/timeline', async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
@@ -244,38 +158,6 @@ router.get('/:id/timeline', async (req: AuthRequest, res: Response) => {
     }
 });
 
-/**
- * @swagger
- * /api/dosir:
- *   post:
- *     summary: Create new dosir
- *     tags: [Dosir]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - judul
- *             properties:
- *               kode:
- *                 type: string
- *               judul:
- *                 type: string
- *               deskripsi:
- *                 type: string
- *               kategori:
- *                 type: string
- *               tanggalMulai:
- *                 type: string
- *                 format: date
- *     responses:
- *       201:
- *         description: Created dosir
- */
 router.post('/', canWriteMiddleware(), validateBody(createDosirSchema), async (req: AuthRequest, res: Response) => {
     try {
         const user = req.user;
@@ -317,43 +199,6 @@ router.post('/', canWriteMiddleware(), validateBody(createDosirSchema), async (r
     }
 });
 
-/**
- * @swagger
- * /api/dosir/{id}:
- *   put:
- *     summary: Update dosir
- *     tags: [Dosir]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               judul:
- *                 type: string
- *               deskripsi:
- *                 type: string
- *               status:
- *                 type: string
- *               kategori:
- *                 type: string
- *               tanggalMulai:
- *                 type: string
- *               tanggalSelesai:
- *                 type: string
- *     responses:
- *       200:
- *         description: Updated dosir
- */
 router.put('/:id', canWriteMiddleware(), validateBody(updateDosirSchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const user = req.user;
@@ -378,24 +223,6 @@ router.put('/:id', canWriteMiddleware(), validateBody(updateDosirSchema), async 
     }
 });
 
-/**
- * @swagger
- * /api/dosir/{id}:
- *   delete:
- *     summary: Delete dosir
- *     tags: [Dosir]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Deleted
- */
 router.delete('/:id', sensitiveLimiter, canWriteMiddleware(), async (req: AuthRequest, res: Response) => {
     try {
         const user = req.user;
@@ -419,41 +246,6 @@ router.delete('/:id', sensitiveLimiter, canWriteMiddleware(), async (req: AuthRe
     }
 });
 
-/**
- * @swagger
- * /api/dosir/{id}/surat:
- *   post:
- *     summary: Add surat to dosir
- *     tags: [Dosir]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - type
- *               - suratId
- *             properties:
- *               type:
- *                 type: string
- *                 enum: [masuk, keluar]
- *               suratId:
- *                 type: string
- *               notes:
- *                 type: string
- *     responses:
- *       201:
- *         description: Surat linked
- */
 router.post('/:id/surat', canWriteMiddleware(), validateBody(linkSuratToDosirSchema), async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
@@ -504,35 +296,6 @@ router.post('/:id/surat', canWriteMiddleware(), validateBody(linkSuratToDosirSch
     }
 });
 
-/**
- * @swagger
- * /api/dosir/{id}/surat/{type}/{suratId}:
- *   delete:
- *     summary: Remove surat from dosir
- *     tags: [Dosir]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *       - in: path
- *         name: type
- *         required: true
- *         schema:
- *           type: string
- *           enum: [masuk, keluar]
- *       - in: path
- *         name: suratId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Surat unlinked
- */
 router.delete('/:id/surat/:type/:suratId', canWriteMiddleware(), async (req: AuthRequest, res: Response) => {
     try {
         const { id, type, suratId } = req.params;

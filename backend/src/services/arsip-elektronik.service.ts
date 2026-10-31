@@ -419,16 +419,6 @@ class ArsipElektronikService {
         });
     }
 
-    async findUnitKerjaId(id: string): Promise<string | null> {
-        const [result] = await db
-            .select({ unitKerjaId: arsip.unitKerjaId })
-            .from(arsipElektronik)
-            .innerJoin(arsip, eq(arsipElektronik.arsipId, arsip.id))
-            .where(eq(arsipElektronik.id, id))
-            .limit(1);
-        return result?.unitKerjaId || null;
-    }
-
     async findPendingVerification(
         page = 1,
         limit = 20,

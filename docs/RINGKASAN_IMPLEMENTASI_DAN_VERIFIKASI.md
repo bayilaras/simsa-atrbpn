@@ -1,10 +1,8 @@
 # Ringkasan Implementasi dan Verifikasi SIMSA
 
-> **Ringkasan historis.** Dokumen ini merekam baseline sebelum migrasi backend
-> Firebase/Google Cloud. Gunakan `docs/infra/firebase-gcp/README.md` dan runbook
-> GCP di root repository sebagai sumber operasional terbaru; referensi private
-> Vercel Blob atau hitungan migrasi/test di bawah bukan instruksi deployment
-> aktif.
+> **Ringkasan historis.** Hitungan migrasi/test di bawah bukan instruksi
+> deployment aktif. Sumber operasional terbaru: `docs/DEPLOY_VERCEL_NEON.md`,
+> `docs/RUNBOOK_KREDENSIAL_DATABASE.md`, dan `docs/OPERATIONS_RECOVERY.md`.
 
 ## Status
 
@@ -35,7 +33,7 @@ Lihat [Profil Aplikasi Internal SIMSA](PROFIL_APLIKASI_INTERNAL.md) untuk batas 
 - Unggah massal PDF kini persisten dan benar-benar mengekstrak teks: PDF bertingkat teks dibaca langsung, sedangkan PDF hasil pindai dirender per halaman lalu di-OCR dengan model Bahasa Indonesia dan Inggris. Batas ukuran, halaman, piksel, waktu, dan panjang hasil diterapkan; kegagalan OCR tidak menghasilkan metadata seolah-olah berhasil. Kapasitas OCR dibatasi lintas instance dengan lease PostgreSQL yang diperbarui berkala, download Blob dibatasi waktu, respons penuh bersifat retryable, dan hasil worker/pembatalan stale dipagari agar tidak dapat menimpa claim baru.
 - Lampiran direct-Blob surat masuk/keluar wajib lolos preotorisasi lease yang terikat URL, tujuan, pemilik, status, dan masa berlaku sebelum ada I/O jaringan. Unduhan dibatasi 10 MiB/30 detik lalu dihitung MIME, ukuran, serta SHA-256 sebelum transaksi dibuka. Claim lease, pencatatan attachment, surat, audit, dan outbox tetap atomik di dalam transaksi, sehingga lock penomoran tidak ditahan oleh jaringan Blob.
 - Readiness memeriksa database/private Blob dan heartbeat worker dengan tenggat terbatas; worker yang baru mulai, macet, stale, atau gagal mengakses antrean tidak dapat dilaporkan sehat. Kebijakan CORS hanya ditetapkan oleh Express agar allow-list dinamis tidak ditimpa header statis platform.
-- Tanda tangan elektronik dikeluarkan dari ruang lingkup produk. Endpoint legacy tetap gagal-tertutup dan `MOCK-SIG` selalu dinyatakan tidak sah.
+- Tanda tangan elektronik dikeluarkan dari ruang lingkup produk. Endpoint legacy `/api/approval/sign` sudah dihapus dan `MOCK-SIG` lama tidak pernah dianggap sah.
 - Kredensial utilitas test dipindahkan ke environment dan destructive tester reset membutuhkan guard eksplisit.
 - Dependency utama diperbarui, lockfile `npm ci` diselaraskan, dan CI membangun backend/frontend/situs dokumentasi serta memblokir audit aplikasi berlevel tinggi/kritis.
 

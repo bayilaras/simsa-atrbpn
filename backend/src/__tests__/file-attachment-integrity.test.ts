@@ -10,7 +10,7 @@ import { fileAttachmentService } from '../services/file-attachment.service.js';
 const content = Buffer.from('original');
 const record = {
     id: '00000000-0000-4000-8000-000000000001',
-    fileUrl: 'gs://private/record.pdf', driveFileId: null, objectGeneration: '12',
+    fileUrl: 'https://store.private.blob.vercel-storage.com/record.pdf', driveFileId: null, objectGeneration: null,
     storageAccess: 'private', sizeBytes: content.length,
     integrityStatus: 'verified', malwareScanStatus: 'clean',
     sha256: createHash('sha256').update(content).digest('hex'),

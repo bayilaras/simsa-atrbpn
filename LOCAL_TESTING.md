@@ -1,7 +1,7 @@
 # Pengujian lokal tanpa resource cloud
 
-Pengujian lokal tidak mengaktifkan billing, mengubah paket Firebase, melakukan
-deployment, atau membuktikan kesiapan Production. Gunakan data sintetis dan
+Pengujian lokal tidak mengaktifkan billing, melakukan deployment, atau
+membuktikan kesiapan Production. Gunakan data sintetis dan
 database terpisah; jangan memakai credential atau salinan arsip Production.
 
 ## Pemeriksaan kode
@@ -35,7 +35,11 @@ Jalankan hanya pada database disposable, bukan target yang dipakai pengguna.
    kosong milik pengujian. Verifikasi host, port, database, serta data directory
    sebelum bootstrap. Jangan memodifikasi layanan database existing.
 2. Ikuti pemisahan grant-admin, migrator, maintenance, runtime, dan backup-reader
-   dalam `GCP_DATABASE_MAINTENANCE.md`, dengan identitas lokal tersendiri.
+   pada langkah bootstrap job Backend Tests di `.github/workflows/ci.yml`
+   (`backend/src/db/grants/0001_bootstrap_cloud_sql_roles.sql`, lalu
+   `npm run db:roles:bootstrap`), dengan identitas lokal tersendiri. Pemetaan
+   peran yang sama untuk Neon ada di `scripts/neon-database-policy.mjs` dan
+   [runbook kredensial database](docs/RUNBOOK_KREDENSIAL_DATABASE.md).
    Bootstrap schema/role sebelum `npm run db:migrate`; jangan memakai `db:push`.
    Setelah bootstrap final dan grant convergence, jalankan migrasi lagi: harus
    `0 applied`, dengan database `CREATE` migrator tetap ditolak.
@@ -62,20 +66,21 @@ Jalankan hanya pada database disposable, bukan target yang dipakai pengguna.
 Tanpa private object storage yang benar-benar dikonfigurasi, pengujian surat
 dengan link placeholder hanya membuktikan metadata, bukan preservasi berkas.
 Jangan membuat lease/hasil scan palsu atau menurunkan pemeriksaan keamanan agar
-upload terlihat berhasil. Build dengan nilai Firebase dummy hanya membuktikan
-kompilasi, bukan login/App Check/GCS live.
+upload terlihat berhasil.
 
 ClamAV native dapat menguji protokol INSTREAM (clean, EICAR, unavailable, dan
 restart). Worker nyata harus membuktikan heartbeat `running -> degraded ->
 running`; tes antrean kosong tidak menggantikan alur upload sampai claim/final.
-Hasil Windows native juga tidak menggantikan pengujian Linux Compose.
+Hasil Windows native juga tidak menggantikan pengujian Linux.
 
-Backup drill lokal harus memakai backup-reader, snapshot konsisten, artifact
-terenkripsi, key terpisah ber-ACL, serta instance restore baru. Bandingkan jumlah
-dan fingerprint semua tabel pada snapshot yang sama, periksa jurnal migrasi dan
-grant setelah restore, serta buktikan ciphertext yang diubah ditolak. Simpan
-versi tool, hash artifact, dan evidence tanpa credential. Drill satu workstation
-tidak menggantikan independent operator, backup Production, atau recovery GCP.
+Uji backup harus memakai backup-reader, snapshot konsisten, artifact
+terenkripsi, key terpisah ber-ACL, serta instance restore baru, seperti
+`scripts/neon-backup.mjs` ([backup Neon](docs/BACKUP_NEON.md)) dan
+`scripts/operations-recovery.mjs` ([cadangan dan pemulihan](docs/OPERATIONS_RECOVERY.md)).
+Bandingkan jumlah dan fingerprint semua tabel pada snapshot yang sama, periksa
+jurnal migrasi dan grant setelah restore, serta buktikan ciphertext yang diubah
+ditolak. Simpan versi tool, hash artifact, dan evidence tanpa credential. Drill
+satu workstation tidak menggantikan independent operator atau backup Production.
 
 Hentikan proses uji milik sendiri secara graceful setelah selesai. Simpan data
 fixture dan evidence yang diperlukan, tetapi jangan commit `.env`, password,

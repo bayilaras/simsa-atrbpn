@@ -1,7 +1,7 @@
 /** Automatic baseline activation is only a local development/test convenience. */
 export function allowsLocalRegulatoryBootstrap(source: NodeJS.ProcessEnv = process.env): boolean {
     const mode = source.NODE_ENV || 'development';
-    return ['development', 'test'].includes(mode) && !source.K_SERVICE && !source.VERCEL;
+    return ['development', 'test'].includes(mode) && !source.VERCEL;
 }
 
 export function assertLocalRegulatorySeed(): void {

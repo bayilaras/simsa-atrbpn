@@ -2,7 +2,6 @@ import type { RangkaianAsal, RangkaianStatus } from '../db/schema/rangkaian-sura
 
 /** Himpunan tunggal (spesifikasi §8) untuk auto-selesai DAN syarat berkaskan. */
 export const BLOCKING_APPROVAL_STATUSES = ['draft', 'pending', 'rejected'] as const;
-export const OPEN_DISPOSISI_STATUSES = ['sent', 'received'] as const;
 
 export type RangkaianStatusFacts = {
     current: RangkaianStatus;

@@ -119,17 +119,6 @@ export const PERMISSIONS: Record<Module, Partial<Record<Action, Role[]>>> = {
     },
 };
 
-// Role hierarchy - higher roles inherit permissions from lower roles
-export const ROLE_HIERARCHY: Record<Role, number> = {
-    'super_admin': 100,
-    'admin_unit': 80,
-    'admin_dirjen': 80,
-    'admin_sesditjen': 60,
-    'staff': 30,
-    'auditor': 40,
-    'user': 10, // Lowest — no access
-};
-
 // Unit kerja access by role (uses actual DB IDs from unit_kerja table)
 export const UNIT_KERJA_ACCESS: Record<Role, string[] | '*'> = {
     'super_admin': '*', // Access to all units
@@ -174,18 +163,6 @@ export function canAccessUnit(role: Role, userUnitKerjaId: string | null, target
 
     // admin_dirjen / admin_sesditjen: check against their allowed units
     return Array.isArray(accessConfig) && accessConfig.includes(targetUnitKerjaId);
-}
-
-/**
- * Get all allowed actions for a role on a module
- */
-export function getAllowedActions(role: Role, module: Module): Action[] {
-    const modulePerms = PERMISSIONS[module];
-    if (!modulePerms) return [];
-
-    return (Object.entries(modulePerms) as [Action, Role[]][])
-        .filter(([_, roles]) => roles.includes(role))
-        .map(([action]) => action);
 }
 
 /**

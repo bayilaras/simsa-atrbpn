@@ -25,27 +25,6 @@ function resolveValidatedNotificationUnit(req: AuthRequest, res: Response): stri
 // All routes require authentication
 router.use(authMiddleware);
 
-/**
- * @swagger
- * /api/notifications:
- *   get:
- *     summary: Get all notifications
- *     tags: [Notifications]
- *     parameters:
- *       - in: query
- *         name: unitKerjaId
- *         required: false
- *         schema:
- *           type: string
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           default: 10
- *     responses:
- *       200:
- *         description: List of notifications with counts
- */
 router.get('/', async (req: AuthRequest, res: Response) => {
     try {
         const { limit } = req.query;
@@ -80,22 +59,6 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     }
 });
 
-/**
- * @swagger
- * /api/notifications/count:
- *   get:
- *     summary: Get notification count
- *     tags: [Notifications]
- *     parameters:
- *       - in: query
- *         name: unitKerjaId
- *         required: false
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Notification counts by type
- */
 router.get('/count', async (req: AuthRequest, res: Response) => {
     try {
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
@@ -125,13 +88,6 @@ router.get('/count', async (req: AuthRequest, res: Response) => {
     }
 });
 
-/**
- * @swagger
- * /api/notifications/surat-masuk:
- *   get:
- *     summary: Get pending surat masuk notifications
- *     tags: [Notifications]
- */
 router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
     try {
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
@@ -159,13 +115,6 @@ router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
     }
 });
 
-/**
- * @swagger
- * /api/notifications/arsip:
- *   get:
- *     summary: Get expiring archive notifications
- *     tags: [Notifications]
- */
 router.get('/arsip', async (req: AuthRequest, res: Response) => {
     try {
         const { daysAhead } = req.query;
@@ -195,22 +144,6 @@ router.get('/arsip', async (req: AuthRequest, res: Response) => {
     }
 });
 
-/**
- * @swagger
- * /api/notifications/:id/read:
- *   patch:
- *     summary: Mark notification as read
- *     tags: [Notifications]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Notification marked as read
- */
 router.patch(
     '/:id/read',
     validateQuery(notificationUnitScopeQuerySchema),
@@ -249,27 +182,6 @@ router.patch(
     },
 );
 
-/**
- * @swagger
- * /api/notifications/read-all:
- *   patch:
- *     summary: Mark all notifications as read
- *     tags: [Notifications]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               notificationIds:
- *                 type: array
- *                 items:
- *                   type: string
- *     responses:
- *       200:
- *         description: All notifications marked as read
- */
 router.patch(
     '/read-all',
     validateQuery(notificationUnitScopeQuerySchema),

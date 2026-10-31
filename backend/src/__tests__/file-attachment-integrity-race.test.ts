@@ -32,7 +32,7 @@ afterAll(async () => { await database?.close(); });
 beforeEach(async () => {
     await database.exec('TRUNCATE file_attachments');
     await database.query(`INSERT INTO file_attachments (id,entity_type,entity_id,file_name,file_url,object_generation,size_bytes,sha256,storage_access,integrity_status,malware_scan_status)
-        VALUES ($1,'arsip',$1,'original.pdf','gs://private/original.pdf','123',$2,$3,'private','verified','clean')`, [id, bytes.length, hash]);
+        VALUES ($1,'arsip',$1,'original.pdf','https://store.private.blob.vercel-storage.com/original.pdf',NULL,$2,$3,'private','verified','clean')`, [id, bytes.length, hash]);
     storage.downloadFile.mockReset();
 });
 

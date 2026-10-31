@@ -245,18 +245,13 @@ describe('NotificationService', () => {
         });
     });
 
-    describe('markAsRead', () => {
-        it('should not throw when marking notification as read', async () => {
-            enqueue(undefined);
-
-            await expect(
-                notificationService.markAsRead('user-1', NOTIFICATION_1)
-            ).resolves.not.toThrow();
-        });
-
+    describe('markCurrentAsRead', () => {
         it('rejects malformed notification IDs before persistence', async () => {
-            await expect(notificationService.markAsRead('user-1', 'arbitrary-key'))
-                .rejects.toThrow('Format ID notifikasi');
+            await expect(notificationService.markCurrentAsRead({
+                unitKerjaId: 'ditjen',
+                userId: 'user-1',
+                userRole: 'admin_dirjen',
+            }, ['arbitrary-key'])).rejects.toThrow('Daftar ID notifikasi tidak valid');
         });
     });
 

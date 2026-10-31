@@ -14,7 +14,7 @@ Panduan ini membantu pegawai mempelajari **Sistem Informasi Manajemen Surat & Ar
 
 ## 1. Akses cepat untuk pengguna baru
 
-Untuk langkah praktis pertama, ikuti [Mulai Inventaris Internal](./mulai-inventaris-internal.md). Pada komputer Windows yang sudah disiapkan operator, jalankan **Mulai-SIMSA.cmd**; browser membuka `http://127.0.0.1:3000` setelah layanan siap. Untuk layanan bersama, gunakan alamat yang diberikan operator.
+Untuk langkah praktis pertama, ikuti [Mulai Inventaris Internal](./mulai-inventaris-internal.md). Buka SIMSA di browser pada `https://simsa-frontend.vercel.app`.
 
 Sebelum mulai, pastikan Super Admin sudah:
 

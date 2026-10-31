@@ -47,22 +47,6 @@ function resolveScopedUnit(
     return unitKerjaId;
 }
 
-/**
- * @swagger
- * /api/retention/summary:
- *   get:
- *     summary: Get monthly retention summary
- *     tags: [Retention]
- *     parameters:
- *       - in: query
- *         name: unitKerjaId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Monthly retention summary with alerts
- */
 router.get('/summary', async (req: AuthRequest, res: Response, next) => {
     try {
         const unitKerjaId = resolveScopedUnit(req, res);
@@ -79,40 +63,6 @@ router.get('/summary', async (req: AuthRequest, res: Response, next) => {
     }
 });
 
-/**
- * @swagger
- * /api/retention/candidates:
- *   get:
- *     summary: Get disposal candidates
- *     tags: [Retention]
- *     parameters:
- *       - in: query
- *         name: unitKerjaId
- *         required: true
- *         schema:
- *           type: string
- *       - in: query
- *         name: hasilAkhir
- *         schema:
- *           type: string
- *           enum: [Musnah, Permanen, Dinilai Kembali]
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *           enum: [kadaluarsa, akan_kadaluarsa, inaktif]
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: List of disposal candidates
- */
 router.get('/candidates', async (req: AuthRequest, res: Response, next) => {
     try {
         const unitKerjaId = resolveScopedUnit(req, res);
@@ -137,31 +87,6 @@ router.get('/candidates', async (req: AuthRequest, res: Response, next) => {
     }
 });
 
-/**
- * @swagger
- * /api/retention/disposal-report:
- *   post:
- *     summary: Generate disposal report (Berita Acara Pemusnahan)
- *     tags: [Retention]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - unitKerjaId
- *             properties:
- *               unitKerjaId:
- *                 type: string
- *               archiveIds:
- *                 type: array
- *                 items:
- *                   type: string
- *     responses:
- *       200:
- *         description: Disposal report data
- */
 router.post('/disposal-report', async (req: AuthRequest, res: Response, next) => {
     try {
         const unitKerjaId = resolveScopedUnit(req, res, 'body');
@@ -181,22 +106,6 @@ router.post('/disposal-report', async (req: AuthRequest, res: Response, next) =>
     }
 });
 
-/**
- * @swagger
- * /api/retention/lifecycle:
- *   get:
- *     summary: Get archive lifecycle notifications
- *     tags: [Retention]
- *     parameters:
- *       - in: query
- *         name: unitKerjaId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Lifecycle notifications grouped by status
- */
 router.get('/lifecycle', async (req: AuthRequest, res: Response, next) => {
     try {
         const unitKerjaId = resolveScopedUnit(req, res);

@@ -806,21 +806,6 @@ export class NotificationService {
     }
 
     /**
-     * Mark notification as read
-     */
-    async markAsRead(userId: string, notificationId: string): Promise<void> {
-        if (!isValidNotificationId(notificationId)) {
-            throw new ValidationError('Format ID notifikasi tidak valid');
-        }
-        await db.insert(notificationReads).values({
-            userId,
-            notificationId
-        }).onConflictDoNothing({
-            target: [notificationReads.userId, notificationReads.notificationId],
-        });
-    }
-
-    /**
      * Mark all as read
      */
     async markAllAsRead(userId: string, notificationIds: string[]): Promise<void> {

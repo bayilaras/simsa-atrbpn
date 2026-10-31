@@ -50,8 +50,7 @@ export function AppConfigProvider({ children }) {
                     ...runtime,
                     features: runtime.compatible && runtime.capabilities.externalIntegrations
                         ? resolveRuntimeFeatures(appConfig, health?.application) : DISABLED_FEATURES,
-                    configurationError: runtime.compatible ? null : appConfig.mode === 'metadata-demo'
-                        ? 'Backend tidak mengaktifkan profil demo metadata yang sesuai.'
+                    configurationError: runtime.compatible ? null
                         : 'Kemampuan layanan belum dapat diverifikasi. Coba periksa kembali.',
                     loading: false, checking: false,
                 })
@@ -60,9 +59,7 @@ export function AppConfigProvider({ children }) {
                 failed = true
                 setState({
                     ...resolveRuntimeCapabilities(appConfig, null), features: DISABLED_FEATURES,
-                    configurationError: appConfig.mode === 'metadata-demo'
-                        ? 'Kapabilitas backend demo tidak dapat diverifikasi.'
-                        : 'Kemampuan layanan belum dapat diverifikasi. Coba periksa kembali.',
+                    configurationError: 'Kemampuan layanan belum dapat diverifikasi. Coba periksa kembali.',
                     loading: false, checking: false,
                 })
             } finally {

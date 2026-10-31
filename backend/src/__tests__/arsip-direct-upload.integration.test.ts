@@ -76,12 +76,6 @@ describe('durable direct upload registration for an existing archive', () => {
         expect(result.body.error).toMatch(/unggah langsung/i);
         expect(holder.upload).not.toHaveBeenCalled(); await unchanged();
     });
-    it('keeps the existing GCS multipart route available', async () => {
-        vi.stubEnv('OBJECT_STORAGE_PROVIDER', 'gcs');
-        holder.upload.mockResolvedValueOnce({ url: 'gs://test-private-upload/server-created.pdf', generation: '1234' });
-        const result = await request(app).post(`/api/upload/arsip/${archiveId}`).attach('file', pdf, { filename: 'bukti.pdf', contentType: 'application/pdf' });
-        expect(result.status).toBe(201); expect(holder.upload).toHaveBeenCalledOnce();
-    });
     it('returns authorized JSON registration and replay with safe attachment URLs', async () => {
         const first = await request(app).post(`/api/upload/arsip/${archiveId}`).send(payload).expect(201);
         expect(first.body.data).toMatchObject({ accessUrl: expect.stringContaining('/api/files/attachment/'), malwareScanStatus: 'not_scanned', sizeBytes: pdf.length });

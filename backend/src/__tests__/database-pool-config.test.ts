@@ -37,12 +37,11 @@ describe('database pool configuration', () => {
         } finally { vi.unstubAllEnvs(); }
     });
 
-    it('does not register a persistent local or Cloud Run pool with Vercel', async () => {
+    it('does not register a persistent local pool with Vercel', async () => {
         const { attachDatabasePool } = await import('@vercel/functions');
         vi.mocked(attachDatabasePool).mockClear();
         vi.resetModules();
         vi.stubEnv('VERCEL', '');
-        vi.stubEnv('K_SERVICE', 'simsa-api');
         vi.stubEnv('DATABASE_URL', 'postgresql://bootstrap.invalid/simsa');
         try {
             await import('../config/database.js');
@@ -63,34 +62,25 @@ describe('database pool configuration', () => {
         });
     });
 
-    it('keeps Cloud Run and Vercel pool defaults deliberately small', () => {
+    it('keeps Vercel pool defaults deliberately small', () => {
         expect(buildDatabasePoolConfig({
             DATABASE_URL: 'postgresql://db/simsa',
-            K_SERVICE: 'simsa-api',
-            K_REVISION: 'simsa-api-00042-abc',
-        })).toMatchObject({
-            max: 5,
-            idleTimeoutMillis: 10_000,
-            application_name: 'simsa-api-00042-abc',
-        });
-        expect(buildDatabasePoolConfig({
-            DATABASE_URL: 'postgresql://db/simsa',
-            K_SERVICE: 'simsa-api',
             VERCEL: '1',
         })).toMatchObject({
             max: 3,
             idleTimeoutMillis: 10_000,
+            application_name: 'simsa-backend',
         });
     });
 
-    it('builds a Cloud SQL Unix socket configuration without requiring TLS', () => {
+    it('builds a TCP configuration without TLS unless requested', () => {
         expect(buildDatabasePoolConfig({
-            CLOUD_SQL_UNIX_SOCKET: '/cloudsql/project:asia-southeast2:simsa',
+            DB_HOST: '127.0.0.1',
             DB_USER: 'simsa_api',
             DB_PASSWORD: '',
             DB_NAME: 'simsa',
         })).toMatchObject({
-            host: '/cloudsql/project:asia-southeast2:simsa',
+            host: '127.0.0.1',
             user: 'simsa_api',
             password: '',
             database: 'simsa',
@@ -121,24 +111,11 @@ describe('database pool configuration', () => {
         });
     });
 
-    it.each([
-        { CLOUD_SQL_UNIX_SOCKET: '/cloudsql/project:region:instance' },
-        { DB_HOST: '127.0.0.1' },
-    ])('rejects DATABASE_URL combined with a discrete database host: %j', (authority) => {
+    it('rejects DATABASE_URL combined with a discrete database host', () => {
         expect(() => buildDatabasePoolConfig({
-            DATABASE_URL: 'postgresql://legacy.example/simsa',
-            ...authority,
-        })).toThrow(/DATABASE_URL cannot be combined/);
-    });
-
-    it('rejects simultaneous Unix-socket and TCP authorities', () => {
-        expect(() => buildDatabasePoolConfig({
-            CLOUD_SQL_UNIX_SOCKET: '/cloudsql/project:region:instance',
+            DATABASE_URL: 'postgresql://other.example/simsa',
             DB_HOST: '127.0.0.1',
-            DB_USER: 'simsa',
-            DB_PASSWORD: '',
-            DB_NAME: 'simsa',
-        })).toThrow(/only one of CLOUD_SQL_UNIX_SOCKET or DB_HOST/);
+        })).toThrow(/DATABASE_URL cannot be combined/);
     });
 
     it.each([
@@ -185,7 +162,6 @@ describe('database pool configuration', () => {
     it.each([
         { DATABASE_URL: 'postgresql://user:pass@db.example.test/simsa' },
         { DB_HOST: '127.0.0.1', DB_USER: 'simsa', DB_PASSWORD: '', DB_NAME: 'simsa' },
-        { CLOUD_SQL_UNIX_SOCKET: '/cloudsql/project:region:instance', DB_USER: 'simsa', DB_PASSWORD: '', DB_NAME: 'simsa' },
     ])('sets UTC before the first query for each connection authority: %j', async (authority) => {
         const { Client } = await vi.importActual<typeof import('pg')>('pg');
         const config = buildDatabasePoolConfig(authority);
