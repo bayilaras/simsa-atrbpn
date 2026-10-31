@@ -35,6 +35,11 @@ test('real FileFixityService matches bounded file and writes its existing audit 
  const updates=pool.statements.filter(row=>row.sql.startsWith('UPDATE file_attachments'));assert.equal(updates.length,1);assert.equal(updates[0].args[2],hash);assert.match(updates[0].sql,/last_fixity_check_at=now\(\)/);assert.doesNotMatch(updates[0].sql,/SET\s+sha256/i);
  assert.equal(pool.statements.filter(row=>row.sql.includes('INSERT INTO audit_log')).length,1);
 });
+test('real service enrolls new files up to its own bound, separate from the read batch',async()=>{
+ const pool=poolFor([{...file},{...file}]);const report=await runIntegrityWithPool(pool,{...env,FIXITY_BATCH_SIZE:'1'},{fetchImpl:async()=>new Response(fileBytes,{status:200})});
+ const inserts=pool.statements.filter(row=>row.sql.includes('INSERT INTO file_fixity_jobs'));assert.equal(inserts.length,1);assert.deepEqual(inserts[0].args,[100]);assert.match(inserts[0].sql,/ON CONFLICT \(attachment_id\) DO NOTHING/);
+ assert.equal(report.maximumEnrollments,100);assert.equal(report.maximumChecks,1);assert.equal(report.privateObjectDownloads,1);assert.equal(pool.statements.filter(row=>row.sql.includes('WITH candidate AS')).length,1);
+});
 test('real service reports mismatch and preserves expected hash in guarded update',async()=>{
  const pool=poolFor([{...file}]);const report=await runIntegrityWithPool(pool,{...env,FIXITY_BATCH_SIZE:'1'},{fetchImpl:async()=>new Response('different bytes',{status:200})});
  assert.equal(report.status,'attention');assert.equal(report.summary.mismatched,1);

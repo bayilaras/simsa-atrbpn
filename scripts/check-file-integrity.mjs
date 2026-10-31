@@ -10,7 +10,7 @@ import {assertNeonWorkerRole} from './neon-worker-role.mjs';
 import {privateBlobConfiguration,pinnedPrivateUrl} from './operations-recovery-documents.mjs';
 const requireBackend=createRequire(new URL('../backend/package.json',import.meta.url));
 const {tsImport}=await import(pathToFileURL(requireBackend.resolve('tsx/esm/api')));
-const {FileFixityService,loadFixityConfig}=await tsImport(new URL('../backend/src/services/file-fixity.service.ts',import.meta.url).href,{parentURL:import.meta.url,tsconfig:false});
+const {FileFixityService,loadFixityConfig,FIXITY_ENROLLMENT_LIMIT}=await tsImport(new URL('../backend/src/services/file-fixity.service.ts',import.meta.url).href,{parentURL:import.meta.url,tsconfig:false});
 const {normalizeStoredObjectLocator}=await tsImport(new URL('../backend/src/storage/locator.ts',import.meta.url).href,{parentURL:import.meta.url,tsconfig:false});
 const check=(value,code)=>{if(!value)throw Object.assign(new Error(code),{safeCode:code});};
 
@@ -45,7 +45,7 @@ export async function runIntegrityWithPool(pool,environment,{fetchImpl=fetch}={}
  const reader=createPrivateIntegrityReader(environment,{fetchImpl,onRead:()=>downloaded++});
  const summary=await new FileFixityService(pool,reader).run(fixity);
  const attention=summary.failed>0||summary.mismatched>0||summary.stale>0;
- return {status:attention?'attention':'success',summary,privateObjectDownloads:downloaded,maximumChecks:fixity.batchSize,
+ return {status:attention?'attention':'success',summary,privateObjectDownloads:downloaded,maximumChecks:fixity.batchSize,maximumEnrollments:FIXITY_ENROLLMENT_LIMIT,
   intervalSeconds:fixity.intervalSeconds,retrySeconds:fixity.retrySeconds,maximumBytes:fixity.maximumBytes,timeoutMs:fixity.timeoutMs,
   expectedHashesOverwritten:false,productionBusinessContentChanged:false,service:'existing_FileFixityService'};
 }

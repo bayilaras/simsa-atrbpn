@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 import { PGlite } from '@electric-sql/pglite';
 import type { Pool } from 'pg';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FileFixityService, loadFixityConfig } from '../services/file-fixity.service.js';
+import { FIXITY_ENROLLMENT_LIMIT, FileFixityService, loadFixityConfig } from '../services/file-fixity.service.js';
 
 let database: PGlite;
 const id = '00000000-0000-4000-8000-000000000001';
@@ -57,8 +57,8 @@ describe('scheduled file integrity checks', () => {
         const service = new FileFixityService(pool, download);
         await database.exec('SET ROLE simsa_worker_runtime');
         try {
-            expect(await service.run(config)).toMatchObject({ checked: 1, matched: 1, mismatched: 0, failed: 0 });
-            expect(await service.run(config)).toMatchObject({ checked: 0 });
+            expect(await service.run(config)).toMatchObject({ enrolled: 1, checked: 1, matched: 1, mismatched: 0, failed: 0 });
+            expect(await service.run(config)).toMatchObject({ enrolled: 0, checked: 0 });
         } finally { await database.exec('RESET ROLE'); }
         const audit = await database.query('SELECT action, changes FROM audit_log');
         expect(audit.rows).toMatchObject([{ action: 'verify_integrity', changes: { source: 'scheduled_fixity', result: 'match' } }]);
@@ -116,6 +116,39 @@ describe('scheduled file integrity checks', () => {
         expect(await new FileFixityService(pool, download).run({ ...config, batchSize: 1 })).toMatchObject({ checked: 1 });
         expect(download).toHaveBeenCalledTimes(1);
         expect(await new FileFixityService(pool, download).run({ ...config, batchSize: 1 })).toMatchObject({ checked: 1 });
+    });
+
+    it('enrolls a whole bulk upload in one run while reading only one batch', async () => {
+        await database.exec(`INSERT INTO file_attachments
+            SELECT ('00000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid,file_url,drive_file_id,object_generation,
+            sha256,size_bytes,storage_access,malware_scan_status,integrity_status,last_fixity_check_at,created_at,entity_type,entity_id
+            FROM file_attachments, generate_series(2, 50) AS n`);
+        await database.exec('SET ROLE simsa_worker_runtime');
+        try {
+            expect(await new FileFixityService(pool, download).run(config)).toMatchObject({ enrolled: 50, checked: 5, matched: 5 });
+        } finally { await database.exec('RESET ROLE'); }
+        expect(download).toHaveBeenCalledTimes(5);
+        const jobs = await database.query(`SELECT count(*) FILTER (WHERE last_result IS NULL)::int AS due,
+            count(*) FILTER (WHERE last_result='match' AND next_check_at > now())::int AS scheduled FROM file_fixity_jobs`);
+        expect(jobs.rows).toEqual([{ due: 45, scheduled: 5 }]);
+        expect(await new FileFixityService(pool, download).run(config)).toMatchObject({ enrolled: 0, checked: 5 });
+        expect(download).toHaveBeenCalledTimes(10);
+    });
+
+    it('caps enrollment per run, oldest files first, and leaves the rest for the next run', async () => {
+        await database.exec(`INSERT INTO file_attachments
+            SELECT ('00000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid,file_url,drive_file_id,object_generation,
+            sha256,size_bytes,storage_access,malware_scan_status,integrity_status,last_fixity_check_at,
+            created_at - n * interval '1 minute',entity_type,entity_id
+            FROM file_attachments, generate_series(2, ${FIXITY_ENROLLMENT_LIMIT + 5}) AS n`);
+        const service = new FileFixityService(pool, download);
+        expect(await service.run({ ...config, batchSize: 1 })).toMatchObject({ enrolled: FIXITY_ENROLLMENT_LIMIT, checked: 1 });
+        const waiting = await database.query<{ id: string }>(`SELECT f.id FROM file_attachments f
+            LEFT JOIN file_fixity_jobs j ON j.attachment_id=f.id WHERE j.attachment_id IS NULL ORDER BY f.created_at DESC`);
+        expect(waiting.rows.map(row => row.id)).toEqual([id, ...[2, 3, 4, 5].map(n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`)]);
+        expect(await service.run({ ...config, batchSize: 1 })).toMatchObject({ enrolled: 5, checked: 1 });
+        expect((await database.query('SELECT count(*)::int AS jobs FROM file_fixity_jobs')).rows).toEqual([{ jobs: FIXITY_ENROLLMENT_LIMIT + 5 }]);
+        expect(download).toHaveBeenCalledTimes(2);
     });
 
     it('does not commit a result after another worker has reclaimed the lease', async () => {
