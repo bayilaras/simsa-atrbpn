@@ -86,10 +86,12 @@ Gunakan filter lokal pada halaman Surat, Arsip, Laporan, Peminjaman, atau Audit 
 | Role | Penggunaan utama |
 |---|---|
 | **Belum aktif** | Hanya melihat Dashboard pemberitahuan aktivasi; minta Super Admin menetapkan role dan unit kerja. |
-| **Admin Unit Kerja** | Mengelola operasional surat, arsip, distribusi, dosir, retensi, penyusutan, layanan fisik, media, laporan, dan tahapan tata kelola pada unit kerja yang ditetapkan, sesuai pemisahan tugas. Master klasifikasi/JRA, Autentikasi, Audit Log, dan Manajemen Pengguna dikelola Super Admin. |
-| **Super Admin** | Seluruh kewenangan admin untuk semua unit, pengelolaan pengguna dan pengaturan, master klasifikasi/JRA, Audit Log, keputusan akses, filter lintas unit, serta aktivasi versi aturan. |
+| **Admin Unit Kerja** | Mengelola operasional surat, arsip, distribusi, dosir, retensi, layanan fisik, media, laporan, dan tahapan tata kelola pada unit kerja yang ditetapkan, sesuai pemisahan tugas. Pada penyusutan, role ini membuat, mengusulkan, dan meninjau batch. Persetujuan dan pelaksanaan penyusutan, master klasifikasi/JRA, Autentikasi, Audit Log, Monitoring Operasional, tab **Unit Kerja** di Pengaturan, dan Manajemen Pengguna dikelola Super Admin. |
+| **Super Admin** | Seluruh kewenangan admin untuk semua unit, pengelolaan pengguna dan pengaturan (termasuk tab **Unit Kerja**), master klasifikasi/JRA, Audit Log, Monitoring Operasional, persetujuan dan pelaksanaan penyusutan beserta unggah bukti pelaksanaannya, keputusan akses, filter lintas unit, serta aktivasi versi aturan. |
 
-Super Admin hanya dapat memilih dua role tersebut. Akun lama tetap mempertahankan hak aksesnya sampai Super Admin menetapkan role baru. Admin Dirjen dan Admin Sesditjen lama tetap terbatas pada unit semula; akun Staff dan Auditor lama tidak otomatis mendapat kewenangan menulis.
+Super Admin hanya dapat memilih dua role tersebut. Admin Unit Kerja hanya dapat mengubah data unitnya sendiri. Surat unit lain dapat dibaca, tanpa diubah, bila unitnya ikut dalam rangkaian surat tersebut; Admin Unit Kerja pada unit pengawas (Ditjen dan Sesditjen) juga dapat membaca surat Ditjen, Sesditjen, dan seluruh direktorat. Surat lintas unit berklasifikasi Terbatas atau lebih tinggi tetap memerlukan izin akses.
+
+Akun lama tetap mempertahankan hak aksesnya sampai Super Admin menetapkan role baru. Admin Dirjen dan Admin Sesditjen lama hanya dapat mengubah data unit semula (Ditjen atau Sesditjen) dan, sebagai unit pengawas, dapat membaca surat lintas unit seperti di atas; akun Staff dan Auditor lama tidak otomatis mendapat kewenangan menulis.
 
 Prinsip yang harus selalu dipakai:
 
@@ -315,8 +317,8 @@ Pada menu **Penyusutan**:
 1. Pilih tab **Pemindahan**, **Pemusnahan**, atau **Alih Media**.
 2. Klik **Buat Usulan**, pilih kandidat, dan isi keterangan.
 3. Periksa daftar arsip di dalam batch.
-4. Majukan status secara tertib: **Draft > Diusulkan > Ditinjau > Disetujui > Dilaksanakan**.
-5. Gunakan akun/pejabat berbeda pada tahap pemeriksaan jika diwajibkan.
+4. Majukan status secara tertib: **Draft > Diusulkan > Ditinjau > Disetujui > Dilaksanakan**. Admin Unit Kerja dapat mengusulkan dan meninjau batch unitnya. Tahap **Disetujui** dan **Dilaksanakan**, termasuk unggah bukti pelaksanaan pemusnahan, hanya dapat dilakukan Super Admin.
+5. Gunakan akun berbeda untuk setiap tahap pemeriksaan: peninjau berbeda dari pembuat dan pengusul, penyetuju berbeda dari pembuat, pengusul, dan peninjau, dan pelaksana berbeda dari semua akun sebelumnya. Artinya, penyetuju dan pelaksana harus dua akun Super Admin yang berbeda.
 6. Cetak daftar usul atau berita acara pada tahap yang tersedia.
 
 Kandidat dapat tidak muncul karena retensi belum jatuh tempo, pemicu belum terverifikasi, keputusan belum efektif, aturan lama belum direkonsiliasi, legal hold aktif, arsip sedang direservasi workflow lain, atau penyusutan sudah selesai.
@@ -343,7 +345,7 @@ Sebelum serah terima, manifest dapat diajukan untuk pembatalan dengan alasan. Re
 2. Pilih tipe **Per Arsip** atau **Per Box**.
 3. Cari arsip/lokasi dengan minimal tiga karakter dan pilih hasil yang benar.
 4. Isi nama peminjam, unit kerja, tanggal jatuh tempo, dan tujuan.
-5. Simpan, lalu cek tab **Sedang Dipinjam** atau **Terlambat**.
+5. Simpan, lalu cek tab **Dipinjam** atau **Terlambat**.
 6. Gunakan **Perpanjang** untuk mengubah jatuh tempo atau **Kembalikan** untuk mencatat pengembalian dan kondisi/catatan.
 
 Fitur ini mencatat sirkulasi secara langsung; pastikan kewenangan peminjaman telah diperiksa di luar aplikasi bila prosedur unit mensyaratkannya. Cocokkan arsip/box fisik sebelum menyerahkan dan saat menerima kembali.

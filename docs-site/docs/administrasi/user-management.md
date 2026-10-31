@@ -16,9 +16,9 @@ Pilihan peran hanya dua:
 | Peran | Ruang lingkup |
 |---|---|
 | **Super Admin** | Administrasi lintas unit; unit kerja dikosongkan oleh sistem. |
-| **Admin Unit Kerja** | Mengelola surat, arsip, dan fitur operasional pada satu unit kerja. Unit kerja wajib dipilih. |
+| **Admin Unit Kerja** | Mengelola surat, arsip, dan fitur operasional pada satu unit kerja. Unit kerja wajib dipilih. Surat unit lain hanya dapat dibaca, tanpa diubah, melalui rangkaian surat yang diikuti unitnya atau bila unitnya unit pengawas (Ditjen/Sesditjen). |
 
-Akun lama tetap mempertahankan hak aksesnya sampai Super Admin menetapkan peran baru. Admin Dirjen dan Admin Sesditjen lama tetap terbatas pada unit semula; akun Staff dan Auditor lama tidak otomatis mendapat kewenangan menulis. Pada dialog **Ubah Peran/Unit**, peran lama tampil dengan keterangan *(peran lama)* dan tidak tersedia untuk akun baru.
+Akun lama tetap mempertahankan hak aksesnya sampai Super Admin menetapkan peran baru. Admin Dirjen dan Admin Sesditjen lama hanya dapat mengubah data unit semula (Ditjen atau Sesditjen). Karena kedua unit itu unit pengawas, akun tersebut juga dapat membaca surat Ditjen, Sesditjen, dan seluruh direktorat tanpa dapat mengubahnya. Akun Staff dan Auditor lama tidak otomatis mendapat kewenangan menulis. Pada dialog **Ubah Peran/Unit**, peran lama tampil dengan keterangan *(peran lama)* dan tidak tersedia untuk akun baru.
 
 Akun yang menunggu persetujuan tampil dengan peran **Pengguna** dan belum memiliki akses data. Pilih **Menunggu persetujuan**, klik **Setujui akses**, lalu tetapkan peran dan unit kerjanya.
 
@@ -32,6 +32,6 @@ Gunakan **Nonaktifkan** untuk menghentikan akses. Data identitas dan riwayat akt
 
 ## Pemeriksaan sebelum dipakai
 
-Uji satu akun untuk setiap peran dan unit: login/logout, akses unit sendiri, penolakan unit lain, penolakan dokumen tanpa hak, perubahan peran dan penonaktifan akun saat masih memiliki sesi. Jangan menggunakan akun uji sebagai akun bersama untuk pekerjaan resmi.
+Uji satu akun untuk setiap peran dan unit: login/logout, akses unit sendiri, penolakan perubahan di unit lain, baca-saja surat unit lain hanya melalui rangkaian atau unit pengawas, penolakan dokumen tanpa hak, perubahan peran dan penonaktifan akun saat masih memiliki sesi. Jangan menggunakan akun uji sebagai akun bersama untuk pekerjaan resmi.
 
 [Audit Log](audit-log.md) · [Master Data](master-data.md)

@@ -5,7 +5,7 @@ Gunakan data uji yang terpisah dari arsip resmi. Petugas mencatat tanggal, versi
 | Skenario | Hasil yang harus terbukti |
 |---|---|
 | Login dan logout | Akun aktif dapat masuk, sesi berakhir setelah logout, kata sandi salah ditolak. Pada lokal, `localhost:3000` dan `127.0.0.1:3000` sama-sama dapat dipakai jika keduanya diizinkan operator. |
-| Peran dan unit kerja | Peran yang dapat dipilih hanya Super Admin dan Admin Unit Kerja. Admin Unit Kerja melihat unit yang ditugaskan; akses unit lain ditolak. Akun lama Staff dan Auditor tidak dapat mengubah arsip. |
+| Peran dan unit kerja | Peran yang dapat dipilih hanya Super Admin dan Admin Unit Kerja. Admin Unit Kerja mengelola data unitnya; perubahan di unit lain ditolak. Surat unit lain hanya dapat dibaca, tanpa diubah, bila unitnya ikut dalam rangkaian surat tersebut atau bila unitnya unit pengawas (Ditjen/Sesditjen), yang dapat membaca surat Ditjen, Sesditjen, dan seluruh direktorat. Surat lain dari unit lain tidak dapat dibuka. Akun lama Staff dan Auditor tidak dapat mengubah arsip. |
 | Arsip terbatas/rahasia | Pengguna tanpa pemberian akses tidak dapat membaca/mengubah/mengunduh. Uji juga dengan Super Admin untuk operasi yang membutuhkan hak khusus per arsip. |
 | Penonaktifan pengguna | Akun tidak dapat membuat sesi baru; sesi lama tidak dapat melanjutkan operasi yang sudah dicabut. |
 | Impor CSV | Pratinjau tidak menambah data. Tanggal kosong, tidak sah dan header duplikat ditolak dengan nomor baris/alasan. Impor ulang diperiksa untuk duplikasi. |

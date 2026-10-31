@@ -30,7 +30,8 @@ Akun lama dengan role **Admin Dirjen**, **Admin Sesditjen**, **Staff**, atau **A
 
 ## 3️⃣ Data Difilter Berdasarkan Unit Kerja
 
-- Kamu **hanya bisa melihat data** dari unit kerja kamu sendiri.
+- Kamu **hanya bisa mengubah data** unit kerja kamu sendiri.
+- Surat unit lain hanya bisa **dibaca, tanpa diubah**, bila unit kamu ikut dalam rangkaian surat tersebut. Unit pengawas (Ditjen dan Sesditjen) juga bisa membaca surat Ditjen, Sesditjen, dan seluruh direktorat. Surat Terbatas atau lebih tinggi dari unit lain tetap memerlukan izin akses.
 - **Super Admin** dapat memilih cakupan lintas unit; akses rekod terkendali tetap mengikuti izin per rekod dan klasifikasi keamanan.
 
 ---
