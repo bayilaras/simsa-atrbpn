@@ -2,6 +2,7 @@ import { db } from '../config/database';
 import { users, unitKerja, sessions, accounts, suratKeluar } from '../db/schema';
 import { eq, ilike, or, and, desc, sql } from 'drizzle-orm';
 import { hashPassword } from 'better-auth/crypto';
+import { hashCredentialPassword } from '../config/password-hashing.js';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 import { ROLE_MANDATED_UNIT_KERJA } from '../utils/resolve-unit-kerja.js';
 import {
@@ -42,6 +43,9 @@ export interface CreateUserData {
 // Valid roles
 export const VALID_ROLES = KNOWN_ROLES;
 export type Role = typeof VALID_ROLES[number];
+
+export const SELF_PASSWORD_RESET_MESSAGE =
+    'Gunakan Ubah Kata Sandi di halaman Pengaturan untuk akun Anda sendiri.';
 
 export function normalizeUserUnitAssignment(
     role: Role,
@@ -497,6 +501,93 @@ export const userManagementService = {
      */
     async deactivateUser(userId: string, auditContext: CriticalAuditContext) {
         return this.updateUser(userId, { isActive: false }, auditContext);
+    },
+
+    /**
+     * Set a new email+password credential for another user (by Super Admin).
+     * This is the only recovery path: production sends no reset email.
+     */
+    async resetPassword(userId: string, newPassword: string, auditContext: CriticalAuditContext) {
+        // Better Auth's configured hasher, so normal sign-in verifies the
+        // result. Hash before taking the mandate gate; scrypt is slow.
+        const passwordHash = await hashCredentialPassword(newPassword);
+
+        return db.transaction(async (tx) => {
+            await lockAuthorizationMandatesExclusive(tx);
+            const actor = await requireActiveSuperAdminActor(tx, auditContext);
+
+            // Changing one's own password must prove the current one.
+            if (actor.id === userId) {
+                throw new ValidationError(SELF_PASSWORD_RESET_MESSAGE);
+            }
+
+            const [target] = await tx
+                .select({ id: users.id, role: users.role, isActive: users.isActive })
+                .from(users)
+                .where(eq(users.id, userId))
+                .limit(1)
+                .for('update');
+            if (!target) return null;
+
+            // A pending identity has no approved mandate yet; approval stays
+            // the first decision. Inactive accounts are allowed: they cannot
+            // sign in until reactivated, so resetting first means the
+            // forgotten password is never valid again.
+            if (target.role === 'user') {
+                throw new ConflictError('Akun masih menunggu persetujuan. Setujui akses pengguna terlebih dahulu.');
+            }
+
+            // Better Auth looks the credential up by (user, 'credential',
+            // account_id = user id), as createUser and migration 0015 write it.
+            const credentialWhere = and(
+                eq(accounts.userId, userId),
+                eq(accounts.providerId, 'credential'),
+                eq(accounts.accountId, userId),
+            );
+            const updatedCredentials = await tx
+                .update(accounts)
+                .set({ password: passwordHash, updatedAt: new Date() })
+                .where(credentialWhere)
+                .returning({ id: accounts.id });
+            const credentialCreated = updatedCredentials.length === 0;
+            if (credentialCreated) {
+                // Google-only identity: add the same credential row createUser writes.
+                await tx.insert(accounts).values({
+                    userId,
+                    issuer: 'local:credential',
+                    accountId: userId,
+                    providerId: 'credential',
+                    password: passwordHash,
+                });
+            }
+
+            const revokedSessions = await tx
+                .delete(sessions)
+                .where(eq(sessions.userId, userId))
+                .returning({ id: sessions.id });
+
+            // Never record the password or its hash.
+            await auditLogService.logActionOrThrow({
+                ...auditContext,
+                action: 'update',
+                entityType: 'user',
+                entityId: userId,
+                changes: {
+                    fields: ['password'],
+                    after: {
+                        password: 'diatur ulang',
+                        credentialAccount: credentialCreated ? 'dibuat' : 'diperbarui',
+                        revokedSessions: revokedSessions.length,
+                    },
+                },
+            }, tx);
+
+            return {
+                userId,
+                credentialCreated,
+                revokedSessions: revokedSessions.length,
+            };
+        });
     },
 
     /**
