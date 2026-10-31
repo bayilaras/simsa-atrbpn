@@ -31,7 +31,15 @@ Variabel dan secret berikut disediakan melalui environment privat, tidak sebagai
 | `OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES` | Opsional, tepat `true` untuk kebijakan pencatatan hash null di atas |
 | `OPERATIONS_RECOVERY_PUBLISH_STATUS` | Opsional, tepat `true` untuk publikasi bukti ke Blob privat |
 
-Jalankan `node scripts/operations-recovery.mjs run`. Keluaran standar hanya laporan tersanitasi. Batas pengambilan adalah 1.000 referensi, 50 MiB per objek, dan total 200 MiB; batas ini harus ditinjau bila data bertambah, tidak dilewati otomatis. Semua GET menolak redirect dan memakai deadline serta batas ukuran.
+Jalankan `node scripts/operations-recovery.mjs run`. Keluaran standar hanya laporan tersanitasi. Batas pengambilan adalah 1.000 referensi, 100 objek tersimpan unik, 50 MiB per objek, dan total 160 MiB objek unik. Objek dihitung setelah deduplikasi URL, sama dengan yang benar-benar diunduh: beberapa referensi ke berkas yang sama hanya diunduh dan dihitung sekali. Batas ini tidak dilewati otomatis. Semua GET menolak redirect dan memakai deadline serta batas ukuran.
+
+### Batas dokumen dan kuota Blob
+
+Batas di atas menjaga kuota Blob paket Vercel Hobby. Setiap run, terjadwal maupun manual, mengunduh ulang semua objek unik dengan `cache=0`; tiap unduhan dihitung sebagai satu *simple operation* ditambah transfer data Blob. Hobby menyediakan 10 GB transfer Blob dan 10.000 *simple operations* per 30 hari. Bila terlampaui, akses Blob diblokir 30 hari, sehingga unggah, unduh, pemindaian, dan backup produksi ikut berhenti. Dengan backup penuh harian (ditambah run manual seperti pada Oktober 2026), 160 MiB objek unik memakai sekitar 6–7 GB transfer per bulan, dan 100 objek memakai sekitar 7.800–8.500 operasi termasuk pemakaian aplikasi lain.
+
+Bila batas terlampaui, run gagal pada tahap `document_inventory` (`DOCUMENT_BYTES_OUTSIDE_BUDGET`, `DOCUMENT_OBJECTS_OUTSIDE_BUDGET`, atau `DOCUMENT_COUNT_OUTSIDE_BUDGET`) sebelum GET dokumen pertama. Database terenkripsi dan kunci terbungkus sudah tersimpan di artefak, tetapi status backup merah. Artefak itu tidak berisi manifest dokumen, sehingga `operations-recovery-extract.mjs` dan `restore-delivery` gagal pada bagian dokumen; pakai artefak hijau terakhir sampai batas ditinjau.
+
+Menaikkan batas memerlukan keputusan pemilik: pindah ke paket Pro (misalnya 1 GiB dan 1.000 objek, dengan `timeout-minutes` 60), atau mengubah desain menjadi backup dokumen penuh mingguan ditambah inkremental harian. Selama masih Hobby, batasi run manual `workflow_dispatch` karena tiap run adalah pengunduhan penuh.
 
 Kunci arsip database dan dokumen dibungkus menggunakan scrypt (N=32768, r=8, p=1) dan AES-GCM dengan salt baru. Artefak delivery hanya berisi ciphertext, manifest, parameter KDF, dan laporan. **Jangan mengunggah workspace privat atau direktori kunci mentah.** Database terenkripsi dan kunci terbungkus disimpan sebelum fase berikutnya supaya kegagalan pengambilan dokumen/pemulihan tidak menghilangkan cadangan database yang sudah valid.
 
@@ -66,7 +74,7 @@ node scripts/operations-recovery-extract.mjs --bundle "$HOME\Downloads\simsa-rec
 Remove-Item Env:BACKUP_ENCRYPTION_PASSPHRASE
 ```
 
-Setiap run terjadwal juga mencatat `documentBudget` (jumlah dan ukuran dokumen terhadap batas 1.000 file / 200 MiB). Mulai 80% dari salah satu batas, GitHub Actions menampilkan peringatan "SIMSA backup mendekati batas" agar batas dinaikkan sebelum backup gagal.
+Setiap run terjadwal juga mencatat `documentBudget` di laporan run: jumlah referensi, objek unik, dan ukuran objek unik terhadap batas 1.000 / 100 / 160 MiB. Mulai 75% dari salah satu batas, GitHub Actions menampilkan peringatan "SIMSA backup mendekati batas". Peringatan memakai perhitungan yang sama dengan pemeriksaan keras, jadi muncul sebelum backup gagal. Tinjau kuota Blob (lihat [Batas dokumen dan kuota Blob](#batas-dokumen-dan-kuota-blob)) sebelum menaikkan batas.
 
 ## Memulihkan artefak delivery yang sudah diunduh
 

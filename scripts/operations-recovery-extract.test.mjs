@@ -83,11 +83,14 @@ test('file names are sanitized and fall back to the stored object name', () => {
   assert.equal(documentFileName({ ...row, url: 'not a url', fileName: '' }), `${'e'.repeat(64)}.pdf`);
 });
 
-test('document budget warns at 80 percent of count or size', () => {
-  const ref = sizeBytes => ({ sizeBytes });
-  assert.equal(documentBudgetUsage([ref(1)]).warning, false);
-  assert.equal(documentBudgetUsage(Array.from({ length: 800 }, () => ref(1))).warning, true);
-  assert.equal(documentBudgetUsage([ref(170 * 1024 * 1024)]).warning, true);
+test('document budget counts unique stored objects and warns at 75 percent of any hard limit', () => {
+  const mib = 1024 * 1024, ref = (sizeBytes, name) => ({ url: `https://teststore123.private.blob.vercel-storage.com/${name}.pdf`, sha256: sha256(String(name)), sizeBytes });
+  assert.equal(documentBudgetUsage([ref(1, 'a')]).warning, false);
+  const shared = documentBudgetUsage([ref(40 * mib, 'a'), ref(40 * mib, 'a'), ref(40 * mib, 'b'), ref(40 * mib, 'b')]);
+  assert.deepEqual([shared.references, shared.objects, shared.bytes, shared.bytesRatio, shared.warning], [4, 2, 80 * mib, 0.5, false]);
+  assert.equal(documentBudgetUsage([ref(40 * mib, 'a'), ref(40 * mib, 'b'), ref(40 * mib, 'c')]).warning, true);
+  assert.equal(documentBudgetUsage(Array.from({ length: 75 }, (_, n) => ref(1, n))).warning, true);
+  assert.equal(documentBudgetUsage(Array.from({ length: 750 }, () => ref(1, 'a'))).warning, true);
   assert.equal(documentReferences([attachment], [])[0].fileName, attachment.file_name);
 });
 

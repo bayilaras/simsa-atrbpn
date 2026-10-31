@@ -6,15 +6,32 @@ import { createServer } from 'node:http';
 export const sha256 = value => createHash('sha256').update(value).digest('hex');
 const check = (value, code) => { if (!value) throw Object.assign(new Error(code), { safeCode: code }); };
 const MAX_OBJECT = 50 * 1024 * 1024;
-const MAX_TOTAL = 200 * 1024 * 1024;
+// Hard, reviewed budgets. Every run GETs each unique stored object once with
+// cache=0 (one Blob simple operation plus its bytes as data transfer), so bytes
+// and objects are counted after URL deduplication. These keep a daily full pull
+// inside the Vercel Hobby Blob allowance (10 GB transfer, 10,000 simple
+// operations per 30 days); going over blocks Blob for 30 days. References stay
+// a separate metadata sanity bound. Raise only after the owner review described
+// in docs/OPERATIONS_RECOVERY.md.
+const MAX_TOTAL = 160 * 1024 * 1024;
+const MAX_OBJECTS = 100;
 const MAX_COUNT = 1000;
+// One envelope seals one document; the manifest and wrapped keys are far smaller.
+const MAX_ENVELOPE = MAX_OBJECT + 28;
 // Early warning before a scheduled backup hits the hard document budget.
-export const DOCUMENT_BUDGET = Object.freeze({ maxCount: MAX_COUNT, maxObjectBytes: MAX_OBJECT, maxTotalBytes: MAX_TOTAL, warningRatio: 0.8 });
+export const DOCUMENT_BUDGET = Object.freeze({ maxReferences: MAX_COUNT, maxObjects: MAX_OBJECTS, maxObjectBytes: MAX_OBJECT, maxTotalBytes: MAX_TOTAL, warningRatio: 0.75 });
+function uniqueDocuments(references) {
+  const unique = new Map();
+  for (const ref of references) { const prior = unique.get(ref.url);
+    check(!prior || prior.sha256 === ref.sha256 && prior.sizeBytes === ref.sizeBytes, 'CONFLICTING_DOCUMENT_REFERENCES'); if (!prior) unique.set(ref.url, ref); }
+  return [...unique.values()];
+}
+// Measured exactly like the hard check in documentReferences, so the warning predicts that failure.
 export function documentBudgetUsage(references) {
-  const count = references.length, bytes = references.reduce((sum, ref) => sum + ref.sizeBytes, 0);
-  const countRatio = count / MAX_COUNT, bytesRatio = bytes / MAX_TOTAL;
-  return { count, bytes, maxCount: MAX_COUNT, maxTotalBytes: MAX_TOTAL, countRatio, bytesRatio,
-    warning: countRatio >= DOCUMENT_BUDGET.warningRatio || bytesRatio >= DOCUMENT_BUDGET.warningRatio };
+  const objects = uniqueDocuments(references), bytes = objects.reduce((sum, ref) => sum + ref.sizeBytes, 0);
+  const referencesRatio = references.length / MAX_COUNT, objectsRatio = objects.length / MAX_OBJECTS, bytesRatio = bytes / MAX_TOTAL;
+  return { references: references.length, objects: objects.length, bytes, maxReferences: MAX_COUNT, maxObjects: MAX_OBJECTS, maxTotalBytes: MAX_TOTAL,
+    referencesRatio, objectsRatio, bytesRatio, warning: Math.max(referencesRatio, objectsRatio, bytesRatio) >= DOCUMENT_BUDGET.warningRatio };
 }
 export function seal(bytes, key, context) {
   check(Buffer.isBuffer(key) && key.length === 32, 'INVALID_KEY');
@@ -23,7 +40,7 @@ export function seal(bytes, key, context) {
   return Buffer.concat([iv, cipher.update(bytes), cipher.final(), cipher.getAuthTag()]);
 }
 export function unseal(bytes, key, context) {
-  check(bytes.length >= 28 && bytes.length <= MAX_TOTAL * 2, 'INVALID_ENVELOPE');
+  check(bytes.length >= 28 && bytes.length <= MAX_ENVELOPE, 'INVALID_ENVELOPE');
   const decipher = createDecipheriv('aes-256-gcm', key, bytes.subarray(0, 12));
   decipher.setAAD(Buffer.from(context)); decipher.setAuthTag(bytes.subarray(-16));
   return Buffer.concat([decipher.update(bytes.subarray(12, -16)), decipher.final()]);
@@ -67,7 +84,8 @@ export function documentReferences(attachments, ruleSets, {captureMissingHashes=
   check(refs.length > 0 && refs.length <= MAX_COUNT, 'DOCUMENT_COUNT_OUTSIDE_BUDGET');
   for (const ref of refs) check(/^[a-f0-9-]{36}$/i.test(ref.id) && (/^[a-f0-9]{64}$/.test(ref.sha256 || '') || captureMissingHashes && ref.sha256 == null)
     && Number.isSafeInteger(ref.sizeBytes) && ref.sizeBytes > 0 && ref.sizeBytes <= MAX_OBJECT && ref.storageAccess === 'private', 'DOCUMENT_METADATA_INCOMPLETE');
-  check(refs.reduce((sum, ref) => sum + ref.sizeBytes, 0) <= MAX_TOTAL, 'DOCUMENT_BYTES_OUTSIDE_BUDGET');
+  const usage = documentBudgetUsage(refs);
+  check(usage.objects <= MAX_OBJECTS, 'DOCUMENT_OBJECTS_OUTSIDE_BUDGET'); check(usage.bytes <= MAX_TOTAL, 'DOCUMENT_BYTES_OUTSIDE_BUDGET');
   return refs;
 }
 async function exclusiveDirectory(path) {
@@ -76,14 +94,8 @@ async function exclusiveDirectory(path) {
 }
 export async function backupDocuments({references, token, directory, key, sourceSnapshotAt, archiveSha256, captureMissingHashes=false, fetchImpl=fetch, applicationReader}) {
   await exclusiveDirectory(directory);
-  const unique = new Map();
-  for (const ref of references) {
-    const prior = unique.get(ref.url);
-    check(!prior || prior.sha256 === ref.sha256 && prior.sizeBytes === ref.sizeBytes, 'CONFLICTING_DOCUMENT_REFERENCES');
-    if (!prior) unique.set(ref.url, ref);
-  }
   const objects=[]; let requests=0;
-  for (const ref of unique.values()) {
+  for (const ref of uniqueDocuments(references)) {
     // An operator recovery can use an authenticated application route when a
     // sensitive managed storage token cannot be exported. Its reader is local
     // trusted code; the default scheduled path always pins the private store.

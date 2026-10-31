@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdtemp,readFile,writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { seal,unseal,pinnedPrivateUrl,parseCopyTable,documentReferences,backupDocuments,restoreDocuments,sha256,privateBlobConfiguration } from './operations-recovery-documents.mjs';
+import { seal,unseal,pinnedPrivateUrl,parseCopyTable,documentReferences,documentBudgetUsage,DOCUMENT_BUDGET,backupDocuments,restoreDocuments,sha256,privateBlobConfiguration } from './operations-recovery-documents.mjs';
 const token='vercel_blob_rw_teststore123_secret', url='https://teststore123.private.blob.vercel-storage.com/test.pdf';
 const bytes=Buffer.from('synthetic recovery test bytes'),hash=sha256(bytes),archive='a'.repeat(64),id='00000000-0000-4000-8000-000000000001';
 const reference={id,kind:'attachment',entityType:'arsip',entityId:id,url,sha256:hash,sizeBytes:bytes.length,storageAccess:'private'};
@@ -18,6 +18,25 @@ test('authenticated encryption rejects tampering, wrong key and changed database
  const key=randomBytes(32),encrypted=seal(bytes,key,'context');assert.deepEqual(unseal(encrypted,key,'context'),bytes);
  assert.throws(()=>unseal(encrypted,randomBytes(32),'context'));assert.throws(()=>unseal(encrypted,key,'other'));
  encrypted[15]^=1;assert.throws(()=>unseal(encrypted,key,'context'));
+});
+test('envelope bound admits the largest allowed document and nothing larger',()=>{
+ const key=randomBytes(32),largest=seal(Buffer.alloc(DOCUMENT_BUDGET.maxObjectBytes),key,'context');
+ assert.equal(unseal(largest,key,'context').length,DOCUMENT_BUDGET.maxObjectBytes);
+ assert.throws(()=>unseal(Buffer.concat([largest,Buffer.alloc(1)]),key,'context'),/INVALID_ENVELOPE/);
+});
+test('document budget counts unique stored objects, keeps the reference sanity bound, and warns before failing',()=>{
+ const mib=1024*1024,row=(n,size,name=n)=>({id:`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`,file_url:`https://teststore123.private.blob.vercel-storage.com/${name}.pdf`,sha256:sha256(String(name)),size_bytes:size,storage_access:'private'});
+ const shared=documentBudgetUsage(documentReferences(Array.from({length:5},(_,n)=>row(n,50*mib,'shared')),[]));
+ assert.deepEqual([shared.references,shared.objects,shared.bytes],[5,1,50*mib]);
+ const full=[row(0,50*mib),row(1,50*mib),row(2,50*mib),row(3,10*mib)];
+ assert.equal(documentReferences(full,[]).length,4);assert.equal(documentBudgetUsage(documentReferences(full,[])).bytes,DOCUMENT_BUDGET.maxTotalBytes);
+ assert.throws(()=>documentReferences([...full,row(4,1)],[]),/DOCUMENT_BYTES_OUTSIDE_BUDGET/);
+ const many=Array.from({length:DOCUMENT_BUDGET.maxObjects},(_,n)=>row(n,1));
+ assert.equal(documentReferences(many,[]).length,100);assert.throws(()=>documentReferences([...many,row(100,1)],[]),/DOCUMENT_OBJECTS_OUTSIDE_BUDGET/);
+ assert.equal(documentBudgetUsage(documentReferences(many.slice(0,74),[])).warning,false);assert.equal(documentBudgetUsage(documentReferences(many.slice(0,75),[])).warning,true);
+ assert.equal(documentReferences(Array.from({length:1000},(_,n)=>row(n,1,'shared')),[]).length,1000);
+ assert.throws(()=>documentReferences(Array.from({length:1001},(_,n)=>row(n,1,'shared')),[]),/DOCUMENT_COUNT_OUTSIDE_BUDGET/);
+ assert.throws(()=>documentReferences([row(0,1,'shared'),row(1,2,'shared')],[]),/CONFLICTING_DOCUMENT_REFERENCES/);
 });
 test('private URL pins exact store before any authenticated fetch',()=>{
  assert.equal(pinnedPrivateUrl(url,token).search,'?cache=0');
