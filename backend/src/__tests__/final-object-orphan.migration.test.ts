@@ -67,7 +67,7 @@ describe('final object orphan queue migration privileges', () => {
                 '1735689600999999',
                 'gs://simsa-upload/surat-masuk/record.pdf',
                 '1735689600123456',
-                '2026-10-31T01:00:00Z'
+                '2099-10-31T01:00:00Z'
             ) AS acquired
         `);
         expect(fenced.rows).toEqual([{ acquired: true }]);
@@ -113,7 +113,7 @@ describe('final object orphan queue migration privileges', () => {
             expect.objectContaining({ status: 'referenced' }),
         ]));
         const workerCandidate = queued.rows.find(row => row.status === 'reference_check');
-        expect(new Date(workerCandidate!.not_before).toISOString()).toBe('2026-10-31T01:00:00.000Z');
+        expect(new Date(workerCandidate!.not_before).toISOString()).toBe('2099-10-31T01:00:00.000Z');
         await expect(database.exec(`
             UPDATE final_object_orphans SET status = 'referenced'
         `)).resolves.toBeDefined();
