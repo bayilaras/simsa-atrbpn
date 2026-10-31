@@ -1,12 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
 import {parseIntegrityEnvironment,createPrivateIntegrityReader,runIntegrityWithPool} from './check-file-integrity.mjs';
 const blobToken='vercel_blob_rw_teststore123_syntheticsecret';
 const env={NEON_WORKER_DATABASE_URL:'postgresql://simsa_worker:synthetic-password@ep-synthetic-test.ap-southeast-1.aws.neon.tech/simsa?sslmode=verify-full&channel_binding=require',NEON_WORKER_EXPECTED_HOST:'ep-synthetic-test.ap-southeast-1.aws.neon.tech',NEON_WORKER_EXPECTED_DATABASE:'simsa',SIMSA_PRIVATE_BLOB_READ_WRITE_TOKEN:blobToken};
 test('worker config requires pinned direct worker identity and bounded execution',()=>{
  const actual=parseIntegrityEnvironment({...env,FIXITY_BATCH_SIZE:'3'});assert.equal(actual.clientConfig.user,'simsa_worker');assert.equal(actual.clientConfig.ssl.rejectUnauthorized,true);assert.equal(actual.fixity.batchSize,3);
  for(const changed of [{NEON_WORKER_EXPECTED_HOST:'ep-other.ap-southeast-1.aws.neon.tech'},{NEON_WORKER_DATABASE_URL:env.NEON_WORKER_DATABASE_URL.replace('simsa_worker:','simsa_api:')},{FIXITY_BATCH_SIZE:'101'},{FIXITY_MAX_BYTES:String(513*1024*1024)}])assert.throws(()=>parseIntegrityEnvironment({...env,...changed}));
+ assert.equal(parseIntegrityEnvironment(env).fixity.batchSize,20);assert.throws(()=>parseIntegrityEnvironment({...env,FIXITY_BATCH_SIZE:'21'}),/INTEGRITY_RUN_EXCEEDS_REVIEWED_BUDGET/);
+});
+test('scheduled workflow runs twice a day and its job timeout covers every read deadline in the batch',async()=>{
+ const workflow=await readFile(new URL('../.github/workflows/operations-fixity.yml',import.meta.url),'utf8'),field=name=>new RegExp(`^\\s+${name}: '?([^'\\r\\n]+)'?\\r?$`,'m').exec(workflow)?.[1];
+ assert.equal(field('- cron'),'45 0,12 * * *');
+ const {fixity}=parseIntegrityEnvironment({...env,FIXITY_BATCH_SIZE:field('FIXITY_BATCH_SIZE'),FIXITY_TIMEOUT_MS:field('FIXITY_TIMEOUT_MS')});
+ assert.equal(fixity.batchSize,20);assert.ok(Number(field('timeout-minutes'))*60000>=fixity.batchSize*fixity.timeoutMs+3*60000);
 });
 test('private reader denies another host and redirect, and forwards service abort signal',async()=>{
  const abort=new AbortController();let calls=0;

@@ -19,7 +19,7 @@ export function parseIntegrityEnvironment(environment){
  check(url.hostname===environment.NEON_WORKER_EXPECTED_HOST&&url.pathname==='/'+environment.NEON_WORKER_EXPECTED_DATABASE,'INTEGRITY_DATABASE_PIN_MISMATCH');
  check(!['postgres','template0','template1'].includes(environment.NEON_WORKER_EXPECTED_DATABASE),'INTEGRITY_SYSTEM_DATABASE_REFUSED');
  privateBlobConfiguration(environment);
- const fixity=loadFixityConfig({FIXITY_BATCH_SIZE:'10',...environment});
+ const fixity=loadFixityConfig({FIXITY_BATCH_SIZE:'20',...environment});
  check(fixity.batchSize<=20&&fixity.maximumBytes<=64*1024*1024&&fixity.timeoutMs<=120000,'INTEGRITY_RUN_EXCEEDS_REVIEWED_BUDGET');
  return {fixity,database:environment.NEON_WORKER_EXPECTED_DATABASE,clientConfig:{host:url.hostname,port:5432,database:environment.NEON_WORKER_EXPECTED_DATABASE,
   user:'simsa_worker',password:decodeURIComponent(url.password),ssl:{rejectUnauthorized:true,servername:url.hostname},enableChannelBinding:true,

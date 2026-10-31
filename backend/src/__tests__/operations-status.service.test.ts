@@ -91,7 +91,7 @@ describe('operational collector uses the workers actual SQL membership', () => {
             id text PRIMARY KEY, entity_type text NOT NULL DEFAULT 'arsip', file_url text DEFAULT 'gs://private/qa.pdf',
             drive_file_id text, storage_access text DEFAULT 'private', malware_scan_status text DEFAULT 'clean',
             integrity_status text DEFAULT 'verified', sha256 text DEFAULT repeat('a',64), created_at timestamptz DEFAULT now()-interval '2 hours', last_fixity_check_at timestamptz);
-            CREATE TABLE file_fixity_jobs (attachment_id text PRIMARY KEY REFERENCES file_attachments(id), next_check_at timestamptz DEFAULT now()-interval '2 hours', last_result text);`);
+            CREATE TABLE file_fixity_jobs (attachment_id text PRIMARY KEY REFERENCES file_attachments(id), next_check_at timestamptz DEFAULT now()-interval '27 hours', last_result text);`);
     }, 30_000);
     beforeEach(async () => {
         await database.exec('TRUNCATE file_fixity_jobs, file_attachments');
@@ -127,7 +127,17 @@ describe('operational collector uses the workers actual SQL membership', () => {
         expect(check(result, 'fixity').counts).toEqual({ overdue: 2, errors: 2, unscheduled: 0, mismatched: 0 });
         expect(check(result, 'scan_queue').counts?.errors).toBe(1);
     });
-    it('gives newly released files until the next daily fixity run before reporting them unscheduled', async () => {
+    it('tolerates a missed or late scheduled fixity run before reporting a check overdue', async () => {
+        await database.exec(`INSERT INTO file_attachments(id) VALUES ('not-due'),('due-before-run'),('missed-one-run'),('overdue');
+            INSERT INTO file_fixity_jobs(attachment_id,next_check_at) VALUES ('not-due', now()+interval '6 days'),
+            ('due-before-run', now()-interval '1 hour 5 minutes'), ('missed-one-run', now()-interval '25 hours'), ('overdue', now()-interval '27 hours');`);
+        const result = await collectOperationsStatus();
+        expect(check(result, 'fixity').counts).toEqual({ overdue: 1, errors: 0, unscheduled: 0, mismatched: 0 });
+        expect(check(result, 'fixity').message).toMatch(/terlambat lebih dari 26 jam/);
+        await database.exec(`DELETE FROM file_fixity_jobs WHERE attachment_id='overdue'`);
+        expect(check(await collectOperationsStatus(), 'fixity').status).toBe('healthy');
+    });
+    it('gives newly released files until the next scheduled fixity run before reporting them unscheduled', async () => {
         await database.exec(`INSERT INTO file_attachments(id,created_at,last_fixity_check_at) VALUES
             ('released-today', now()-interval '30 days', now()-interval '1 hour'),
             ('uploaded-today', now()-interval '2 hours', NULL),

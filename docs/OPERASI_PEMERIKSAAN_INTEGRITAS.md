@@ -12,7 +12,7 @@ Untuk satu eksekusi pada lingkungan yang sudah dikonfigurasi:
 npm run start:file-fixity
 ```
 
-Produksi menjalankan pemeriksaan terjadwal melalui workflow `.github/workflows/operations-fixity.yml`; lihat [pemeriksaan integritas file terjadwal](OPERATIONS_FIXITY.md). Setiap berkas yang cocok dijadwalkan ulang setelah 7 hari. Pada server lain, pasang perintah tersebut di scheduler milik server dan tangkap exit status serta lognya. Belum ada scheduler yang dipasang pada komputer pengguna hanya karena dokumen ini tersedia.
+Produksi menjalankan pemeriksaan terjadwal dua kali sehari melalui workflow `.github/workflows/operations-fixity.yml` dengan batch 20; lihat [pemeriksaan integritas file terjadwal](OPERATIONS_FIXITY.md). Setiap berkas yang cocok dijadwalkan ulang setelah 7 hari. Pada server lain, pasang perintah tersebut di scheduler milik server dan tangkap exit status serta lognya. Belum ada scheduler yang dipasang pada komputer pengguna hanya karena dokumen ini tersedia.
 
 | Pengaturan | Default | Batas yang diterima |
 |---|---:|---|
@@ -50,7 +50,7 @@ WHERE j.attachment_id IS NULL AND f.storage_access='private'
   AND f.integrity_status <> 'mismatch';
 ```
 
-Pantau antrean terlambat dan berkas yang belum terjadwal, selain exit worker. Hanya worker fixity harian yang mendaftarkan berkas baru (peran API tidak punya hak `INSERT` pada `file_fixity_jobs`), sehingga Monitoring Operasional baru menghitung berkas bersih sebagai "belum terjadwal" bila `coalesce(last_fixity_check_at, created_at)` lebih tua dari 26 jam. Berkas yang baru dinyatakan bersih tidak memerahkan monitor sebelum jadwal harian berikutnya sempat berjalan; kueri `missing_schedule` di atas tetap menampilkan semuanya. Penemuan berkas baru juga dibatasi per batch. Berkas tanpa hash, belum bersih, publik, atau sudah mismatch memerlukan penanganan terpisah dan tidak dianggap berhasil diperiksa.
+Pantau antrean terlambat dan berkas yang belum terjadwal, selain exit worker. Hanya worker fixity terjadwal yang mendaftarkan berkas baru (peran API tidak punya hak `INSERT` pada `file_fixity_jobs`), sehingga Monitoring Operasional baru menghitung berkas bersih sebagai "belum terjadwal" bila `coalesce(last_fixity_check_at, created_at)` lebih tua dari 26 jam. Berkas yang baru dinyatakan bersih tidak memerahkan monitor sebelum run terjadwal berikutnya sempat berjalan; kueri `missing_schedule` di atas tetap menampilkan semuanya. Dengan alasan yang sama, pemeriksaan ulang baru dihitung terlambat bila `next_check_at` sudah lewat lebih dari 26 jam: berkas yang jatuh tempo beberapa menit setelah run dimulai menunggu run berikutnya, dan jadwal GitHub dapat tertunda berjam-jam atau terlewat. Kueri `overdue` di atas tetap menampilkan semua yang sudah jatuh tempo. Penemuan berkas baru juga dibatasi per batch. Berkas tanpa hash, belum bersih, publik, atau sudah mismatch memerlukan penanganan terpisah dan tidak dianggap berhasil diperiksa.
 
 ## Backup dan uji penerimaan
 
