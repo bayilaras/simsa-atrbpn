@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdtemp,readFile,writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { seal,unseal,pinnedPrivateUrl,parseCopyTable,documentReferences,backupDocuments,restoreDocuments,sha256,privateBlobConfiguration } from './operations-recovery-documents.mjs';
+import { seal,unseal,pinnedPrivateUrl,parseCopyTable,documentReferences,documentBudgetUsage,documentBudgetAnnotation,DOCUMENT_BUDGET,backupDocuments,restoreDocuments,sha256,privateBlobConfiguration } from './operations-recovery-documents.mjs';
 const token='vercel_blob_rw_teststore123_secret', url='https://teststore123.private.blob.vercel-storage.com/test.pdf';
 const bytes=Buffer.from('synthetic recovery test bytes'),hash=sha256(bytes),archive='a'.repeat(64),id='00000000-0000-4000-8000-000000000001';
 const reference={id,kind:'attachment',entityType:'arsip',entityId:id,url,sha256:hash,sizeBytes:bytes.length,storageAccess:'private'};
@@ -18,6 +18,61 @@ test('authenticated encryption rejects tampering, wrong key and changed database
  const key=randomBytes(32),encrypted=seal(bytes,key,'context');assert.deepEqual(unseal(encrypted,key,'context'),bytes);
  assert.throws(()=>unseal(encrypted,randomBytes(32),'context'));assert.throws(()=>unseal(encrypted,key,'other'));
  encrypted[15]^=1;assert.throws(()=>unseal(encrypted,key,'context'));
+});
+test('envelope bound admits the largest allowed document and nothing larger',()=>{
+ const key=randomBytes(32),largest=seal(Buffer.alloc(DOCUMENT_BUDGET.maxObjectBytes),key,'context');
+ assert.equal(unseal(largest,key,'context').length,DOCUMENT_BUDGET.maxObjectBytes);
+ assert.throws(()=>unseal(Buffer.concat([largest,Buffer.alloc(1)]),key,'context'),/INVALID_ENVELOPE/);
+});
+const mib=1024*1024,row=(n,size,name=n)=>({id:`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`,file_url:`https://teststore123.private.blob.vercel-storage.com/${name}.pdf`,sha256:sha256(String(name)),size_bytes:size,storage_access:'private'});
+test('document budget counts unique stored objects, keeps the reference sanity bound, and warns at 75 percent',()=>{
+ const shared=documentBudgetUsage(documentReferences(Array.from({length:5},(_,n)=>row(n,50*mib,'shared')),[]));
+ assert.deepEqual([shared.references,shared.objects,shared.bytes],[5,1,50*mib]);
+ const full=[...Array.from({length:20},(_,n)=>row(n,50*mib)),row(20,24*mib)];
+ assert.equal(documentReferences(full,[]).length,21);assert.equal(documentBudgetUsage(documentReferences(full,[])).bytes,DOCUMENT_BUDGET.maxTotalBytes);
+ assert.throws(()=>documentReferences([...full,row(21,1)],[]),/DOCUMENT_BYTES_OUTSIDE_BUDGET/);
+ const many=Array.from({length:DOCUMENT_BUDGET.maxObjects},(_,n)=>row(n,1));
+ assert.equal(documentReferences(many,[]).length,1000);assert.throws(()=>documentReferences([...many,row(1000,1)],[]),/DOCUMENT_OBJECTS_OUTSIDE_BUDGET/);
+ assert.equal(documentBudgetUsage(documentReferences(many.slice(0,749),[])).ratioWarning,false);assert.equal(documentBudgetUsage(documentReferences(many.slice(0,750),[])).ratioWarning,true);
+ assert.equal(documentReferences(Array.from({length:2000},(_,n)=>row(n,1,'shared')),[]).length,2000);
+ assert.throws(()=>documentReferences(Array.from({length:2001},(_,n)=>row(n,1,'shared')),[]),/DOCUMENT_COUNT_OUTSIDE_BUDGET/);
+ assert.throws(()=>documentReferences([row(0,1,'shared'),row(1,2,'shared')],[]),/CONFLICTING_DOCUMENT_REFERENCES/);
+});
+test('budget warns once the room left is smaller than one bulk-upload batch',()=>{
+ const batch=DOCUMENT_BUDGET.bulkUploadBatch,perFile=Math.floor(batch.bytes/batch.objects);
+ // 19 unique objects, 77,723,422 bytes on 31 October 2026: far from every limit, and one more batch still fits.
+ const today=Array.from({length:19},(_,n)=>row(n,n<18?4090706:77723422-18*4090706));
+ const usage=documentBudgetUsage(documentReferences(today,[]));
+ assert.deepEqual([usage.objects,usage.bytes,usage.ratioWarning,usage.headroomWarning,usage.warning],[19,77723422,false,false,false]);
+ assert.equal(usage.bytesHeadroom,DOCUMENT_BUDGET.maxTotalBytes-77723422);
+ assert.equal(documentReferences([...today,...Array.from({length:batch.objects},(_,n)=>row(100+n,perFile))],[]).length,69);
+ // A hard failure carries its usage record.
+ assert.throws(()=>documentReferences([...Array.from({length:20},(_,n)=>row(n,50*mib)),row(20,24*mib),row(21,1)],[]),error=>error.safeCode==='DOCUMENT_BYTES_OUTSIDE_BUDGET'
+  &&error.documentBudget.objects===22&&error.documentBudget.bytesHeadroom===-1);
+ // Bytes: exactly one batch of room is quiet, one byte less warns.
+ const shortBy=extra=>documentBudgetUsage(documentReferences([...Array.from({length:18},(_,n)=>row(n,50*mib)),row(18,DOCUMENT_BUDGET.maxTotalBytes-batch.bytes-18*50*mib+extra)],[]));
+ assert.equal(shortBy(0).bytesHeadroom,batch.bytes);assert.equal(shortBy(0).headroomWarning,false);assert.equal(shortBy(1).headroomWarning,true);
+ // Objects: room for exactly one batch is quiet, one object more warns.
+ const objects=n=>documentBudgetUsage(documentReferences(Array.from({length:n},(_,i)=>row(i,1)),[]));
+ assert.equal(objects(950).headroomWarning,false);assert.equal(objects(951).headroomWarning,true);
+ assert.throws(()=>documentReferences(Array.from({length:1001},(_,i)=>row(i,1)),[]),error=>error.safeCode==='DOCUMENT_OBJECTS_OUTSIDE_BUDGET'&&error.documentBudget.objects===1001);
+});
+test('budget annotation states the numbers and the one-batch risk without workflow-command escapes',()=>{
+ const today=documentBudgetUsage(documentReferences(Array.from({length:19},(_,n)=>row(n,n<18?4090706:77723422-18*4090706)),[]));
+ assert.equal(documentBudgetAnnotation(today),null);
+ const nearFull=documentBudgetUsage(documentReferences([...Array.from({length:19},(_,n)=>row(n,50*mib)),row(19,10*mib)],[]));
+ const warning=documentBudgetAnnotation(nearFull);
+ assert.match(warning,/^::warning title=SIMSA backup mendekati batas::20\/1000 objek unik, 960\.0\/1024\.0 MiB, 20\/2000 referensi\. Sisa ruang \(980 objek, 64\.0 MiB\) lebih kecil dari satu batch unggah massal \(50 berkas, 100\.0 MiB\)/);
+ assert.match(documentBudgetAnnotation(documentBudgetUsage(documentReferences([row(0,mib)],[])),{failed:true}),/^::error title=SIMSA backup melewati batas dokumen::1\/1000 objek unik/);
+ for(const line of [warning,documentBudgetAnnotation(today,{failed:true})])assert.doesNotMatch(line,/[%\r\n]/);
+});
+test('bulk-upload batch mirrors the backend and frontend upload limits',async()=>{
+ const limits=async path=>{const source=await readFile(new URL(path,import.meta.url),'utf8');
+  const block=/BULK_UPLOAD_LIMITS = Object\.freeze\(\{([\s\S]*?)\}\);/.exec(source)?.[1]??'';
+  const files=Number(/maxFiles:\s*(\d+),/.exec(block)?.[1]);
+  const bytes=(/maxBatchBytes:\s*([\d\s*]+),/.exec(block)?.[1]??'0').split('*').reduce((product,factor)=>product*Number(factor),1);
+  return {objects:files,bytes};};
+ for(const path of ['../backend/src/services/bulk-upload.service.ts','../frontend/src/hooks/useOCRUpload.js'])assert.deepEqual(await limits(path),{...DOCUMENT_BUDGET.bulkUploadBatch});
 });
 test('private URL pins exact store before any authenticated fetch',()=>{
  assert.equal(pinnedPrivateUrl(url,token).search,'?cache=0');

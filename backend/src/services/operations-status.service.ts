@@ -12,7 +12,17 @@ const date = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2
 const count = (value: unknown) => Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : 0;
 const validCount = (value: unknown) => (typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value)))
     && Number.isSafeInteger(Number(value)) && Number(value) >= 0;
-const FIXITY_ENROLLMENT_GRACE_HOURS = 26;
+// The fixity worker runs from a best-effort GitHub schedule (00:45 and 12:45
+// UTC). A file that falls due or is released just after a run starts waits
+// for the next run, or 24 hours if GitHub drops that run. GitHub has started
+// the 00:45 run anywhere between 05:00 and 07:07 UTC, and checkout, npm ci and
+// tests take up to 5 minutes, so the run after a dropped one may reach the
+// file 24 h + 2 h 07 min + 5 min = 26 h 12 min later. A due file can also be
+// the last of 20 reads that each hit the 60 s deadline: 26 h 32 min. 28 hours
+// leaves 1 h 28 min for later starts than observed, so one dropped run stays
+// healthy and two in a row are reported. Enrollment runs before any read.
+const FIXITY_ENROLLMENT_GRACE_HOURS = 28;
+const FIXITY_OVERDUE_GRACE_HOURS = 28;
 const QUEUE_KEYS = ['scanWaiting', 'scanOverdue', 'scanErrors', 'fixityOverdue', 'fixityErrors', 'fixityUnscheduled', 'mismatched'];
 
 export function evaluateRecoveryCheck(id: 'backup' | 'restore', evidence: unknown, now: number): Check {
@@ -56,7 +66,7 @@ export function buildOperationsStatus(input: { now: number; readiness: unknown; 
     checks.push({ id: 'scan_queue', label: 'Antrean pemindaian', status: unavailable ? 'unknown' : scanCounts.errors || scanCounts.overdue ? 'attention' : 'healthy',
         message: unavailable ? 'Antrean belum dapat diperiksa.' : 'Berkas menunggu lebih dari 30 menit atau gagal dipindai perlu ditindaklanjuti.', ...(!unavailable ? { counts: scanCounts } : {}) });
     checks.push({ id: 'fixity', label: 'Integritas dokumen berkala', status: unavailable ? 'unknown' : fixityCounts.mismatched ? 'failed' : Object.values(fixityCounts).some(Boolean) ? 'attention' : 'healthy',
-        message: unavailable ? 'Jadwal integritas belum dapat diperiksa.' : 'Periksa berkas rusak, pemeriksaan gagal, jadwal terlambat lebih dari satu jam, atau berkas bersih yang belum terjadwal lebih dari 26 jam.', ...(!unavailable ? { counts: fixityCounts } : {}) });
+        message: unavailable ? 'Jadwal integritas belum dapat diperiksa.' : `Periksa berkas rusak, pemeriksaan gagal, jadwal terlambat lebih dari ${FIXITY_OVERDUE_GRACE_HOURS} jam, atau berkas bersih yang belum terjadwal lebih dari ${FIXITY_ENROLLMENT_GRACE_HOURS} jam.`, ...(!unavailable ? { counts: fixityCounts } : {}) });
     checks.push(evaluateRecoveryCheck('backup', recovery.backup, input.now), evaluateRecoveryCheck('restore', recovery.restore, input.now));
     return { timestamp: new Date(input.now).toISOString(), status: checks.some(c => c.status === 'failed') ? 'failed' : checks.some(c => ['attention', 'unknown'].includes(c.status)) ? 'attention' : 'healthy',
         checks, ciUrl: 'https://github.com/bayilaras/simsa-atrbpn/actions', refreshAfterSeconds: 60 };
@@ -92,10 +102,10 @@ export async function collectOperationsStatus() {
     const pendingScan = `(malware_scan_status IN ('not_scanned', 'not_required')
         OR (malware_scan_status='clean' AND (integrity_status <> 'verified' OR sha256 IS NULL OR sha256 !~* '^[a-f0-9]{64}$'))
         OR malware_scan_status ~ '^(scanning|retry):[1-9][0-9]?:[0-9]{1,12}$')`;
-    // Only the daily fixity worker may enroll files (the API role has no
+    // Only the scheduled fixity worker may enroll files (the API role has no
     // INSERT on file_fixity_jobs). A scan that releases a file records its
     // verified hash in last_fixity_check_at, so count a file as unscheduled
-    // only after the next daily run has had time to enroll it.
+    // only after the next scheduled run has had time to enroll it.
     const fixityEligible = `f.storage_access='private' AND f.malware_scan_status='clean'
         AND f.sha256 IS NOT NULL AND f.integrity_status <> 'mismatch'`;
     const [ready, queue, recovery] = await Promise.allSettled([
@@ -105,7 +115,7 @@ export async function collectOperationsStatus() {
             (SELECT count(*) FROM file_attachments WHERE ${pendingScan} AND created_at < now() - interval '30 minutes') AS "scanOverdue",
             (SELECT count(*) FROM file_attachments WHERE malware_scan_status IN ('scan_error', 'infected')) AS "scanErrors",
             (SELECT count(*) FROM file_fixity_jobs j JOIN file_attachments f ON f.id=j.attachment_id
-                WHERE ${fixityEligible} AND j.next_check_at < now() - interval '1 hour') AS "fixityOverdue",
+                WHERE ${fixityEligible} AND j.next_check_at < now() - interval '${FIXITY_OVERDUE_GRACE_HOURS} hours') AS "fixityOverdue",
             (SELECT count(*) FROM file_fixity_jobs j JOIN file_attachments f ON f.id=j.attachment_id
                 WHERE ${fixityEligible} AND j.last_result IN ('error', 'stale')) AS "fixityErrors",
             (SELECT count(*) FROM file_attachments f LEFT JOIN file_fixity_jobs j ON j.attachment_id=f.id

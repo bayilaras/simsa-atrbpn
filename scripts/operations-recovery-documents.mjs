@@ -6,15 +6,52 @@ import { createServer } from 'node:http';
 export const sha256 = value => createHash('sha256').update(value).digest('hex');
 const check = (value, code) => { if (!value) throw Object.assign(new Error(code), { safeCode: code }); };
 const MAX_OBJECT = 50 * 1024 * 1024;
-const MAX_TOTAL = 200 * 1024 * 1024;
-const MAX_COUNT = 1000;
-// Early warning before a scheduled backup hits the hard document budget.
-export const DOCUMENT_BUDGET = Object.freeze({ maxCount: MAX_COUNT, maxObjectBytes: MAX_OBJECT, maxTotalBytes: MAX_TOTAL, warningRatio: 0.8 });
+// Hard, reviewed budgets. Every run GETs each unique stored object once with
+// cache=0 (one Blob simple operation plus its bytes as data transfer), so bytes
+// and objects are counted after URL deduplication. Sized for the Vercel Pro
+// plan, where Blob usage is billed instead of blocked, and the 60-minute job
+// timeout; never use these limits on Hobby (10 GB transfer and 10,000 simple
+// operations per 30 days, then Blob is blocked for 30 days). References stay a
+// separate metadata sanity bound. Raise only after the owner review described
+// in docs/OPERATIONS_RECOVERY.md.
+const MAX_TOTAL = 1024 * 1024 * 1024;
+const MAX_OBJECTS = 1000;
+const MAX_COUNT = 2000;
+// One envelope seals one document; the manifest and wrapped keys are far smaller.
+const MAX_ENVELOPE = MAX_OBJECT + 28;
+// Largest single user action: one confirmed bulk-upload batch, mirroring
+// BULK_UPLOAD_LIMITS in the backend bulk-upload service and the upload hook.
+const BULK_UPLOAD_BATCH = Object.freeze({ objects: 50, bytes: 100 * 1024 * 1024 });
+export const DOCUMENT_BUDGET = Object.freeze({ maxReferences: MAX_COUNT, maxObjects: MAX_OBJECTS, maxObjectBytes: MAX_OBJECT, maxTotalBytes: MAX_TOTAL,
+  warningRatio: 0.75, bulkUploadBatch: BULK_UPLOAD_BATCH });
+function uniqueDocuments(references) {
+  const unique = new Map();
+  for (const ref of references) { const prior = unique.get(ref.url);
+    check(!prior || prior.sha256 === ref.sha256 && prior.sizeBytes === ref.sizeBytes, 'CONFLICTING_DOCUMENT_REFERENCES'); if (!prior) unique.set(ref.url, ref); }
+  return [...unique.values()];
+}
+// Measured like the hard check in documentReferences. A ratio alone cannot
+// predict that failure: one bulk-upload batch between two daily runs can take
+// usage from below the ratio straight past a limit. The headroom warning
+// therefore also fires whenever the room left is smaller than one batch.
 export function documentBudgetUsage(references) {
-  const count = references.length, bytes = references.reduce((sum, ref) => sum + ref.sizeBytes, 0);
-  const countRatio = count / MAX_COUNT, bytesRatio = bytes / MAX_TOTAL;
-  return { count, bytes, maxCount: MAX_COUNT, maxTotalBytes: MAX_TOTAL, countRatio, bytesRatio,
-    warning: countRatio >= DOCUMENT_BUDGET.warningRatio || bytesRatio >= DOCUMENT_BUDGET.warningRatio };
+  const objects = uniqueDocuments(references), bytes = objects.reduce((sum, ref) => sum + ref.sizeBytes, 0);
+  const referencesRatio = references.length / MAX_COUNT, objectsRatio = objects.length / MAX_OBJECTS, bytesRatio = bytes / MAX_TOTAL;
+  const referencesHeadroom = MAX_COUNT - references.length, objectsHeadroom = MAX_OBJECTS - objects.length, bytesHeadroom = MAX_TOTAL - bytes;
+  const ratioWarning = Math.max(referencesRatio, objectsRatio, bytesRatio) >= DOCUMENT_BUDGET.warningRatio;
+  const headroomWarning = referencesHeadroom < BULK_UPLOAD_BATCH.objects || objectsHeadroom < BULK_UPLOAD_BATCH.objects || bytesHeadroom < BULK_UPLOAD_BATCH.bytes;
+  return { references: references.length, objects: objects.length, bytes, maxReferences: MAX_COUNT, maxObjects: MAX_OBJECTS, maxTotalBytes: MAX_TOTAL,
+    referencesRatio, objectsRatio, bytesRatio, referencesHeadroom, objectsHeadroom, bytesHeadroom, ratioWarning, headroomWarning, warning: ratioWarning || headroomWarning };
+}
+const mib = bytes => (bytes / (1024 * 1024)).toFixed(1);
+// GitHub Actions annotation for a usage record, or null when nothing needs attention.
+// Numbers only (no '%', no newline), so the workflow command needs no escaping.
+export function documentBudgetAnnotation(usage, { failed = false } = {}) {
+  if (!failed && !usage.warning) return null;
+  const numbers = `${usage.objects}/${usage.maxObjects} objek unik, ${mib(usage.bytes)}/${mib(usage.maxTotalBytes)} MiB, ${usage.references}/${usage.maxReferences} referensi`;
+  if (failed) return `::error title=SIMSA backup melewati batas dokumen::${numbers}. Dokumen tidak dicadangkan pada run ini. Lihat docs/OPERATIONS_RECOVERY.md.`;
+  const batch = usage.headroomWarning ? ` Sisa ruang (${usage.objectsHeadroom} objek, ${mib(usage.bytesHeadroom)} MiB) lebih kecil dari satu batch unggah massal (${BULK_UPLOAD_BATCH.objects} berkas, ${mib(BULK_UPLOAD_BATCH.bytes)} MiB); satu unggahan massal dapat membuat backup berikutnya gagal tanpa peringatan lain.` : '';
+  return `::warning title=SIMSA backup mendekati batas::${numbers}.${batch} Tinjau kuota Blob dan batas di docs/OPERATIONS_RECOVERY.md.`;
 }
 export function seal(bytes, key, context) {
   check(Buffer.isBuffer(key) && key.length === 32, 'INVALID_KEY');
@@ -23,7 +60,7 @@ export function seal(bytes, key, context) {
   return Buffer.concat([iv, cipher.update(bytes), cipher.final(), cipher.getAuthTag()]);
 }
 export function unseal(bytes, key, context) {
-  check(bytes.length >= 28 && bytes.length <= MAX_TOTAL * 2, 'INVALID_ENVELOPE');
+  check(bytes.length >= 28 && bytes.length <= MAX_ENVELOPE, 'INVALID_ENVELOPE');
   const decipher = createDecipheriv('aes-256-gcm', key, bytes.subarray(0, 12));
   decipher.setAAD(Buffer.from(context)); decipher.setAuthTag(bytes.subarray(-16));
   return Buffer.concat([decipher.update(bytes.subarray(12, -16)), decipher.final()]);
@@ -67,7 +104,10 @@ export function documentReferences(attachments, ruleSets, {captureMissingHashes=
   check(refs.length > 0 && refs.length <= MAX_COUNT, 'DOCUMENT_COUNT_OUTSIDE_BUDGET');
   for (const ref of refs) check(/^[a-f0-9-]{36}$/i.test(ref.id) && (/^[a-f0-9]{64}$/.test(ref.sha256 || '') || captureMissingHashes && ref.sha256 == null)
     && Number.isSafeInteger(ref.sizeBytes) && ref.sizeBytes > 0 && ref.sizeBytes <= MAX_OBJECT && ref.storageAccess === 'private', 'DOCUMENT_METADATA_INCOMPLETE');
-  check(refs.reduce((sum, ref) => sum + ref.sizeBytes, 0) <= MAX_TOTAL, 'DOCUMENT_BYTES_OUTSIDE_BUDGET');
+  const usage = documentBudgetUsage(refs);
+  // The usage record (counts and sizes only) travels with the failure so a red run still reports its numbers.
+  const over = usage.objects > MAX_OBJECTS ? 'DOCUMENT_OBJECTS_OUTSIDE_BUDGET' : usage.bytes > MAX_TOTAL ? 'DOCUMENT_BYTES_OUTSIDE_BUDGET' : null;
+  if (over) throw Object.assign(new Error(over), { safeCode: over, documentBudget: usage });
   return refs;
 }
 async function exclusiveDirectory(path) {
@@ -76,14 +116,8 @@ async function exclusiveDirectory(path) {
 }
 export async function backupDocuments({references, token, directory, key, sourceSnapshotAt, archiveSha256, captureMissingHashes=false, fetchImpl=fetch, applicationReader}) {
   await exclusiveDirectory(directory);
-  const unique = new Map();
-  for (const ref of references) {
-    const prior = unique.get(ref.url);
-    check(!prior || prior.sha256 === ref.sha256 && prior.sizeBytes === ref.sizeBytes, 'CONFLICTING_DOCUMENT_REFERENCES');
-    if (!prior) unique.set(ref.url, ref);
-  }
   const objects=[]; let requests=0;
-  for (const ref of unique.values()) {
+  for (const ref of uniqueDocuments(references)) {
     // An operator recovery can use an authenticated application route when a
     // sensitive managed storage token cannot be exported. Its reader is local
     // trusted code; the default scheduled path always pins the private store.

@@ -12,7 +12,7 @@ Untuk satu eksekusi pada lingkungan yang sudah dikonfigurasi:
 npm run start:file-fixity
 ```
 
-Produksi menjalankan pemeriksaan terjadwal melalui workflow `.github/workflows/operations-fixity.yml`; lihat [pemeriksaan integritas file terjadwal](OPERATIONS_FIXITY.md). Setiap berkas yang cocok dijadwalkan ulang setelah 7 hari. Pada server lain, pasang perintah tersebut di scheduler milik server dan tangkap exit status serta lognya. Belum ada scheduler yang dipasang pada komputer pengguna hanya karena dokumen ini tersedia.
+Produksi menjalankan pemeriksaan terjadwal dua kali sehari melalui workflow `.github/workflows/operations-fixity.yml` dengan batch 20; lihat [pemeriksaan integritas file terjadwal](OPERATIONS_FIXITY.md). Setiap berkas yang cocok dijadwalkan ulang setelah 7 hari. Pada server lain, pasang perintah tersebut di scheduler milik server dan tangkap exit status serta lognya. Belum ada scheduler yang dipasang pada komputer pengguna hanya karena dokumen ini tersedia.
 
 | Pengaturan | Default | Batas yang diterima |
 |---|---:|---|
@@ -22,11 +22,11 @@ Produksi menjalankan pemeriksaan terjadwal melalui workflow `.github/workflows/o
 | `FIXITY_MAX_BYTES` | 67108864 (64 MiB) | 1–536870912 |
 | `FIXITY_TIMEOUT_MS` | 30000 | 1000–120000 |
 
-Dengan default, satu eksekusi membaca paling banyak 20 berkas dan satu pembacaan paling lama 30 detik. Batasi waktu proses scheduler dengan ruang tambahan untuk database. Sesuaikan frekuensi/jumlah batch terhadap inventaris dan kapasitas storage; jangan menaikkan batas tanpa memeriksa durasi dan biaya baca. Nilai konfigurasi yang tidak valid menggagalkan worker.
+Dengan default, satu eksekusi mendaftarkan paling banyak lima batch baca berkas baru (100 berkas; pendaftaran tidak membaca storage) dengan jadwal baca pertama berselang 12 jam per batch, membaca paling banyak 20 berkas, dan satu pembacaan paling lama 30 detik. Eksekusi manual dengan batch lebih kecil mendaftarkan dan mengelompokkan menurut batch tersebut, misalnya batch 3 mendaftarkan 15 berkas dalam lima kelompok. Batasi waktu proses scheduler dengan ruang tambahan untuk database. Sesuaikan frekuensi/jumlah batch terhadap inventaris dan kapasitas storage; jangan menaikkan batas tanpa memeriksa durasi dan biaya baca. Nilai konfigurasi yang tidak valid menggagalkan worker.
 
 ## Hasil dan respons petugas
 
-Worker menulis ringkasan `checked`, `matched`, `mismatched`, `failed`, `stale`. Exit 0 berarti eksekusi berhasil tanpa ketidakcocokan/kegagalan. Exit 1 atau tidak adanya eksekusi sesuai jadwal harus memicu notifikasi petugas melalui fasilitas monitoring server. Status HTTP `/ready` tidak membuktikan timer ini sudah berjalan.
+Worker menulis ringkasan `enrolled` (berkas baru yang didaftarkan), `checked`, `matched`, `mismatched`, `failed`, `stale`. Exit 0 berarti eksekusi berhasil tanpa ketidakcocokan/kegagalan. Exit 1 atau tidak adanya eksekusi sesuai jadwal harus memicu notifikasi petugas melalui fasilitas monitoring server. Status HTTP `/ready` tidak membuktikan timer ini sudah berjalan.
 
 - `match`: hash dan ukuran cocok; jadwal berikutnya disimpan.
 - `mismatch`: berkas ditandai tidak cocok. Jalur unduh terkendali menolak berkas tersebut. Worker berkala tidak memulihkannya otomatis. Pertahankan bukti, periksa storage/riwayat versi dan backup, lalu lakukan pemulihan melalui prosedur yang disetujui sebelum pemeriksaan manual.
@@ -50,7 +50,7 @@ WHERE j.attachment_id IS NULL AND f.storage_access='private'
   AND f.integrity_status <> 'mismatch';
 ```
 
-Pantau antrean terlambat dan berkas yang belum terjadwal, selain exit worker. Hanya worker fixity harian yang mendaftarkan berkas baru (peran API tidak punya hak `INSERT` pada `file_fixity_jobs`), sehingga Monitoring Operasional baru menghitung berkas bersih sebagai "belum terjadwal" bila `coalesce(last_fixity_check_at, created_at)` lebih tua dari 26 jam. Berkas yang baru dinyatakan bersih tidak memerahkan monitor sebelum jadwal harian berikutnya sempat berjalan; kueri `missing_schedule` di atas tetap menampilkan semuanya. Penemuan berkas baru juga dibatasi per batch. Berkas tanpa hash, belum bersih, publik, atau sudah mismatch memerlukan penanganan terpisah dan tidak dianggap berhasil diperiksa.
+Pantau antrean terlambat dan berkas yang belum terjadwal, selain exit worker. Hanya worker fixity terjadwal yang mendaftarkan berkas baru (peran API tidak punya hak `INSERT` pada `file_fixity_jobs`), sehingga Monitoring Operasional baru menghitung berkas bersih sebagai "belum terjadwal" bila `coalesce(last_fixity_check_at, created_at)` lebih tua dari 28 jam. Berkas yang baru dinyatakan bersih tidak memerahkan monitor sebelum run terjadwal berikutnya sempat berjalan; kueri `missing_schedule` di atas tetap menampilkan semuanya. Dengan alasan yang sama, pemeriksaan ulang baru dihitung terlambat bila `next_check_at` sudah lewat lebih dari 28 jam. Angka ini menampung satu run terlewat: berkas yang jatuh tempo atau dinyatakan bersih sesaat setelah run dimulai menunggu 24 jam bila run berikutnya tidak berjalan, ditambah rentang mulai jadwal 00:45 yang teramati (05:00–07:07 UTC, 2 jam 7 menit), persiapan job sampai 5 menit, dan sampai 20 menit bila berkas itu menjadi bacaan terakhir dari 20 bacaan yang masing-masing habis 60 detik, total 26 jam 32 menit. Sisa 1 jam 28 menit menampung keterlambatan GitHub yang lebih besar; dua run terlewat berturut-turut tetap memerahkan monitor. Kueri `overdue` di atas tetap menampilkan semua yang sudah jatuh tempo. Penemuan berkas baru dibatasi lima batch baca per eksekusi (100 berkas pada batch 20), terpisah dari batch baca; sisanya didaftarkan pada eksekusi berikutnya. Berkas yang didaftarkan jatuh tempo per kelompok sebesar batch dengan jarak 12 jam, sehingga pemeriksaan ulang yang jatuh tempo lebih dulu tidak tertahan di belakang seluruh unggahan massal dan kelompok yang belum jatuh tempo tidak dihitung terlambat. Berkas tanpa hash, belum bersih, publik, atau sudah mismatch memerlukan penanganan terpisah dan tidak dianggap berhasil diperiksa.
 
 ## Backup dan uji penerimaan
 

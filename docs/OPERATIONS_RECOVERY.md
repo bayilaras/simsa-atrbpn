@@ -31,7 +31,17 @@ Variabel dan secret berikut disediakan melalui environment privat, tidak sebagai
 | `OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES` | Opsional, tepat `true` untuk kebijakan pencatatan hash null di atas |
 | `OPERATIONS_RECOVERY_PUBLISH_STATUS` | Opsional, tepat `true` untuk publikasi bukti ke Blob privat |
 
-Jalankan `node scripts/operations-recovery.mjs run`. Keluaran standar hanya laporan tersanitasi. Batas pengambilan adalah 1.000 referensi, 50 MiB per objek, dan total 200 MiB; batas ini harus ditinjau bila data bertambah, tidak dilewati otomatis. Semua GET menolak redirect dan memakai deadline serta batas ukuran.
+Jalankan `node scripts/operations-recovery.mjs run`. Keluaran standar hanya laporan tersanitasi. Batas pengambilan adalah 2.000 referensi, 1.000 objek tersimpan unik, 50 MiB per objek, dan total 1 GiB objek unik. Objek dihitung setelah deduplikasi URL, sama dengan yang benar-benar diunduh: beberapa referensi ke berkas yang sama hanya diunduh dan dihitung sekali. Batas ini tidak dilewati otomatis. Semua GET menolak redirect dan memakai deadline serta batas ukuran.
+
+### Batas dokumen dan kuota Blob
+
+Batas di atas disesuaikan dengan paket Vercel Pro yang dipakai produksi mulai November 2026. Setiap run, terjadwal maupun manual, mengunduh ulang semua objek unik dengan `cache=0`; tiap unduhan dihitung sebagai satu *simple operation* ditambah transfer data Blob dan Fast Origin Transfer. Di Pro, pemakaian di atas jatah ditagih, tidak diblokir. Perkiraan untuk 1 GiB objek unik dengan backup penuh harian adalah 30–40 GB transfer per bulan, sekitar US$11–14, masih di dalam kredit pemakaian US$20 paket Pro. Pasang batas belanja (Spend Management) di Vercel agar kenaikan biaya terlihat lebih awal.
+
+Batas ini tidak aman untuk paket Hobby. Hobby hanya menyediakan 10 GB transfer Blob dan 10.000 *simple operations* per 30 hari, dan bila terlampaui akses Blob diblokir 30 hari, sehingga unggah, unduh, pemindaian, dan backup produksi ikut berhenti. Jangan menurunkan paket tanpa menurunkan batas ini terlebih dahulu (misalnya ke 160 MiB dan 100 objek).
+
+Bila batas terlampaui, run gagal pada tahap `document_inventory` (`DOCUMENT_BYTES_OUTSIDE_BUDGET`, `DOCUMENT_OBJECTS_OUTSIDE_BUDGET`, atau `DOCUMENT_COUNT_OUTSIDE_BUDGET`) sebelum GET dokumen pertama. Database terenkripsi dan kunci terbungkus sudah tersimpan di artefak, tetapi status backup merah. Artefak itu tidak berisi manifest dokumen, sehingga `operations-recovery-extract.mjs` dan `restore-delivery` gagal pada bagian dokumen; pakai artefak hijau terakhir sampai batas ditinjau.
+
+Menaikkan batas di atas 1 GiB perlu ditinjau lebih dulu: waktu unduh (perkiraan 10–27 menit untuk 1 GiB dari runner GitHub, sehingga `timeout-minutes` job ini 60), ruang disk runner (sekitar dua kali ukuran objek unik), dan biaya transfer. Alternatifnya, ubah desain menjadi backup dokumen penuh mingguan ditambah inkremental harian. Run manual `workflow_dispatch` selalu berupa pengunduhan penuh, jadi batasi pemakaiannya.
 
 Kunci arsip database dan dokumen dibungkus menggunakan scrypt (N=32768, r=8, p=1) dan AES-GCM dengan salt baru. Artefak delivery hanya berisi ciphertext, manifest, parameter KDF, dan laporan. **Jangan mengunggah workspace privat atau direktori kunci mentah.** Database terenkripsi dan kunci terbungkus disimpan sebelum fase berikutnya supaya kegagalan pengambilan dokumen/pemulihan tidak menghilangkan cadangan database yang sudah valid.
 
@@ -66,7 +76,7 @@ node scripts/operations-recovery-extract.mjs --bundle "$HOME\Downloads\simsa-rec
 Remove-Item Env:BACKUP_ENCRYPTION_PASSPHRASE
 ```
 
-Setiap run terjadwal juga mencatat `documentBudget` (jumlah dan ukuran dokumen terhadap batas 1.000 file / 200 MiB). Mulai 80% dari salah satu batas, GitHub Actions menampilkan peringatan "SIMSA backup mendekati batas" agar batas dinaikkan sebelum backup gagal.
+Setiap run terjadwal juga mencatat `documentBudget` di laporan run: jumlah referensi, objek unik, dan ukuran objek unik terhadap batas 2.000 / 1.000 / 1 GiB, beserta sisa ruang masing-masing. GitHub Actions menampilkan peringatan "SIMSA backup mendekati batas" bila pemakaian mencapai 75% dari salah satu batas (`ratioWarning`) **atau** sisa ruang lebih kecil dari satu batch unggah massal, yaitu 50 berkas / 100 MiB (`headroomWarning`). Peringatan ini bukan jaminan bahwa backup tidak akan langsung gagal: beberapa batch dalam satu hari tetap bisa melewati batas sebelum run berikutnya. Run yang gagal karena batas tetap mencatat `documentBudget` dan menampilkan anotasi error "SIMSA backup melewati batas dokumen" berisi angka pemakaiannya. Tinjau kuota Blob (lihat [Batas dokumen dan kuota Blob](#batas-dokumen-dan-kuota-blob)) sebelum menaikkan batas.
 
 ## Memulihkan artefak delivery yang sudah diunduh
 
@@ -80,7 +90,7 @@ Mode tersebut tidak membaca credential sumber Neon/Blob, tidak terhubung ke prod
 
 `SIMSA_PRIVATE_BLOB_STORE_ID` milik control plane Vercel berbentuk `store_<id>`. Nilai ini bukan awalan hostname dalam token dan tidak dibandingkan dengannya. Token alias privat, hostname yang diturunkan SDK dari token, dan URL dokumen dalam snapshot adalah batas pemilihan store; pin hostname tambahan di atas direkomendasikan untuk publikasi status.
 
-Workflow `.github/workflows/operations-recovery.yml` berjalan pada default branch yang terlindungi dan environment khusus `production-recovery`. Environment lama `production-backup` menunjuk target database berbeda dan dipertahankan tanpa perubahan. Konfigurasi baru harus memverifikasi pin database dan store privat, menyediakan credential recovery terpisah, serta menyimpan passphrase pemulihan secara privat; jangan mengganti atau memakai ulang target lama secara otomatis. Aktivasi memerlukan repository variable `OPERATIONS_RECOVERY_ENABLED=true`, secret/variable environment di tabel, dan pembatasan deployment branch environment. Workflow lama `backup-neon.yml` sudah dihapus dari repository; alur ini satu-satunya backup terjadwal. Waktu selesai backup pada status menggunakan waktu snapshot database; waktu pengambilan byte dicatat terpisah agar umur backup tidak diperpanjang oleh proses restore.
+Workflow `.github/workflows/operations-recovery.yml` berjalan pada default branch yang terlindungi dan environment khusus `production-recovery`, satu-satunya environment backup. Environment lama `production-backup` dan `gcp-production-backup` sudah dihapus pada 31 Oktober 2026. Konfigurasi harus memverifikasi pin database dan store privat, menyediakan credential recovery terpisah, serta menyimpan passphrase pemulihan secara privat. Aktivasi memerlukan repository variable `OPERATIONS_RECOVERY_ENABLED=true`, secret/variable environment di tabel, dan pembatasan deployment branch environment. Workflow lama `backup-neon.yml` sudah dihapus dari repository; alur ini satu-satunya backup terjadwal. Waktu selesai backup pada status menggunakan waktu snapshot database; waktu pengambilan byte dicatat terpisah agar umur backup tidak diperpanjang oleh proses restore.
 
 File workflow telah disiapkan, tetapi merge ke protected default branch, aktivasi, dan run GitHub pertama harus diverifikasi tersendiri. Tidak ada public PR dibuat oleh pekerjaan recovery ini. Uji lokal, bukti restore aktual, dan kesiapan konfigurasi tidak boleh dilaporkan sebagai jadwal CI yang sudah berjalan.
 

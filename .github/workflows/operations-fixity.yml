@@ -2,7 +2,9 @@ name: Verify private file integrity
 
 on:
   schedule:
-    - cron: '45 0 * * *'
+    # Twice a day: GitHub often starts scheduled runs hours late or drops one,
+    # and a file that falls due minutes after a run waits for the next run.
+    - cron: '45 0,12 * * *'
   workflow_dispatch:
 
 permissions:
@@ -17,7 +19,9 @@ jobs:
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && vars.OPERATIONS_FIXITY_ENABLED == 'true'
     environment: production-integrity
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Every object in the batch may hit its 60 s read deadline (20 x 60 s),
+    # plus a few minutes of checkout, npm ci and tests.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -37,7 +41,7 @@ jobs:
           NEON_WORKER_EXPECTED_DATABASE: ${{ vars.NEON_WORKER_EXPECTED_DATABASE }}
           SIMSA_PRIVATE_BLOB_READ_WRITE_TOKEN: ${{ secrets.SIMSA_PRIVATE_BLOB_READ_WRITE_TOKEN }}
           OPERATIONS_RECOVERY_EXPECTED_BLOB_HOSTNAME: ${{ vars.OPERATIONS_RECOVERY_EXPECTED_BLOB_HOSTNAME }}
-          FIXITY_BATCH_SIZE: '10'
+          FIXITY_BATCH_SIZE: '20'
           FIXITY_TIMEOUT_MS: '60000'
           OPERATIONS_FIXITY_REPORT: ${{ runner.temp }}/simsa-file-integrity-result.json
         run: node scripts/check-file-integrity.mjs run
