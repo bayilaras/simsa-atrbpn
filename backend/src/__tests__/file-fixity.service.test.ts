@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 import { PGlite } from '@electric-sql/pglite';
 import type { Pool } from 'pg';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FIXITY_ENROLLMENT_LIMIT, FileFixityService, loadFixityConfig } from '../services/file-fixity.service.js';
+import { FIXITY_ENROLLMENT_SPACING_SECONDS, FileFixityService, fixityEnrollmentLimit, loadFixityConfig } from '../services/file-fixity.service.js';
 
 let database: PGlite;
 const id = '00000000-0000-4000-8000-000000000001';
@@ -13,6 +13,9 @@ const hash = createHash('sha256').update(content).digest('hex');
 const config = { batchSize: 5, intervalSeconds: 86400, retrySeconds: 3600, maximumBytes: 1024, timeoutMs: 1000 };
 let pool: Pick<Pool, 'query' | 'connect'>;
 const download = vi.fn();
+// Moves every schedule back instead of moving the database clock forward.
+const advanceHours = (hours: number) => database.query(
+    "UPDATE file_fixity_jobs SET next_check_at = next_check_at - $1::int * interval '1 hour'", [hours]);
 
 // WASM/database bootstrap can exceed Vitest's 10s hook default on a cold or
 // busy workstation. Keep this separate from the real 1s inspection deadline.
@@ -113,42 +116,74 @@ describe('scheduled file integrity checks', () => {
         await database.exec(`INSERT INTO file_attachments
             SELECT '00000000-0000-4000-8000-000000000002',file_url,drive_file_id,object_generation,
             sha256,size_bytes,storage_access,malware_scan_status,integrity_status,last_fixity_check_at,created_at,entity_type,entity_id FROM file_attachments`);
-        expect(await new FileFixityService(pool, download).run({ ...config, batchSize: 1 })).toMatchObject({ checked: 1 });
+        await database.exec("INSERT INTO file_fixity_jobs (attachment_id,next_check_at) SELECT id, now() - interval '1 day' FROM file_attachments");
+        expect(await new FileFixityService(pool, download).run({ ...config, batchSize: 1 })).toMatchObject({ enrolled: 0, checked: 1 });
         expect(download).toHaveBeenCalledTimes(1);
         expect(await new FileFixityService(pool, download).run({ ...config, batchSize: 1 })).toMatchObject({ checked: 1 });
     });
 
-    it('enrolls a whole bulk upload in one run while reading only one batch', async () => {
+    it('enrolls a whole bulk upload in one run and schedules one read batch per later run', async () => {
         await database.exec(`INSERT INTO file_attachments
             SELECT ('00000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid,file_url,drive_file_id,object_generation,
             sha256,size_bytes,storage_access,malware_scan_status,integrity_status,last_fixity_check_at,created_at,entity_type,entity_id
             FROM file_attachments, generate_series(2, 50) AS n`);
+        const bulk = { ...config, batchSize: 10 };
         await database.exec('SET ROLE simsa_worker_runtime');
         try {
-            expect(await new FileFixityService(pool, download).run(config)).toMatchObject({ enrolled: 50, checked: 5, matched: 5 });
+            expect(await new FileFixityService(pool, download).run(bulk)).toMatchObject({ enrolled: 50, checked: 10, matched: 10 });
         } finally { await database.exec('RESET ROLE'); }
-        expect(download).toHaveBeenCalledTimes(5);
-        const jobs = await database.query(`SELECT count(*) FILTER (WHERE last_result IS NULL)::int AS due,
-            count(*) FILTER (WHERE last_result='match' AND next_check_at > now())::int AS scheduled FROM file_fixity_jobs`);
-        expect(jobs.rows).toEqual([{ due: 45, scheduled: 5 }]);
-        expect(await new FileFixityService(pool, download).run(config)).toMatchObject({ enrolled: 0, checked: 5 });
         expect(download).toHaveBeenCalledTimes(10);
+        const unread = await database.query(`SELECT round(extract(epoch FROM next_check_at - now()) / $1)::int AS run,
+            count(*)::int AS jobs FROM file_fixity_jobs WHERE last_result IS NULL GROUP BY 1 ORDER BY 1`, [FIXITY_ENROLLMENT_SPACING_SECONDS]);
+        expect(unread.rows).toEqual([1, 2, 3, 4].map(run => ({ run, jobs: 10 })));
+        expect(await new FileFixityService(pool, download).run(bulk)).toMatchObject({ enrolled: 0, checked: 0 });
+        await advanceHours(12);
+        expect(await new FileFixityService(pool, download).run(bulk)).toMatchObject({ enrolled: 0, checked: 10 });
+        expect(download).toHaveBeenCalledTimes(20);
     });
 
-    it('caps enrollment per run, oldest files first, and leaves the rest for the next run', async () => {
+    it('reads a re-check that falls due after a bulk enrollment on the next run, ahead of later upload batches', async () => {
+        await database.query("INSERT INTO file_fixity_jobs (attachment_id,next_check_at,last_result) VALUES ($1, now() + interval '1 day', 'match')", [id]);
+        const workflow = { ...config, batchSize: 20, intervalSeconds: 604800 };
+        const limit = fixityEnrollmentLimit(workflow);
+        await database.exec(`INSERT INTO file_attachments
+            SELECT ('00000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid,file_url,drive_file_id,object_generation,
+            sha256,size_bytes,storage_access,malware_scan_status,integrity_status,last_fixity_check_at,created_at,entity_type,entity_id
+            FROM file_attachments, generate_series(2, ${limit + 1}) AS n`);
+        const service = new FileFixityService(pool, download);
+        expect(await service.run(workflow)).toMatchObject({ enrolled: limit, checked: 20 });
+        // The existing file falls due just after that run, before the next one.
+        await database.query('UPDATE file_fixity_jobs SET next_check_at=now() WHERE attachment_id=$1', [id]);
+        const recheckRead = async () => (await database.query<{ read: boolean }>(
+            'SELECT last_attempt_at IS NOT NULL AS read FROM file_fixity_jobs WHERE attachment_id=$1', [id])).rows[0].read;
+        const checked: number[] = [];
+        for (let run = 1; run <= 5; run++) {
+            await advanceHours(12);
+            const overdue = await database.query("SELECT count(*)::int AS jobs FROM file_fixity_jobs WHERE next_check_at < now() - interval '28 hours'");
+            expect(overdue.rows).toEqual([{ jobs: 0 }]);
+            checked.push((await service.run(workflow)).checked);
+            if (run === 1) expect(await recheckRead()).toBe(true);
+        }
+        expect(checked).toEqual([20, 20, 20, 20, 1]);
+        expect((await database.query('SELECT count(*)::int AS unread FROM file_fixity_jobs WHERE last_attempt_at IS NULL')).rows).toEqual([{ unread: 0 }]);
+    });
+
+    it('caps enrollment per run at five read batches, oldest files first, and leaves the rest for the next run', async () => {
+        const limit = fixityEnrollmentLimit(config);
         await database.exec(`INSERT INTO file_attachments
             SELECT ('00000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid,file_url,drive_file_id,object_generation,
             sha256,size_bytes,storage_access,malware_scan_status,integrity_status,last_fixity_check_at,
             created_at - n * interval '1 minute',entity_type,entity_id
-            FROM file_attachments, generate_series(2, ${FIXITY_ENROLLMENT_LIMIT + 5}) AS n`);
+            FROM file_attachments, generate_series(2, ${limit + 5}) AS n`);
         const service = new FileFixityService(pool, download);
-        expect(await service.run({ ...config, batchSize: 1 })).toMatchObject({ enrolled: FIXITY_ENROLLMENT_LIMIT, checked: 1 });
+        expect(limit).toBe(config.batchSize * 5);
+        expect(await service.run(config)).toMatchObject({ enrolled: limit, checked: config.batchSize });
         const waiting = await database.query<{ id: string }>(`SELECT f.id FROM file_attachments f
             LEFT JOIN file_fixity_jobs j ON j.attachment_id=f.id WHERE j.attachment_id IS NULL ORDER BY f.created_at DESC`);
         expect(waiting.rows.map(row => row.id)).toEqual([id, ...[2, 3, 4, 5].map(n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`)]);
-        expect(await service.run({ ...config, batchSize: 1 })).toMatchObject({ enrolled: 5, checked: 1 });
-        expect((await database.query('SELECT count(*)::int AS jobs FROM file_fixity_jobs')).rows).toEqual([{ jobs: FIXITY_ENROLLMENT_LIMIT + 5 }]);
-        expect(download).toHaveBeenCalledTimes(2);
+        expect(await service.run(config)).toMatchObject({ enrolled: 5, checked: 5 });
+        expect((await database.query('SELECT count(*)::int AS jobs FROM file_fixity_jobs')).rows).toEqual([{ jobs: limit + 5 }]);
+        expect(download).toHaveBeenCalledTimes(2 * config.batchSize);
     });
 
     it('does not commit a result after another worker has reclaimed the lease', async () => {
