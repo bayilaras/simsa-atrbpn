@@ -6,55 +6,48 @@ Sidebar adalah menu navigasi utama di sisi kiri layar SIMSA. Dari sini kamu bisa
 
 ## Tampilan Sidebar
 
-```
-┌─────────────────────────┐
-│  🏛️ SIMSA              │
-│     ATR/BPN             │
-├─────────────────────────┤
-│                         │
-│ UTAMA                   │
-│  📊 Dashboard           │
-│                         │
-│ MANAJEMEN SURAT         │
-│  📧 Surat          ▼   │
-│     ├ 📨 Surat Masuk    │
-│     └ 📤 Surat Keluar   │
-│  🔄 Distribusi          │
-│                         │
-│ SIKLUS HIDUP ARSIP      │
-│  🗂️ Arsip Aktif    ▼   │
-│     ├ Arsip Surat Masuk │
-│     └ Arsip Surat Keluar│
-│  📁 Pemberkasan (Dosir) │
-│  ⏱️ Jadwal Retensi      │
-│  📊 Manajemen Retensi   │
-│  ✂️ Penyusutan           │
-│                         │
-│ LAYANAN & FISIK         │
-│  📋 Layanan Arsip       │
-│  🔄 Peminjaman          │
-│  📍 Lokasi Simpan     🔒│
-│  🛡️ Arsip Vital      🔒│
-│  🔐 Arsip Terjaga    🔒│
-│                         │
-│ MEDIA & AUTENTIKASI     │
-│  💾 Arsip Elektronik    │
-│  🛡️ Autentikasi        │
-│  🔗 Tunjuk Silang       │
-│                         │
-│ ADMINISTRASI            │
-│  📊 Laporan             │
-│  📝 Audit Log           │
-│  👥 User Management  🔒│
-│  📂 Master Data      🔒│
-│     ├ Klasifikasi Arsip │
-│     └ Template Surat    │
-│                         │
-│  ⚙️ Pengaturan          │
-├─────────────────────────┤
-│  SIMSA v1.0.0    BETA   │
-└─────────────────────────┘
-```
+Sidebar menampilkan menu navigasi yang dikelompokkan sebagai berikut:
+
+**UTAMA**
+- 📊 Dashboard
+
+**MANAJEMEN SURAT**
+- 📧 Surat → 📨 Surat Masuk, 📤 Surat Keluar, 🔍 Lacak Surat
+- 🔄 Distribusi
+
+**SIKLUS HIDUP ARSIP**
+- 🗂️ Arsip Aktif → Arsip Surat Masuk, Arsip Surat Keluar
+- 📁 Pemberkasan (Dosir)
+- ⏱️ Jadwal Retensi 🔒
+- 📊 Manajemen Retensi
+- ⚖️ Tata Kelola Retensi
+- ✂️ Penyusutan
+
+**LAYANAN & FISIK**
+- 📋 Layanan Arsip
+- 🔄 Peminjaman
+- 📍 Lokasi Simpan
+- 🛡️ Arsip Vital
+- 🔐 Arsip Terjaga
+
+**MEDIA & AUTENTIKASI**
+- 💾 Arsip Elektronik
+- 🛡️ Autentikasi 🔒
+- 🔗 Tunjuk Silang
+
+**ADMINISTRASI**
+- 📊 Laporan
+- 📝 Audit Log 🔒
+- 🔑 Persetujuan Akses Arsip
+- 🖥️ Monitoring Operasional 🔒
+- ⚙️ Pengaturan
+- ☁️ Integrasi SRIKANDI
+- 👥 Manajemen Pengguna 🔒
+- 📂 Master Data 🔒 → Versi Aturan, Klasifikasi Arsip
+
+Tautan **📖 Panduan** ada di bagian bawah sidebar.
+
+*Menu dengan 🔒 hanya tersedia untuk Super Admin. Arsip Elektronik, Autentikasi, Penyusutan, Arsip Terjaga, dan Integrasi SRIKANDI hanya muncul bila fiturnya diaktifkan operator.*
 
 ---
 
@@ -74,19 +67,22 @@ Sidebar adalah menu navigasi utama di sisi kiri layar SIMSA. Dari sini kamu bisa
 
 ---
 
-## Menu dengan 🔒 (Khusus Admin)
+## Menu dengan 🔒 (Khusus Super Admin)
 
-Menu yang ditandai 🔒 **hanya tersedia** untuk pengguna dengan role tertentu:
+Menu yang ditandai 🔒 **hanya tersedia** untuk Super Admin:
 
 | Menu | Tersedia Untuk |
 |------|----------------|
-| Lokasi Simpan | Admin Dirjen, Admin Sesditjen, Super Admin |
-| Arsip Vital | Admin Dirjen, Admin Sesditjen, Super Admin |
-| Arsip Terjaga | Admin Dirjen, Admin Sesditjen, Super Admin |
-| User Management | Super Admin saja |
-| Master Data | Admin Dirjen, Admin Sesditjen, Super Admin |
-| Pengaturan profil/preferensi | Semua akun yang sudah diprovisi |
-| Pengaturan unit/template | Admin Dirjen, Admin Sesditjen, Super Admin |
+| Jadwal Retensi | Super Admin saja |
+| Autentikasi | Super Admin saja |
+| Audit Log | Super Admin saja |
+| Monitoring Operasional | Super Admin saja |
+| Manajemen Pengguna | Super Admin saja |
+| Master Data (Versi Aturan, Klasifikasi Arsip) | Super Admin saja |
+
+**Admin Unit Kerja** melihat semua menu lain untuk unit kerja yang ditetapkan. Di **Pengaturan**, tab **Profil**, **Preferensi**, dan **Template** tersedia untuk Admin Unit Kerja; tab **Unit Kerja** hanya untuk Super Admin.
+
+Akun lama Admin Dirjen dan Admin Sesditjen melihat menu yang sama dengan Admin Unit Kerja. Akun lama Staff dan Auditor hanya melihat Dashboard, Surat, Arsip Aktif, Layanan Arsip, Laporan, Persetujuan Akses Arsip, dan Pengaturan (tab Profil dan Preferensi); Auditor lama juga melihat Tata Kelola Retensi.
 
 > 💡 Jika kamu tidak melihat menu tertentu di sidebar, artinya role kamu tidak memiliki akses ke menu tersebut.
 
@@ -95,7 +91,7 @@ Menu yang ditandai 🔒 **hanya tersedia** untuk pengguna dengan role tertentu:
 ## Indikator Menu Aktif
 
 - Menu yang sedang **aktif** (halaman yang sedang dibuka) akan ditandai dengan **highlight** berwarna.
-- Menu yang memiliki **notifikasi baru** akan menampilkan **titik biru kecil** yang berkedip di samping nama menu.
+- Bagi Super Admin dan Admin Unit Kerja, sub-menu **Lacak Surat** menampilkan angka bila ada surat yang perlu dilengkapi.
 
 ---
 

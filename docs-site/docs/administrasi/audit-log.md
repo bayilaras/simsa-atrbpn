@@ -2,7 +2,7 @@
 
 Panduan melihat log aktivitas pengguna di SIMSA.
 
-> 🔒 **Hanya Admin dan Auditor** yang bisa mengakses Audit Log.
+> 🔒 **Hanya Super Admin** yang bisa mengakses Audit Log.
 
 ---
 

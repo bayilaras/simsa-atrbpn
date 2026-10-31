@@ -2,7 +2,7 @@
 
 Panduan melihat log aktivitas pengguna di SIMSA.
 
-> 🔒 **Hanya Admin dan Auditor** yang bisa mengakses Audit Log.
+> 🔒 **Hanya Super Admin** yang bisa mengakses Audit Log.
 
 ---
 
@@ -28,9 +28,9 @@ Di sidebar, klik **Audit Log** di bawah **Administrasi**.
 │ Waktu    │ Pengguna  │ Aksi       │ Detail              │ IP Address   │
 ├──────────┼───────────┼────────────┼─────────────────────┼──────────────┤
 │ 10:32:15 │ admin@..  │ CREATE     │ Buat surat SM/001   │ 192.168.1.10 │
-│ 10:28:03 │ staff@..  │ UPDATE     │ Edit surat SK/015   │ 192.168.1.15 │
+│ 10:28:03 │ unit@..   │ UPDATE     │ Edit surat SK/015   │ 192.168.1.15 │
 │ 10:15:44 │ admin@..  │ DELETE     │ Hapus arsip KL-05   │ 192.168.1.10 │
-│ 09:45:22 │ staff@..  │ LOGIN      │ Login berhasil      │ 192.168.1.20 │
+│ 09:45:22 │ unit@..   │ LOGIN      │ Login berhasil      │ 192.168.1.20 │
 └──────────┴───────────┴────────────┴─────────────────────┴──────────────┘
 ```
 

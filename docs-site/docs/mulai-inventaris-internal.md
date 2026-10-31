@@ -13,7 +13,7 @@ Buka `https://simsa-frontend.vercel.app` di browser.
 
 Masukkan **Email kedinasan** dan **Kata sandi**, lalu klik **Masuk**. Google hanya digunakan bila sudah dikonfigurasi. Gunakan akun pribadi; akun uji tidak dipakai bersama untuk pekerjaan resmi.
 
-Super Admin menyiapkan akun melalui **Administrasi → Manajemen Pengguna → Tambah Pengguna**, termasuk kata sandi, peran, unit kerja, dan status aktif. **Admin Dirjen** mengelola unit Ditjen dan **Admin Sesditjen** mengelola unit Sesditjen. **Staf** membaca dan mencari data dalam unit penugasannya; staf tidak mengubah surat atau arsip. Lihat [pengelolaan akun](./administrasi/user-management.md).
+Super Admin menyiapkan akun melalui **Administrasi → Manajemen Pengguna → Tambah Pengguna**, termasuk kata sandi, peran, unit kerja, dan status aktif. **Admin Unit Kerja** mencatat dan mengelola surat serta arsip pada unit yang ditetapkan; **Super Admin** bekerja lintas unit. Lihat [pengelolaan akun](./administrasi/user-management.md).
 
 ## 2. Catat surat atau impor daftar yang sudah ada
 

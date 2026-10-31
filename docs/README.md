@@ -55,7 +55,7 @@ Login dan Daftar
 | Tutorial | Keterangan |
 |----------|------------|
 | [📋 Layanan Arsip](layanan-fisik/layanan-arsip.md) | Cara mengajukan layanan arsip |
-| [🔄 Peminjaman Arsip](layanan-fisik/peminjaman.md) | Cara meminjam dan mengembalikan arsip |
+| [🔄 Peminjaman Arsip](layanan-fisik/peminjaman.md) | Cara mencatat peminjaman dan pengembalian arsip |
 | [📍 Lokasi Simpan](layanan-fisik/lokasi-simpan.md) | Mengelola lokasi penyimpanan arsip |
 | [🛡️ Arsip Vital & Terjaga](layanan-fisik/arsip-vital-terjaga.md) | Panduan arsip vital dan terjaga |
 
@@ -74,7 +74,7 @@ Login dan Daftar
 | [📊 Laporan](administrasi/laporan.md) | Cara membuat dan ekspor laporan |
 | [📝 Audit Log](administrasi/audit-log.md) | Monitoring aktivitas pengguna |
 | [👥 User Management](administrasi/user-management.md) | Kelola akun pengguna (Super Admin) |
-| [📂 Master Data](administrasi/master-data.md) | Kelola data klasifikasi dan template |
+| [📂 Master Data](administrasi/master-data.md) | Kelola klasifikasi arsip dan versi aturan |
 | [⚙️ Settings](administrasi/settings.md) | Pengaturan profil, unit kerja, dan template |
 
 ### Tata Kelola Internal

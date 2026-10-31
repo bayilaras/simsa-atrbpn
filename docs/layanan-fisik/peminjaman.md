@@ -1,53 +1,60 @@
 # 🔄 Peminjaman Arsip
 
-Panduan meminjam dan mengembalikan arsip fisik.
+Panduan mencatat peminjaman dan pengembalian arsip fisik.
+
+> 🔒 Menu **Peminjaman** hanya tersedia bagi Super Admin dan Admin Unit Kerja.
 
 ---
 
 ## Apa Itu Peminjaman?
 
-Fitur ini untuk **mengelola peminjaman arsip fisik** dari tempat penyimpanan. Memastikan setiap arsip yang dipinjam **tercatat** dan **dikembalikan tepat waktu**.
+Fitur ini untuk **mencatat sirkulasi arsip fisik** dari tempat penyimpanan. Admin mencatat peminjaman langsung atas nama peminjam; tidak ada tahap pengajuan atau persetujuan di aplikasi. Bila prosedur unit mensyaratkan persetujuan, periksa kewenangan peminjam di luar aplikasi sebelum mencatat.
 
 ---
 
 ## Alur Peminjaman
 
 ```
-📋 Ajukan        →    ✅ Disetujui    →    📦 Arsip         →    🔙 Kembalikan
-   Peminjaman         oleh Admin           Dipinjam               Arsip
+📋 Admin mencatat    →    📦 Dipinjam    →    🔙 Dikembalikan
+   peminjaman                  │
+                               └── ⚠️ Terlambat (lewat jatuh tempo)
 ```
 
 ---
 
-## Cara Meminjam Arsip
+## Cara Mencatat Peminjaman
 
 ### Langkah 1: Buka Menu Peminjaman
 Di sidebar, klik **Peminjaman** di bawah **Layanan & Fisik**.
 
-### Langkah 2: Klik "Ajukan Peminjaman"
-Klik tombol di pojok kanan atas.
+### Langkah 2: Klik "Catat Peminjaman"
+Klik tombol di pojok kanan atas. Super Admin memilih unit kerja terlebih dahulu.
 
 ### Langkah 3: Isi Form
 
 | Kolom | Keterangan |
 |-------|------------|
-| Arsip | Pilih arsip yang ingin dipinjam |
-| Keperluan | Alasan peminjaman |
-| Tanggal Pinjam | Tanggal mulai |
-| Tanggal Kembali | Tanggal estimasi pengembalian |
+| Tipe | **Per Arsip** atau **Per Box** |
+| Arsip / Lokasi / Box | Cari dengan minimal tiga karakter, lalu pilih hasil yang benar |
+| Peminjam | Nama lengkap peminjam |
+| Unit Kerja | Divisi atau unit asal peminjam |
+| Jatuh Tempo | Tanggal arsip harus dikembalikan |
+| Tujuan | Keperluan peminjaman |
 
-### Langkah 4: Kirim
+### Langkah 4: Simpan
 
-Klik **"Ajukan"** dan tunggu persetujuan Admin.
+Klik **"Simpan Peminjaman"**. Peminjaman langsung tercatat dengan status **Dipinjam**. Cocokkan arsip atau box fisik sebelum menyerahkannya.
 
 ---
 
-## Mengembalikan Arsip
+## Memperpanjang dan Mengembalikan
 
-1. Buka daftar peminjaman.
-2. Cari arsip yang ingin dikembalikan.
-3. Klik **"Kembalikan"**.
-4. Konfirmasi pengembalian.
+1. Buka tab **Dipinjam** atau **Terlambat**.
+2. Cari peminjaman yang dimaksud.
+3. Klik **"Perpanjang"** untuk mengubah tanggal jatuh tempo, atau **"Kembalikan"** untuk mencatat pengembalian.
+4. Saat pengembalian, isi catatan kondisi bila perlu, lalu klik **"Konfirmasi Pengembalian"**.
+
+Peminjaman yang sudah dikembalikan tampil di tab **Riwayat**.
 
 ---
 
@@ -55,10 +62,9 @@ Klik **"Ajukan"** dan tunggu persetujuan Admin.
 
 | Status | Keterangan |
 |--------|------------|
-| ⏳ Menunggu Persetujuan | Menunggu Admin menyetujui |
-| ✅ Disetujui / Dipinjam | Arsip sedang dipinjam |
+| 📦 Dipinjam | Arsip sedang dipinjam |
+| ⚠️ Terlambat | Jatuh tempo sudah lewat dan arsip belum dikembalikan |
 | 🔙 Dikembalikan | Arsip sudah dikembalikan |
-| 🔴 Overdue | Terlambat dikembalikan |
 
 ---
 
