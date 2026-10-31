@@ -8,14 +8,15 @@ const check = (value, code) => { if (!value) throw Object.assign(new Error(code)
 const MAX_OBJECT = 50 * 1024 * 1024;
 // Hard, reviewed budgets. Every run GETs each unique stored object once with
 // cache=0 (one Blob simple operation plus its bytes as data transfer), so bytes
-// and objects are counted after URL deduplication. These keep a daily full pull
-// inside the Vercel Hobby Blob allowance (10 GB transfer, 10,000 simple
-// operations per 30 days); going over blocks Blob for 30 days. References stay
-// a separate metadata sanity bound. Raise only after the owner review described
+// and objects are counted after URL deduplication. Sized for the Vercel Pro
+// plan, where Blob usage is billed instead of blocked, and the 60-minute job
+// timeout; never use these limits on Hobby (10 GB transfer and 10,000 simple
+// operations per 30 days, then Blob is blocked for 30 days). References stay a
+// separate metadata sanity bound. Raise only after the owner review described
 // in docs/OPERATIONS_RECOVERY.md.
-const MAX_TOTAL = 160 * 1024 * 1024;
-const MAX_OBJECTS = 100;
-const MAX_COUNT = 1000;
+const MAX_TOTAL = 1024 * 1024 * 1024;
+const MAX_OBJECTS = 1000;
+const MAX_COUNT = 2000;
 // One envelope seals one document; the manifest and wrapped keys are far smaller.
 const MAX_ENVELOPE = MAX_OBJECT + 28;
 // Largest single user action: one confirmed bulk-upload batch, mirroring
