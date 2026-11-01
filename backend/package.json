@@ -55,7 +55,7 @@
     "node": "24.x"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.10",
+    "@electric-sql/pglite": "^0.5.11",
     "@types/compression": "^1.8.1",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
@@ -63,7 +63,7 @@
     "@types/multer": "^2.3.0",
     "@types/node": "^24.13.3",
     "@types/nodemailer": "^8.0.2",
-    "@types/pdfkit": "^0.17.6",
+    "@types/pdfkit": "^0.17.7",
     "@types/pg": "^8.23.1",
     "@types/qrcode": "^1.5.6",
     "@types/supertest": "^7.2.1",
@@ -74,14 +74,14 @@
     "supertest": "^7.3.1",
     "tsup": "^8.5.1",
     "tsx": "^4.23.15",
-    "typescript": "^5.9.3",
-    "vite": "8.3.4",
+    "typescript": "^7.0.2",
+    "vite": "8.3.5",
     "vitest": "5.0.5"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.13",
     "@vercel/blob": "^2.8.2",
-    "@vercel/functions": "3.10.1",
+    "@vercel/functions": "3.10.3",
     "bcryptjs": "^3.0.3",
     "better-auth": "^1.7.14",
     "compression": "^1.8.1",

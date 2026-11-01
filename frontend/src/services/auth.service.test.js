@@ -70,3 +70,33 @@ describe('session prefetch at boot', () => {
         expect(getSession).toHaveBeenCalledTimes(2)
     })
 })
+
+describe('own password management', () => {
+    it('lists linked sign-in methods and treats a missing payload as none', async () => {
+        const accounts = [{ providerId: 'credential' }, { providerId: 'google' }]
+        const listAccounts = vi.fn().mockResolvedValueOnce({ data: accounts, error: null }).mockResolvedValueOnce({ data: null, error: null })
+        const service = createAuthService({ legacyClient: { listAccounts } })
+
+        await expect(service.listAccounts()).resolves.toEqual(accounts)
+        await expect(service.listAccounts()).resolves.toEqual([])
+    })
+
+    it('changes the password and always signs other devices out', async () => {
+        const changePassword = vi.fn().mockResolvedValue({ data: { token: 'baru' }, error: null })
+        const service = createAuthService({ legacyClient: { changePassword } })
+
+        await service.changePassword('lama-sintetis', 'baru-sintetis')
+        expect(changePassword).toHaveBeenCalledExactlyOnceWith({
+            currentPassword: 'lama-sintetis', newPassword: 'baru-sintetis', revokeOtherSessions: true,
+        })
+    })
+
+    it('keeps the Better Auth error code for a wrong current password', async () => {
+        const changePassword = vi.fn().mockResolvedValue({
+            data: null, error: { code: 'INVALID_PASSWORD', message: 'Invalid password', status: 400 },
+        })
+        const service = createAuthService({ legacyClient: { changePassword } })
+
+        await expect(service.changePassword('salah', 'baru-sintetis')).rejects.toMatchObject({ code: 'INVALID_PASSWORD', status: 400 })
+    })
+})
