@@ -2,13 +2,15 @@
 
 Super Admin membuka **Administrasi → Monitoring Operasional**. Status memeriksa database, penyimpanan privat, mesin pemindai dan masa berlaku definisinya, antrean pemindaian, antrean integritas, backup, serta pemulihan. Halaman memperbarui status setiap menit saat aktif. Kegagalan pengambilan data menghapus status lama; `unknown` tidak pernah dianggap sehat.
 
+Pembaruan tiap menit tidak menambah operasi Blob. Probe penyimpanan privat memakai `list()`, yang dihitung sebagai *advanced operation*; paket Vercel Hobby hanya menyediakan 2.000 operasi semacam itu per 30 hari. Karena itu, probe yang lulus dipakai ulang paling lama 10 menit di dalam satu instans backend, untuk `/ready`, `/api/health`, panel, probe CI, dan wake pemindai. Probe yang gagal selalu diulang pada pemeriksaan berikutnya. Bukti backup dan pemulihan juga dipakai ulang paling lama 10 menit. Akibatnya, gangguan Blob baru dapat terlihat sampai 10 menit setelah probe terakhir yang lulus.
+
 `GET /api/operations/status` memakai sesi Super Admin. `GET /api/operations/probe` khusus CI memakai `Authorization: Bearer OPERATIONS_MONITOR_TOKEN`, kredensial acak minimal 32 karakter yang tidak memberi akses dokumen atau akun. Respons probe hanya memuat waktu dan status pemeriksaan. Respons 503 membuat pekerjaan CI gagal bila terdapat kegagalan, keterlambatan, atau bukti yang belum tersedia.
 
 Workflow `.github/workflows/operations-monitor.yml` berjalan setiap jam setelah tersedia pada cabang default. Environment GitHub `production-monitor` menyimpan secret `OPERATIONS_MONITOR_TOKEN` yang sama dengan environment production backend Vercel. Batasi environment pada cabang default. Jalankan workflow manual satu kali dan periksa hasil sebelum menyatakan jadwal aktif. Status CI adalah kanal notifikasi awal; tidak ada pengiriman email atau webhook tambahan.
 
 ## Bukti backup dan pemulihan
 
-Panel membaca objek **privat** `operations/recovery-status-v1.json` pada penyimpanan Blob aplikasi. Pembacaan dibatasi 16 KiB dan lima detik, tanpa cache CDN. Tidak ada URL penyimpanan, nama dokumen, data pengguna, atau kredensial dalam respons panel.
+Panel membaca objek **privat** `operations/recovery-status-v1.json` pada penyimpanan Blob aplikasi. Pembacaan dibatasi 16 KiB dan lima detik, tanpa cache CDN. Setiap pembacaan dihitung sebagai satu *simple operation* Blob, jadi pembacaan yang berhasil dipakai ulang paling lama 10 menit oleh instans backend yang sama. Tidak ada URL penyimpanan, nama dokumen, data pengguna, atau kredensial dalam respons panel.
 
 Format bukti:
 

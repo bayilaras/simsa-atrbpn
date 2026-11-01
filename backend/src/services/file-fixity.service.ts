@@ -26,6 +26,16 @@ export function loadFixityConfig(source: NodeJS.ProcessEnv = process.env): Fixit
     };
 }
 
+// Enrolling is one INSERT with no Blob read, so it is bounded separately from
+// the read batch: a run schedules up to five read batches of new files (100 at
+// the workflow batch of 20, two bulk uploads), and the rest wait for the next
+// run. Each later batch falls due one scheduled run (12 hours) after the one
+// before it. A bulk upload is then read at the pace of the schedule and never
+// goes ahead of 7-day re-checks that fall due before its later batches.
+const FIXITY_ENROLLMENT_BATCHES = 5;
+export const FIXITY_ENROLLMENT_SPACING_SECONDS = 12 * 3600;
+export const fixityEnrollmentLimit = (config: Pick<FixityConfig, 'batchSize'>) => config.batchSize * FIXITY_ENROLLMENT_BATCHES;
+
 interface ClaimedFile extends BitstreamBaseline { id: string; claimToken: string }
 type Inspection = Awaited<ReturnType<typeof inspectBitstream>>;
 type Outcome = 'match' | 'mismatch' | 'error' | 'stale';
@@ -38,19 +48,29 @@ export class FileFixityService {
     ) {}
 
     async run(config: FixityConfig = loadFixityConfig()) {
-        const summary = { checked: 0, matched: 0, mismatched: 0, failed: 0, stale: 0 };
-        // Discover a bounded set of new controlled files. Existing schedules are
-        // not reset by a restart, and each failed object gets a retry delay.
-        await this.pool.query(`
-            INSERT INTO file_fixity_jobs (attachment_id)
-            SELECT f.id FROM file_attachments f
-            LEFT JOIN file_fixity_jobs j ON j.attachment_id=f.id
-            WHERE j.attachment_id IS NULL AND f.storage_access='private'
-              AND f.malware_scan_status='clean' AND f.sha256 IS NOT NULL
-              AND f.integrity_status <> 'mismatch'
-            ORDER BY f.created_at, f.id LIMIT $1
-            ON CONFLICT (attachment_id) DO NOTHING
-        `, [config.batchSize]);
+        const summary = { enrolled: 0, checked: 0, matched: 0, mismatched: 0, failed: 0, stale: 0 };
+        // Discover a bounded set of new controlled files, oldest first. The
+        // first read batch is due at once and later batches one spacing apart,
+        // so they take their turn among re-checks by due time. Existing
+        // schedules are not reset by a restart, a concurrent run skips rows
+        // another run already inserted, and each failed object gets a retry delay.
+        const enrolled = await this.pool.query<{ count: number }>(`
+            WITH enrolled AS (
+                INSERT INTO file_fixity_jobs (attachment_id, next_check_at)
+                SELECT f.id, now() + ((row_number() OVER (ORDER BY f.created_at, f.id) - 1) / $2::int)
+                    * ($3::int * interval '1 second')
+                FROM file_attachments f
+                LEFT JOIN file_fixity_jobs j ON j.attachment_id=f.id
+                WHERE j.attachment_id IS NULL AND f.storage_access='private'
+                  AND f.malware_scan_status='clean' AND f.sha256 IS NOT NULL
+                  AND f.integrity_status <> 'mismatch'
+                ORDER BY f.created_at, f.id LIMIT $1
+                ON CONFLICT (attachment_id) DO NOTHING
+                RETURNING attachment_id
+            )
+            SELECT count(*)::int AS count FROM enrolled
+        `, [fixityEnrollmentLimit(config), config.batchSize, FIXITY_ENROLLMENT_SPACING_SECONDS]);
+        summary.enrolled = Number(enrolled.rows[0]?.count ?? 0);
 
         for (let index = 0; index < config.batchSize; index++) {
             const file = await this.claim(config);
