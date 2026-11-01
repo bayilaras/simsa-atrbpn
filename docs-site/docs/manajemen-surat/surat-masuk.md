@@ -93,11 +93,11 @@ Halaman detail menampilkan semua informasi surat, termasuk lampiran yang bisa di
 
 | Tombol | Fungsi | Akses |
 |--------|--------|-------|
-| **Edit** | Ubah data surat | Staff, Admin |
-| **Balas Surat** | Buat surat keluar balasan (auto-fill) | Staff, Admin |
-| **Distribusikan** | Kirim surat ke unit lain | Staff, Admin |
-| **Arsipkan** | Pindahkan ke arsip | Staff, Admin |
-| **Hapus** | Hapus surat | Admin saja |
+| **Edit** | Ubah data surat | Super Admin, Admin Unit Kerja |
+| **Balas Surat** | Buat surat keluar balasan (auto-fill) | Super Admin, Admin Unit Kerja |
+| **Distribusikan** | Kirim surat ke unit lain | Super Admin, Admin Unit Kerja |
+| **Arsipkan** | Pindahkan ke arsip | Super Admin, Admin Unit Kerja |
+| **Hapus** | Hapus surat | Super Admin, Admin Unit Kerja |
 
 ---
 

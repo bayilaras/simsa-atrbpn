@@ -10,7 +10,7 @@ Sumber awal aplikasi memuat 842 baris klasifikasi Permen ATR/BPN Nomor 10 Tahun 
 
 ## Menerbitkan perubahan aturan
 
-Super Admin menyiapkan, mengajukan, dan mengaktifkan edisi. Penelaah dan penyetuju dapat memakai akun admin Ditjen/Sesditjen yang berbeda; aplikasi menolak perangkapan pelaku pada tahapan maker-checker yang harus independen.
+Menu **Versi Aturan** hanya tersedia bagi Super Admin. Super Admin menyiapkan, memvalidasi, dan mengaktifkan edisi; aktivasi tidak memerlukan akun penelaah atau penyetuju terpisah.
 
 1. Buka **Master Data > Versi Aturan**.
 2. Buat draft dari versi aktif.
@@ -18,13 +18,13 @@ Super Admin menyiapkan, mengajukan, dan mengaktifkan edisi. Penelaah dan penyetu
 4. Edit butir atau impor manifest JSON ke draft.
 5. Verifikasi manifest jumlah/cakupan halaman dan buat laporan diff serta dampak.
 6. Jalankan validasi dan selesaikan semua kesalahan.
-7. Jalankan **Ajukan → Telaah → Setujui → Aktifkan** dengan akun berbeda dan catatan substantif.
+7. Pilih **Aktifkan**. Pemeriksaan sumber, integritas, dan tanggal berlaku tetap dijalankan saat aktivasi.
 
 PDF sampai 50 MiB diunggah langsung ke namespace private Blob yang terikat ID draft. Server kemudian mengunduh ulang objek tersebut, memeriksa MIME/signature dan ukuran, menghitung SHA-256 serta jumlah halaman, lalu menyimpan locator hanya secara internal. Fallback multipart dibatasi 4 MiB dan juga mempertahankan byte yang diterima pada private Blob.
 
 Pemakaian ulang PDF sumber membuat objek baru pada namespace draft. Server mengunduh ulang salinan, membandingkan SHA-256, ukuran, dan jumlah halaman dengan bukti edisi aktif, lalu mencatat waktu dan pelaku verifikasi saat ini; bukti pelaku/waktu edisi lama tidak diwariskan.
 
-Admin tata kelola dan auditor dapat memakai **Lihat/Unduh PDF** melalui stream endpoint terautentikasi. Locator Blob tidak dikirim ke browser dan akses dicatat; baseline lama tanpa bitstream private ditolak dengan status `409`, bukan diarahkan ke URL publik.
+Super Admin dapat memakai **Lihat/Unduh PDF** melalui stream endpoint terautentikasi. Locator Blob tidak dikirim ke browser dan akses dicatat; baseline lama tanpa bitstream private ditolak dengan status `409`, bukan diarahkan ke URL publik.
 
 Aktivasi menutup masa berlaku versi sebelumnya. Arsip lama tetap menunjuk versi, butir, dasar hukum, hash dokumen, dan snapshot keputusan yang lama. Perubahan item dan workflow ditulis transaksional ke rantai audit append-only yang dapat diperiksa integritasnya.
 

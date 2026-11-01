@@ -8,7 +8,7 @@ Gunakan akun pribadi yang dibuat Super Admin melalui **Administrasi → Manajeme
 2. Isi **Email kedinasan** dan **Kata sandi**.
 3. Klik **Masuk**. Setelah berhasil, periksa peran dan unit kerja Anda sebelum mencatat data.
 
-Login Google hanya digunakan jika integrasinya sudah dikonfigurasi. Aplikasi tidak menyediakan pendaftaran mandiri. Akun uji tidak digunakan sebagai akun bersama untuk pekerjaan resmi.
+Login Google hanya digunakan jika integrasinya sudah dikonfigurasi. Aplikasi tidak menyediakan pendaftaran mandiri dengan email dan kata sandi; login Google pertama dengan email baru hanya membuat akun yang menunggu persetujuan Super Admin. Akun uji tidak digunakan sebagai akun bersama untuk pekerjaan resmi.
 
 ## Jika gagal
 
