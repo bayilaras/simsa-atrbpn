@@ -1,6 +1,6 @@
 # Runbook kredensial database dan rilis SIMSA
 
-Runbook ini mengatur di mana setiap kredensial produksi disimpan, cara memakainya saat rilis, cara merotasinya tanpa (atau dengan jeda sesingkat mungkin) gangguan layanan, dan cara memverifikasinya. Alat yang dipakai ada di `scripts/ops/`. Alat itu menggantikan helper yang sebelumnya disimpan di luar repository, di folder rilis (`rilis-neon.ps1`, `diag-neon.mjs`, `rotasi-migrasi.mjs`, `make-manifest.py`). Status per 31 Oktober 2026: produksi backend C65 dan frontend C61 dari `main` `5c61830`, dengan journal 54 migrasi.
+Runbook ini mengatur di mana setiap kredensial produksi disimpan, cara memakainya saat rilis, cara merotasinya tanpa (atau dengan jeda sesingkat mungkin) gangguan layanan, dan cara memverifikasinya. Alat yang dipakai ada di `scripts/ops/`. Alat itu menggantikan helper yang sebelumnya disimpan di luar repository, di folder rilis (`rilis-neon.ps1`, `diag-neon.mjs`, `rotasi-migrasi.mjs`, `make-manifest.py`). Status per 1 November 2026: produksi backend C67 dari `main` `60f3ecc` dan frontend C62 dari `main` `93dbe98`, dengan journal 54 migrasi.
 
 Aturan dasar:
 
