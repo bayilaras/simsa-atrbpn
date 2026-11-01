@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, it, expect, vi } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
-import { evaluateRecoveryCheck, buildOperationsStatus, collectOperationsStatus } from '../services/operations-status.service.js';
+import { evaluateRecoveryCheck, buildOperationsStatus, collectOperationsStatus, getOperationsStatus } from '../services/operations-status.service.js';
 
 const io = vi.hoisted(() => ({ query: vi.fn(), readiness: vi.fn(), blob: vi.fn() }));
 vi.mock('../config/database.js', () => ({ pool: { query: io.query } }));
@@ -91,7 +91,7 @@ describe('operational collector uses the workers actual SQL membership', () => {
             id text PRIMARY KEY, entity_type text NOT NULL DEFAULT 'arsip', file_url text DEFAULT 'gs://private/qa.pdf',
             drive_file_id text, storage_access text DEFAULT 'private', malware_scan_status text DEFAULT 'clean',
             integrity_status text DEFAULT 'verified', sha256 text DEFAULT repeat('a',64), created_at timestamptz DEFAULT now()-interval '2 hours', last_fixity_check_at timestamptz);
-            CREATE TABLE file_fixity_jobs (attachment_id text PRIMARY KEY REFERENCES file_attachments(id), next_check_at timestamptz DEFAULT now()-interval '2 hours', last_result text);`);
+            CREATE TABLE file_fixity_jobs (attachment_id text PRIMARY KEY REFERENCES file_attachments(id), next_check_at timestamptz DEFAULT now()-interval '29 hours', last_result text);`);
     }, 30_000);
     beforeEach(async () => {
         await database.exec('TRUNCATE file_fixity_jobs, file_attachments');
@@ -127,11 +127,23 @@ describe('operational collector uses the workers actual SQL membership', () => {
         expect(check(result, 'fixity').counts).toEqual({ overdue: 2, errors: 2, unscheduled: 0, mismatched: 0 });
         expect(check(result, 'scan_queue').counts?.errors).toBe(1);
     });
-    it('gives newly released files until the next daily fixity run before reporting them unscheduled', async () => {
+    it('tolerates a missed or late scheduled fixity run before reporting a check overdue', async () => {
+        await database.exec(`INSERT INTO file_attachments(id) VALUES ('not-due'),('due-before-run'),('missed-one-run'),('overdue');
+            INSERT INTO file_fixity_jobs(attachment_id,next_check_at) VALUES ('not-due', now()+interval '6 days'),
+            ('due-before-run', now()-interval '1 hour 5 minutes'),
+            ('missed-one-run', now()-interval '26 hours 32 minutes'), ('overdue', now()-interval '28 hours 5 minutes');`);
+        const result = await collectOperationsStatus();
+        expect(check(result, 'fixity').counts).toEqual({ overdue: 1, errors: 0, unscheduled: 0, mismatched: 0 });
+        expect(check(result, 'fixity').message).toMatch(/terlambat lebih dari 28 jam/);
+        await database.exec(`DELETE FROM file_fixity_jobs WHERE attachment_id='overdue'`);
+        expect(check(await collectOperationsStatus(), 'fixity').status).toBe('healthy');
+    });
+    it('tolerates a missed or late scheduled fixity run before reporting newly released files unscheduled', async () => {
         await database.exec(`INSERT INTO file_attachments(id,created_at,last_fixity_check_at) VALUES
             ('released-today', now()-interval '30 days', now()-interval '1 hour'),
             ('uploaded-today', now()-interval '2 hours', NULL),
-            ('released-long-ago', now()-interval '30 days', now()-interval '27 hours'),
+            ('released-before-missed-run', now()-interval '30 days', now()-interval '26 hours 12 minutes'),
+            ('released-long-ago', now()-interval '30 days', now()-interval '28 hours 5 minutes'),
             ('legacy-never-checked', now()-interval '30 days', NULL);
             INSERT INTO file_attachments(id,created_at,last_fixity_check_at,malware_scan_status) VALUES
             ('old-unclean', now()-interval '30 days', NULL, 'not_scanned');`);
@@ -180,5 +192,32 @@ describe('operational collector uses the workers actual SQL membership', () => {
         const result = await pending;
         expect(aborted).toBe(true);
         expect(check(result, 'backup').status).toBe('unknown');
+    });
+});
+
+describe('served operations status reuses private recovery evidence', () => {
+    const evidence = () => ({ statusCode: 200, stream: new ReadableStream({ start(controller) {
+        controller.enqueue(new TextEncoder().encode(JSON.stringify({ schemaVersion: 1, backup: proof(), restore: proof() })));
+        controller.close();
+    } }) });
+    beforeEach(() => {
+        vi.stubEnv('OBJECT_STORAGE_PROVIDER', 'vercel-blob');
+        vi.stubEnv('BLOB_READ_WRITE_TOKEN', 'local-fixture-only');
+        io.query.mockReset().mockResolvedValue({ rows: [] });
+        io.readiness.mockReset().mockResolvedValue({});
+        io.blob.mockReset().mockImplementation(async () => evidence());
+    });
+    afterEach(() => { vi.unstubAllEnvs(); vi.useRealTimers(); });
+
+    it('reads the recovery status from Blob at most once per ten minutes', async () => {
+        vi.useFakeTimers({ now, toFake: ['Date'] });
+        expect((await getOperationsStatus()).checks.find(item => item.id === 'backup')!.status).toBe('healthy');
+        vi.setSystemTime(now + 9 * 60_000);
+        expect((await getOperationsStatus()).checks.find(item => item.id === 'backup')!.status).toBe('healthy');
+        expect(io.blob).toHaveBeenCalledOnce();
+        expect(io.query).toHaveBeenCalledTimes(2);
+        vi.setSystemTime(now + 10 * 60_000 + 31_000);
+        await getOperationsStatus();
+        expect(io.blob).toHaveBeenCalledTimes(2);
     });
 });
