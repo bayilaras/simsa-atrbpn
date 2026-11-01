@@ -95,7 +95,19 @@ async function readRecoveryEvidence() {
     } finally { clearTimeout(timer); }
 }
 
-export async function collectOperationsStatus() {
+// The recovery status is rewritten about once a day, but every uncached read is
+// a Blob simple operation (10,000 per 30 days on Vercel Hobby) and the
+// monitoring page refreshes every 60 s. Reuse a successful read for ten minutes.
+const RECOVERY_EVIDENCE_REUSE_MS = 10 * 60_000;
+let reusableEvidence: { value: unknown; until: number } | null = null;
+async function readReusableRecoveryEvidence() {
+    if (reusableEvidence && Date.now() < reusableEvidence.until) return reusableEvidence.value;
+    const value = await readRecoveryEvidence();
+    if (value) reusableEvidence = { value, until: Date.now() + RECOVERY_EVIDENCE_REUSE_MS };
+    return value;
+}
+
+export async function collectOperationsStatus(readEvidence: () => Promise<unknown> = readRecoveryEvidence) {
     // Keep queue membership aligned with the actual scan/fixity workers.
     // Legacy not_required letter attachments stay counted until the baseline
     // backfill queues them, so operators can see they are not yet released.
@@ -122,7 +134,7 @@ export async function collectOperationsStatus() {
                 WHERE j.attachment_id IS NULL AND ${fixityEligible}
                   AND coalesce(f.last_fixity_check_at, f.created_at) < now() - interval '${FIXITY_ENROLLMENT_GRACE_HOURS} hours') AS "fixityUnscheduled",
             (SELECT count(*) FROM file_attachments WHERE integrity_status='mismatch') AS "mismatched"`, query_timeout: 5000 } as QueryConfig & { query_timeout: number }),
-        readRecoveryEvidence(),
+        readEvidence(),
     ]);
     return buildOperationsStatus({ now: Date.now(), readiness: ready.status === 'fulfilled' ? ready.value : null,
         queues: queue.status === 'fulfilled' ? queue.value.rows[0] : null, recovery: recovery.status === 'fulfilled' ? recovery.value : null });
@@ -134,6 +146,6 @@ let until = 0;
 export function getOperationsStatus() {
     if (cached && Date.now() < until) return Promise.resolve(cached);
     if (pending) return pending;
-    pending = collectOperationsStatus().then(result => { cached = result; until = Date.now() + 30000; return result; }).finally(() => { pending = null; });
+    pending = collectOperationsStatus(readReusableRecoveryEvidence).then(result => { cached = result; until = Date.now() + 30000; return result; }).finally(() => { pending = null; });
     return pending;
 }
