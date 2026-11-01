@@ -5,6 +5,7 @@ import { db } from './database';
 import { env } from './env';
 import { getTrustedOrigins, isTrustedOrigin } from './trusted-origins';
 import { hashCredentialPassword, verifyCredentialPassword } from './password-hashing.js';
+import { CREDENTIAL_PASSWORD_MAX_LENGTH, CREDENTIAL_PASSWORD_MIN_LENGTH } from './password-policy.js';
 import { buildGoogleOAuthConfig } from './google-oauth.js';
 import { createRateLimiterStore, usesSharedRateLimits } from './rate-limits.js';
 import { betterAuthIpOptions } from '../middlewares/better-auth-ip.middleware.js';
@@ -80,6 +81,8 @@ export const auth = betterAuth({
     }),
     emailAndPassword: {
         enabled: true,
+        minPasswordLength: CREDENTIAL_PASSWORD_MIN_LENGTH,
+        maxPasswordLength: CREDENTIAL_PASSWORD_MAX_LENGTH,
         password: {
             // Write only Better Auth's current scrypt format while retaining a
             // verification path for credential rows created by older bcrypt

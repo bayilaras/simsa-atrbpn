@@ -1,12 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
 import {parseIntegrityEnvironment,createPrivateIntegrityReader,runIntegrityWithPool} from './check-file-integrity.mjs';
 const blobToken='vercel_blob_rw_teststore123_syntheticsecret';
 const env={NEON_WORKER_DATABASE_URL:'postgresql://simsa_worker:synthetic-password@ep-synthetic-test.ap-southeast-1.aws.neon.tech/simsa?sslmode=verify-full&channel_binding=require',NEON_WORKER_EXPECTED_HOST:'ep-synthetic-test.ap-southeast-1.aws.neon.tech',NEON_WORKER_EXPECTED_DATABASE:'simsa',SIMSA_PRIVATE_BLOB_READ_WRITE_TOKEN:blobToken};
 test('worker config requires pinned direct worker identity and bounded execution',()=>{
  const actual=parseIntegrityEnvironment({...env,FIXITY_BATCH_SIZE:'3'});assert.equal(actual.clientConfig.user,'simsa_worker');assert.equal(actual.clientConfig.ssl.rejectUnauthorized,true);assert.equal(actual.fixity.batchSize,3);
  for(const changed of [{NEON_WORKER_EXPECTED_HOST:'ep-other.ap-southeast-1.aws.neon.tech'},{NEON_WORKER_DATABASE_URL:env.NEON_WORKER_DATABASE_URL.replace('simsa_worker:','simsa_api:')},{FIXITY_BATCH_SIZE:'101'},{FIXITY_MAX_BYTES:String(513*1024*1024)}])assert.throws(()=>parseIntegrityEnvironment({...env,...changed}));
+ assert.equal(parseIntegrityEnvironment(env).fixity.batchSize,20);assert.throws(()=>parseIntegrityEnvironment({...env,FIXITY_BATCH_SIZE:'21'}),/INTEGRITY_RUN_EXCEEDS_REVIEWED_BUDGET/);
+});
+test('scheduled workflow runs twice a day and its job timeout covers every read deadline in the batch',async()=>{
+ const workflow=await readFile(new URL('../.github/workflows/operations-fixity.yml',import.meta.url),'utf8'),field=name=>new RegExp(`^\\s+${name}: '?([^'\\r\\n]+)'?\\r?$`,'m').exec(workflow)?.[1];
+ assert.equal(field('- cron'),'45 0,12 * * *');
+ const {fixity}=parseIntegrityEnvironment({...env,FIXITY_BATCH_SIZE:field('FIXITY_BATCH_SIZE'),FIXITY_TIMEOUT_MS:field('FIXITY_TIMEOUT_MS')});
+ assert.equal(fixity.batchSize,20);assert.ok(Number(field('timeout-minutes'))*60000>=fixity.batchSize*fixity.timeoutMs+3*60000);
 });
 test('private reader denies another host and redirect, and forwards service abort signal',async()=>{
  const abort=new AbortController();let calls=0;
@@ -26,6 +34,11 @@ test('real FileFixityService matches bounded file and writes its existing audit 
  assert.equal(report.summary.checked,1);assert.equal(report.summary.matched,1);assert.equal(report.status,'success');
  const updates=pool.statements.filter(row=>row.sql.startsWith('UPDATE file_attachments'));assert.equal(updates.length,1);assert.equal(updates[0].args[2],hash);assert.match(updates[0].sql,/last_fixity_check_at=now\(\)/);assert.doesNotMatch(updates[0].sql,/SET\s+sha256/i);
  assert.equal(pool.statements.filter(row=>row.sql.includes('INSERT INTO audit_log')).length,1);
+});
+test('real service enrolls five read batches of new files, one batch per scheduled run, separate from the read batch',async()=>{
+ const pool=poolFor([{...file},{...file}]);const report=await runIntegrityWithPool(pool,{...env,FIXITY_BATCH_SIZE:'1'},{fetchImpl:async()=>new Response(fileBytes,{status:200})});
+ const inserts=pool.statements.filter(row=>row.sql.includes('INSERT INTO file_fixity_jobs'));assert.equal(inserts.length,1);assert.deepEqual(inserts[0].args,[5,1,43200]);assert.match(inserts[0].sql,/ON CONFLICT \(attachment_id\) DO NOTHING/);assert.match(inserts[0].sql,/row_number\(\) OVER \(ORDER BY f\.created_at, f\.id\)/);
+ assert.equal(report.maximumEnrollments,5);assert.equal(report.maximumChecks,1);assert.equal(report.privateObjectDownloads,1);assert.equal(pool.statements.filter(row=>row.sql.includes('WITH candidate AS')).length,1);
 });
 test('real service reports mismatch and preserves expected hash in guarded update',async()=>{
  const pool=poolFor([{...file}]);const report=await runIntegrityWithPool(pool,{...env,FIXITY_BATCH_SIZE:'1'},{fetchImpl:async()=>new Response('different bytes',{status:200})});

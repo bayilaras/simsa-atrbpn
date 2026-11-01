@@ -10,7 +10,7 @@ import {assertNeonWorkerRole} from './neon-worker-role.mjs';
 import {privateBlobConfiguration,pinnedPrivateUrl} from './operations-recovery-documents.mjs';
 const requireBackend=createRequire(new URL('../backend/package.json',import.meta.url));
 const {tsImport}=await import(pathToFileURL(requireBackend.resolve('tsx/esm/api')));
-const {FileFixityService,loadFixityConfig}=await tsImport(new URL('../backend/src/services/file-fixity.service.ts',import.meta.url).href,{parentURL:import.meta.url,tsconfig:false});
+const {FileFixityService,loadFixityConfig,fixityEnrollmentLimit}=await tsImport(new URL('../backend/src/services/file-fixity.service.ts',import.meta.url).href,{parentURL:import.meta.url,tsconfig:false});
 const {normalizeStoredObjectLocator}=await tsImport(new URL('../backend/src/storage/locator.ts',import.meta.url).href,{parentURL:import.meta.url,tsconfig:false});
 const check=(value,code)=>{if(!value)throw Object.assign(new Error(code),{safeCode:code});};
 
@@ -19,7 +19,7 @@ export function parseIntegrityEnvironment(environment){
  check(url.hostname===environment.NEON_WORKER_EXPECTED_HOST&&url.pathname==='/'+environment.NEON_WORKER_EXPECTED_DATABASE,'INTEGRITY_DATABASE_PIN_MISMATCH');
  check(!['postgres','template0','template1'].includes(environment.NEON_WORKER_EXPECTED_DATABASE),'INTEGRITY_SYSTEM_DATABASE_REFUSED');
  privateBlobConfiguration(environment);
- const fixity=loadFixityConfig({FIXITY_BATCH_SIZE:'10',...environment});
+ const fixity=loadFixityConfig({FIXITY_BATCH_SIZE:'20',...environment});
  check(fixity.batchSize<=20&&fixity.maximumBytes<=64*1024*1024&&fixity.timeoutMs<=120000,'INTEGRITY_RUN_EXCEEDS_REVIEWED_BUDGET');
  return {fixity,database:environment.NEON_WORKER_EXPECTED_DATABASE,clientConfig:{host:url.hostname,port:5432,database:environment.NEON_WORKER_EXPECTED_DATABASE,
   user:'simsa_worker',password:decodeURIComponent(url.password),ssl:{rejectUnauthorized:true,servername:url.hostname},enableChannelBinding:true,
@@ -45,7 +45,7 @@ export async function runIntegrityWithPool(pool,environment,{fetchImpl=fetch}={}
  const reader=createPrivateIntegrityReader(environment,{fetchImpl,onRead:()=>downloaded++});
  const summary=await new FileFixityService(pool,reader).run(fixity);
  const attention=summary.failed>0||summary.mismatched>0||summary.stale>0;
- return {status:attention?'attention':'success',summary,privateObjectDownloads:downloaded,maximumChecks:fixity.batchSize,
+ return {status:attention?'attention':'success',summary,privateObjectDownloads:downloaded,maximumChecks:fixity.batchSize,maximumEnrollments:fixityEnrollmentLimit(fixity),
   intervalSeconds:fixity.intervalSeconds,retrySeconds:fixity.retrySeconds,maximumBytes:fixity.maximumBytes,timeoutMs:fixity.timeoutMs,
   expectedHashesOverwritten:false,productionBusinessContentChanged:false,service:'existing_FileFixityService'};
 }

@@ -4,6 +4,7 @@ import {
     updateUserSchema,
     userIdParamSchema,
     createUserSchema,
+    resetPasswordSchema,
 } from '../validations/user-management.validation';
 
 // ==================== listUsersSchema ====================
@@ -138,6 +139,14 @@ describe('userIdParamSchema', () => {
         expect(result.success).toBe(true);
     });
 
+    it('lower-cases an upper-case UUID so it matches the stored id', () => {
+        const result = userIdParamSchema.safeParse({
+            userId: '550E8400-E29B-41D4-A716-446655440000',
+        });
+        expect(result.success).toBe(true);
+        if (result.success) expect(result.data.userId).toBe('550e8400-e29b-41d4-a716-446655440000');
+    });
+
     it('rejects non-UUID string', () => {
         const result = userIdParamSchema.safeParse({
             userId: 'not-a-uuid',
@@ -178,6 +187,11 @@ describe('createUserSchema', () => {
     it('accepts password exactly 8 characters', () => {
         const result = createUserSchema.safeParse({ ...validUser, password: '12345678' });
         expect(result.success).toBe(true);
+    });
+
+    it('rejects a password Better Auth would refuse at sign-in (over 128 characters)', () => {
+        expect(createUserSchema.safeParse({ ...validUser, password: 'a'.repeat(128) }).success).toBe(true);
+        expect(createUserSchema.safeParse({ ...validUser, password: 'a'.repeat(129) }).success).toBe(false);
     });
 
     it('rejects missing email', () => {
@@ -231,5 +245,28 @@ describe('createUserSchema', () => {
     it('rejects nip exceeding 30 characters', () => {
         const result = createUserSchema.safeParse({ ...validUser, nip: '1'.repeat(31) });
         expect(result.success).toBe(false);
+    });
+});
+
+// ==================== resetPasswordSchema ====================
+
+describe('resetPasswordSchema', () => {
+    it('accepts the Better Auth bounds of 8 to 128 characters', () => {
+        expect(resetPasswordSchema.safeParse({ newPassword: '12345678' }).success).toBe(true);
+        expect(resetPasswordSchema.safeParse({ newPassword: 'a'.repeat(128) }).success).toBe(true);
+    });
+
+    it('rejects a missing, short or overlong password with an Indonesian message', () => {
+        expect(resetPasswordSchema.safeParse({}).success).toBe(false);
+        const short = resetPasswordSchema.safeParse({ newPassword: '1234567' });
+        expect(short.success).toBe(false);
+        if (!short.success) expect(short.error.issues[0].message).toBe('Kata sandi minimal 8 karakter');
+        const long = resetPasswordSchema.safeParse({ newPassword: 'a'.repeat(129) });
+        expect(long.success).toBe(false);
+        if (!long.success) expect(long.error.issues[0].message).toBe('Kata sandi maksimal 128 karakter');
+    });
+
+    it('does not accept the password under another field name', () => {
+        expect(resetPasswordSchema.safeParse({ password: 'synthetic-password' }).success).toBe(false);
     });
 });

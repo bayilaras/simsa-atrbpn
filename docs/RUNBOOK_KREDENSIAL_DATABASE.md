@@ -1,6 +1,6 @@
 # Runbook kredensial database dan rilis SIMSA
 
-Runbook ini mengatur di mana setiap kredensial produksi disimpan, cara memakainya saat rilis, cara merotasinya tanpa (atau dengan jeda sesingkat mungkin) gangguan layanan, dan cara memverifikasinya. Alat yang dipakai ada di `scripts/ops/`. Alat itu menggantikan helper yang sebelumnya disimpan di luar repository, di folder rilis (`rilis-neon.ps1`, `diag-neon.mjs`, `rotasi-migrasi.mjs`, `make-manifest.py`). Status per 21 Oktober 2026: produksi backend C56 dan frontend C53 dari `main` `1f125b0`, dengan journal 52 migrasi.
+Runbook ini mengatur di mana setiap kredensial produksi disimpan, cara memakainya saat rilis, cara merotasinya tanpa (atau dengan jeda sesingkat mungkin) gangguan layanan, dan cara memverifikasinya. Alat yang dipakai ada di `scripts/ops/`. Alat itu menggantikan helper yang sebelumnya disimpan di luar repository, di folder rilis (`rilis-neon.ps1`, `diag-neon.mjs`, `rotasi-migrasi.mjs`, `make-manifest.py`). Status per 1 November 2026: produksi backend C67 dari `main` `60f3ecc` dan frontend C62 dari `main` `93dbe98`, dengan journal 54 migrasi.
 
 Aturan dasar:
 
@@ -45,7 +45,7 @@ Semua login `simsa_*` dibuat dengan SQL oleh pemilik database: `bootstrap` di `s
 
 Peran kebijakan `simsa_api_runtime`, `simsa_event_runtime`, `simsa_worker_runtime`, `simsa_final_cleanup`, `simsa_maintenance`, `simsa_migrator`, dan `simsa_backup_reader` tidak dapat login dan tidak memiliki kredensial. Batasnya diperiksa oleh `assertNeonRoleBoundaries` setiap kali `migrate` atau `verify-runtime` berjalan.
 
-Backup terjadwal berjalan lewat `.github/workflows/operations-recovery.yml` (env `production-recovery`). Workflow lama `backup-neon.yml` sudah dihapus dari repository; salinan `NEON_BACKUP_DATABASE_URL` di env lama `production-backup` sudah basi dan sebaiknya dihapus.
+Backup terjadwal berjalan lewat `.github/workflows/operations-recovery.yml` (env `production-recovery`). Workflow lama `backup-neon.yml` sudah dihapus dari repository; env lama `production-backup` dan `gcp-production-backup` beserta secret-nya sudah dihapus pada 31 Oktober 2026.
 
 Kredensial non-database yang ikut menentukan rilis:
 
