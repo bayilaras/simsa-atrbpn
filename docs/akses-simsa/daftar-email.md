@@ -6,7 +6,7 @@ SIMSA tidak menyediakan pendaftaran mandiri dengan email dan kata sandi. Super A
 
 1. Berikan nama, email, unit kerja, dan penugasan kepada Super Admin.
 2. Super Admin menetapkan peran dan unit, memastikan akun aktif, serta mengisi kata sandi untuk login email.
-3. Terima kata sandi awal melalui saluran internal yang disetujui. Masuk menggunakan email dan kata sandi tersebut.
+3. Terima kata sandi awal melalui saluran internal yang disetujui. Masuk menggunakan email dan kata sandi tersebut, lalu ganti kata sandi itu di [Pengaturan → Profil → Ubah Kata Sandi](../administrasi/settings.md#ubah-kata-sandi).
 4. Periksa bahwa menu serta data yang dapat Anda lihat sesuai tugas dan unit kerja.
 
 Peran yang dapat ditetapkan hanya **Super Admin** (administrasi lintas unit) dan **Admin Unit Kerja** (mengelola satu unit kerja yang ditetapkan). Akun lama dengan peran Admin Dirjen, Admin Sesditjen, Staff, atau Auditor tetap berlaku sampai Super Admin menetapkan peran baru. Google hanya dapat digunakan bila integrasinya aktif. Login Google pertama dengan email yang belum terdaftar membuat akun yang [menunggu persetujuan Super Admin](login-google.md#langkah-5-tunggu-persetujuan-super-admin) dan belum dapat membuka data.

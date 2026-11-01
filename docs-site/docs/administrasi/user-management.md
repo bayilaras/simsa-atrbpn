@@ -6,7 +6,7 @@ Hanya pengguna aktif dengan peran **Super Admin** dapat membuka **Manajemen Peng
 
 1. Buka **Administrasi → Manajemen Pengguna**, lalu **Tambah Pengguna**.
 2. Isi nama, email unik, peran dan unit kerja yang sesuai penugasan. Jabatan dan NIP membantu identifikasi pejabat; mengisinya tidak membuat tanda tangan elektronik.
-3. Untuk akun email/kata sandi, isi kata sandi minimal 8 karakter. Berikan kata sandi awal melalui saluran internal yang disetujui.
+3. Untuk akun email/kata sandi, isi kata sandi 8 sampai 128 karakter. Berikan kata sandi awal melalui saluran internal yang disetujui, lalu minta pengguna menggantinya di [Pengaturan → Profil → Ubah Kata Sandi](settings.md#ubah-kata-sandi).
 4. Simpan, lalu uji login serta akses menggunakan akun tersebut.
 
 Metode login mengikuti penyedia autentikasi yang dikonfigurasi operator. Akun Better Auth dapat memakai email/kata sandi jika dibuat dengan kata sandi. Google hanya dapat digunakan jika integrasinya aktif dan identitas email sesuai. Jangan menganggap setiap akun baru otomatis dapat masuk melalui Google.
@@ -48,6 +48,23 @@ Gunakan **Nonaktifkan** untuk menghentikan akses. Data identitas dan riwayat akt
 4. Klik **Simpan Perubahan**. Sesi pengguna ditutup dan pengguna perlu masuk kembali.
 
 Perubahan ini satu arah: setelah disimpan, peran lama tidak dapat dipilih kembali. Bila penyimpanan ditolak dengan pesan *Pengguna masih menjadi penyetuju aktif untuk surat pending…*, selesaikan atau teruskan persetujuan surat tersebut, lalu ulangi. Staff dan Auditor lama tidak dapat mengubah data, sedangkan Admin Unit Kerja dapat mengubah data unitnya. Tidak ada peran baru yang setara baca-saja, jadi biarkan peran lama bila pengguna cukup membaca.
+
+## Atur ulang kata sandi
+
+SIMSA tidak mengirim email untuk mengatur ulang kata sandi. Bila pengguna lupa kata sandinya, Super Admin menetapkan kata sandi baru.
+
+1. Cari pengguna, buka menu tindakan, lalu pilih **Atur Ulang Kata Sandi**.
+2. Isi **Kata sandi baru** (8 sampai 128 karakter) dan **Konfirmasi kata sandi baru**.
+3. Klik **Atur Ulang Kata Sandi**.
+4. Sampaikan kata sandi kepada pengguna secara langsung, lalu minta pengguna menggantinya di [Pengaturan → Profil → Ubah Kata Sandi](settings.md#ubah-kata-sandi).
+
+- Kata sandi baru langsung berlaku, kata sandi lama tidak dapat dipakai lagi, dan semua sesi pengguna tersebut ditutup.
+- Hanya Super Admin yang dapat melakukannya, termasuk untuk akun Super Admin lain.
+- Menu ini tidak tampil untuk akun Anda sendiri; gunakan **Ubah Kata Sandi** di Pengaturan.
+- Menu ini juga tidak tampil untuk akun yang belum disetujui (peran **Pengguna**); setujui aksesnya terlebih dahulu.
+- Akun nonaktif dapat diatur ulang, tetapi pengguna baru dapat masuk setelah akun diaktifkan kembali.
+- Akun yang selama ini hanya masuk dengan Google mendapat kata sandi SIMSA, sehingga dapat masuk dengan Google maupun dengan email dan kata sandi.
+- Tindakan ini dicatat dalam audit tanpa menyimpan kata sandi.
 
 ## Pemeriksaan sebelum dipakai
 
