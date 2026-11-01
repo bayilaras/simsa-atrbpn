@@ -1,6 +1,12 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import userManagementService from '../services/user-management.service';
-import { listUsersSchema, updateUserSchema, userIdParamSchema, createUserSchema } from '../validations/user-management.validation';
+import userManagementService, { SELF_PASSWORD_RESET_MESSAGE } from '../services/user-management.service';
+import {
+    listUsersSchema,
+    updateUserSchema,
+    userIdParamSchema,
+    createUserSchema,
+    resetPasswordSchema,
+} from '../validations/user-management.validation';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
 
@@ -154,6 +160,50 @@ router.put('/:userId', async (req: Request, res: Response, next: NextFunction) =
         }
 
         res.json({ success: true, data: updatedUser });
+    } catch (error) {
+        next(error);
+    }
+});
+
+router.post('/:userId/password', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const paramResult = userIdParamSchema.safeParse(req.params);
+        if (!paramResult.success) {
+            return res.status(400).json({
+                error: 'Validation error',
+                details: paramResult.error.issues
+            });
+        }
+
+        // Zod issues carry the rule and path, never the submitted value.
+        const bodyResult = resetPasswordSchema.safeParse(req.body);
+        if (!bodyResult.success) {
+            return res.status(400).json({
+                error: 'Validation error',
+                message: bodyResult.error.issues[0]?.message,
+                details: bodyResult.error.issues
+            });
+        }
+
+        const currentUser = (req as any).currentUser;
+        if (paramResult.data.userId === currentUser.id) {
+            return res.status(400).json({ error: SELF_PASSWORD_RESET_MESSAGE });
+        }
+
+        const result = await userManagementService.resetPassword(
+            paramResult.data.userId,
+            bodyResult.data.newPassword,
+            { userId: currentUser.id, userEmail: currentUser.email, ipAddress: req.ip },
+        );
+        if (!result) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        res.json({
+            success: true,
+            data: result,
+            message: 'Kata sandi diatur ulang. Pengguna perlu masuk kembali dengan kata sandi baru.',
+        });
     } catch (error) {
         next(error);
     }

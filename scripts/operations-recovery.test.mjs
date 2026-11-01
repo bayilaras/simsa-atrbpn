@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { recoveryAttestation,publishRecoveryStatus,finalizeRecoveryAttempt } from './operations-recovery.mjs';
+import { recoveryAttestation,publishRecoveryStatus,finalizeRecoveryAttempt,recordRecoveryFailure } from './operations-recovery.mjs';
 import { unwrapRecoveryKeys } from './operations-recovery-delivery.mjs';
-import { seal } from './operations-recovery-documents.mjs';
+import { seal,sha256,documentReferences } from './operations-recovery-documents.mjs';
 import { randomBytes,scryptSync } from 'node:crypto';
 const time='2026-09-15T12:00:00.000Z';
 const report={runId:'a'.repeat(32),finishedAt:time,backup:{databaseVerified:true,documentsVerified:true,completedAt:time},restore:{databaseVerified:true,documentsVerified:true,targetStopped:true,completedAt:time}};
@@ -21,6 +21,14 @@ test('portable recovery key envelope roundtrip rejects wrong passphrase and unbo
  const envelope=seal(bytes,key,`simsa-recovery-keys-v1:${archiveSha256}`);assert.deepEqual(unwrapRecoveryKeys(metadata,envelope,passphrase).documentKey,documentKey);
  assert.throws(()=>unwrapRecoveryKeys(metadata,envelope,'wrong password long enough to test encryption'));
  assert.throws(()=>unwrapRecoveryKeys({...metadata,N:2**30},envelope,passphrase));
+});
+test('a document budget failure still records its counts and sizes in the run report',()=>{
+ const row=n=>({id:`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`,file_url:`https://teststore123.private.blob.vercel-storage.com/${n}.pdf`,sha256:sha256(String(n)),size_bytes:1,storage_access:'private'});
+ let error;try{documentReferences(Array.from({length:101},(_,n)=>row(n)),[]);}catch(caught){error=caught;}
+ const failed=recordRecoveryFailure({status:'failed'},'document_inventory',error);
+ assert.deepEqual([failed.failureStage,failed.failureCode,failed.documentBudget.objects,failed.documentBudget.objectsHeadroom],['document_inventory','DOCUMENT_OBJECTS_OUTSIDE_BUDGET',101,-1]);
+ const other=recordRecoveryFailure({},'database_snapshot',Object.assign(new Error('raw detail'),{documentBudget:{objects:1}}));
+ assert.deepEqual(other,{failureStage:'database_snapshot',failureCode:'RECOVERY_FAILED_DETAILS_SUPPRESSED'});
 });
 test('status keeps completion age and binds sanitized evidence hash',()=>{
  const actual=recoveryAttestation(report);assert.equal(actual.backup.completedAt,time);assert.match(actual.backup.evidenceSha256,/^[a-f0-9]{64}$/);

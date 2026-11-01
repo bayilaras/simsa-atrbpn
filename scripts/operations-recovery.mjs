@@ -10,8 +10,14 @@ import { runNeonBackup } from './neon-backup.mjs';
 import { makeBackupWorkspace } from './neon-backup-runtime.mjs';
 import { authenticatedDatabaseBundle,restoreDatabaseProof } from './operations-recovery-database.mjs';
 import { restoreDeliveryProof } from './operations-recovery-delivery.mjs';
-import { seal,unseal,sha256,parseCopyTable,documentReferences,documentBudgetUsage,backupDocuments,restoreDocuments,privateBlobConfiguration } from './operations-recovery-documents.mjs';
+import { seal,unseal,sha256,parseCopyTable,documentReferences,documentBudgetUsage,documentBudgetAnnotation,backupDocuments,restoreDocuments,privateBlobConfiguration } from './operations-recovery-documents.mjs';
 const check=(value,code)=>{if(!value)throw Object.assign(new Error(code),{safeCode:code});};
+export function recordRecoveryFailure(report,stage,error){
+ report.failureStage=stage;report.failureCode=error?.safeCode||'RECOVERY_FAILED_DETAILS_SUPPRESSED';
+ // A document budget failure carries its counts and sizes, so the red run still records them.
+ if(error?.safeCode&&error.documentBudget)report.documentBudget=error.documentBudget;
+ return report;
+}
 const required=(env,key)=>{check(typeof env[key]==='string'&&env[key].length>0,'RECOVERY_CONFIGURATION_MISSING');return env[key];};
 export function recoveryAttestation(report){
  const evidenceSha256=sha256(JSON.stringify(report));
@@ -70,7 +76,7 @@ export async function runRecovery(environment){
   stage='document_inventory';const sql=await workspace.command('pg_restore',['--data-only','--schema=public','--table=file_attachments','--table=regulatory_rule_sets','--file=-'],{input:plain.archive,metadata:true,maximum:20*1024*1024});
   let references;try{references=documentReferences(parseCopyTable(sql.toString(),'file_attachments'),parseCopyTable(sql.toString(),'regulatory_rule_sets'),{captureMissingHashes:environment.OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES==='true'});}finally{sql.fill(0);}
   report.documentBudget=documentBudgetUsage(references);
-  if(report.documentBudget.warning&&environment.GITHUB_ACTIONS==='true')console.log(`::warning title=SIMSA backup mendekati batas::${report.documentBudget.count}/${report.documentBudget.maxCount} dokumen, ${Math.round(report.documentBudget.bytesRatio*100)}% dari batas ukuran. Naikkan batas sebelum backup gagal.`);
+  const annotation=documentBudgetAnnotation(report.documentBudget);if(annotation&&environment.GITHUB_ACTIONS==='true')console.log(annotation);
   stage='document_backup';const documentDirectory=join(output,'documents');
   report.documentBackup=await backupDocuments({references,token,directory:documentDirectory,key:documentKey,sourceSnapshotAt:report.sourceSnapshotAt,archiveSha256:report.archiveSha256,captureMissingHashes:environment.OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES==='true'});
   report.backup.documentsVerified=true;report.documentBackup.completedAt=new Date().toISOString();report.backup.completedAt=report.sourceSnapshotAt;
@@ -79,7 +85,8 @@ export async function runRecovery(environment){
   stage='document_restore';report.documentRestore=await restoreDocuments({directory:documentDirectory,key:documentKey,targetDirectory:join(workspace.directory,'restored-documents'),targetKey,expectedArchiveSha256:report.archiveSha256});
   report.restore.documentsVerified=report.documentRestore.allHashesMatch&&report.documentRestore.unauthorizedDenied;report.restore.completedAt=new Date().toISOString();
   report.status='success';
- }catch(error){report.failureStage=stage;report.failureCode=error?.safeCode||'RECOVERY_FAILED_DETAILS_SUPPRESSED';}
+ }catch(error){recordRecoveryFailure(report,stage,error);
+  if(stage==='document_inventory'&&error?.safeCode&&error.documentBudget&&environment.GITHUB_ACTIONS==='true')console.log(documentBudgetAnnotation(error.documentBudget,{failed:true}));}
  finally{plain?.archive.fill(0);plain?.evidence.fill(0);documentKey?.fill(0);targetKey?.fill(0);keyEnvelope?.fill(0);
   report.finishedAt=new Date().toISOString();
   await finalizeRecoveryAttempt(report,{persist:async()=>{if(output){await mkdir(output,{recursive:true,mode:0o700});await writeFile(join(output,'recovery-proof.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx',mode:0o600});await writeFile(join(output,'recovery-status-v1.json'),JSON.stringify(recoveryAttestation(report),null,2)+'\n',{flag:'wx',mode:0o600});}},

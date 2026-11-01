@@ -1,8 +1,17 @@
 import { z } from 'zod';
 import { ASSIGNABLE_ROLES, KNOWN_ROLES } from '../config/permissions.js';
+import {
+    CREDENTIAL_PASSWORD_MAX_LENGTH,
+    CREDENTIAL_PASSWORD_MIN_LENGTH,
+} from '../config/password-policy.js';
 
 // Valid roles
 const roles = KNOWN_ROLES;
+
+// Same bounds as Better Auth's email+password sign-in (config/auth.ts).
+const credentialPasswordSchema = z.string()
+    .min(CREDENTIAL_PASSWORD_MIN_LENGTH, `Kata sandi minimal ${CREDENTIAL_PASSWORD_MIN_LENGTH} karakter`)
+    .max(CREDENTIAL_PASSWORD_MAX_LENGTH, `Kata sandi maksimal ${CREDENTIAL_PASSWORD_MAX_LENGTH} karakter`);
 
 // Query params for listing users
 export const listUsersSchema = z.object({
@@ -23,9 +32,11 @@ export const updateUserSchema = z.object({
     nip: z.string().max(30).nullable().optional(),
 });
 
-// Params with userId
+// Params with userId. uuid() also accepts upper-case hex; Postgres returns
+// ids in lower case, and the self checks and accounts.account_id (text)
+// compare the string as written.
 export const userIdParamSchema = z.object({
-    userId: z.string().uuid(),
+    userId: z.string().uuid().transform(value => value.toLowerCase()),
 });
 
 // Create user body
@@ -36,11 +47,18 @@ export const createUserSchema = z.object({
     unitKerjaId: z.string().nullable().optional(),
     jabatan: z.string().max(100).nullable().optional(),
     nip: z.string().max(30).nullable().optional(),
-    password: z.string().min(8, 'Password minimal 8 karakter').optional(),
+    password: credentialPasswordSchema.optional(),
 }).refine(value => value.role !== 'admin_unit' || Boolean(value.unitKerjaId?.trim()), {
     message: 'Unit kerja wajib untuk admin unit.', path: ['unitKerjaId'],
+});
+
+// Super Admin password reset body. `newPassword` is exempt from the HTML
+// input sanitizer, so the stored hash matches what the user will type.
+export const resetPasswordSchema = z.object({
+    newPassword: credentialPasswordSchema,
 });
 
 export type ListUsersQuery = z.infer<typeof listUsersSchema>;
 export type UpdateUserBody = z.infer<typeof updateUserSchema>;
 export type CreateUserBody = z.infer<typeof createUserSchema>;
+export type ResetPasswordBody = z.infer<typeof resetPasswordSchema>;
