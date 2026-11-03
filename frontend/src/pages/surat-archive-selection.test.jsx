@@ -10,11 +10,14 @@ const fixtures = vi.hoisted(() => ({
     retention: { id: 97, kode: 'S.III.01', uraian: 'Berkas penetapan hak', retensiAktif: '2 tahun', retensiInaktif: '3 tahun', keterangan: 'Permanen' },
     masuk: { getById: vi.fn(), update: vi.fn(), create: vi.fn(), getNextNumber: vi.fn(), getBelumDibalas: vi.fn() },
     keluar: { getById: vi.fn(), update: vi.fn(), create: vi.fn(), getNextNumber: vi.fn() },
+    dist: { getDistributableUnits: vi.fn(), getOpsi: vi.fn() },
 }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { id: 'user', role: 'admin_unit', unitKerjaId: 'unit-a' } }) }))
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ capabilities: { fileUploads: false } }) }))
 vi.mock('@/services/surat-masuk.service', () => ({ suratMasukService: fixtures.masuk }))
 vi.mock('@/services/surat-keluar.service', () => ({ suratKeluarService: fixtures.keluar }))
+// Keeps the incoming create form off the network (see surat-date-input.test.jsx).
+vi.mock('@/services/distribution.service', () => ({ default: fixtures.dist, distributionService: fixtures.dist }))
 vi.mock('@/components/ui/searchable-select', () => ({ SearchableSelect: ({ id, ariaLabel, value, onValueChange, options }) => <select id={id} aria-label={ariaLabel} value={value} onChange={event => onValueChange(event.target.value)}>
     <option value="">Pilih</option>{options.map(option => <option key={option.value ?? option} value={option.value ?? option}>{option.label ?? option}</option>)}
 </select> }))
@@ -36,6 +39,8 @@ beforeEach(() => {
         service.create.mockResolvedValue(record)
         service.getNextNumber.mockResolvedValue({ nextNumber: 1 })
     }
+    fixtures.dist.getDistributableUnits.mockResolvedValue([])
+    fixtures.dist.getOpsi.mockResolvedValue({ instruksi: [], jalurAksesTerkendali: false })
     vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
     vi.spyOn(window, 'confirm').mockReturnValue(false)
     Element.prototype.scrollIntoView = vi.fn()
