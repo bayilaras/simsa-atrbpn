@@ -1,7 +1,7 @@
 import type { Config } from 'drizzle-kit';
 import * as dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config({ quiet: true, override: false });
 
 export default {
     schema: './src/db/schema/index.ts',

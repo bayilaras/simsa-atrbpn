@@ -111,7 +111,7 @@ export async function migrateDatabase(client, migrations = loadMigrations()) {
 }
 
 async function main() {
-  dotenv.config({ quiet: true });
+  dotenv.config({ quiet: true, override: false });
   if (!process.env.DATABASE_URL?.trim()) throw new Error('DATABASE_URL is required for db:migrate');
   const migrations = loadMigrations();
   const client = new Client({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 10_000 });

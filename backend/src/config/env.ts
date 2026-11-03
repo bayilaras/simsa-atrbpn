@@ -9,7 +9,7 @@ import {
 } from './cloud-platform.js';
 import { assertValidGoogleOAuthEnvironment } from './google-oauth.js';
 
-dotenv.config();
+dotenv.config({ quiet: true, override: false });
 
 export const malwareScanConfig = loadMalwareScanConfig();
 const appProfile = loadAppProfile();
