@@ -95,8 +95,18 @@ Wrapper memeriksa dependensi ini **sebelum** prompt muncul dan mencetak perintah
 
 1. **Pra-cek.** PR sudah di-merge ke `main` dan kelima check wajib hijau pada commit merge. Run `operations-recovery.yml` terakhir sukses. Produksi sehat (Operations Monitor).
 2. **Bila rilis memuat migrasi.** Merge ke `main` membuat backup harian gagal sampai migrasi diterapkan, karena rantai journal berbeda. Ini sudah diperkirakan. Sebelum migrasi:
-   - buat branch Neon `pra-00xx-<tanggal>` dari branch produksi (Neon Console → Branches);
+   - buat branch Neon `pra-00xx-<tanggal>` dari branch produksi (Neon Console → Branches). Pada *Automatically delete branch after*, pilih 7 hari, karena bawaannya 1 hari;
    - pastikan backup terakhir dari rantai lama ada.
+
+   Paket Neon Free membatasi 10 branch per project, dan branch yang diarsipkan ikut dihitung. Sisakan minimal dua slot: satu untuk `pra-00xx`, satu untuk branch `<nama>_old_<waktu>` yang dibuat Neon saat restore. Bila slot penuh, buat snapshot manual lewat Backup & Restore (Free hanya menyimpan satu), lalu hapus snapshot itu setelah rilis stabil.
+
+   Jangan menghubungkan integrasi Neon–Vercel ke project SIMSA mana pun. Integrasi itu membuat branch `preview/<git-branch>`, yaitu salinan penuh data produksi, untuk setiap deployment preview. Integrasi juga menaruh `DATABASE_URL` berisi password pemilik database di Vercel. Frontend tidak memakai database, dan backend memakai env yang diisi manual. Pada Oktober 2026, sembilan branch semacam itu memenuhi batas sehingga titik pulih pra-0052 tidak bisa dibuat. Integrasinya dihapus pada 2 November 2026.
+
+   Bila integrasi itu sempat terhubung lagi, bersihkan dengan urutan berikut:
+   1. Putuskan dulu (Neon → Settings → Vercel → Disconnect). Selama masih terhubung, setiap slot yang kosong langsung dipakai lagi oleh integrasi untuk men-deploy ulang preview yang tertunda.
+   2. Hapus branch `preview/*`.
+   3. Hapus integrasinya di Vercel (Team → Integrations → Neon → Settings → Remove). Env milik integrasi ikut terhapus.
+   4. Reset password `neondb_owner` (lihat [neondb_owner](#neondb_owner)).
 3. **Migrasi** dari sumber beku rilis, setelah `npm ci --prefix <source>\backend --ignore-scripts` (lihat [alat](#alat-di-scriptsops)). Ada dua pilihan:
    - `rilis-neon.ps1 -Action rotate-migrate -Checkout <source>`: memakai kredensial `neondb_owner`, merotasi `simsa_migration` ke password acak sekali pakai, lalu menjalankan `migrate --apply`. Ini alur yang dipakai pada rilis 0051.
    - `rilis-neon.ps1 -Action migrate -Checkout <source>`: memakai `simsa_migration` dari password manager.
