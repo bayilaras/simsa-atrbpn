@@ -363,7 +363,7 @@ export function formatSifatFixture(results) {
 }
 
 async function main() {
-  dotenv.config({ quiet: true });
+  dotenv.config({ quiet: true, override: false });
   const connectionString = process.env.PREFLIGHT_DATABASE_URL?.trim();
   if (!connectionString) throw new Error('PREFLIGHT_DATABASE_URL wajib diisi (gunakan role Neon read-only)');
   const formatArg = process.argv.find(arg => arg.startsWith('--format='));
