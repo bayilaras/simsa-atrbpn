@@ -11,10 +11,15 @@ const mocks = vi.hoisted(() => ({
     masuk: { getAll: vi.fn(), getById: vi.fn(), getStats: vi.fn(), archive: vi.fn() },
     keluar: { getAll: vi.fn(), getById: vi.fn(), getStats: vi.fn(), archive: vi.fn() },
     user: { id: 'actor-a', role: 'admin_unit', unitKerjaId: 'unit-a' },
+    rangkaian: { getBySurat: vi.fn() },
 }))
 vi.mock('@/components/surat/KoreksiBerkasSection', () => ({ default: () => null }))
 vi.mock('@/services/surat-masuk.service', () => ({ default: mocks.masuk }))
 vi.mock('@/services/surat-keluar.service', () => ({ default: mocks.keluar }))
+// The detail pages render AlurSuratPanel, which loads the letter's rangkaian
+// on mount. Unmocked, that request reaches the network and its retry can
+// outlive the jsdom environment (see surat-date-input.test.jsx).
+vi.mock('@/services/rangkaian.service', () => ({ default: mocks.rangkaian, rangkaianService: mocks.rangkaian }))
 vi.mock('@/services/approval.service', () => ({ default: { getPending: vi.fn().mockResolvedValue([]), getHistory: vi.fn().mockResolvedValue([]) } }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: mocks.user, canWrite: () => true }) }))
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ capabilities: { files: false } }) }))
@@ -35,6 +40,8 @@ beforeEach(() => {
     vi.clearAllMocks()
     mocks.masuk.getStats.mockResolvedValue({ total: 1, belumDibalas: 1, sudahDibalas: 0, diarsipkan: 0 })
     mocks.keluar.getStats.mockResolvedValue({ total: 1, diarsipkan: 0 })
+    // A letter outside any rangkaian: the panel renders nothing.
+    mocks.rangkaian.getBySurat.mockResolvedValue(null)
     Element.prototype.scrollIntoView = vi.fn()
 })
 afterEach(cleanup)

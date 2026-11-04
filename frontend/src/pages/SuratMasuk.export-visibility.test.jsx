@@ -5,7 +5,7 @@ import SuratMasuk from './SuratMasuk'
 
 // Tombol Export hanya untuk peran yang memiliki izin reports:export di server
 // (staf mendapat 403), sama dengan aturan halaman Laporan.
-const mocks = vi.hoisted(() => ({ getAll: vi.fn(), getStats: vi.fn(), toast: vi.fn(), role: 'staff' }))
+const mocks = vi.hoisted(() => ({ getAll: vi.fn(), getStats: vi.fn(), getAllUnitKerja: vi.fn(), toast: vi.fn(), role: 'staff' }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({
     user: { id: 'user-a', role: mocks.role, unitKerjaId: 'unit-a' }, canWrite: () => mocks.role !== 'auditor',
 }) }))
@@ -14,6 +14,11 @@ vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({
 }) }))
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }))
 vi.mock('@/services/surat-masuk.service', () => ({ default: { getAll: mocks.getAll, getStats: mocks.getStats } }))
+// super_admin memuat daftar unit kerja saat mount. Tanpa mock, permintaan itu
+// ke jaringan dan retry-nya bisa melewati teardown jsdom.
+vi.mock('@/services/settings.service', () => ({
+    default: { getAllUnitKerja: mocks.getAllUnitKerja }, settingsService: { getAllUnitKerja: mocks.getAllUnitKerja },
+}))
 vi.mock('@/services/approval.service', () => ({ default: { getPending: async () => [] }, approvalService: { getPending: async () => [] } }))
 vi.mock('@/components/ArchiveDialog', () => ({ ArchiveDialog: () => null }))
 vi.mock('@/components/DistributeDialog', () => ({ DistributeDialog: () => null }))
@@ -30,6 +35,7 @@ beforeEach(() => {
         pagination: { page: 1, limit: 10, total: 1, totalPages: 1 },
     })
     mocks.getStats.mockResolvedValue({ total: 1, belumDibalas: 1, sudahDibalas: 0, diarsipkan: 0 })
+    mocks.getAllUnitKerja.mockResolvedValue({ data: [] })
 })
 afterEach(cleanup)
 
