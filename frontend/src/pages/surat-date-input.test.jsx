@@ -8,6 +8,7 @@ import { clearOfflineStorage } from '../lib/offline-storage';
 const services = vi.hoisted(() => ({
     masuk: { create: vi.fn(), getById: vi.fn(), getNextNumber: vi.fn(), getBelumDibalas: vi.fn() },
     keluar: { create: vi.fn(), getNextNumber: vi.fn() },
+    dist: { getDistributableUnits: vi.fn(), getOpsi: vi.fn() },
 }));
 
 vi.mock('@/context/AuthContext', () => ({
@@ -15,6 +16,10 @@ vi.mock('@/context/AuthContext', () => ({
 }));
 vi.mock('@/services/surat-masuk.service', () => ({ suratMasukService: services.masuk }));
 vi.mock('@/services/surat-keluar.service', () => ({ suratKeluarService: services.keluar }));
+// The incoming form loads disposition units on mount. Without this mock the
+// request goes to the network and retries after 1 s, so its rejection can
+// call setState after the jsdom environment is gone ("window is not defined").
+vi.mock('@/services/distribution.service', () => ({ default: services.dist, distributionService: services.dist }));
 
 // Only simplify unrelated popup selectors. The real form, native date Input,
 // onChange handlers, numbering effect, draft hook and router blocker stay intact.
@@ -47,6 +52,10 @@ describe('surat date field state', () => {
         services.masuk.getBelumDibalas.mockResolvedValue({ data: [] });
         services.masuk.getNextNumber.mockResolvedValue({ nomorSurat: '001/SM/2026' });
         services.keluar.getNextNumber.mockResolvedValue({ nomorSurat: '001/ND/2026' });
+        // No units: the disposition list offers only the label-only Kabag
+        // options, as it did while the unmocked request was still pending.
+        services.dist.getDistributableUnits.mockResolvedValue([]);
+        services.dist.getOpsi.mockResolvedValue({ instruksi: [], jalurAksesTerkendali: false });
     });
 
     afterEach(async () => {
@@ -77,6 +86,8 @@ describe('surat date field state', () => {
         render(<RouterProvider router={createRouter} />);
         expect(screen.getByLabelText(/^Perihal/)).toHaveValue('');
         expect(confirm).not.toHaveBeenCalled();
+        // Let the mocked disposition options settle inside act().
+        await act(async () => {});
         createRouter.dispose();
     });
 
