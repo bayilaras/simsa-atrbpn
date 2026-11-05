@@ -164,7 +164,7 @@ Pada ikon lonceng:
 Untuk admin:
 
 1. Buka **Surat > Surat Masuk** lalu klik **Tambah Surat Masuk**.
-2. Isi nomor, tanggal surat, tanggal diterima, pengirim, tujuan/perihal, naskah atau sifat surat, klasifikasi, dan metadata lain yang tersedia.
+2. Isi nomor, tanggal surat, tanggal diterima, pengirim, tujuan/perihal, naskah atau sifat surat, klasifikasi, dan metadata lain yang tersedia. Sifat surat terdiri atas Biasa, Segera, Sangat Segera, Rahasia, Undangan, dan Penting; sifat Rahasia hanya dapat ditetapkan oleh Super Admin.
 3. Lampirkan dokumen bila diperlukan dan fasilitas penyimpanan file tersedia. Untuk pencatatan inventaris fisik, metadata dapat disimpan tanpa lampiran.
 4. Periksa nomor, tanggal, pengirim, perihal, unit, dan file sebelum menyimpan.
 5. Buka detail untuk mengedit, membalas, mendistribusikan, atau mengarsipkan sesuai tombol dan kewenangan.
@@ -201,11 +201,11 @@ Impor ini mencatat metadata, bukan mengunggah berkas digital. Impor arsip belum 
 
 ### Unggah massal dan OCR PDF
 
-Gunakan fitur ini hanya ketika penyimpanan privat dan pemeriksaan file telah dikonfigurasi operator. Bila menu unggah tidak tersedia, pencatatan manual atau impor metadata tetap dapat digunakan. Jangan membuat unggahan kosong atau tautan publik untuk mengganti bukti.
+Fitur ini hanya tersedia bila operator mengaktifkan modul Unggah Massal & OCR serta mengonfigurasi penyimpanan privat dan pemeriksaan file. Bila tombol **Unggah Massal** tidak tampil, pencatatan manual atau impor metadata tetap dapat digunakan. Jangan membuat unggahan kosong atau tautan publik untuk mengganti bukti.
 
 Untuk menyiapkan beberapa draft arsip dari PDF sekaligus:
 
-1. Buka **Unggah Massal & OCR** dari Dashboard.
+1. Klik **Unggah Massal** di Dashboard atau di halaman Arsip Aktif untuk membuka halaman **Unggah Massal & OCR**.
 2. Pilih satu unit kerja yang konkret. Super Admin juga wajib memilih unit tujuan sebelum unggah.
 3. Pilih atau seret PDF, maksimal 50 berkas, 50 MiB per berkas, dan 100 MiB per batch.
 4. Klik **Mulai unggah** dan tunggu sampai pemrosesan selesai. PDF yang memiliki text layer dibaca langsung; PDF hasil pindai dirender lalu dikenali dengan OCR Bahasa Indonesia dan Inggris.
@@ -223,7 +223,7 @@ OCR PDF hasil pindai dibatasi maksimal 10 halaman dan dapat gagal bila citra ter
 3. Pilih **Klasifikasi Arsip & Jadwal Retensi**. Pilih klasifikasi dahulu, kemudian butir JRA yang sesuai.
 4. Baca pratinjau retensi aktif, retensi inaktif, hasil JRA, versi, dan referensi.
 5. Isi uraian berkas, unit pengolah, kurun waktu, item arsip, tingkat perkembangan, tanggal, jumlah, dan lokasi fisik.
-6. Tetapkan klasifikasi keamanan dan PIC.
+6. Tetapkan klasifikasi keamanan dan PIC. Admin Unit Kerja hanya dapat memilih Biasa/Terbuka atau Terbatas; bila surat sumber berkelas Rahasia atau Sangat Rahasia, kelas itu dipertahankan pada arsip, dan kelas yang lebih tinggi hanya dapat dipilih Super Admin.
 7. Periksa ulang lalu simpan.
 
 Saran JRA dari aplikasi membantu pencarian, tetapi **bukan keputusan otomatis**. Petugas tetap menilai isi, fungsi, konteks, dan rumusan pemicu. Pemicu retensi juga tidak ditetapkan pada dialog registrasi; catat setelah arsip dibuat melalui **Tata Kelola Retensi**.
@@ -235,8 +235,13 @@ Saran JRA dari aplikasi membantu pencarian, tetapi **bukan keputusan otomatis**.
 - **Tab Jejak Aturan:** menunjukkan versi klasifikasi/JRA dan revisi yang pernah dipakai.
 - **Tab Keamanan:** menunjukkan klasifikasi keamanan dan kontrol akses.
 - **Tab Surat:** menghubungkan arsip dengan surat sumber.
+- **Export:** pilih **Formulir 4** (Daftar Arsip Aktif) atau **Formulir 6** (Daftar Arsip Inaktif), lalu Excel atau PDF. Isi ekspor mengikuti tab, unit, pencarian, dan tahun yang sedang dipilih.
+
+Formulir 4 memuat arsip yang masa aktifnya belum berakhir. Formulir 6 memuat arsip yang masa aktifnya sudah berakhir menurut klasifikasi/JRA dan peristiwa pemicu retensi yang sudah terverifikasi, serta arsip yang pemindahannya ke penyimpanan inaktif sudah dicatat di SIMSA melalui modul Penyusutan; pemindahan di luar SIMSA tidak mengubah isi formulir. Arsip yang belum terverifikasi dan belum dicatat pindah tetap tercantum di Formulir 4, sedangkan arsip yang penyusutannya sudah dilaksanakan tidak tercantum di keduanya. Bila belum ada arsip inaktif untuk filter yang dipilih, Formulir 6 tidak diunduh dan muncul keterangan "Belum ada arsip inaktif untuk filter ini…". Rincian kolom ada di [Arsip Aktif](./siklus-arsip/arsip-aktif.md#ekspor-formulir-4-dan-formulir-6).
 
 Arsip lama berstatus aturan belum terverifikasi dapat dibaca tetapi tidak boleh masuk penyusutan. Admin dapat memilih **Rekonsiliasi Klasifikasi/JRA**, memilih aturan aktif, dan mengisi alasan yang spesifik. Rekonsiliasi tidak tersedia bila arsip sedang legal hold, berada dalam workflow penyusutan, atau sudah dieksekusi.
+
+Untuk memperbaiki data berkas yang salah catat, admin yang berwenang atas unit arsip memilih **Ubah Metadata** di halaman detail. Isian yang dapat diubah: nomor dan uraian berkas, unit pengolah, kurun waktu, nomor dan uraian item, tingkat perkembangan, tanggal arsip, jumlah, media, No. Filing Cabinet, No. Laci, No. Folder, klasifikasi keamanan, PIC, dan keterangan. Hanya isian yang diubah yang disimpan, dan perubahannya tercatat di log audit. Klasifikasi/JRA tetap diubah melalui **Rekonsiliasi Klasifikasi/JRA**. **Ubah Metadata** dikunci bila arsip sedang legal hold, sedang dalam proses penyusutan, atau penyusutannya sudah dilaksanakan. Admin Unit Kerja hanya dapat memilih klasifikasi keamanan Biasa/Terbuka atau Terbatas; kelas yang sudah tersimpan boleh dipertahankan.
 
 ### Dosir dan lokasi fisik
 
@@ -312,6 +317,8 @@ Jenis peristiwa yang tersedia mencakup kegiatan selesai, berkas ditutup, serah t
 
 ### Pemindahan, pemusnahan, dan alih media
 
+Menu **Penyusutan** hanya muncul bila modulnya diaktifkan operator. Selama modul belum diaktifkan, pemindahan dan pemusnahan arsip dilakukan di luar SIMSA mengikuti prosedur unit; gunakan **Manajemen Retensi** untuk melihat arsip yang masa retensinya sudah atau hampir habis dan untuk mencetak draf berita acara pemusnahan melalui **Generate Berita Acara**.
+
 Pada menu **Penyusutan**:
 
 1. Pilih tab **Pemindahan**, **Pemusnahan**, atau **Alih Media**.
@@ -353,11 +360,11 @@ Fitur ini mencatat sirkulasi secara langsung; pastikan kewenangan peminjaman tel
 ### Fitur layanan lainnya
 
 - **Layanan Arsip:** catat dan pantau permintaan layanan internal.
-- **Arsip Vital / Arsip Terjaga:** tandai dan kelola arsip yang memerlukan perlindungan khusus sesuai kewenangan.
+- **Arsip Vital / Arsip Terjaga:** tandai dan kelola arsip yang memerlukan perlindungan khusus sesuai kewenangan. Menu Arsip Terjaga hanya muncul bila modulnya diaktifkan operator.
 - **Arsip Elektronik:** kelola media digital dan metadata teknis.
 - **Autentikasi:** catat proses autentikasi arsip.
 - **Tunjuk Silang:** hubungkan rekod yang berkaitan tanpa menggandakan arsip.
-- **Formulir:** galeri ini berisi format referensi kosong. Untuk dokumen berbasis data, gunakan tombol cetak/unduh pada modul Peminjaman, Penyusutan, Arsip Vital/Terjaga, atau Laporan agar isi berasal dari rekod aplikasi.
+- **Formulir:** galeri ini berisi format referensi kosong. Untuk dokumen berbasis data, gunakan tombol cetak/unduh pada modul Peminjaman, Penyusutan, Arsip Vital/Terjaga, atau Laporan agar isi berasal dari rekod aplikasi. Formulir 4 dan Formulir 6 berisi data diunduh dari menu **Export** di halaman Arsip. Bila modul Penyusutan atau Arsip Terjaga belum diaktifkan, template terkait tetap dapat dilihat dan dicetak untuk diisi manual.
 
 ## 12. Persetujuan akses rekod terkendali
 
