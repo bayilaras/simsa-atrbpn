@@ -5,7 +5,20 @@ import { suratKeluarService, SuratKeluarFilters } from './surat-keluar.service';
 import { arsipService, ArsipFilters } from './arsip.service';
 import { ASAL_NASKAH_LABEL, resolveBalasanLabels } from './export-balasan';
 import { sifatSuratLabel } from './sifat-surat.js';
+import { jenisFormulirArsip, saringFormulirArsip } from './arsip-fase.js';
+import { AppError } from '../utils/errors.js';
 import { loadExcelJS, loadPdfKit } from '../utils/lazy-libraries.js';
+
+export const PESAN_FORMULIR6_KOSONG = 'Belum ada arsip inaktif untuk filter ini. Arsip masuk Formulir 6 setelah masa aktifnya berakhir menurut JRA dan pemicu retensi yang terverifikasi, atau setelah pemindahannya dicatat di SIMSA melalui modul Penyusutan. Pemindahan yang dilakukan di luar SIMSA tidak mengubah daftar ini.';
+
+/** Formulir 6 tanpa baris bukan daftar resmi; tolak alih-alih mengirim formulir kosong. */
+export class ExportFormulirKosongError extends AppError {
+    readonly code = 'EXPORT_FORMULIR6_EMPTY';
+
+    constructor() {
+        super(PESAN_FORMULIR6_KOSONG, 422);
+    }
+}
 
 export interface ExportOptions {
     format: 'excel' | 'pdf';
@@ -230,13 +243,8 @@ export class ExportService {
      * Kurun Waktu Berkas, Jumlah Berkas, Item Arsip (No.Item, Uraian Informasi Arsip, Tanggal, Jml),
      * Tingkat Perkembangan, Lokasi Simpan, Tingkat Klasifikasi Keamanan & Akses, Ket.
      */
-    async generateExcelArsip(filters: ArsipFilters, formulirType: string = 'formulir4'): Promise<Buffer> {
-        const result = await arsipService.findAll({
-            ...filters,
-            page: 1,
-            limit: EXPORT_ROW_LIMIT,
-        });
-        const data = requireCompleteExport(result);
+    async generateExcelArsip(filters: ArsipFilters, formulirType?: string): Promise<Buffer> {
+        const data = await this.dataFormulirArsip(filters, formulirType);
 
         const { Workbook } = await loadExcelJS();
         const workbook = new Workbook();
@@ -249,6 +257,29 @@ export class ExportService {
 
         // Default: Formulir 4 - Daftar Arsip Aktif
         return this.generateExcelArsipFormulir4(workbook, data, filters);
+    }
+
+    /**
+     * Baris arsip untuk Formulir 4 atau 6. Kelengkapan diperiksa pada seluruh
+     * hasil filter sebelum disaring per fase, sehingga daftar per formulir
+     * tidak pernah menjadi potongan diam-diam dari hasil yang melebihi batas.
+     * Tanpa formulirType (ekspor Laporan) semua arsip ikut, seperti sebelumnya;
+     * penyaringan fase hanya untuk pilihan Formulir 4/6 di menu Export arsip.
+     */
+    private async dataFormulirArsip(filters: ArsipFilters, formulirType?: string) {
+        const result = await arsipService.findAll({
+            ...filters,
+            page: 1,
+            limit: EXPORT_ROW_LIMIT,
+        });
+        const lengkap = requireCompleteExport(result);
+        if (formulirType === undefined) return lengkap;
+        const formulir = jenisFormulirArsip(formulirType);
+        const data = saringFormulirArsip(lengkap, formulir);
+        if (formulir === 'formulir6' && data.length === 0) {
+            throw new ExportFormulirKosongError();
+        }
+        return data;
     }
 
     /**
@@ -717,13 +748,8 @@ export class ExportService {
     /**
      * Export Arsip to PDF — Formulir 4 or 6 format
      */
-    async generatePdfArsip(filters: ArsipFilters, formulirType: string = 'formulir4'): Promise<Buffer> {
-        const result = await arsipService.findAll({
-            ...filters,
-            page: 1,
-            limit: EXPORT_ROW_LIMIT,
-        });
-        const data = requireCompleteExport(result);
+    async generatePdfArsip(filters: ArsipFilters, formulirType?: string): Promise<Buffer> {
+        const data = await this.dataFormulirArsip(filters, formulirType);
 
         const PDFDocument = await loadPdfKit();
         return new Promise((resolve, reject) => {
