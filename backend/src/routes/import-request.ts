@@ -4,6 +4,7 @@ import { canAccessUnit, type Role } from '../config/permissions.js';
 import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import type { GoogleSheetsRequestOptions } from '../services/google-sheets-source.js';
 import type { ImportSync } from '../services/import-sync.js';
+import type { ImportAuditContext } from '../services/import-plafon-kelas.js';
 
 /** The unit an import writes into; answers 400/403 and returns null when it cannot. */
 export function resolveImportUnit(req: AuthRequest, res: Response): string | null {
@@ -16,6 +17,11 @@ export function resolveImportUnit(req: AuthRequest, res: Response): string | nul
         return null;
     }
     return unitKerjaId;
+}
+
+/** The importing user for the audit log; their role caps the security class of a surat masuk row. */
+export function importAuditContext(req: AuthRequest): ImportAuditContext {
+    return { userId: req.user!.id, userEmail: req.user?.email, ipAddress: req.ip, role: req.user?.role };
 }
 
 /** Sinkron is opt-in per request; record access for the updates is checked for the importing user. */

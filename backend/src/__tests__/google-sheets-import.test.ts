@@ -13,7 +13,8 @@ vi.mock('../services/surat-keluar.service.js', () => ({ suratKeluarService: {
 vi.mock('../utils/logger', () => ({ createLogger: () => ({ warn: vi.fn() }) }));
 import { GoogleDriveImportService } from '../services/google-drive-import.service.js';
 
-const audit = { userId: '11111111-1111-4111-8111-111111111111' };
+// The importer's role caps the security class a surat masuk row may carry.
+const audit = { userId: '11111111-1111-4111-8111-111111111111', role: 'admin_unit' };
 const headers = ['Nomor Urut', 'No. Surat', 'Tanggal Surat', 'Perihal', 'Dari', 'Kepada'];
 const data = ['7', 'SM-2026-actual', '12/09/2026', 'Permohonan data', 'Kantah A', 'Ditjen'];
 beforeEach(() => {

@@ -10,7 +10,7 @@ import { fileImportService } from '../services/file-import.service.js';
 import { IMPORT_FILE_LIMITS, assertImportFileType, type ImportFileUpload } from '../services/import-file-reader.js';
 import { GOOGLE_SHEETS_LIMITS } from '../services/google-sheets-source.js';
 import { IMPORT_TIME_BUDGET_MS, type ImportResume } from '../services/import-resume.js';
-import { importSync, resolveImportUnit, withImportRequest } from './import-request.js';
+import { importAuditContext, importSync, resolveImportUnit, withImportRequest } from './import-request.js';
 
 /**
  * CSV/XLSX import of surat masuk/keluar with the Google Sheets import's
@@ -85,7 +85,7 @@ for (const kind of ['masuk', 'keluar'] as const) {
         try {
             const unitKerjaId = resolveImportUnit(req, res);
             if (!unitKerjaId) return;
-            const audit = { userId: req.user!.id, userEmail: req.user?.email, ipAddress: req.ip };
+            const audit = importAuditContext(req);
             // Each part re-sends the same file; without startRow the whole file is one request.
             const resume: ImportResume | undefined = req.body.startRow === undefined ? undefined
                 : { startRow: req.body.startRow, prefixHash: req.body.prefixHash, deadlineAt: Date.now() + IMPORT_TIME_BUDGET_MS };

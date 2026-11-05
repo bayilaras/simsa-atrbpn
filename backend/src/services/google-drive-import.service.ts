@@ -4,6 +4,7 @@ import { createLogger } from '../utils/logger';
 import { suratMasukService } from './surat-masuk.service.js';
 import { suratKeluarService } from './surat-keluar.service.js';
 import type { CriticalAuditContext } from './audit-log.service.js';
+import { assertImportedKelasSuratMasuk, type ImportAuditContext } from './import-plafon-kelas.js';
 import { AppError, PayloadTooLargeError, ValidationError } from '../utils/errors.js';
 import { publicErrorResponse } from '../utils/public-error.js';
 import { currentRequestId } from '../utils/request-context.js';
@@ -287,7 +288,7 @@ export class GoogleDriveImportService {
         spreadsheetId: string,
         sheet: SheetSelector,
         unitKerjaId: string,
-        auditContext: CriticalAuditContext,
+        auditContext: ImportAuditContext,
         options: GoogleSheetsRequestOptions = {},
         resume?: ImportResume,
         sync?: ImportSync,
@@ -303,7 +304,7 @@ export class GoogleDriveImportService {
         spreadsheetId: string,
         sheet: SheetSelector,
         unitKerjaId: string,
-        auditContext: CriticalAuditContext,
+        auditContext: ImportAuditContext,
         options: GoogleSheetsRequestOptions = {},
         resume?: ImportResume,
         sync?: ImportSync,
@@ -315,13 +316,14 @@ export class GoogleDriveImportService {
     /**
      * Import already-parsed rows from any source (Google Sheets, a CSV or XLSX
      * file): detect the header row, map columns by their titles, then run the
-     * bounded row loop below, optionally as one time-budgeted part.
+     * bounded row loop below, optionally as one time-budgeted part. The
+     * importer's role caps the security class of a surat masuk row.
      */
     async importRows(
         type: GoogleSheetsImportType,
         allRows: string[][],
         unitKerjaId: string,
-        auditContext: CriticalAuditContext,
+        auditContext: ImportAuditContext,
         options: GoogleSheetsRequestOptions = {},
         resume?: ImportResume,
         sync?: ImportSync,
@@ -361,6 +363,7 @@ export class GoogleDriveImportService {
         return type === 'surat-masuk'
             ? this.importRecords(dataRows, incoming, write, {
                 summary, build: (row, i) => this.incomingRecord(row, i, colMap, unitKerjaId, auditContext),
+                admit: record => assertImportedKelasSuratMasuk(auditContext, record.sifatSurat),
                 syncSource: row => syncSource(row, ['perihal', 'tanggalSurat', 'jenisSurat'], { field: 'dari', label: 'Pengirim' }) })
             : this.importRecords(dataRows, outgoing, write, {
                 summary, build: (row, i) => this.outgoingRecord(row, i, colMap, unitKerjaId, auditContext),
@@ -466,9 +469,11 @@ export class GoogleDriveImportService {
             unitKerjaId: string; auditContext: CriticalAuditContext; options: GoogleSheetsRequestOptions;
             resume: ImportResume | undefined; sync: ImportSync | undefined;
         },
-        { summary, build, syncSource }: {
+        { summary, build, admit, syncSource }: {
             summary: (row: string[]) => RowSummary;
             build: (row: string[], index: number) => T | null;
+            /** Throws for a row this importer may not write; checked after the resume digest. */
+            admit?: (record: T) => void;
             syncSource: (row: string[]) => ImportSyncSource;
         },
     ): Promise<ImportResult> {
@@ -482,11 +487,16 @@ export class GoogleDriveImportService {
         const start = resume?.startRow ?? 0;
         if (resume) assertImportResumable(readRows, resume);
         // Identities of every row, earlier parts included, so a row repeating
-        // an identity can name the row it repeats.
+        // an identity can name the row it repeats. A row the importer may not
+        // write is invalid like an unreadable one: it is never looked up,
+        // synced, or counted as an earlier row, and it writes nothing.
         const prepared = built.map((item): PreparedRow<T> => {
             if ('error' in item) return item;
             if (!item.record) return null;
-            try { return { record: item.record, key: target.importIdentityKey(item.record) }; } catch (error) { return { error }; }
+            try {
+                admit?.(item.record);
+                return { record: item.record, key: target.importIdentityKey(item.record) };
+            } catch (error) { return { error }; }
         });
         const firstRowOf = new Map<string, number>();
         prepared.forEach((item, index) => {

@@ -5,7 +5,7 @@ import { authMiddleware, type AuthRequest } from '../middlewares/auth.middleware
 import { canWriteMiddleware } from '../middlewares/role.middleware.js';
 import { importLimiter, importDiscoveryLimiter, importPreviewLimiter } from '../middlewares/rate-limiter.middleware.js';
 import { validateBody, validateQuery } from '../middlewares/validate.middleware.js';
-import { importSync, resolveImportUnit, withImportRequest } from './import-request.js';
+import { importAuditContext, importSync, resolveImportUnit, withImportRequest } from './import-request.js';
 import { ValidationError } from '../utils/errors.js';
 import { GOOGLE_SHEETS_LIMITS, extractSheetGid } from '../services/google-sheets-source.js';
 import { IMPORT_TIME_BUDGET_MS, type ImportResume } from '../services/import-resume.js';
@@ -72,7 +72,7 @@ for (const kind of ['masuk', 'keluar'] as const) {
             if (!unitKerjaId) return;
             const sheet = selectedSheet(req.body);
             const id = spreadsheetId(req.body.spreadsheetUrl);
-            const audit = { userId: req.user!.id, userEmail: req.user?.email, ipAddress: req.ip };
+            const audit = importAuditContext(req);
             // Older clients send one request for the whole sheet and get the previous behaviour.
             const resume: ImportResume | undefined = req.body.startRow === undefined ? undefined
                 : { startRow: req.body.startRow, prefixHash: req.body.prefixHash, deadlineAt: Date.now() + IMPORT_TIME_BUDGET_MS };

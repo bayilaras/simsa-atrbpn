@@ -1,7 +1,7 @@
-import type { CriticalAuditContext } from './audit-log.service.js';
 import { googleDriveImportService } from './google-drive-import.service.js';
 import { linkColumns, type GoogleSheetsImportType } from './google-sheets-import-mapping.js';
 import type { GoogleSheetsRequestOptions } from './google-sheets-source.js';
+import type { ImportAuditContext } from './import-plafon-kelas.js';
 import type { ImportResume } from './import-resume.js';
 import type { ImportSync } from './import-sync.js';
 import { listImportFileSheets, readImportFile, type ImportFileContent, type ImportFileUpload } from './import-file-reader.js';
@@ -25,9 +25,10 @@ function sourceRows(content: ImportFileContent, type: GoogleSheetsImportType): s
 
 /**
  * CSV and XLSX uploads for surat masuk/keluar. A file is only a different
- * source of rows: header detection, column mapping, sifat, import identity,
- * the duplicate lookup, resumable parts and audit are the Google Sheets
- * import's own (GoogleDriveImportService.previewRows / importRows).
+ * source of rows: header detection, column mapping, sifat and its class
+ * ceiling, import identity, the duplicate lookup, resumable parts and audit
+ * are the Google Sheets import's own (GoogleDriveImportService.previewRows /
+ * importRows).
  * Each request reads the uploaded file from memory; nothing is stored.
  */
 export const fileImportService = {
@@ -42,7 +43,7 @@ export const fileImportService = {
     },
 
     async importSurat(type: GoogleSheetsImportType, file: ImportFileUpload, sheet: string | undefined, unitKerjaId: string,
-        auditContext: CriticalAuditContext, options: GoogleSheetsRequestOptions = {}, resume?: ImportResume, sync?: ImportSync) {
+        auditContext: ImportAuditContext, options: GoogleSheetsRequestOptions = {}, resume?: ImportResume, sync?: ImportSync) {
         const content = await readImportFile(file, sheet);
         return googleDriveImportService.importRows(type, sourceRows(content, type), unitKerjaId, auditContext, options, resume, sync);
     },

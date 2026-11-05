@@ -75,8 +75,8 @@ describe('Google Sheets tabs are identified by gid', () => {
         const service = new GoogleDriveImportService();
         const sheet = { gid: '234636572' };
         await (action === 'preview' ? service.previewData('synthetic-sheet', sheet)
-            : action === 'surat-masuk' ? service.importSuratMasuk('synthetic-sheet', sheet, 'unit-a', { userId: 'u' })
-                : service.importSuratKeluar('synthetic-sheet', sheet, 'unit-a', { userId: 'u' }));
+            : action === 'surat-masuk' ? service.importSuratMasuk('synthetic-sheet', sheet, 'unit-a', { userId: 'u', role: 'admin_unit' })
+                : service.importSuratKeluar('synthetic-sheet', sheet, 'unit-a', { userId: 'u', role: 'admin_unit' }));
         const url = csvUrl(fetchMock.mock.calls[0]);
         expect(url.searchParams.get('gid')).toBe('234636572');
         expect(url.searchParams.has('sheet')).toBe(false);

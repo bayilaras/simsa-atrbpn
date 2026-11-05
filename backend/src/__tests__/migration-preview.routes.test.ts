@@ -25,6 +25,11 @@ describe('migration preview boundary', () => {
         expect(response.body.data.dryRun).toBe(true);
         expect(mocks.import).toHaveBeenCalledWith(expect.any(String), 'unit-a', expect.objectContaining({ userId: 'staff-a' }), { dryRun: true });
     });
+    it('passes the importer role to surat-masuk, whose Sifat Surat is the security class', async () => {
+        await request(app).post('/api/migration/surat-masuk').field('unitKerjaId', 'unit-a')
+            .attach('file', Buffer.from('Tanggal\n2026-09-11'), 'import.csv').expect(200);
+        expect(mocks.import.mock.calls[0][2]).toEqual({ userId: 'staff-a', userEmail: 'staff@example.test', ipAddress: expect.any(String), role: 'staff' });
+    });
     it('rejects ambiguous preview flags instead of accidentally importing', async () => {
         await request(app).post('/api/migration/arsip').field('dryRun', 'yes').field('unitKerjaId', 'unit-a')
             .attach('file', Buffer.from('Tanggal\n2026-09-11'), 'import.csv').expect(400);

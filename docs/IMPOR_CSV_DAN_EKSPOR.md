@@ -107,6 +107,10 @@ impor tidak menetapkan JRA atau mengesahkan aturan retensi.
 
 Untuk CSV surat keluar, kolom opsional `Sifat Surat` (Biasa, Penting, Segera,
 Sangat Segera) disimpan sebagai sifat surat; teks lain disimpan apa adanya.
+Untuk CSV surat masuk, `Sifat Surat` adalah klasifikasi keamanan: baris Rahasia
+dan Sangat Rahasia dari pengguna selain Super Admin ditolak per baris, juga saat
+pratinjau (lihat
+[batas klasifikasi keamanan](#sifat-surat-masuk-dan-batas-klasifikasi-keamanan)).
 
 ## Kontrak API
 
@@ -157,6 +161,30 @@ satu-satunya kolom yang berisi alamat web, atau kolom yang memuat setiap alamat
 kolom lainnya pada baris yang sama; hanya nilai `http(s)://` yang disimpan. Baris tanpa nomor surat (kosong atau "-") memerlukan Pengirim (surat
 masuk), atau Kepada maupun tautan dokumen (surat keluar), agar dapat dikenali
 saat impor ulang; baris tanpa keduanya ditolak per baris.
+
+### Sifat surat masuk dan batas klasifikasi keamanan
+
+Pada surat masuk, sifat surat sekaligus menjadi klasifikasi keamanan (sifat
+urgensi seperti Segera, Penting, atau Undangan dibaca sebagai Biasa; sel kosong
+menjadi Biasa). Semua jalur impor surat masuk (Google Sheets, CSV/XLSX, dan
+`POST /api/migration/surat-masuk`) menerapkan batas kelas yang sama dengan
+formulir: Admin Unit Kerja, Admin Ditjen, dan Admin Sesditjen hanya dapat
+mengimpor baris Biasa dan Terbatas; baris **Rahasia** dan **Sangat Rahasia**
+hanya dapat diimpor oleh Super Admin.
+
+- Baris di atas batas itu **ditolak per baris** dengan keterangan "Klasifikasi
+  keamanan melebihi kewenangan pengguna. Kelas Rahasia dan Sangat Rahasia hanya
+  dapat ditetapkan oleh Super Admin." Baris lain tetap diimpor, dan impor tidak
+  gagal seluruhnya. Pratinjau CSV lama (`dryRun=true`) sudah menandai baris itu
+  tidak valid.
+- Baris yang ditolak tidak dicocokkan dengan surat yang sudah tercatat, juga saat
+  sinkron, dan tidak dihitung sebagai baris sebelumnya untuk pemeriksaan ganda.
+  Impor ulang lembar yang sama oleh Admin tetap melaporkannya sebagai ditolak,
+  meskipun Super Admin sudah mengimpornya.
+- Minta Super Admin mengimpor lembar tersebut atau mencatat surat itu melalui
+  formulir.
+- Surat keluar tidak terpengaruh: sifat surat keluar adalah urgensi, dan impor
+  selalu mencatat klasifikasi keamanannya sebagai Biasa.
 
 ## Impor panjang per bagian
 
@@ -220,7 +248,7 @@ otomatis).
 |---|---|
 | Tersimpan | Surat baru dibuat. |
 | Duplikat | Tidak ditulis: identitas impor sama dengan baris sumber sebelumnya (disebut nomor barisnya; `duplicate: source`), sudah tercatat di unit ini (`recorded`), atau cocok dengan surat yang sudah dihapus (`deleted`; tidak dibuat ulang). |
-| Ditolak | Baris tidak dapat disimpan, misalnya tanggal kosong/tidak valid atau surat tanpa nomor yang tidak punya pengirim/tujuan. |
+| Ditolak | Baris tidak dapat disimpan, misalnya tanggal kosong/tidak valid, surat tanpa nomor yang tidak punya pengirim/tujuan, atau surat masuk Rahasia/Sangat Rahasia yang diimpor bukan oleh Super Admin (lihat [batas klasifikasi keamanan](#sifat-surat-masuk-dan-batas-klasifikasi-keamanan)). |
 | Kosong | Nomor surat dan perihal kosong. |
 | Diperbarui | (Sinkron) surat yang sudah tercatat diubah; keterangan memuat nilai lama → baru. |
 | Tidak diperbarui | (Sinkron) sumber berbeda tetapi surat tidak boleh diubah; keterangan menyebut sebabnya. |

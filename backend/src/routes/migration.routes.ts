@@ -107,6 +107,8 @@ router.post('/surat-masuk',
                     userId: req.user?.id,
                     userEmail: req.user?.email,
                     ipAddress: req.ip,
+                    // Caps the security class (Sifat Surat) of each row.
+                    role: req.user?.role,
                 },
                 importOptions(req),
             );
