@@ -21,7 +21,7 @@ const SIFAT_BIASA = new Set([
 const ADMIN_UNIT_ROLES = new Set(['admin_unit', 'admin_dirjen', 'admin_sesditjen'])
 
 export const PESAN_KELAS_TERBATAS_PERAN =
-    'Surat dan arsip berkelas Rahasia atau Sangat Rahasia hanya dapat dicatat dan diubah oleh Super Admin.'
+    'Kelas Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin.'
 
 /** Kelas keamanan baku untuk nilai klasifikasiKeamanan atau sifatSurat. */
 export function normalisasiKelas(nilai) {

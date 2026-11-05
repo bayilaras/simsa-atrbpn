@@ -16,6 +16,15 @@ describe('notification routing', () => {
         expect(notificationRoute({ category, referenceId: 'one' })).toBe(expected);
     });
 
+    it('sends disposal notifications to retention management while the module is off', () => {
+        const notification = { category: 'penyusutan', referenceId: 'one' };
+        expect(notificationRoute(notification, { advancedArchiveWorkflows: false })).toBe('/retention');
+        expect(notificationRoute(notification, { advancedArchiveWorkflows: true })).toBe('/penyusutan');
+        expect(notificationRoute(notification, {})).toBe('/penyusutan');
+        expect(notificationRoute({ category: 'appraisal' }, { advancedArchiveWorkflows: false }))
+            .toBe('/retention-governance');
+    });
+
     it('routes record-backed notifications to their details', () => {
         expect(notificationRoute({ category: 'surat-masuk', referenceId: 'surat-1' }))
             .toBe('/surat/masuk/surat-1');

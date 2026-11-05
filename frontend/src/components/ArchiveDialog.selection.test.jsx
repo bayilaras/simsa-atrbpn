@@ -1,8 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ArchiveDialog } from './ArchiveDialog'
+import { PESAN_KELAS_TERBATAS_PERAN } from '@/lib/kelas-keamanan'
 
+const mocks = vi.hoisted(() => ({ user: null }))
+vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: mocks.user }) }))
 vi.mock('./archive-registration-validation', () => ({ validateArchiveRegistration: () => '' }))
 vi.mock('@/components/KlasifikasiPicker', () => ({ KlasifikasiPicker: ({ onChange, selectedClassification, selectedRetention }) => <div>
     <output aria-label="Pasangan aturan surat">{JSON.stringify({ classification: selectedClassification, retention: selectedRetention })}</output>
@@ -10,6 +13,7 @@ vi.mock('@/components/KlasifikasiPicker', () => ({ KlasifikasiPicker: ({ onChang
 </div> }))
 
 const source = { id: 'surat-1', nomorSurat: '001/2026', perihal: 'Arsip surat', tanggalSurat: '2026-09-12', klasifikasiItemId: 82, klasifikasiSubstantifKode: 'HT.01.01', klasifikasiSubstantif: 'Penetapan hak', jraItemId: 97, jraKode: 'S.III.01', jraUraian: 'Berkas penetapan hak', jraRetensiAktif: '2 tahun', jraRetensiInaktif: '3 tahun', jraKeterangan: 'Permanen', klasifikasiKeamanan: 'rahasia' }
+beforeEach(() => { mocks.user = { id: 'u-sa', role: 'super_admin' } })
 afterEach(cleanup)
 
 describe('surat to archive rule transfer', () => {
@@ -47,23 +51,24 @@ describe('surat to archive rule transfer', () => {
     })
 })
 
-describe('kelas keamanan arsip mengikuti surat sumber', () => {
-    // Radix Select tertutup tetap merender <select> native tersembunyi berisi
-    // semua opsi (termasuk atribut disabled); pilih yang memuat opsi kelas.
-    const opsiKelas = () => {
-        const native = [...document.querySelectorAll('select')].find(select => select.querySelector('option[value="sangat_rahasia"]'))
-        return Object.fromEntries([...native.options].filter(option => option.value).map(option => [option.value, option.disabled]))
-    }
-    const kirim = async (suratData, suratType) => {
-        const onArchive = vi.fn().mockResolvedValue(undefined)
-        render(<MemoryRouter><ArchiveDialog open onOpenChange={vi.fn()} suratType={suratType} suratData={suratData} onArchive={onArchive} /></MemoryRouter>)
-        const opsi = opsiKelas()
-        fireEvent.submit(document.getElementById('archive-form'))
-        await waitFor(() => expect(onArchive).toHaveBeenCalled())
-        return { payload: onArchive.mock.calls[0][0], opsi }
-    }
-    const masuk = ({ klasifikasiKeamanan: _abaikan, ...rest }) => rest
+// Radix Select tertutup tetap merender <select> native tersembunyi berisi
+// semua opsi yang dirender (termasuk atribut disabled); pilih yang memuat
+// opsi kelas. Biasa selalu tampil karena diizinkan bagi setiap peran.
+const opsiKelas = () => {
+    const native = [...document.querySelectorAll('select')].find(select => select.querySelector('option[value="biasa"]'))
+    return Object.fromEntries([...native.options].filter(option => option.value).map(option => [option.value, option.disabled]))
+}
+const kirim = async (suratData, suratType) => {
+    const onArchive = vi.fn().mockResolvedValue(undefined)
+    render(<MemoryRouter><ArchiveDialog open onOpenChange={vi.fn()} suratType={suratType} suratData={suratData} onArchive={onArchive} /></MemoryRouter>)
+    const opsi = opsiKelas()
+    fireEvent.submit(document.getElementById('archive-form'))
+    await waitFor(() => expect(onArchive).toHaveBeenCalled())
+    return { payload: onArchive.mock.calls[0][0], opsi }
+}
+const masuk = ({ klasifikasiKeamanan: _abaikan, ...rest }) => rest
 
+describe('kelas keamanan arsip mengikuti surat sumber', () => {
     it('surat masuk Rahasia: terisi rahasia dan kelas yang lebih rendah nonaktif', async () => {
         const { payload, opsi } = await kirim({ ...masuk(source), sifatSurat: 'Rahasia' }, 'masuk')
         expect(payload.klasifikasiKeamanan).toBe('rahasia')
@@ -93,5 +98,61 @@ describe('kelas keamanan arsip mengikuti surat sumber', () => {
         expect(payload).not.toHaveProperty('klasifikasiKeamanan')
         expect(opsi).toEqual({ biasa: true, terbatas: true, rahasia: true, sangat_rahasia: true })
         expect(screen.getByText(/tidak dikenali/)).toBeInTheDocument()
+    })
+})
+
+describe('kelas keamanan arsip mengikuti plafon peran', () => {
+    const adminUnit = { id: 'u-tu', role: 'admin_unit', unitKerjaId: 'sesditjen' }
+    const bantuanKelas = () => {
+        const trigger = screen.getByRole('combobox', { name: 'Klasifikasi keamanan arsip' })
+        expect(trigger).toHaveAttribute('aria-describedby', 'klasifikasi-arsip-bantuan')
+        return document.getElementById('klasifikasi-arsip-bantuan')
+    }
+
+    it('Super Admin melihat semua kelas tanpa teks pembatasan', async () => {
+        const { opsi } = await kirim({ ...masuk(source), sifatSurat: 'Segera' }, 'masuk')
+        expect(Object.keys(opsi)).toEqual(['biasa', 'terbatas', 'rahasia', 'sangat_rahasia'])
+        expect(screen.queryByText(PESAN_KELAS_TERBATAS_PERAN)).toBeNull()
+        expect(screen.getByRole('combobox', { name: 'Klasifikasi keamanan arsip' })).not.toHaveAttribute('aria-describedby')
+    })
+
+    it('Admin Unit Kerja: Rahasia dan Sangat Rahasia disembunyikan beserta alasannya', async () => {
+        mocks.user = adminUnit
+        const { payload, opsi } = await kirim({ ...masuk(source), sifatSurat: 'Segera' }, 'masuk')
+        expect(opsi).toEqual({ biasa: false, terbatas: false })
+        expect(payload.klasifikasiKeamanan).toBe('biasa')
+        expect(bantuanKelas()).toHaveTextContent(PESAN_KELAS_TERBATAS_PERAN)
+    })
+
+    it('Admin Unit Kerja: kelas surat sumber Rahasia tetap dapat dipertahankan', async () => {
+        mocks.user = adminUnit
+        const { payload, opsi } = await kirim({ ...masuk(source), sifatSurat: 'Rahasia' }, 'masuk')
+        // Di bawah sumber nonaktif; Sangat Rahasia di atas plafon dan bukan kelas sumber.
+        expect(opsi).toEqual({ biasa: true, terbatas: true, rahasia: false })
+        expect(payload.klasifikasiKeamanan).toBe('rahasia')
+        expect(screen.getByRole('button', { name: 'Simpan Arsip' })).toBeEnabled()
+        // Pesan umum "hanya Super Admin" bertentangan dengan tombol simpan yang aktif.
+        expect(screen.queryByText(PESAN_KELAS_TERBATAS_PERAN)).toBeNull()
+        expect(bantuanKelas()).toHaveTextContent(
+            'Kelas Rahasia dipertahankan sesuai surat sumber. Kelas yang lebih tinggi hanya dapat dipilih oleh Super Admin.',
+        )
+    })
+
+    it('Admin Unit Kerja: kelas sumber Sangat Rahasia dipertahankan tanpa menyebut kelas yang lebih tinggi', async () => {
+        mocks.user = adminUnit
+        const { payload, opsi } = await kirim({ ...masuk(source), sifatSurat: 'Sangat Rahasia' }, 'masuk')
+        expect(opsi).toEqual({ biasa: true, terbatas: true, sangat_rahasia: false })
+        expect(payload.klasifikasiKeamanan).toBe('sangat_rahasia')
+        expect(bantuanKelas().textContent).toBe('Kelas Sangat Rahasia dipertahankan sesuai surat sumber.')
+    })
+
+    it('staf: kelas sumber Terbatas dipertahankan, Biasa nonaktif karena di bawah sumber', async () => {
+        mocks.user = { id: 'u-staf', role: 'staff', unitKerjaId: 'sesditjen' }
+        const { payload, opsi } = await kirim({ ...source, klasifikasiKeamanan: null, sifatSurat: 'biasa' }, 'keluar')
+        expect(opsi).toEqual({ biasa: true, terbatas: false })
+        expect(payload.klasifikasiKeamanan).toBe('terbatas')
+        expect(bantuanKelas()).toHaveTextContent(
+            'Kelas Terbatas dipertahankan sesuai surat sumber. Kelas yang lebih tinggi hanya dapat dipilih oleh Super Admin.',
+        )
     })
 })

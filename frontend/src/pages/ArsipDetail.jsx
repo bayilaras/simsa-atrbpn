@@ -4,7 +4,7 @@ import {
     Archive, ArrowLeft, ExternalLink, Calendar, MapPin,
     Clock, Shield, User, FileText, Hash, Layers, Info, Tag,
     Printer, ChevronRight, Eye, BookOpen, FolderOpen, Trash2,
-    CheckCircle2, AlertTriangle, History, RefreshCw, Loader2
+    CheckCircle2, AlertTriangle, History, RefreshCw, Loader2, Pencil
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,8 @@ import {
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { KlasifikasiPicker } from '@/components/KlasifikasiPicker'
+import { EditArsipDialog } from '@/components/arsip/EditArsipDialog'
+import { kelasPerluPersetujuan } from '@/components/arsip/edit-arsip-form'
 import { arsipService } from '@/services/arsip.service'
 import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/hooks/use-toast'
@@ -42,6 +44,17 @@ function formatRelative(dateStr) {
     } catch {
         return ''
     }
+}
+
+// Cermin penolakan PUT /api/arsip/:id (record-access mutable dan
+// arsipService.update) agar tombol dikunci dengan alasan, bukan gagal saat simpan.
+function alasanMetadataDikunci(arsip) {
+    if (arsip.disposalStatus === 'executed') return 'Metadata dikunci karena penyusutan arsip ini sudah dilaksanakan.'
+    if (arsip.legalHold) return 'Metadata dikunci karena arsip sedang dalam legal hold.'
+    if (arsip.disposalStatus !== 'active' || arsip.disposalBatchId) {
+        return 'Metadata dikunci karena arsip sedang dalam proses penyusutan.'
+    }
+    return ''
 }
 
 // ─── Sub-Components ─────────────────────────────────────────
@@ -282,6 +295,7 @@ export default function ArsipDetail() {
     const [historyLoading, setHistoryLoading] = useState(true)
     const [historyError, setHistoryError] = useState(null)
     const [reconcileOpen, setReconcileOpen] = useState(false)
+    const [editOpen, setEditOpen] = useState(false)
     const [reconcileSaving, setReconcileSaving] = useState(false)
     const [reconcileError, setReconcileError] = useState(null)
     const [reconcileReason, setReconcileReason] = useState('')
@@ -375,6 +389,29 @@ export default function ArsipDetail() {
         }
     }
 
+    // Respons PUT adalah baris mentah, bukan read model detail; gabungkan hanya
+    // field yang dikirim lalu muat ulang tanpa skeleton.
+    const handleMetadataSaved = async (perubahan, hasil) => {
+        setArsip(current => ({
+            ...current,
+            ...Object.fromEntries(Object.keys(perubahan).map(field => [
+                field,
+                hasil && Object.hasOwn(hasil, field) ? hasil[field] : perubahan[field],
+            ])),
+        }))
+        try {
+            const refreshed = await arsipService.getById(id)
+            setArsip(refreshed?.data || refreshed)
+        } catch {
+            toast({
+                title: 'Data terbaru belum dapat dimuat',
+                description: kelasPerluPersetujuan(perubahan.klasifikasiKeamanan)
+                    ? 'Arsip kini berkelas Terbatas atau lebih tinggi dan memerlukan persetujuan akses sebelum dapat dibuka kembali.'
+                    : 'Perubahan sudah tersimpan. Muat ulang halaman untuk melihat data terbaru.',
+            })
+        }
+    }
+
     // ─── Loading State ─────────────────
     if (loading) return <ArsipDetailSkeleton />
 
@@ -412,6 +449,7 @@ export default function ArsipDetail() {
     const reconciliationBlocked = Boolean(
         arsip.legalHold || arsip.disposalStatus !== 'active' || arsip.disposalBatchId
     )
+    const metadataLockReason = alasanMetadataDikunci(arsip)
     const provenanceStatus = arsip.ruleProvenanceStatus || 'legacy_unverified'
     const provenanceMeta = RULE_STATUS[provenanceStatus] || RULE_STATUS.legacy_unverified
 
@@ -469,6 +507,19 @@ export default function ArsipDetail() {
                             <ArrowLeft className="mr-2 h-4 w-4" /> Kembali
                         </Button>
                         <div className="flex flex-wrap gap-2">
+                            {isEditor && (
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    className="bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-sm"
+                                    disabled={Boolean(metadataLockReason)}
+                                    title={metadataLockReason || undefined}
+                                    aria-describedby={metadataLockReason ? 'alasan-metadata-dikunci' : undefined}
+                                    onClick={() => setEditOpen(true)}
+                                >
+                                    <Pencil className="mr-2 h-4 w-4" /> Ubah Metadata
+                                </Button>
+                            )}
                             {suratUrl && (
                                 <Link to={suratUrl}>
                                     <Button variant="secondary" size="sm" className="bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-sm">
@@ -478,6 +529,10 @@ export default function ArsipDetail() {
                             )}
                         </div>
                     </div>
+                    {/* Di ponsel, kartu Aksi Cepat berada jauh di bawah dan title tidak tampil saat disentuh. */}
+                    {isEditor && metadataLockReason && (
+                        <p className="text-xs text-white/85 sm:hidden">{metadataLockReason}</p>
+                    )}
 
                     {/* Title area */}
                     <div className="flex items-center gap-4">
@@ -945,6 +1000,23 @@ export default function ArsipDetail() {
                             <CardTitle className="text-sm font-semibold">Aksi Cepat</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-2 pt-0">
+                            {isEditor && (
+                                <>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="w-full justify-start gap-2"
+                                        disabled={Boolean(metadataLockReason)}
+                                        aria-describedby={metadataLockReason ? 'alasan-metadata-dikunci' : undefined}
+                                        onClick={() => setEditOpen(true)}
+                                    >
+                                        <Pencil className="h-4 w-4" /> Ubah Metadata
+                                    </Button>
+                                    {metadataLockReason && (
+                                        <p id="alasan-metadata-dikunci" className="text-xs text-muted-foreground">{metadataLockReason}</p>
+                                    )}
+                                </>
+                            )}
                             {suratUrl && (
                                 <Link to={suratUrl} className="block">
                                     <Button variant="outline" size="sm" className="w-full justify-start gap-2">
@@ -1041,6 +1113,15 @@ export default function ArsipDetail() {
                     </Card>
                 </div>
             </div>
+
+            {isEditor && (
+                <EditArsipDialog
+                    open={editOpen}
+                    onOpenChange={setEditOpen}
+                    arsip={arsip}
+                    onSaved={handleMetadataSaved}
+                />
+            )}
 
             <Dialog open={reconcileOpen} onOpenChange={open => !reconcileSaving && setReconcileOpen(open)}>
                 <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">

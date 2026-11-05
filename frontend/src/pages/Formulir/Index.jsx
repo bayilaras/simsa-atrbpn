@@ -2,9 +2,11 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Link } from 'react-router-dom';
-import { formulirMetadata } from './formulir-metadata';
+import { useAppConfig } from '@/context/app-config-context';
+import { formulirMetadata, isFormulirModuleAvailable } from './formulir-metadata';
 
 const FormulirIndex = () => {
+    const { capabilities } = useAppConfig();
     return (
         <div className="p-6">
             <h1 className="text-2xl font-bold">Template Referensi Kosong</h1>
@@ -25,9 +27,15 @@ const FormulirIndex = () => {
                                     Lihat Template Kosong
                                 </Button>
                             </Link>
-                            <Button asChild className="w-full">
-                                <Link to={form.path}>{form.label}</Link>
-                            </Button>
+                            {isFormulirModuleAvailable(form, capabilities) ? (
+                                <Button asChild className="w-full">
+                                    <Link to={form.path}>{form.label}</Link>
+                                </Button>
+                            ) : (
+                                <p className="text-sm text-muted-foreground">
+                                    Modul {form.moduleName} belum diaktifkan. Template tetap dapat dilihat dan dicetak untuk diisi manual.
+                                </p>
+                            )}
                         </CardContent>
                     </Card>
                 ))}
