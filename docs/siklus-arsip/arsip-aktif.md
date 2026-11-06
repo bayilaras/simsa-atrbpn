@@ -34,6 +34,19 @@ Tabel menampilkan:
 | Status | Aktif / Inaktif |
 | Lokasi | Lokasi penyimpanan fisik |
 
+### Ekspor Formulir 4 dan Formulir 6
+
+Klik tombol **Export**, lalu pilih Excel (.xlsx) atau PDF pada formulir yang dibutuhkan. Isi ekspor mengikuti tab, unit, pencarian, dan tahun yang sedang dipilih.
+
+| Formulir | Isi |
+|----------|-----|
+| **Formulir 4 — Daftar Arsip Aktif** | Arsip yang masa aktifnya belum berakhir. Kolom: No. Berkas, Kode Klasifikasi, Uraian Informasi Berkas, Kurun Waktu, Jumlah Berkas, Item Arsip (No. Item, Uraian Informasi Arsip, Tanggal, Jumlah), Tingkat Perkembangan, Lokasi Simpan, Tingkat Klasifikasi Keamanan & Akses, Keterangan |
+| **Formulir 6 — Daftar Arsip Inaktif (Kertas)** | Arsip yang masa aktifnya sudah berakhir atau yang sudah dipindahkan ke penyimpanan inaktif. Kolom: No, Kode Klasifikasi, Uraian Informasi Arsip/Berkas, Kurun Waktu, Tingkat Perkembangan, Jumlah, Lokasi Simpan, Keamanan & Akses, Jangka Simpan & Nasib Akhir, Kategori Arsip, Keterangan |
+
+Masa aktif baru dianggap berakhir bila klasifikasi/JRA arsip sudah terverifikasi dan peristiwa pemicu retensinya sudah diverifikasi. Arsip yang belum memenuhi syarat itu tetap tercantum di Formulir 4 sampai pemindahannya dicatat di SIMSA melalui modul Penyusutan. Pemindahan yang dilakukan di luar SIMSA, misalnya selama modul Penyusutan belum diaktifkan, tidak mengubah isi kedua formulir. Arsip yang penyusutannya sudah dilaksanakan tidak tercantum di kedua formulir.
+
+Bila belum ada arsip inaktif untuk filter yang dipilih, Formulir 6 tidak diunduh. Di bawah tombol muncul keterangan "Belum ada arsip inaktif untuk filter ini…".
+
 ---
 
 ## Melihat Detail Arsip
@@ -49,7 +62,7 @@ Klik baris arsip untuk melihat detail.
 │  📋 Detail Arsip                                │
 │  Kode: KL.01.02 | 15 Item | Status: Aktif      │
 │                                                 │
-│  [Edit] [Distribusi] [Arsipkan] [Hapus]         │
+│  [Ubah Metadata] [Lihat Surat Asli]             │
 ├─────────────────────────────────────────────────┤
 │  [Informasi]  [Item Berkas]  [Riwayat]  ← Tab  │
 ├─────────────────────────────────────────────────┤
@@ -66,6 +79,8 @@ Klik baris arsip untuk melihat detail.
 └─────────────────────────────────────────────────┘
 ```
 
+Tombol aksi: **Ubah Metadata** dan **Rekonsiliasi Klasifikasi/JRA** (untuk admin yang berwenang atas unit arsip), **Lihat Surat Asli** (bila arsip berasal dari surat), dan **Cetak Detail**.
+
 ### Tab di Halaman Detail:
 
 | Tab | Isi |
@@ -77,6 +92,20 @@ Klik baris arsip untuk melihat detail.
 ### Progress Bar Retensi
 
 Bar visual menunjukkan **persentase masa retensi yang sudah berjalan**. Semakin penuh bar, semakin dekat arsip ke batas waktu musnah.
+
+---
+
+## Mengubah Metadata Arsip
+
+Bila ada data berkas yang salah catat, admin yang berwenang atas unit arsip dapat memperbaikinya dari halaman detail:
+
+1. Klik **Ubah Metadata** di bagian atas halaman atau di kartu **Aksi Cepat**.
+2. Perbaiki isian yang salah: Nomor Berkas, Unit Pengolah, Uraian Berkas, Kurun Waktu, Nomor Item, Tingkat Perkembangan, Uraian Item, Tanggal Arsip, Jumlah, Media, No. Filing Cabinet, No. Laci, No. Folder, Klasifikasi Keamanan, PIC, atau Keterangan.
+3. Klik **Simpan**. Hanya isian yang diubah yang disimpan, dan perubahannya tercatat di log audit.
+
+Kode klasifikasi arsip dan JRA tidak diubah di sini; gunakan **Rekonsiliasi Klasifikasi/JRA**. Tombol **Ubah Metadata** dikunci bila arsip sedang legal hold, sedang dalam proses penyusutan, atau penyusutannya sudah dilaksanakan.
+
+Admin Unit Kerja hanya dapat memilih klasifikasi keamanan Biasa/Terbuka atau Terbatas; Rahasia dan Sangat Rahasia hanya dapat dipilih Super Admin. Kelas yang sudah tersimpan boleh dipertahankan. Bila kelas dinaikkan ke Terbatas atau lebih tinggi, arsip memerlukan persetujuan akses; pengubahnya pun mungkin perlu mengajukan persetujuan akses untuk membuka arsip itu lagi.
 
 ---
 

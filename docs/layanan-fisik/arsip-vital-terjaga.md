@@ -37,7 +37,7 @@ Arsip terjaga adalah arsip yang **harus dilindungi oleh negara** berdasarkan per
 
 ### Cara Mengelola:
 
-1. Di sidebar, klik **Arsip Terjaga** di bawah **Layanan & Fisik**.
+1. Di sidebar, klik **Arsip Terjaga** di bawah **Layanan & Fisik**. Menu ini hanya muncul bila modul Arsip Terjaga diaktifkan operator.
 2. Lihat daftar arsip yang berstatus terjaga.
 3. Klik **"+ Tambah Arsip Terjaga"** untuk menambah.
 4. Pilih arsip dan isi dasar hukum perlindungan.

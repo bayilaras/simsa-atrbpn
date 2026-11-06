@@ -22,6 +22,7 @@ import {
     isAllowedForClassification,
     recordAccessService,
 } from '../services/record-access.service.js';
+import { PESAN_KELAS_MELEBIHI_KEWENANGAN } from '../constants/pesan-akses.js';
 import { normalizeSecurityClassification } from '../services/access/visibility-spec.js';
 
 const router = Router();
@@ -274,7 +275,7 @@ router.put('/:id', validateIdParam(),
                 && normalizeSecurityClassification(req.body.klasifikasiKeamanan)
                     !== normalizeSecurityClassification(existing.klasifikasiKeamanan)
             ) {
-                return res.status(403).json({ error: 'Klasifikasi keamanan melebihi kewenangan pengguna' });
+                return res.status(403).json({ error: PESAN_KELAS_MELEBIHI_KEWENANGAN });
             }
             const result = await arsipService.update(id as string, req.body, {
                 userId: req.user?.id,

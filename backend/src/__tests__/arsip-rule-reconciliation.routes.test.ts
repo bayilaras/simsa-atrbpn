@@ -123,9 +123,13 @@ describe('arsip rule reconciliation routes', () => {
 
     it('still checks authority for an explicitly changed security classification', async () => {
         mocks.isAllowedForClassification.mockReturnValue(false);
-        await request(app).put(`/arsip/${ARCHIVE_ID}`)
+        const response = await request(app).put(`/arsip/${ARCHIVE_ID}`)
             .send({ klasifikasiKeamanan: 'sangat_rahasia' }).expect(403);
         expect(mocks.arsip.update).not.toHaveBeenCalled();
+        // Pesan menyebut siapa yang berwenang agar formulir tidak berhenti di penolakan.
+        expect(response.body.error).toBe(
+            'Klasifikasi keamanan melebihi kewenangan pengguna. Kelas Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin.',
+        );
     });
 
     it('validates item IDs and a meaningful reason before reconciliation', async () => {

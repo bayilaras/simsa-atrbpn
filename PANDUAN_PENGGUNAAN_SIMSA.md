@@ -233,7 +233,7 @@ Setelah berhasil login, Anda akan diarahkan ke halaman **Dashboard** yang menamp
 | **Kartu Statistik** | 6 kartu ringkasan: Surat Masuk, Surat Keluar, Total Arsip, Arsip Masuk, Arsip Keluar, Segera Musnah |
 | **Analisis Trend** | Grafik garis perbandingan volume surat masuk & keluar dalam 12 bulan terakhir |
 | **Perbandingan Unit Kerja** | Grafik batang horizontal volume surat per unit kerja bulan ini |
-| **Aksi Cepat** | 4 tombol shortcut: Surat Masuk, Surat Keluar, Laporan, Upload |
+| **Aksi Cepat** | 4 tombol shortcut: Surat Masuk, Surat Keluar, Laporan, Unggah Massal (hanya muncul bila modul Unggah Massal & OCR diaktifkan operator) |
 | **Masa Retensi** | Daftar arsip yang mendekati batas waktu musnah dengan indikator warna urgency |
 | **Aktivitas Terbaru** | Daftar surat masuk/keluar terakhir yang masuk ke sistem |
 
@@ -246,9 +246,9 @@ Mulai versi 1.1, dashboard menampilkan **6 widget tambahan** yang memberikan gam
 | **🍩 Status Siklus Arsip** | Donut chart menampilkan distribusi arsip berdasarkan status: **Aktif** (masa retensi aktif berjalan), **Inaktif** (masa aktif selesai, inaktif berjalan), **Kadaluarsa** (semua masa retensi selesai), dan **Belum Ditentukan** (belum ada data retensi). Dihitung otomatis dari tanggal arsip dan jadwal retensi aktif/inaktif. |
 | **💿 Jenis Media Arsip** | Progress bar menampilkan distribusi arsip per jenis media penyimpanan: kertas, foto, video, audio, elektronik, dll. Setiap jenis media memiliki ikon dan warna yang berbeda. |
 | **📖 Peminjaman Arsip** | Menampilkan jumlah arsip yang **sedang dipinjam** dan jumlah peminjaman yang **terlambat dikembalikan** (overdue). Jika ada overdue, indikator berwarna merah. |
-| **📋 Pipeline Penyusutan** | Menampilkan status alur persetujuan penyusutan arsip dalam 5 tahap: **Draft** → **Diusulkan** → **Ditinjau** → **Disetujui** → **Dilaksanakan**. Setiap tahap menunjukkan jumlah arsip yang sedang berada di tahap tersebut. |
+| **📋 Pipeline Penyusutan** | Menampilkan status alur persetujuan penyusutan arsip dalam 5 tahap: **Draft** → **Diusulkan** → **Ditinjau** → **Disetujui** → **Dilaksanakan**. Setiap tahap menunjukkan jumlah arsip yang sedang berada di tahap tersebut. Widget ini hanya tampil bila modul Penyusutan diaktifkan operator. |
 | **🏢 Kapasitas Penyimpanan** | Progress bar utilisasi ruang arsip per gedung. Warna berubah sesuai tingkat pengisian: **hijau** (<70%), **kuning** (70-89%), **merah** (≥90%). Tombol "Kelola Penyimpanan" di bawah mengarah ke halaman Lokasi Simpan. |
-| **🛡️ Arsip Vital & Terjaga** | Alert card yang menampilkan jumlah arsip vital yang **belum diproteksi** dan arsip terjaga yang **belum dilaporkan ke ANRI**. Berwarna merah/kuning jika ada yang perlu tindakan, hijau jika semua aman. |
+| **🛡️ Arsip Vital & Terjaga** | Alert card yang menampilkan jumlah arsip vital yang **belum diproteksi** dan arsip terjaga yang **belum dilaporkan ke ANRI**. Berwarna merah/kuning jika ada yang perlu tindakan, hijau jika semua aman. Bagian arsip terjaga hanya tampil bila modul Arsip Terjaga diaktifkan operator; tanpa modul itu kartu bernama **Arsip Vital**. |
 
 > [!NOTE]
 > Semua widget otomatis menyesuaikan dengan **unit kerja yang dipilih** oleh Super Admin melalui dropdown di Hero Section. Untuk admin biasa, data ditampilkan sesuai unit kerja masing-masing.
@@ -317,6 +317,7 @@ graph LR
 > [!NOTE]
 > - Menu dengan 🔒 hanya tersedia untuk **Admin Unit Kerja** atau **Super Admin**.
 > - Menu dengan 🔒🔒 hanya tersedia untuk **Super Admin** saja.
+> - **Penyusutan** dan **Arsip Terjaga** hanya muncul bila modulnya diaktifkan operator.
 > - **Settings** (⚙️) tersedia untuk semua pengguna; tab Unit Kerja dan Template hanya muncul untuk **Super Admin**.
 > - Link **📖 Panduan** membuka panduan di dalam aplikasi (halaman `/panduan`) dan tersedia untuk semua pengguna.
 > - Akun lama berperan **Staff** atau **Auditor** hanya dapat melihat data unit kerjanya; peran ini tidak lagi diberikan untuk akun baru.
@@ -367,7 +368,7 @@ flowchart LR
 | Pengirim | Nama instansi / perorangan pengirim | ✅ |
 | Perihal | Subjek / topik surat | ✅ |
 | Klasifikasi | Pilih kode klasifikasi dari dropdown | ✅ |
-| Sifat Surat | Biasa / Segera / Sangat Segera | ✅ |
+| Sifat Surat | Biasa / Segera / Sangat Segera / Rahasia / Undangan / Penting. Sifat Rahasia hanya dapat ditetapkan oleh Super Admin; Admin Unit Kerja tidak melihat pilihan ini kecuali sifat itu sudah tersimpan pada surat | ✅ |
 | Lampiran | Upload file surat (drag & drop atau klik) | ❌ |
 
 3. Klik tombol **"Simpan"** untuk menyimpan surat.
@@ -417,6 +418,8 @@ flowchart LR
 3. Ubah data yang diperlukan.
 4. Klik **"Simpan"** untuk menyimpan perubahan.
 
+Sifat Rahasia yang sudah tersimpan boleh dipertahankan. Bila diganti lalu disimpan, sifat itu hanya dapat dipilih kembali oleh Super Admin.
+
 ---
 
 ### 5.2 Surat Keluar
@@ -440,7 +443,8 @@ Halaman **Surat Keluar** mengelola semua surat yang dikirim dari unit kerja Anda
 | Penerima | Tujuan pengiriman surat | ✅ |
 | Perihal | Subjek / topik surat | ✅ |
 | Klasifikasi | Pilih kode klasifikasi | ✅ |
-| Sifat Surat | Biasa / Segera / Sangat Segera | ✅ |
+| Sifat Surat | Biasa / Penting / Segera / Sangat Segera (tingkat urgensi, bukan kerahasiaan) | ❌ |
+| Klasifikasi Keamanan | Biasa / Terbuka, Terbatas, Rahasia, atau Sangat Rahasia. Admin Unit Kerja hanya dapat memilih Biasa / Terbuka atau Terbatas; Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin | ✅ |
 | Lampiran | Upload file surat keluar | ❌ |
 
 3. Klik **"Simpan"** untuk menyimpan surat keluar.
@@ -526,6 +530,19 @@ Arsip aktif terbagi menjadi dua sub-halaman:
 
 3. Gunakan fitur pencarian dan filter untuk mempersempit hasil.
 
+#### Ekspor Formulir 4 dan Formulir 6
+
+Klik tombol **Export**, lalu pilih Excel (.xlsx) atau PDF pada formulir yang dibutuhkan. Isi ekspor mengikuti tab, unit, pencarian, dan tahun yang sedang dipilih.
+
+| Formulir | Isi |
+|----------|-----|
+| **Formulir 4 — Daftar Arsip Aktif** | Arsip yang masa aktifnya belum berakhir. Kolom: No. Berkas, Kode Klasifikasi, Uraian Informasi Berkas, Kurun Waktu, Jumlah Berkas, Item Arsip (No. Item, Uraian Informasi Arsip, Tanggal, Jumlah), Tingkat Perkembangan, Lokasi Simpan, Tingkat Klasifikasi Keamanan & Akses, Keterangan |
+| **Formulir 6 — Daftar Arsip Inaktif (Kertas)** | Arsip yang masa aktifnya sudah berakhir atau yang sudah dipindahkan ke penyimpanan inaktif. Kolom: No, Kode Klasifikasi, Uraian Informasi Arsip/Berkas, Kurun Waktu, Tingkat Perkembangan, Jumlah, Lokasi Simpan, Keamanan & Akses, Jangka Simpan & Nasib Akhir, Kategori Arsip, Keterangan |
+
+Masa aktif baru dianggap berakhir bila klasifikasi/JRA arsip sudah terverifikasi dan peristiwa pemicu retensinya sudah diverifikasi. Arsip yang belum memenuhi syarat itu tetap tercantum di Formulir 4 sampai pemindahannya dicatat di SIMSA melalui modul Penyusutan. Pemindahan yang dilakukan di luar SIMSA, misalnya selama modul Penyusutan belum diaktifkan, tidak mengubah isi kedua formulir. Arsip yang penyusutannya sudah dilaksanakan tidak tercantum di kedua formulir.
+
+Bila belum ada arsip inaktif untuk filter yang dipilih, Formulir 6 tidak diunduh. Di bawah tombol muncul keterangan "Belum ada arsip inaktif untuk filter ini…".
+
 #### Melihat Detail Arsip
 
 1. Klik baris arsip untuk membuka halaman detail.
@@ -541,7 +558,7 @@ Arsip aktif terbagi menjadi dua sub-halaman:
 │ 📋 Detail Arsip                                 │
 │ Kode: KL.01.02 | Item: 15 | Status: Aktif      │
 │                                                 │
-│ [Edit] [Distribusi] [Arsipkan] [Hapus]          │
+│ [Ubah Metadata] [Lihat Surat Asli]              │
 ├─────────────────────────────────────────────────┤
 │ [Informasi] [Item Berkas] [Riwayat]  ← Tab      │
 ├─────────────────────────────────────────────────┤
@@ -555,6 +572,20 @@ Arsip aktif terbagi menjadi dua sub-halaman:
 │                                                 │
 └─────────────────────────────────────────────────┘
 ```
+
+Tombol aksi: **Ubah Metadata** dan **Rekonsiliasi Klasifikasi/JRA** (untuk admin yang berwenang atas unit arsip), **Lihat Surat Asli** (bila arsip berasal dari surat), dan **Cetak Detail**.
+
+#### Mengubah Metadata Arsip
+
+Bila ada data berkas yang salah catat, admin yang berwenang atas unit arsip dapat memperbaikinya dari halaman detail:
+
+1. Klik **Ubah Metadata** di bagian atas halaman atau di kartu **Aksi Cepat**.
+2. Perbaiki isian yang salah: Nomor Berkas, Unit Pengolah, Uraian Berkas, Kurun Waktu, Nomor Item, Tingkat Perkembangan, Uraian Item, Tanggal Arsip, Jumlah, Media, No. Filing Cabinet, No. Laci, No. Folder, Klasifikasi Keamanan, PIC, atau Keterangan.
+3. Klik **Simpan**. Hanya isian yang diubah yang disimpan, dan perubahannya tercatat di log audit.
+
+Kode klasifikasi arsip dan JRA tidak diubah di sini; gunakan **Rekonsiliasi Klasifikasi/JRA**. Tombol **Ubah Metadata** dikunci bila arsip sedang legal hold, sedang dalam proses penyusutan, atau penyusutannya sudah dilaksanakan.
+
+Admin Unit Kerja hanya dapat memilih klasifikasi keamanan Biasa/Terbuka atau Terbatas; Rahasia dan Sangat Rahasia hanya dapat dipilih Super Admin. Kelas yang sudah tersimpan boleh dipertahankan. Bila kelas dinaikkan ke Terbatas atau lebih tinggi, arsip memerlukan persetujuan akses; pengubahnya pun mungkin perlu mengajukan persetujuan akses untuk membuka arsip itu lagi.
 
 ---
 
@@ -615,6 +646,9 @@ flowchart LR
 1. Klik **Penyusutan** pada sidebar.
 2. Lihat daftar arsip yang memenuhi syarat penyusutan.
 3. Pilih tindakan yang sesuai untuk setiap arsip.
+
+> [!NOTE]
+> Menu **Penyusutan** hanya muncul bila modulnya diaktifkan operator. Selama modul belum diaktifkan, pemindahan dan pemusnahan arsip dilakukan di luar SIMSA mengikuti prosedur unit. **Manajemen Retensi** tetap dapat dipakai untuk melihat arsip yang masa retensinya sudah atau hampir habis dan untuk mencetak draf berita acara pemusnahan melalui tombol **Generate Berita Acara**.
 
 ---
 
@@ -679,6 +713,9 @@ Arsip Terjaga adalah arsip yang dilindungi negara dan memiliki perlindungan huku
 
 1. Klik **Arsip Terjaga** (🔒) pada sidebar.
 2. Lihat dan kelola arsip yang termasuk kategori terjaga.
+
+> [!NOTE]
+> Menu **Arsip Terjaga** hanya muncul bila modulnya diaktifkan operator.
 
 ---
 
@@ -1006,7 +1043,7 @@ Di bagian bawah sidebar, terdapat link **📖 Panduan** yang membuka panduan di 
 ---
 
 ### 11.6 Bulk Upload
-- Akses melalui menu **Aksi Cepat** > **Upload** di Dashboard.
+- Klik **Unggah Massal** di Dashboard atau di halaman Arsip Aktif untuk membuka halaman **Unggah Massal & OCR**. Tombol ini hanya muncul untuk admin bila modul Unggah Massal & OCR diaktifkan operator dan unggah file tersedia; bila tidak muncul, gunakan pencatatan manual atau impor metadata.
 - Upload banyak surat atau arsip sekaligus dalam format yang didukung.
 
 ### 11.7 Formulir
@@ -1016,6 +1053,7 @@ Di bagian bawah sidebar, terdapat link **📖 Panduan** yang membuka panduan di 
 ### 11.8 Ekspor Data
 - Pada halaman daftar surat/arsip, klik tombol **"Ekspor"** untuk mengunduh data dalam format PDF, Excel, atau CSV.
 - Ekspor Excel Surat Keluar menampilkan **Balasan Untuk** sebagai nomor surat masuk (bukan kode internal). Bila surat masuk berada di unit lain tertulis `(lintas unit)`, bila kelasnya tidak boleh Anda baca tertulis `Dikecualikan`, dan bila sudah dihapus tertulis `(tidak tersedia)`. Sejak integrasi rangkaian, sistem hanya mengisi relasi Balasan Untuk untuk balasan dari unit yang sama; rantai balasan lintas unit dilihat di panel Alur Surat. Relasi ini dikosongkan bila tautan balasannya dibatalkan, sehingga kolomnya ikut kosong. Kolom **Asal Naskah** berisi `Inisiatif` atau `Tindak Lanjut`.
+- Pada daftar arsip, pilih **Formulir 4** (Daftar Arsip Aktif) atau **Formulir 6** (Daftar Arsip Inaktif); isi masing-masing dijelaskan pada bagian 6.1 Arsip Aktif. Formulir 6 tidak diunduh bila belum ada arsip inaktif untuk filter yang dipilih.
 
 ---
 

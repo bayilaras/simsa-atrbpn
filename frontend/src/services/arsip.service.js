@@ -69,7 +69,8 @@ export const arsipService = {
         return response.data;
     },
 
-    // Update arsip
+    // Koreksi metadata arsip: kirim hanya field yang berubah. Klasifikasi/JRA
+    // dan field retensi ditolak server; gunakan reconcileRules.
     async update(id, data) {
         const response = await api.put(`/api/arsip/${id}`, data);
         return response.data;

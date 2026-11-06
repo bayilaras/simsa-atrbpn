@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Loader2, AlertTriangle, FileText, Download, Archive, Clock, CheckCircle2, XCircle, Calendar, Trash2, Eye, Filter, Printer, Scale, History, Lock, Unlock } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
+import { useAppConfig } from '@/context/app-config-context'
 import { useToast } from '@/hooks/use-toast'
 import retentionService from '@/services/retention.service'
 import { format, parseISO } from 'date-fns'
@@ -42,6 +43,8 @@ function startRequest(counters, key) {
 export default function RetentionManagement() {
     const { user } = useAuth()
     const { toast } = useToast()
+    const { capabilities } = useAppConfig()
+    const penyusutanModuleOff = capabilities?.advancedArchiveWorkflows === false
     const unitScope = useRequiredUnitKerjaScope(user)
     const unitKerjaId = unitScope.unitKerjaId
 
@@ -534,6 +537,11 @@ export default function RetentionManagement() {
                             <CardDescription className="text-xs">
                                 Arsip yang status retensinya perlu perhatian atau tindakan
                             </CardDescription>
+                            {penyusutanModuleOff && (
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                    Selama modul Penyusutan belum diaktifkan, pemindahan dan pemusnahan arsip dilakukan di luar SIMSA.
+                                </p>
+                            )}
                         </div>
                         <div className="flex items-center gap-2">
                             <Button

@@ -107,14 +107,8 @@ describe('registrasi surat masuk', () => {
         expect(mocks.masuk.create).not.toHaveBeenCalled()
     })
 
-    it('surat terkendali dengan disposisi ditolak di klien selama jalur akses mati', async () => {
-        const view = await tampilDanIsi()
-        fireEvent.change(document.getElementById('sifat-surat'), { target: { value: 'rahasia' } })
-        pilihDisposisi(['dir_bppt'])
-        fireEvent.submit(view.container.querySelector('form'))
-        expect(await screen.findByRole('alert')).toHaveTextContent('Surat terkendali belum dapat didisposisikan')
-        expect(mocks.masuk.create).not.toHaveBeenCalled()
-    })
+    // Kasus surat terkendali + disposisi ada di TambahSuratMasuk.kelas.test.jsx:
+    // Admin Unit Kerja tidak lagi ditawari sifat Rahasia, jadi ujinya memakai Super Admin.
 
     it('peringatan duplikat nomor memakai Lacak mode cek', async () => {
         await tampilDanIsi()

@@ -39,6 +39,7 @@ import { useDisposisiOpsi } from '@/hooks/use-disposisi-opsi';
 import { ReferensiSection } from '@/components/surat-keluar/ReferensiSection';
 import { DisposisiRegistrasiSection } from '@/components/surat-masuk/DisposisiRegistrasiSection';
 import { PESAN_TERKENDALI, isSifatTerkendali } from '@/lib/tindak-lanjut';
+import { PESAN_KELAS_TERBATAS_PERAN, adaKelasTersembunyi, bolehMemilihKelas, saringOpsiKelas } from '@/lib/kelas-keamanan';
 import {
     MailOpen,
     ChevronLeft,
@@ -121,6 +122,14 @@ const SIFAT_SURAT_OPTIONS = [
     { value: 'penting', label: 'Penting', color: 'bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-200' },
 ];
 
+// Nilai impor seperti 'Rahasia' atau 'Sangat Segera' dipetakan ke nilai opsi
+// agar pilihan tampil terpilih; nilai di luar daftar dibiarkan apa adanya.
+const nilaiOpsiSifat = (nilai) => {
+    const kunci = String(nilai ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+    if (!kunci) return 'biasa';
+    return SIFAT_SURAT_OPTIONS.some(opt => opt.value === kunci) ? kunci : nilai;
+};
+
 // Keterangan options
 const KETERANGAN_OPTIONS = [
     { value: 'penanggung_jawab', label: 'Penanggung Jawab', icon: '👔' },
@@ -160,6 +169,7 @@ export default function TambahSuratMasuk() {
     const [rangkaian, setRangkaian] = useState(null);
     const [alasanKoreksi, setAlasanKoreksi] = useState('');
     const [referensi, setReferensi] = useState(null);
+    const [sifatTersimpan, setSifatTersimpan] = useState(null);
     const originalRef = useRef({ nomorSurat: '', perihal: '', sifatSurat: 'biasa' });
     const unitScope = useRequiredUnitKerjaScope(user, {
         fixedUnitKerjaId: isEditMode ? recordUnitKerjaId : '',
@@ -207,6 +217,21 @@ export default function TambahSuratMasuk() {
     });
     const archiveRules = selectedSuratArchiveRules(formData);
 
+    // Sifat surat masuk memuat kelas keamanan; opsi di atas plafon peran pasti
+    // ditolak server (403), kecuali sifat yang sudah tersimpan pada rekod ini.
+    const opsiSifat = saringOpsiKelas(SIFAT_SURAT_OPTIONS, user?.role, isEditMode ? sifatTersimpan : undefined);
+    const sifatDibatasi = adaKelasTersembunyi(SIFAT_SURAT_OPTIONS, user?.role);
+    // Draf atau isian awal bisa memuat sifat di luar kewenangan; yang ditampilkan
+    // dan dikirim adalah kelas terendah yang diizinkan.
+    const sifatDiganti = !isEditMode && Boolean(formData.sifatSurat) && opsiSifat.length > 0
+        && !bolehMemilihKelas(user?.role, formData.sifatSurat);
+    const sifatSurat = sifatDiganti ? opsiSifat[0].value : formData.sifatSurat;
+    // Sifat tersimpan di atas plafon tetap boleh dipertahankan (tidak dikirim ulang),
+    // jadi pesan umum "hanya Super Admin" diganti agar tidak bertentangan.
+    const sifatDipertahankan = isEditMode && Boolean(sifatTersimpan) && !bolehMemilihKelas(user?.role, sifatTersimpan);
+    const bantuanSifat = sifatDiganti || sifatDibatasi;
+    const labelSifat = (value) => SIFAT_SURAT_OPTIONS.find(opt => opt.value === value)?.label ?? value;
+
     // Restore draft on mount (only for new entries, not edit mode)
     useEffect(() => {
         if (!isEditMode) {
@@ -253,15 +278,17 @@ export default function TambahSuratMasuk() {
             }
             setRecordUnitKerjaId(data.unitKerjaId || '');
             setRangkaian(data.rangkaian || null);
+            const sifatAwal = nilaiOpsiSifat(data.sifatSurat);
             originalRef.current = {
                 nomorSurat: data.nomorSurat || '',
                 perihal: data.perihal || '',
-                sifatSurat: data.sifatSurat || 'biasa',
+                sifatSurat: sifatAwal,
             };
+            setSifatTersimpan(sifatAwal);
             // Map fetched data to form fields
             setFormData({
                 jenisSurat: data.jenisSurat || '',
-                sifatSurat: data.sifatSurat || 'biasa',
+                sifatSurat: sifatAwal,
                 nomorSurat: data.nomorSurat || '',
                 tanggalSurat: data.tanggalSurat ? data.tanggalSurat.split('T')[0] : '',
                 perihal: data.perihal || '',
@@ -389,7 +416,7 @@ export default function TambahSuratMasuk() {
         }
         if (!isEditMode) {
             const { targets } = pisahkanDisposisi(formData.disposisi);
-            if (targets.length > 0 && isSifatTerkendali(formData.sifatSurat) && !jalurAksesTerkendali) {
+            if (targets.length > 0 && isSifatTerkendali(sifatSurat) && !jalurAksesTerkendali) {
                 return { field: 'disposisi', message: PESAN_TERKENDALI };
             }
         }
@@ -424,7 +451,7 @@ export default function TambahSuratMasuk() {
         setFieldErrors({});
 
         try {
-            const dataToSubmit = buildSuratFormPayload(formData, resolvedUnitKerjaId, filesEnabled);
+            const dataToSubmit = buildSuratFormPayload({ ...formData, sifatSurat }, resolvedUnitKerjaId, filesEnabled);
             const { disposisiPj, disposisiBatasWaktu, disposisiInstruksi, disposisi: pilihan, ...dasar } = dataToSubmit;
 
             if (isEditMode) {
@@ -635,13 +662,31 @@ export default function TambahSuratMasuk() {
                                 <SearchableSelect
                                     id="sifat-surat"
                                     ariaLabel="Sifat surat"
+                                    aria-describedby={bantuanSifat ? 'sifat-surat-bantuan' : undefined}
                                     disabled={saveLocked || rangkaianTerkunci}
-                                    options={SIFAT_SURAT_OPTIONS.map(opt => ({ value: opt.value, label: opt.label }))}
-                                    value={formData.sifatSurat}
+                                    options={opsiSifat.map(opt => ({ value: opt.value, label: opt.label }))}
+                                    value={sifatSurat}
                                     onValueChange={(v) => handleChange('sifatSurat', v)}
                                     placeholder="Pilih sifat surat..."
                                     searchPlaceholder="Cari sifat surat..."
                                 />
+                                {bantuanSifat && (
+                                    <div id="sifat-surat-bantuan" className="space-y-1">
+                                        {sifatDiganti && (
+                                            <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                                                {`Sifat ${labelSifat(formData.sifatSurat)} tidak dapat Anda pilih, sehingga diganti menjadi ${labelSifat(sifatSurat)}.`}
+                                            </p>
+                                        )}
+                                        {sifatDibatasi && (
+                                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                                <Info className="h-3 w-3 shrink-0" aria-hidden="true" />
+                                                {sifatDipertahankan
+                                                    ? `Sifat ${labelSifat(sifatTersimpan)} yang sudah tersimpan boleh dipertahankan. Bila diganti lalu disimpan, sifat ini hanya dapat dipilih kembali oleh Super Admin.`
+                                                    : PESAN_KELAS_TERBATAS_PERAN}
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </CardContent>

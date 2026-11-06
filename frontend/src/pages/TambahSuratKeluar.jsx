@@ -17,6 +17,7 @@ import { buildOutgoingNumberingPayload } from '@/lib/surat-numbering';
 import { ReferensiSection } from '@/components/surat-keluar/ReferensiSection';
 import { toTindakLanjutPayload } from '@/lib/tindak-lanjut';
 import { sifatSuratKeluarOptions } from '@/lib/sifat-surat-keluar';
+import { PESAN_KELAS_TERBATAS_PERAN, adaKelasTersembunyi, bolehMemilihKelas, saringOpsiKelas } from '@/lib/kelas-keamanan';
 import {
     Card,
     CardContent,
@@ -106,6 +107,13 @@ const NASKAH_DINAS_OPTIONS = [
     'Pembatalan Hak',
 ];
 
+const KLASIFIKASI_KEAMANAN_OPTIONS = [
+    { value: 'biasa', label: 'Biasa / Terbuka' },
+    { value: 'terbatas', label: 'Terbatas' },
+    { value: 'rahasia', label: 'Rahasia' },
+    { value: 'sangat_rahasia', label: 'Sangat Rahasia' },
+];
+
 export default function TambahSuratKeluar({ mode: modeProp } = {}) {
     const { id } = useParams(); // Get ID from URL for edit mode
     const isEditMode = Boolean(id);
@@ -138,6 +146,7 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
     const [recordUnitKerjaId, setRecordUnitKerjaId] = useState('');
     const [numberPreview, setNumberPreview] = useState(null);
     const [editLocked, setEditLocked] = useState(false);
+    const [kelasTersimpan, setKelasTersimpan] = useState(null);
     const unitScope = useRequiredUnitKerjaScope(user, {
         fixedUnitKerjaId: isEditMode ? recordUnitKerjaId : '',
     });
@@ -179,6 +188,20 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
         balasanUntuk: null,
     });
     const archiveRules = selectedSuratArchiveRules(formData);
+
+    // Kelas di atas plafon peran pasti ditolak server (403); kelas yang sudah
+    // tersimpan pada rekod yang diubah tetap ditampilkan agar tidak hilang.
+    const opsiKelas = saringOpsiKelas(KLASIFIKASI_KEAMANAN_OPTIONS, user?.role, isEditMode ? kelasTersimpan : undefined);
+    const kelasDibatasi = adaKelasTersembunyi(KLASIFIKASI_KEAMANAN_OPTIONS, user?.role);
+    // Isian awal dari navigasi bisa memuat kelas di luar kewenangan; yang
+    // ditampilkan dan dikirim adalah kelas terendah yang diizinkan.
+    const kelasDiganti = !isEditMode && Boolean(formData.klasifikasiKeamanan) && opsiKelas.length > 0
+        && !bolehMemilihKelas(user?.role, formData.klasifikasiKeamanan);
+    const klasifikasiKeamanan = kelasDiganti ? opsiKelas[0].value : formData.klasifikasiKeamanan;
+    // Kelas tersimpan di atas plafon tetap boleh dipertahankan, jadi pesan umum
+    // "hanya Super Admin" diganti agar tidak bertentangan dengan formulir.
+    const kelasDipertahankan = isEditMode && Boolean(kelasTersimpan) && !bolehMemilihKelas(user?.role, kelasTersimpan);
+    const labelKelas = (value) => KLASIFIKASI_KEAMANAN_OPTIONS.find(opt => opt.value === value)?.label ?? value;
 
     // Prefill dari menu Tindak Lanjut / Kotak Disposisi (state.tindakLanjut) atau klien lama (state.replyTo).
     useEffect(() => {
@@ -226,6 +249,7 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
                 return;
             }
             setRecordUnitKerjaId(data.unitKerjaId || '');
+            setKelasTersimpan(data.klasifikasiKeamanan || 'terbatas');
             // Map fetched data to form fields
             setFormData({
                 naskahDinas: data.naskahDinas || '',
@@ -374,7 +398,7 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
 
         try {
             const dataToSubmit = {
-                ...buildSuratFormPayload(formData, resolvedUnitKerjaId, filesEnabled),
+                ...buildSuratFormPayload({ ...formData, klasifikasiKeamanan }, resolvedUnitKerjaId, filesEnabled),
                 sifatSurat: formData.sifatSurat || undefined,
             };
 
@@ -758,22 +782,39 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
                                     Klasifikasi Keamanan <span className="text-destructive">*</span>
                                 </Label>
                                 <Select
-                                    value={formData.klasifikasiKeamanan}
+                                    value={klasifikasiKeamanan}
                                     onValueChange={(value) => handleChange('klasifikasiKeamanan', value)}
                                 >
-                                    <SelectTrigger id="klasifikasi-keamanan-surat-keluar" aria-label="Klasifikasi keamanan">
+                                    <SelectTrigger
+                                        id="klasifikasi-keamanan-surat-keluar"
+                                        aria-label="Klasifikasi keamanan"
+                                        aria-describedby="klasifikasi-keamanan-bantuan"
+                                    >
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="biasa">Biasa / Terbuka</SelectItem>
-                                        <SelectItem value="terbatas">Terbatas</SelectItem>
-                                        <SelectItem value="rahasia">Rahasia</SelectItem>
-                                        <SelectItem value="sangat_rahasia">Sangat Rahasia</SelectItem>
+                                        {opsiKelas.map(opt => (
+                                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                                        ))}
                                     </SelectContent>
                                 </Select>
-                                <p className="text-xs text-muted-foreground">
-                                    Rekod Terbatas atau lebih tinggi memerlukan persetujuan akses berjangka sebelum dapat ditayangkan atau dikelola.
-                                </p>
+                                <div id="klasifikasi-keamanan-bantuan" className="space-y-1">
+                                    {kelasDiganti && (
+                                        <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                                            {`Klasifikasi ${labelKelas(formData.klasifikasiKeamanan)} tidak dapat Anda pilih, sehingga diganti menjadi ${labelKelas(klasifikasiKeamanan)}.`}
+                                        </p>
+                                    )}
+                                    <p className="text-xs text-muted-foreground">
+                                        Rekod Terbatas atau lebih tinggi memerlukan persetujuan akses berjangka sebelum dapat ditayangkan atau dikelola.
+                                    </p>
+                                    {kelasDibatasi && (
+                                        <p className="text-xs text-muted-foreground">
+                                            {kelasDipertahankan
+                                                ? `Kelas ${labelKelas(kelasTersimpan)} yang sudah tersimpan boleh dipertahankan. Bila diganti lalu disimpan, kelas ini hanya dapat dipilih kembali oleh Super Admin.`
+                                                : PESAN_KELAS_TERBATAS_PERAN}
+                                        </p>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </CardContent>

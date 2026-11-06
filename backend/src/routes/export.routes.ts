@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
-import { exportService } from '../services/export.service';
+import { exportService, ExportFormulirKosongError } from '../services/export.service';
+import { jenisFormulirArsip } from '../services/arsip-fase.js';
 import { ExportCompletenessError } from '../services/export-completeness.js';
 import { exportLimiter } from '../middlewares/rate-limiter.middleware';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
@@ -181,7 +182,7 @@ router.get('/arsip/excel', async (req: AuthRequest, res: Response) => {
             securityClassifications: allowedSecurityClassifications(req.user),
         };
 
-        const fType = (formulirType as string) || 'formulir4';
+        const fType = jenisFormulirArsip(formulirType);
         const buffer = await exportService.generateExcelArsip(filters, fType);
         await auditExport(req, { source: 'export', type: 'arsip', format: 'excel', filters, formulirType: fType });
 
@@ -193,6 +194,9 @@ router.get('/arsip/excel', async (req: AuthRequest, res: Response) => {
     } catch (error) {
         if (error instanceof ExportCompletenessError) {
             return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
+        }
+        if (error instanceof ExportFormulirKosongError) {
+            return res.status(error.statusCode).json({ error: error.code, message: error.message });
         }
         log.error({ err: error }, 'Error exporting Arsip to Excel:');
         res.status(500).json({ error: 'Failed to export to Excel' });
@@ -214,7 +218,7 @@ router.get('/arsip/pdf', async (req: AuthRequest, res: Response) => {
             securityClassifications: allowedSecurityClassifications(req.user),
         };
 
-        const fType = (formulirType as string) || 'formulir4';
+        const fType = jenisFormulirArsip(formulirType);
         const buffer = await exportService.generatePdfArsip(filters, fType);
         await auditExport(req, { source: 'export', type: 'arsip', format: 'pdf', filters, formulirType: fType });
 
@@ -226,6 +230,9 @@ router.get('/arsip/pdf', async (req: AuthRequest, res: Response) => {
     } catch (error) {
         if (error instanceof ExportCompletenessError) {
             return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
+        }
+        if (error instanceof ExportFormulirKosongError) {
+            return res.status(error.statusCode).json({ error: error.code, message: error.message });
         }
         log.error({ err: error }, 'Error exporting Arsip to PDF:');
         res.status(500).json({ error: 'Failed to export to PDF' });

@@ -28,6 +28,7 @@ import {
     normalizeSecurityClassification,
     recordAccessService,
 } from '../services/record-access.service.js';
+import { PESAN_KELAS_MELEBIHI_KEWENANGAN } from '../constants/pesan-akses.js';
 import auditLogService from '../services/audit-log.service.js';
 import { suratAksiPayload } from '../services/rangkaian/aksi.js';
 import { fileValidationMiddleware } from '../middlewares/file-validation.middleware.js';
@@ -228,7 +229,7 @@ router.post('/',
                 return sendValidationFailure(res, bodyValidation.error.issues);
             }
             if (!isAllowedForClassification(req.user, bodyValidation.data.sifatSurat)) {
-                return res.status(403).json({ error: 'Klasifikasi keamanan melebihi kewenangan pengguna' });
+                return res.status(403).json({ error: PESAN_KELAS_MELEBIHI_KEWENANGAN });
             }
 
             if (file && bodyValidation.data.filePath) {
@@ -360,11 +361,15 @@ router.put('/:id', validateIdParam(),
             if (!bodyValidation.success) {
                 return sendValidationFailure(res, bodyValidation.error.issues);
             }
+            // Mengirim ulang sifat yang sudah melekat (mis. 'Rahasia' hasil impor
+            // yang dikirim balik sebagai 'rahasia') bukan kenaikan kelas.
             if (
                 bodyValidation.data.sifatSurat !== undefined
                 && !isAllowedForClassification(req.user, bodyValidation.data.sifatSurat)
+                && normalizeSecurityClassification(bodyValidation.data.sifatSurat)
+                    !== normalizeSecurityClassification(existing.sifatSurat)
             ) {
-                return res.status(403).json({ error: 'Klasifikasi keamanan melebihi kewenangan pengguna' });
+                return res.status(403).json({ error: PESAN_KELAS_MELEBIHI_KEWENANGAN });
             }
 
             if (file && bodyValidation.data.filePath) {
@@ -533,7 +538,7 @@ router.post('/:id/archive-full', validateIdParam(), canWriteMiddleware(), async 
         const kelasSumber = normalizeSecurityClassification(access.classification);
         const kelasArsip = parsed.data.klasifikasiKeamanan ?? kelasSumber;
         if (!isAllowedForClassification(req.user, kelasArsip) && kelasArsip !== kelasSumber) {
-            return res.status(403).json({ error: 'Klasifikasi keamanan melebihi kewenangan pengguna' });
+            return res.status(403).json({ error: PESAN_KELAS_MELEBIHI_KEWENANGAN });
         }
 
         const { arsipService } = await import('../services/arsip.service');

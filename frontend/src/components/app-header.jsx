@@ -28,6 +28,7 @@ import { useNavigate } from 'react-router-dom'
 import appConfig from '@/lib/app-config'
 import settingsService from '@/services/settings.service'
 import { notificationRoute } from '@/lib/notification-routing'
+import { useAppConfig } from '@/context/app-config-context'
 import { useNotificationUnitScope } from '@/hooks/use-notification-unit-scope'
 
 // Role label mapping for display in Indonesian
@@ -53,6 +54,7 @@ const NOTIFICATION_CATEGORY_LABELS = {
 
 export function AppHeader() {
     const { user: authUser, signOut } = useAuth()
+    const { capabilities } = useAppConfig()
     const navigate = useNavigate()
 
     const [searchOpen, setSearchOpen] = useState(false)
@@ -95,7 +97,7 @@ export function AppHeader() {
     const handleNotificationClick = (notif) => {
         markAsRead(notif.id)
 
-        navigate(notificationRoute(notif))
+        navigate(notificationRoute(notif, capabilities))
     }
 
     const handleMarkAllAsRead = () => {
