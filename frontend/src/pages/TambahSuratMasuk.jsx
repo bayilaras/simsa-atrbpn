@@ -112,17 +112,20 @@ const JENIS_SURAT_OPTIONS = [
     'Pembatalan Hak',
 ];
 
-// Sifat Surat options with colors
+// Sifat Surat options with colors. Terbatas, Rahasia, dan Sangat Rahasia adalah
+// kelas keamanan; saringOpsiKelas menyembunyikan yang di atas plafon peran.
 const SIFAT_SURAT_OPTIONS = [
     { value: 'biasa', label: 'Biasa', color: 'bg-muted text-foreground border-border' },
     { value: 'segera', label: 'Segera', color: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-200' },
     { value: 'sangat_segera', label: 'Sangat Segera', color: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200' },
+    { value: 'terbatas', label: 'Terbatas', color: 'bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-200' },
     { value: 'rahasia', label: 'Rahasia', color: 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-200' },
+    { value: 'sangat_rahasia', label: 'Sangat Rahasia', color: 'bg-rose-100 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-200' },
     { value: 'undangan', label: 'Undangan', color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200' },
     { value: 'penting', label: 'Penting', color: 'bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-200' },
 ];
 
-// Nilai impor seperti 'Rahasia' atau 'Sangat Segera' dipetakan ke nilai opsi
+// Nilai impor seperti 'Rahasia', 'Sangat Rahasia', atau 'Sangat Segera' dipetakan ke nilai opsi
 // agar pilihan tampil terpilih; nilai di luar daftar dibiarkan apa adanya.
 const nilaiOpsiSifat = (nilai) => {
     const kunci = String(nilai ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');

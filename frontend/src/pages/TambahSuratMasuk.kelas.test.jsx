@@ -84,19 +84,19 @@ function isiWajib() {
 }
 
 describe('sifat surat masuk menurut peran', () => {
-    it('Admin Unit Kerja tidak ditawari Rahasia dan melihat alasannya', async () => {
+    it('Admin Unit Kerja ditawari Terbatas, tidak ditawari Rahasia dan Sangat Rahasia, dan melihat alasannya', async () => {
         tampil()
         await screen.findByRole('option', { name: 'Dit. BPPT' })
-        expect(opsiSifat()).toEqual(['biasa', 'segera', 'sangat_segera', 'undangan', 'penting'])
+        expect(opsiSifat()).toEqual(['biasa', 'segera', 'sangat_segera', 'terbatas', 'undangan', 'penting'])
         expect(screen.getByText(PESAN_KELAS_TERBATAS_PERAN)).toBeInTheDocument()
         expect(document.getElementById('sifat-surat')).toHaveAttribute('aria-describedby', 'sifat-surat-bantuan')
     })
 
-    it('Super Admin tetap ditawari Rahasia tanpa teks pembatasan', async () => {
+    it('Super Admin ditawari keempat kelas tanpa teks pembatasan', async () => {
         mocks.user = SUPER_ADMIN
         tampil()
         await screen.findByRole('option', { name: 'Dit. BPPT' })
-        expect(opsiSifat()).toEqual(['biasa', 'segera', 'sangat_segera', 'rahasia', 'undangan', 'penting'])
+        expect(opsiSifat()).toEqual(['biasa', 'segera', 'sangat_segera', 'terbatas', 'rahasia', 'sangat_rahasia', 'undangan', 'penting'])
         expect(screen.queryByText(PESAN_KELAS_TERBATAS_PERAN)).toBeNull()
     })
 
@@ -142,7 +142,7 @@ describe('sifat surat masuk menurut peran', () => {
         })
         const view = tampil('/surat/masuk/edit/sm-1')
         await screen.findByDisplayValue('Perihal tersimpan')
-        expect(opsiSifat()).toEqual(['biasa', 'segera', 'sangat_segera', 'rahasia', 'undangan', 'penting'])
+        expect(opsiSifat()).toEqual(['biasa', 'segera', 'sangat_segera', 'terbatas', 'rahasia', 'undangan', 'penting'])
         expect(document.getElementById('sifat-surat')).toHaveValue('rahasia')
         expect(screen.queryByText(/sehingga diganti/)).toBeNull()
         // Pesan umum "hanya Super Admin" bertentangan dengan rekod yang tetap dapat disimpan.
@@ -167,6 +167,44 @@ describe('sifat surat masuk menurut peran', () => {
         const view = tampil('/surat/masuk/edit/sm-2')
         await screen.findByDisplayValue('Hasil impor')
         expect(document.getElementById('sifat-surat')).toHaveValue('rahasia')
+        fireEvent.change(screen.getByLabelText(/^Dari \(Pengirim\)/), { target: { value: 'Kanwil Baru' } })
+        fireEvent.submit(view.container.querySelector('form'))
+        await waitFor(() => expect(mocks.masuk.update).toHaveBeenCalled())
+        expect(mocks.masuk.update.mock.calls[0][1]).not.toHaveProperty('sifatSurat')
+    })
+
+    it.each([
+        ['Admin Unit Kerja', ADMIN_UNIT, 'terbatas'],
+        ['Super Admin', SUPER_ADMIN, 'terbatas'],
+        ['Super Admin', SUPER_ADMIN, 'sangat_rahasia'],
+    ])('%s mencatat surat baru bersifat %s', async (_peran, user, sifat) => {
+        mocks.user = user
+        vi.spyOn(window, 'confirm').mockReturnValue(true)
+        const view = tampil()
+        isiWajib()
+        await screen.findByRole('option', { name: 'Dit. BPPT' })
+        fireEvent.change(document.getElementById('sifat-surat'), { target: { value: sifat } })
+        expect(document.getElementById('sifat-surat')).toHaveValue(sifat)
+        fireEvent.submit(view.container.querySelector('form'))
+        await waitFor(() => expect(mocks.masuk.create).toHaveBeenCalled())
+        expect(mocks.masuk.create.mock.calls[0][0].sifatSurat).toBe(sifat)
+    })
+
+    it.each([
+        ['Terbatas', 'terbatas', ['biasa', 'segera', 'sangat_segera', 'terbatas', 'undangan', 'penting'], PESAN_KELAS_TERBATAS_PERAN],
+        ['Sangat  Rahasia', 'sangat_rahasia', ['biasa', 'segera', 'sangat_segera', 'terbatas', 'sangat_rahasia', 'undangan', 'penting'],
+            'Sifat Sangat Rahasia yang sudah tersimpan boleh dipertahankan. Bila diganti lalu disimpan, sifat ini hanya dapat dipilih kembali oleh Super Admin.'],
+    ])('mode ubah Admin Unit Kerja memetakan sifat impor %j ke opsi %s', async (tersimpan, opsi, daftarOpsi, bantuan) => {
+        mocks.masuk.getById.mockResolvedValue({
+            id: 'sm-3', unitKerjaId: 'sesditjen', jenisSurat: 'Nota Dinas', sifatSurat: tersimpan,
+            nomorSurat: 'B-3/2026', tanggalSurat: '2026-09-01', perihal: 'Kelas hasil impor',
+            dari: 'A', kepada: 'B', disposisi: ['Ditjen'], aksiDiizinkan: ['edit'], rangkaian: null,
+        })
+        const view = tampil('/surat/masuk/edit/sm-3')
+        await screen.findByDisplayValue('Kelas hasil impor')
+        expect(opsiSifat()).toEqual(daftarOpsi)
+        expect(document.getElementById('sifat-surat')).toHaveValue(opsi)
+        expect(document.getElementById('sifat-surat-bantuan')).toHaveTextContent(bantuan)
         fireEvent.change(screen.getByLabelText(/^Dari \(Pengirim\)/), { target: { value: 'Kanwil Baru' } })
         fireEvent.submit(view.container.querySelector('form'))
         await waitFor(() => expect(mocks.masuk.update).toHaveBeenCalled())
