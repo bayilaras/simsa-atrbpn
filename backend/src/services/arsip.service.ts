@@ -4,6 +4,7 @@ import {
     NewArsip,
     Arsip,
     arsipItems,
+    type ArsipItem,
     arsipRuleSnapshots,
     jraAppraisalCases,
     jraAppraisalDecisions,
@@ -107,6 +108,26 @@ const SYSTEM_MANAGED_RETENTION_FIELDS = new Set([
     'legalHoldReleaseReason',
     'tanggalKadaluarsa',
 ]);
+
+// Ringkasan item pada baris arsip adalah salinan item pertama berkas yang
+// dibuat saat registrasi (kolom arsip → kolom arsip_items). Jumlah dan media
+// tidak ikut disalin, jadi keduanya tidak disinkronkan.
+const KOLOM_ITEM_CERMIN = {
+    nomorItem: 'nomorItem',
+    uraianItem: 'uraianItem',
+    tingkatPerkembangan: 'tingkatPerkembangan',
+    tanggalArsip: 'tanggalItem',
+    lokasiFc: 'lokasiFc',
+    lokasiLaci: 'lokasiLaci',
+    lokasiFolder: 'lokasiFolder',
+} as const;
+type KolomArsipCermin = keyof typeof KOLOM_ITEM_CERMIN;
+type KolomItemCermin = (typeof KOLOM_ITEM_CERMIN)[KolomArsipCermin];
+const KOLOM_LOKASI = ['lokasiFc', 'lokasiLaci', 'lokasiFolder'] as const;
+const teks = (value: unknown) => (value ?? '').toString().trim();
+
+export type StatusSinkronItemArsip = 'tidak_perlu' | 'tanpa_item' | 'item_utama_ambigu' | 'disinkronkan';
+type PerubahanItemArsip = { id: string; before: Record<string, unknown>; after: Record<string, unknown> };
 
 // List read models never carry document content (OCR text); only the detail
 // read that passed check() returns it. The projection comes from the column
@@ -625,13 +646,21 @@ export class ArsipService {
                 .where(eq(arsip.id, id))
                 .returning();
 
+            const sinkronItem = await this.sinkronkanItemArsip(tx, existing, result, requestedFields);
+
             if (auditContext) {
                 await auditLogService.logActionOrThrow({
                     ...actorAudit,
                     action: 'update',
                     entityType: 'arsip',
                     entityId: id,
-                    changes: { before: existing, after: result, fields: requestedFields },
+                    changes: {
+                        before: existing,
+                        after: result,
+                        fields: requestedFields,
+                        items: sinkronItem.items,
+                        itemSync: sinkronItem.status,
+                    },
                 }, tx);
             }
 
@@ -639,6 +668,104 @@ export class ArsipService {
 
             return result;
         });
+    }
+
+    /**
+     * Menyelaraskan baris arsip_items dengan ringkasan item yang baru disimpan
+     * pada baris arsip, di dalam transaksi `update`. Baris diubah di tempat
+     * (tanpa hapus/sisip) karena keputusan retensi per item merujuk id-nya.
+     * Item utama hanya dikenali bila tunggal atau cocok penuh dengan ringkasan
+     * lama; bila tidak, hanya item yang berlokasi sama yang dipindahkan.
+     */
+    private async sinkronkanItemArsip(
+        tx: any,
+        existing: Arsip,
+        result: Arsip,
+        requestedFields: string[],
+    ): Promise<{ status: StatusSinkronItemArsip; items: PerubahanItemArsip[] }> {
+        const berubah = requestedFields.filter((field): field is KolomArsipCermin =>
+            Object.hasOwn(KOLOM_ITEM_CERMIN, field)
+            && teks(existing[field as KolomArsipCermin]) !== teks(result[field as KolomArsipCermin]));
+        if (berubah.length === 0) return { status: 'tidak_perlu', items: [] };
+
+        const rows: ArsipItem[] = await tx
+            .select()
+            .from(arsipItems)
+            .where(eq(arsipItems.arsipId, existing.id))
+            .orderBy(arsipItems.nomorItem, arsipItems.id)
+            .for('no key update');
+        if (rows.length === 0) return { status: 'tanpa_item', items: [] };
+
+        // Penilaian JRA membekukan rincian item saat diajukan dan membacanya
+        // lagi saat diputuskan; keduanya harus sama.
+        const [appraisalAktif] = await tx
+            .select({ id: jraAppraisalCases.id })
+            .from(jraAppraisalCases)
+            .where(and(
+                eq(jraAppraisalCases.arsipId, existing.id),
+                inArray(jraAppraisalCases.status, ['open', 'in_review']),
+            ))
+            .limit(1)
+            .for('update');
+        if (appraisalAktif) {
+            throw new ConflictError(
+                'Ringkasan item dan lokasi arsip tidak dapat diubah selama appraisal JRA masih terbuka atau sedang ditelaah.',
+            );
+        }
+
+        const cocokRingkasanLama = rows.filter(row =>
+            teks(row.nomorItem) === teks(existing.nomorItem)
+            && teks(row.uraianItem) === teks(existing.uraianItem)
+            && teks(row.tingkatPerkembangan) === teks(existing.tingkatPerkembangan)
+            && teks(row.tanggalItem) === teks(existing.tanggalArsip));
+        const utama = rows.length === 1 ? rows[0]
+            : cocokRingkasanLama.length === 1 ? cocokRingkasanLama[0] : null;
+
+        const nilaiItem = (kolom: KolomItemCermin, nilai: unknown) =>
+            kolom === 'tanggalItem' && teks(nilai) === '' ? null : (nilai ?? null);
+        const perubahanPerBaris = new Map<string, Partial<Record<KolomItemCermin, unknown>>>();
+        if (utama) {
+            const set: Partial<Record<KolomItemCermin, unknown>> = {};
+            for (const [kolomArsip, kolomItem] of Object.entries(KOLOM_ITEM_CERMIN) as [KolomArsipCermin, KolomItemCermin][]) {
+                if (teks(utama[kolomItem]) !== teks(result[kolomArsip])) {
+                    set[kolomItem] = nilaiItem(kolomItem, result[kolomArsip]);
+                }
+            }
+            if (Object.keys(set).length > 0) perubahanPerBaris.set(utama.id, set);
+        }
+
+        const lokasiLama = KOLOM_LOKASI.map(kolom => teks(existing[kolom]));
+        const lokasiBerubah = berubah.some(field => (KOLOM_LOKASI as readonly string[]).includes(field));
+        if (lokasiBerubah && lokasiLama.some(Boolean)) {
+            for (const row of rows) {
+                if (row.id === utama?.id) continue;
+                if (!KOLOM_LOKASI.every((kolom, index) => teks(row[kolom]) === lokasiLama[index])) continue;
+                const set: Partial<Record<KolomItemCermin, unknown>> = {};
+                for (const kolom of KOLOM_LOKASI) {
+                    if (teks(row[kolom]) !== teks(result[kolom])) set[kolom] = result[kolom] ?? null;
+                }
+                if (Object.keys(set).length > 0) perubahanPerBaris.set(row.id, set);
+            }
+        }
+
+        const items: PerubahanItemArsip[] = [];
+        for (const row of rows) {
+            const set = perubahanPerBaris.get(row.id);
+            if (!set) continue;
+            const [updated] = await tx
+                .update(arsipItems)
+                .set(set)
+                .where(and(eq(arsipItems.id, row.id), eq(arsipItems.arsipId, existing.id)))
+                .returning();
+            const kolom = Object.keys(set) as KolomItemCermin[];
+            items.push({
+                id: row.id,
+                before: Object.fromEntries(kolom.map(key => [key, row[key]])),
+                after: Object.fromEntries(kolom.map(key => [key, updated?.[key]])),
+            });
+        }
+
+        return { status: utama ? 'disinkronkan' : 'item_utama_ambigu', items };
     }
 
     async delete(id: string) {

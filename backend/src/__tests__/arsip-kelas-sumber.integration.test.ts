@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as schema from '../db/schema';
 import { kelasSumberSurat, rankKelas } from '../services/access/visibility-spec';
-import { PENGGUNA, USER_ID, bootRangkaianDatabase, seedRangkaianFixture } from './helpers/rangkaian-pglite';
+import { PENGGUNA, SURAT as SURAT_FIXTURE, USER_ID, bootRangkaianDatabase, seedRangkaianFixture } from './helpers/rangkaian-pglite';
 
 const holder = vi.hoisted(() => ({ db: null as any }));
 vi.mock('../config/database', () => ({
@@ -245,5 +245,43 @@ describe('PUT /api/arsip/:id pada arsip tertaut', () => {
         await request(app).put(`/api/arsip/${id}`).set(sebagai(PENGGUNA.tu))
             .send({ klasifikasiKeamanan: 'sangat_rahasia' }).expect(403);
         expect((await arsipDari(SURAT.smRahasia))[0].klasifikasi_keamanan).toBe('rahasia');
+    });
+});
+
+describe('PUT /api/arsip/:id menyelaraskan daftar item hasil archive-full', () => {
+    const LOKASI = { lokasiFc: 'FC-01', lokasiLaci: 'L-01', lokasiFolder: 'F-001' };
+    const barisItem = async (arsipId: string) => (await database.query<any>(
+        'SELECT * FROM arsip_items WHERE arsip_id = $1 ORDER BY nomor_item', [arsipId])).rows;
+
+    it('nomor item dan lokasi baru tampil di data.items; kenaikan kelas tidak mengubah item', async () => {
+        // Surat Biasa milik TU: admin_unit dapat mengubah arsipnya tanpa grant.
+        const uraian = 'Surat tunggal TU';
+        await request(app).post(`/api/surat-masuk/${SURAT_FIXTURE.smTunggal}/archive-full`).set(sebagai(PENGGUNA.tu))
+            .send(registrasi({
+                ...LOKASI,
+                uraianBerkas: uraian,
+                uraianItem: uraian,
+                jumlah: 2,
+                items: [
+                    { nomor: '1', uraian, perkembangan: 'Asli', tanggal: '2026-09-10', jumlah: 1, ...LOKASI },
+                    { nomor: '2', uraian: 'Lampiran surat', perkembangan: 'Salinan', tanggal: '2026-09-10', jumlah: 2, ...LOKASI },
+                ],
+            })).expect(200);
+        const [{ id, klasifikasi_keamanan }] = await arsipDari(SURAT_FIXTURE.smTunggal);
+        expect(klasifikasi_keamanan).toBe('biasa');
+
+        await request(app).put(`/api/arsip/${id}`).set(sebagai(PENGGUNA.tu))
+            .send({ lokasiFc: 'FC-02', nomorItem: '1A' }).expect(200);
+        const detail = await request(app).get(`/api/arsip/${id}`).set(sebagai(PENGGUNA.staffSes)).expect(200);
+        expect(detail.body.data.items).toEqual([
+            expect.objectContaining({ nomorItem: '1A', uraianItem: uraian, lokasiFc: 'FC-02', lokasiLaci: 'L-01', lokasiFolder: 'F-001' }),
+            expect.objectContaining({ nomorItem: '2', uraianItem: 'Lampiran surat', jumlah: 2, lokasiFc: 'FC-02', lokasiLaci: 'L-01', lokasiFolder: 'F-001' }),
+        ]);
+
+        const sebelum = await barisItem(id);
+        await request(app).put(`/api/arsip/${id}`).set(sebagai(PENGGUNA.tu))
+            .send({ klasifikasiKeamanan: 'terbatas' }).expect(200);
+        expect(await barisItem(id)).toEqual(sebelum);
+        await request(app).get(`/api/arsip/${id}`).set(sebagai(PENGGUNA.staffSes)).expect(404);
     });
 });
