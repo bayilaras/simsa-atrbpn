@@ -207,7 +207,7 @@ di-bootstrap dengan `scripts/neon-database.mjs bootstrap --apply` dari checkout
 P5 sudah memasang `pg_trgm` sebagai administrator; langkah ini tetap aman
 diulang.
 
-**Cloud SQL / CI:** `grants/0001` sengaja **tidak** memasang `pg_trgm`, karena
+**Cloud SQL / CI:** (catatan 31 Oktober 2026: jalur Cloud SQL/GCP, termasuk drill restore Cloud SQL dan fase `bootstrap` GCP, serta drill backup lokal Windows sudah dihapus pada C65. Produksi hanya memakai Vercel + Neon.) `grants/0001` sengaja **tidak** memasang `pg_trgm`, karena
 drill restore Cloud SQL menjalankan ulang 0001 setelah `pg_restore` lalu
 membandingkan bukti extension secara persis dengan arsip (`pre_migration`,
 `pre_upgrade_0038`). Fase `bootstrap` GCP (`npm run db:roles:bootstrap`)

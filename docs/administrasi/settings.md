@@ -10,7 +10,7 @@ Menu **Pengaturan** (⚙️) muncul bagi semua akun yang sudah diprovisi. Anda j
 
 1. Buka **Pengaturan** dari sidebar atau avatar di header.
 2. Semua pengguna mendapat tab **Profil** dan **Preferensi**.
-3. Admin mendapat tab **Unit Kerja** dan **Template** sesuai cakupan unitnya; Super Admin dapat memilih lintas unit.
+3. Admin Unit Kerja mendapat tab **Template** untuk unitnya. Super Admin mendapat tab **Template** untuk unit yang dipilih dan tab **Unit Kerja**.
 
 ---
 
@@ -26,6 +26,18 @@ Tab ini tersedia untuk **semua pengguna** yang login.
 
 > 💡 Perubahan nama akan langsung berlaku di seluruh sistem.
 
+### Ubah Kata Sandi
+
+Kartu **Ubah Kata Sandi** ada di bawah profil dan berlaku untuk akun yang masuk dengan email dan kata sandi.
+
+1. Isi **Kata sandi saat ini**.
+2. Isi **Kata sandi baru** (8 sampai 128 karakter dan berbeda dari kata sandi saat ini), lalu ulangi pada **Konfirmasi kata sandi baru**.
+3. Klik **"Simpan Kata Sandi"**.
+
+> 💡 Setelah berhasil, sesi di perangkat lain ditutup; perangkat yang sedang Anda pakai tetap masuk. Pesan *Kata sandi saat ini salah.* berarti isian pertama keliru. Setelah terlalu banyak percobaan, tunggu beberapa menit.
+
+Akun yang hanya masuk dengan Google tidak memiliki kata sandi SIMSA, sehingga kartu ini hanya menampilkan keterangan tanpa formulir. Bila perlu masuk dengan email dan kata sandi, atau lupa kata sandi saat ini, minta Super Admin memakai [Atur Ulang Kata Sandi](user-management.md#atur-ulang-kata-sandi).
+
 ---
 
 ## Tab Preferensi
@@ -36,7 +48,7 @@ Tab ini tersedia untuk **semua pengguna**. Tema, bahasa, notifikasi dalam aplika
 
 ## Tab Unit Kerja
 
-> 🔒 Tersedia untuk admin. Admin biasa hanya dapat mengubah unit dalam cakupannya; Super Admin dapat mengelola lintas unit.
+> 🔒 Hanya tersedia untuk **Super Admin**, yang mengelola data unit kerja lintas unit.
 
 Tab ini menampilkan daftar unit kerja yang terdaftar di sistem.
 

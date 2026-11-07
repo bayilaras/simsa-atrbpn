@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, it, expect, vi } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
-import { evaluateRecoveryCheck, buildOperationsStatus, collectOperationsStatus } from '../services/operations-status.service.js';
+import { evaluateRecoveryCheck, buildOperationsStatus, collectOperationsStatus, getOperationsStatus } from '../services/operations-status.service.js';
 
 const io = vi.hoisted(() => ({ query: vi.fn(), readiness: vi.fn(), blob: vi.fn() }));
 vi.mock('../config/database.js', () => ({ pool: { query: io.query } }));
@@ -192,5 +192,32 @@ describe('operational collector uses the workers actual SQL membership', () => {
         const result = await pending;
         expect(aborted).toBe(true);
         expect(check(result, 'backup').status).toBe('unknown');
+    });
+});
+
+describe('served operations status reuses private recovery evidence', () => {
+    const evidence = () => ({ statusCode: 200, stream: new ReadableStream({ start(controller) {
+        controller.enqueue(new TextEncoder().encode(JSON.stringify({ schemaVersion: 1, backup: proof(), restore: proof() })));
+        controller.close();
+    } }) });
+    beforeEach(() => {
+        vi.stubEnv('OBJECT_STORAGE_PROVIDER', 'vercel-blob');
+        vi.stubEnv('BLOB_READ_WRITE_TOKEN', 'local-fixture-only');
+        io.query.mockReset().mockResolvedValue({ rows: [] });
+        io.readiness.mockReset().mockResolvedValue({});
+        io.blob.mockReset().mockImplementation(async () => evidence());
+    });
+    afterEach(() => { vi.unstubAllEnvs(); vi.useRealTimers(); });
+
+    it('reads the recovery status from Blob at most once per ten minutes', async () => {
+        vi.useFakeTimers({ now, toFake: ['Date'] });
+        expect((await getOperationsStatus()).checks.find(item => item.id === 'backup')!.status).toBe('healthy');
+        vi.setSystemTime(now + 9 * 60_000);
+        expect((await getOperationsStatus()).checks.find(item => item.id === 'backup')!.status).toBe('healthy');
+        expect(io.blob).toHaveBeenCalledOnce();
+        expect(io.query).toHaveBeenCalledTimes(2);
+        vi.setSystemTime(now + 10 * 60_000 + 31_000);
+        await getOperationsStatus();
+        expect(io.blob).toHaveBeenCalledTimes(2);
     });
 });

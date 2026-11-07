@@ -46,6 +46,8 @@ import { Link } from 'react-router-dom'
 import { validateArchiveRegistration } from './archive-registration-validation'
 import { selectedSuratArchiveRules } from '@/lib/surat-archive-selection'
 import { normalisasiSifat } from '@/lib/tindak-lanjut'
+import { useAuth } from '@/context/AuthContext'
+import { PESAN_KELAS_TERBATAS_PERAN, adaKelasTersembunyi, bolehMemilihKelas, saringOpsiKelas } from '@/lib/kelas-keamanan'
 
 const TINGKAT_PERKEMBANGAN_OPTIONS = [
     { value: 'Asli', label: 'Asli' },
@@ -163,6 +165,25 @@ export function ArchiveDialog({
     const sourceData = JSON.stringify(suratData || {})
     const kelasSumber = kelasSumberSurat(suratData || {}, suratType)
     const rankSumber = rankKelas(kelasSumber)
+    const { user } = useAuth()
+    // Dua batas sekaligus: plafon peran menyembunyikan kelas yang pasti ditolak
+    // (403), sedangkan kelas di bawah surat sumber tetap tampil tetapi nonaktif.
+    // Kelas sumber sendiri boleh dipertahankan pemegang izin kelola walau di
+    // atas plafonnya, sama seperti rute archive-full.
+    const opsiKelas = saringOpsiKelas(KLASIFIKASI_KEAMANAN_OPTIONS, user?.role, kelasSumber)
+    const kelasNonaktif = (kelas) => rankSumber === undefined || RANK_KELAS[kelas] < rankSumber
+    const kelasDibatasi = adaKelasTersembunyi(KLASIFIKASI_KEAMANAN_OPTIONS, user?.role)
+    // Kelas sumber di atas plafon tetap sah dipakai; pesan umum "hanya Super Admin"
+    // akan bertentangan dengan tombol simpan yang aktif, jadi diganti pesan ini.
+    const kelasSumberDipertahankan = rankSumber !== undefined
+        && !bolehMemilihKelas(user?.role, kelasSumber)
+    const pesanKelasSumber = kelasSumberDipertahankan
+        ? [
+            `Kelas ${KLASIFIKASI_KEAMANAN_OPTIONS.find(opt => opt.value === kelasSumber)?.label} dipertahankan sesuai surat sumber.`,
+            rankSumber < RANK_KELAS.sangat_rahasia && 'Kelas yang lebih tinggi hanya dapat dipilih oleh Super Admin.',
+        ].filter(Boolean).join(' ')
+        : ''
+    const bantuanKelas = kelasDibatasi
 
     // Form state for Identifikasi Berkas
     const [formData, setFormData] = useState(() => buildFormData(suratData || {}, kelasSumber))
@@ -748,21 +769,32 @@ export function ArchiveDialog({
                                             value={formData.klasifikasiKeamanan}
                                             onValueChange={(v) => handleChange('klasifikasiKeamanan', v)}
                                         >
-                                            <SelectTrigger className="bg-muted/50 border-border h-10">
+                                            <SelectTrigger
+                                                aria-label="Klasifikasi keamanan arsip"
+                                                aria-describedby={bantuanKelas ? 'klasifikasi-arsip-bantuan' : undefined}
+                                                className="bg-muted/50 border-border h-10"
+                                            >
                                                 <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                {KLASIFIKASI_KEAMANAN_OPTIONS.map(opt => (
+                                                {opsiKelas.map(opt => (
                                                     <SelectItem
                                                         key={opt.value}
                                                         value={opt.value}
-                                                        disabled={rankSumber === undefined || RANK_KELAS[opt.value] < rankSumber}
+                                                        disabled={kelasNonaktif(opt.value)}
                                                     >
                                                         {opt.label}
                                                     </SelectItem>
                                                 ))}
                                             </SelectContent>
                                         </Select>
+                                        {bantuanKelas && (
+                                            <div id="klasifikasi-arsip-bantuan" className="mt-0.5">
+                                                <p className="text-[11px] text-muted-foreground">
+                                                    {kelasSumberDipertahankan ? pesanKelasSumber : PESAN_KELAS_TERBATAS_PERAN}
+                                                </p>
+                                            </div>
+                                        )}
                                     </FormField>
 
                                     <FormField

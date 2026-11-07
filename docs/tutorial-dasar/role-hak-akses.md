@@ -7,13 +7,13 @@ SIMSA menyediakan dua pilihan peran saat super admin membuat atau menetapkan aku
 | **Super Admin** | Mengelola seluruh unit, akun pengguna, pengaturan global, dan master klasifikasi/JRA. |
 | **Admin Unit Kerja** | Mengelola surat, arsip, distribusi, layanan, lokasi simpan, dan fitur operasional sesuai unit kerja yang ditetapkan. |
 
-Admin Unit Kerja wajib memiliki unit kerja. Filter, alamat halaman, maupun ID data dari unit lain tidak memberikan akses lintas unit. Super Admin dapat mengakses semua unit dan menyaring tampilan menurut unit tertentu.
+Admin Unit Kerja wajib memiliki unit kerja. Filter, alamat halaman, maupun ID data dari unit lain tidak memberikan akses lintas unit. Surat unit lain hanya dapat dibaca, tanpa diubah, bila unitnya ikut dalam rangkaian surat tersebut; Admin Unit Kerja pada unit pengawas (Ditjen dan Sesditjen) juga dapat membaca surat Ditjen, Sesditjen, dan seluruh direktorat. Super Admin dapat mengakses semua unit dan menyaring tampilan menurut unit tertentu.
 
 ## Pengelolaan akun
 
 Hanya Super Admin yang dapat membuat akun dan mengubah peran atau penugasan unit melalui **User Management**. Pilih **Admin Unit Kerja**, kemudian tetapkan unitnya. Penugasan **Super Admin** berlaku untuk seluruh unit.
 
-Akun lama tetap mempertahankan hak aksesnya sampai Super Admin menetapkan peran baru. Admin Dirjen dan Admin Sesditjen lama tetap terbatas pada unit semula; akun Staff dan Auditor lama tidak otomatis mendapat kewenangan menulis.
+Akun lama tetap mempertahankan hak aksesnya sampai Super Admin menetapkan peran baru. Admin Dirjen dan Admin Sesditjen lama hanya dapat mengubah data unit semula (Ditjen atau Sesditjen) dan, sebagai unit pengawas, dapat membaca surat lintas unit seperti di atas; akun Staff dan Auditor lama tidak otomatis mendapat kewenangan menulis.
 
 ## Klasifikasi dan jadwal retensi arsip
 

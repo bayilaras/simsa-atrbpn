@@ -1,8 +1,9 @@
 import { ASSIGNABLE_ROLE_OPTIONS, managedUserRoleError } from '@/lib/role-access';
 import { hasProvisionedAccess, isPendingAccess } from '@/lib/provisioning-access';
 import { UserAccessApprovalDialog } from '@/components/UserAccessApprovalDialog';
+import { UserPasswordResetDialog } from '@/components/UserPasswordResetDialog';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Search, Filter, Users, Edit2, UserX, MoreHorizontal, Loader2, AlertTriangle, Shield, Building2, UserPlus, Mail, CheckCircle2, Ban, Eye, EyeOff, Lock } from 'lucide-react';
+import { Search, Filter, Users, Edit2, UserX, MoreHorizontal, Loader2, AlertTriangle, Shield, Building2, UserPlus, Mail, CheckCircle2, Ban, Eye, EyeOff, Lock, KeyRound } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -78,6 +79,7 @@ export default function UserManagement() {
     const [error, setError] = useState(null);
     const [approvalTarget, setApprovalTarget] = useState(null);
     const [approvalMessage, setApprovalMessage] = useState('');
+    const [passwordResetTarget, setPasswordResetTarget] = useState(null);
 
     // Filters
     const [search, setSearch] = useState('');
@@ -535,13 +537,20 @@ export default function UserManagement() {
                                                         <MoreHorizontal className="h-4 w-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end" className="w-48">
+                                                <DropdownMenuContent align="end" className="w-56">
                                                     <DropdownMenuLabel>Tindakan Pengguna</DropdownMenuLabel>
                                                     <DropdownMenuSeparator />
                                                     <DropdownMenuItem onClick={() => handleEdit(user)}>
                                                         <Edit2 className="h-4 w-4 mr-2" />
                                                         Ubah Peran/Unit
                                                     </DropdownMenuItem>
+                                                    {/* Own password: Pengaturan. Pending identities are approved first. */}
+                                                    {user.id !== currentUser?.id && user.role !== 'user' && (
+                                                        <DropdownMenuItem onClick={() => setPasswordResetTarget(user)}>
+                                                            <KeyRound className="h-4 w-4 mr-2" />
+                                                            Atur Ulang Kata Sandi
+                                                        </DropdownMenuItem>
+                                                    )}
                                                     {user.id !== currentUser?.id && (
                                                         <DropdownMenuItem
                                                             onClick={() => user.isActive ? handleDeactivate(user) : handleActivate(user)}
@@ -606,6 +615,9 @@ export default function UserManagement() {
                     setApprovalMessage(`Akses ${approved.name || approved.email} disetujui. Sesi lama telah ditutup; pengguna perlu masuk kembali.`);
                     loadUsers();
                 }} />}
+
+            {passwordResetTarget && <UserPasswordResetDialog key={passwordResetTarget.id} user={passwordResetTarget}
+                onClose={() => setPasswordResetTarget(null)} onReset={() => setPasswordResetTarget(null)} />}
 
             {/* Edit Sheet Modal */}
             <Sheet open={editOpen} onOpenChange={setEditOpen}>

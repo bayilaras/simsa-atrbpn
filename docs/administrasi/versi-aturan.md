@@ -13,13 +13,13 @@ Pemetaan tematik klasifikasi ke JRA hanya merupakan **saran pencarian**. Pemetaa
 
 Perintah `seed:all`, `seed:klasifikasi`, dan `seed:jra` hanya boleh mengaktifkan baseline otomatis dalam development/test lokal. Perintah tersebut ditolak sebelum mengambil lock atau menulis data jika `NODE_ENV=production` atau `VERCEL` terpasang; mode selain development/test juga ditolak. Mengubah `NODE_ENV` menjadi development pada Vercel tidak membuka pengecualian ini.
 
-Pada deployment baru, gunakan draft awal yang disediakan migrasi melalui **Master Data > Versi Aturan**. Impor butir dari manifest JSON yang telah diperiksa, unggah PDF sumber privat, verifikasi manifest kelengkapan, buat laporan dampak, lalu jalankan **Ajukan → Telaah → Setujui → Aktifkan** dengan aktor berwenang. Tahap dan bukti yang sama berlaku untuk baseline maupun edisi berikutnya: aktor verifikasi, locator privat, ukuran PDF, dan ketersediaan objek diperiksa sebelum publikasi. Hash atau nama regulasi dalam asset seed bukan persetujuan hukum.
+Pada deployment baru, gunakan draft awal yang disediakan migrasi melalui **Master Data > Versi Aturan**. Impor butir dari manifest JSON yang telah diperiksa, unggah PDF sumber privat, verifikasi manifest kelengkapan, buat laporan dampak, lalu Super Admin memilih **Aktifkan**. Tahap dan bukti yang sama berlaku untuk baseline maupun edisi berikutnya: aktor verifikasi, locator privat, ukuran PDF, dan ketersediaan objek diperiksa sebelum publikasi. Hash atau nama regulasi dalam asset seed bukan persetujuan hukum.
 
 Seed lokal tetap dapat dijalankan berulang; edisi yang sudah dipublikasikan tidak ditulis ulang. Perbaikan ini tidak mengubah atau mengesahkan ulang baseline yang telanjur aktif pada instalasi lama. Untuk instalasi tersebut, arsiparis perlu memeriksa provenance dan menerbitkan edisi pengganti melalui alur normal apabila bukti sumber atau pengesahannya belum lengkap. Snapshot arsip lama tetap dipertahankan.
 
 ## Menerbitkan perubahan aturan
 
-Super Admin menyiapkan, mengajukan, dan mengaktifkan edisi. Penelaah dan penyetuju dapat memakai akun admin Ditjen/Sesditjen yang berbeda; aplikasi menolak penyusun, pengaju, penelaah, atau penyetuju yang merangkap pada tahapan yang dilarang.
+Menu **Versi Aturan** hanya tersedia bagi Super Admin. Super Admin menyiapkan, memvalidasi, dan mengaktifkan edisi; aktivasi tidak memerlukan akun penelaah atau penyetuju terpisah.
 
 1. Buka **Master Data > Versi Aturan**.
 2. Pilih instrumen Klasifikasi atau JRA, lalu klik **Buat Draft dari Versi Aktif**.
@@ -27,13 +27,13 @@ Super Admin menyiapkan, mengajukan, dan mengaktifkan edisi. Penelaah dan penyetu
 4. Edit butir pada halaman master atau impor manifest JSON ke draft. Impor mengganti isi draft secara atomik; versi aktif tidak berubah.
 5. Verifikasi manifest kelengkapan (jumlah item, jumlah selectable, jumlah halaman, dan rentang halaman sumber), lalu buat laporan diff dan dampak terhadap arsip yang masih memakai edisi sebelumnya.
 6. Jalankan **Validasi**. Perbaiki kode ganda, parent hilang/ambigu, siklus hierarki, item parent yang dapat dipilih, halaman sumber yang belum dicatat, atau durasi yang tidak valid.
-7. Jalankan urutan **Ajukan → Telaah → Setujui → Aktifkan** dengan akun independen dan catatan substantif pada setiap tahap.
+7. Pilih **Aktifkan**. Pemeriksaan sumber, integritas, dan tanggal berlaku tetap dijalankan saat aktivasi.
 
 PDF sampai 50 MiB diunggah langsung oleh browser ke namespace private Blob yang terikat pada ID draft. Setelah itu server mengunduh ulang objek private tersebut, memeriksa MIME/signature PDF dan ukuran, menghitung SHA-256 serta jumlah halaman, lalu menyimpan locator internal. URL private tidak ditampilkan pada respons API. Fallback multipart hanya untuk PDF maksimal 4 MiB dan tetap menyimpan byte yang diterima ke private Blob.
 
 Jika PDF sumber edisi aktif dipakai ulang, server membuat objek baru pada namespace draft, mengunduh ulang salinan tersebut, lalu membandingkan SHA-256, ukuran, dan jumlah halaman dengan bukti edisi aktif. Salinan baru memperoleh waktu verifikasi dan pelaku verifikasi saat ini; bukti pelaku/waktu lama tidak diwariskan.
 
-Admin tata kelola dan auditor dapat memakai **Lihat/Unduh PDF**. Aplikasi mengambil stream melalui endpoint terautentikasi `GET /api/regulatory-rule-sets/:id/source-document`; locator Blob tidak dikirim kepada browser dan setiap akses dicatat. Baseline lama yang bitstream-nya belum dimigrasikan ditolak dengan status `409`, bukan diarahkan ke URL publik.
+Super Admin dapat memakai **Lihat/Unduh PDF**. Aplikasi mengambil stream melalui endpoint terautentikasi `GET /api/regulatory-rule-sets/:id/source-document`; locator Blob tidak dikirim kepada browser dan setiap akses dicatat. Baseline lama yang bitstream-nya belum dimigrasikan ditolak dengan status `409`, bukan diarahkan ke URL publik.
 
 Aktivasi menutup masa berlaku versi sebelumnya. Arsip lama tetap menunjuk versi, butir, dasar hukum, hash dokumen, dan snapshot keputusan yang lama. Jejak perubahan item serta transisi workflow ditulis secara transaksional ke rantai audit append-only; menu Audit menyediakan pemeriksaan integritas rantai.
 

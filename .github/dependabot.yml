@@ -7,6 +7,8 @@
 # - Pembaruan keamanan (Dependabot security updates) tidak masuk grup mana pun,
 #   sehingga tiba sebagai PR tersendiri secepatnya, di luar jadwal dan cooldown.
 #   `ignore` sengaja tidak dipakai: aturan itu juga menahan PR keamanan.
+#   Satu pengecualian sempit: kenaikan mayor @types/node di /backend dan
+#   /frontend (alasannya di blok masing-masing).
 # - Cooldown 5 hari hanya berlaku untuk pembaruan versi (bukan keamanan),
 #   memberi waktu rilis npm yang bermasalah ditarik sebelum diusulkan.
 # - Lockfile npm (lockfileVersion 3) diperbarui oleh Dependabot sendiri; CI
@@ -26,6 +28,13 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
+    # Mayor @types/node mengikuti runtime (engines "24.x", Node 24 di Vercel dan
+    # CI): tipe yang lebih baru meloloskan API yang belum ada di produksi. Paket
+    # ini hanya deklarasi tipe tanpa advisori keamanan; minor/patch 24.x tetap
+    # datang lewat grup. Hapus aturan ini saat engines naik mayor.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       backend-minor-patch:
         update-types: ["minor", "patch"]
@@ -51,14 +60,20 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
+    # Sama seperti /backend: mayor @types/node mengikuti engines "24.x".
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       frontend-minor-patch:
         update-types: ["minor", "patch"]
-        # eslint-plugin-react-hooks >= 7.1 mempertajam validasi React Compiler
-        # (set-state-in-effect, refs, static-components, ...) dan menemukan 78
-        # pelanggaran di kode yang ada, sehingga `npm run lint` merah. Migrasinya
-        # mengubah perilaku komponen, jadi datang sebagai PR tersendiri dan tidak
-        # menahan grup ini. Bukan `ignore`: PR keamanan tetap tiba.
+        # eslint-plugin-react-hooks mempertajam validasi React Compiler di rilis
+        # minor. 7.1 menemukan 63 pelanggaran lama (set-state-in-effect,
+        # static-components, refs, ...) yang dibekukan di
+        # frontend/eslint-suppressions.json; temuan baru rilis berikutnya
+        # membuat `npm run lint` merah. Karena itu paket ini datang sebagai PR
+        # tersendiri dan tidak menahan grup ini. Bukan `ignore`: PR keamanan
+        # tetap tiba.
         exclude-patterns:
           - "eslint-plugin-react-hooks"
 

@@ -14,6 +14,7 @@ import {
 } from '../db/schema';
 import { eq, and, desc, sql, ilike, or, isNotNull, isNull, ne, inArray, getTableColumns } from 'drizzle-orm';
 import { AppError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors';
+import { PESAN_KELAS_MELEBIHI_KEWENANGAN } from '../constants/pesan-akses.js';
 import { hasPermission, type Role } from '../config/permissions';
 import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-lock';
 import { isAllowedForClassification, recordAccessService } from './record-access.service';
@@ -603,7 +604,7 @@ export class ArsipService {
                     && normalizeSecurityClassification(data.klasifikasiKeamanan)
                         !== normalizeSecurityClassification(existing.klasifikasiKeamanan)
                 ) {
-                    throw new ForbiddenError('Klasifikasi keamanan melebihi kewenangan pengguna.');
+                    throw new ForbiddenError(PESAN_KELAS_MELEBIHI_KEWENANGAN);
                 }
                 actorAudit = { ...auditContext, userId: actor.id, userEmail: actor.email };
             }

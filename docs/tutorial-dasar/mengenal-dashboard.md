@@ -88,7 +88,7 @@ Baris kartu yang menampilkan angka-angka ringkasan:
 | 📨 Surat Masuk | Langsung ke form tambah surat masuk |
 | 📤 Surat Keluar | Langsung ke form tambah surat keluar |
 | 📊 Laporan | Langsung ke halaman laporan |
-| 📁 Upload | Langsung ke halaman bulk upload |
+| 📁 Unggah Massal | Langsung ke halaman Unggah Massal & OCR. Hanya muncul bila modul Unggah Massal & OCR diaktifkan operator dan unggah file tersedia |
 
 ### 6. Masa Retensi
 

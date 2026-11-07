@@ -142,7 +142,10 @@ async function main() {
   // role bukan-runtime (melanggar T2-3), dan operator akan salah membaca
   // `sisaTanpaRangkaian: 0` dari database yang salah. [F3]
   const sudahEksplisit = Boolean(process.env.DATABASE_URL?.trim());
-  dotenv.config({ quiet: true });
+  // override: false eksplisit: dotenv 18 membaca DOTENV_OVERRIDE /
+  // DOTENV_CONFIG_OVERRIDE dari shell, yang bisa membuat .env menimpa
+  // DATABASE_URL shell setelah pemeriksaan di atas lolos. Opsi eksplisit menang.
+  dotenv.config({ quiet: true, override: false });
   if (!sudahEksplisit) {
     throw new Error(
       'DATABASE_URL harus diset eksplisit di shell sebelum menjalankan db:backfill:rangkaian-disposisi ' +

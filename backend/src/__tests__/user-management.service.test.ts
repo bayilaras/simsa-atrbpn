@@ -469,4 +469,29 @@ describe('userManagementService', () => {
             expect(mockDb.update).not.toHaveBeenCalled();
         });
     });
+
+    describe('resetPassword', () => {
+        const target = { id: 'unit-admin', role: 'admin_unit', isActive: true };
+
+        it('rejects a demoted actor before touching credentials or sessions', async () => {
+            enqueue([{ ...activeSuperAdmin, role: 'admin_unit', unitKerjaId: 'unit-a' }]);
+            await expect(userManagementService.resetPassword(target.id, 'synthetic-password', actorContext))
+                .rejects.toThrow(/bukan super admin aktif/);
+            expect(mockDb.update).not.toHaveBeenCalled();
+            expect(mockDb.insert).not.toHaveBeenCalled();
+            expect(mockDb.delete).not.toHaveBeenCalled();
+        });
+
+        it('stores only the Better Auth hash and rolls back when the audit record fails', async () => {
+            auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
+            enqueue([activeSuperAdmin], [target], [{ id: 'credential-1' }], [{ id: 'session-1' }]);
+            await expect(userManagementService.resetPassword(target.id, 'synthetic-password', actorContext))
+                .rejects.toThrow('audit unavailable');
+            expect(passwordMocks.hashPassword).toHaveBeenCalledWith('synthetic-password');
+            const written = chainCalls.find(call => call.method === 'set')?.args[0];
+            expect(written).toMatchObject({ password: 'secure-password-hash' });
+            expect(transactionCommits).toBe(0);
+            expect(transactionRollbacks).toBe(1);
+        });
+    });
 });

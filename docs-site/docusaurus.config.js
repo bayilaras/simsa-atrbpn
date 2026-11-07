@@ -7,7 +7,7 @@ const config = {
   tagline: 'Sistem Informasi Manajemen Surat & Arsip — Kementerian ATR/BPN',
   favicon: 'img/favicon.ico',
 
-  url: 'https://panduan-simsa.vercel.app',
+  url: 'https://simsa-atrbpn.vercel.app',
   baseUrl: '/',
 
   organizationName: 'bayilaras',

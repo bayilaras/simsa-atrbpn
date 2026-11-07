@@ -13,7 +13,7 @@ Buka `https://simsa-frontend.vercel.app` di browser.
 
 Masukkan **Email kedinasan** dan **Kata sandi**, lalu klik **Masuk**. Google hanya digunakan bila sudah dikonfigurasi. Gunakan akun pribadi; akun uji tidak dipakai bersama untuk pekerjaan resmi.
 
-Super Admin menyiapkan akun melalui **Administrasi → Manajemen Pengguna → Tambah Pengguna**, termasuk kata sandi, peran, unit kerja, dan status aktif. **Admin Dirjen** mengelola unit Ditjen dan **Admin Sesditjen** mengelola unit Sesditjen. **Staf** membaca dan mencari data dalam unit penugasannya; staf tidak mengubah surat atau arsip. Lihat [pengelolaan akun](./administrasi/user-management.md).
+Super Admin menyiapkan akun melalui **Administrasi → Manajemen Pengguna → Tambah Pengguna**, termasuk kata sandi, peran, unit kerja, dan status aktif. **Admin Unit Kerja** mencatat dan mengelola surat serta arsip pada unit yang ditetapkan; **Super Admin** bekerja lintas unit. Lihat [pengelolaan akun](./administrasi/user-management.md).
 
 ## 2. Catat surat atau impor daftar yang sudah ada
 
@@ -50,7 +50,7 @@ Admin dapat menggunakan **Layanan & Fisik → Lokasi Simpan** untuk mengelola da
 
 ## 5. Tambahkan berkas digital ketika fasilitasnya siap
 
-Apabila menu unggah tidak tersedia, lanjutkan pencatatan metadata dan inventaris fisik. Lampiran, unggah massal, OCR, serta proses berbukti file memerlukan penyimpanan privat dan pemeriksaan file yang dikonfigurasi operator. Jangan membuat berkas kosong atau tautan publik untuk melewati kebutuhan bukti. Berkas yang dikarantina belum dapat dipakai sampai pemeriksaannya lulus.
+Apabila menu unggah tidak tersedia, lanjutkan pencatatan metadata dan inventaris fisik. Lampiran, unggah massal, OCR, serta proses berbukti file memerlukan penyimpanan privat dan pemeriksaan file yang dikonfigurasi operator; unggah massal dan OCR juga hanya tersedia bila modul Unggah Massal & OCR diaktifkan operator. Jangan membuat berkas kosong atau tautan publik untuk melewati kebutuhan bukti. Berkas yang dikarantina belum dapat dipakai sampai pemeriksaannya lulus.
 
 ## Instrumen kearsipan dan SRIKANDI
 

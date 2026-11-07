@@ -31,7 +31,7 @@ vi.mock('../services/blob-storage.service.js', () => ({
     blobStorageService: { probeConnectivity: blobProbe },
 }));
 
-const { collectReadiness, evaluateWorkerReadiness } = await import('../services/readiness.service.js');
+const { collectReadiness, evaluateWorkerReadiness, getReadiness } = await import('../services/readiness.service.js');
 const { evaluateOnDemandMalwareReadiness } = await import('../services/readiness.service.js');
 
 describe('on-demand native scanner readiness', () => {
@@ -482,4 +482,38 @@ describe('schema readiness for rangkaian surat (0046)', () => {
         }
     });
 
+});
+
+describe('served readiness reuses a passed Blob list probe', () => {
+    beforeEach(() => {
+        poolConnect.mockReset().mockRejectedValue(new Error('database offline'));
+        blobProbe.mockReset().mockResolvedValue(undefined);
+        blobStatus.mockReturnValue({ provider: 'vercel-blob-private', required: true, configured: true, ready: true, validationErrors: [] });
+        emailStatus.mockReturnValue({ mode: 'disabled', configured: false, ready: false, validationErrors: [] });
+        srikandiStatus.mockReturnValue({ enabled: false, ready: false, validationErrors: [] });
+    });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('lists the private store at most once per ten minutes while the probe passes', async () => {
+        vi.useFakeTimers({ now: Date.parse('2030-01-01T00:00:00Z'), toFake: ['Date'] });
+        await getReadiness();
+        vi.setSystemTime(Date.parse('2030-01-01T00:09:00Z'));
+        const reused = await getReadiness();
+        expect(blobProbe).toHaveBeenCalledOnce();
+        expect(reused.dependencies.blobStorage.runtime.ready).toBe(true);
+        vi.setSystemTime(Date.parse('2030-01-01T00:10:01Z'));
+        await getReadiness();
+        expect(blobProbe).toHaveBeenCalledTimes(2);
+    });
+
+    it('probes again on the next served check after a failure', async () => {
+        vi.useFakeTimers({ now: Date.parse('2031-01-01T00:00:00Z'), toFake: ['Date'] });
+        blobProbe.mockRejectedValueOnce(new Error('blob unavailable'));
+        const failed = await getReadiness();
+        expect(failed.dependencies.blobStorage.runtime).toMatchObject({ ready: false, reason: 'probe_failed' });
+        vi.setSystemTime(Date.parse('2031-01-01T00:00:06Z'));
+        const recovered = await getReadiness();
+        expect(blobProbe).toHaveBeenCalledTimes(2);
+        expect(recovered.dependencies.blobStorage.runtime.ready).toBe(true);
+    });
 });

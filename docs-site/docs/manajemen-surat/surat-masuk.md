@@ -52,7 +52,7 @@ Form akan muncul dengan kolom-kolom berikut:
 | **Pengirim** | Nama instansi / perorangan pengirim | ✅ |
 | **Perihal** | Subjek / topik surat | ✅ |
 | **Klasifikasi** | Pilih kode klasifikasi dari dropdown | ✅ |
-| **Sifat Surat** | Biasa / Segera / Sangat Segera | ✅ |
+| **Sifat Surat** | Biasa / Segera / Sangat Segera / Rahasia / Undangan / Penting. Sifat Rahasia hanya dapat ditetapkan oleh Super Admin; Admin Unit Kerja tidak melihat pilihan ini kecuali sifat itu sudah tersimpan pada surat | ✅ |
 | **Lampiran** | Upload file surat (PDF, gambar, dll) | ❌ |
 
 :::tip Tampilan Form Tambah Surat Masuk
@@ -60,7 +60,7 @@ Form ini berisi kolom-kolom input yang harus diisi:
 - **Nomor Surat**, **Tanggal Surat**, **Tanggal Terima** (dengan date picker 📅)
 - **Pengirim**, **Perihal** (kolom teks)
 - **Klasifikasi** (dropdown pilihan kode)
-- **Sifat Surat** (radio button: Biasa / Segera / Sangat Segera)
+- **Sifat Surat** (dropdown: Biasa / Segera / Sangat Segera / Rahasia / Undangan / Penting)
 - **Lampiran** (area drag & drop untuk upload file 📎)
 - Tombol **"Batal"** dan **"Simpan"** di bagian bawah
 :::
@@ -93,11 +93,11 @@ Halaman detail menampilkan semua informasi surat, termasuk lampiran yang bisa di
 
 | Tombol | Fungsi | Akses |
 |--------|--------|-------|
-| **Edit** | Ubah data surat | Staff, Admin |
-| **Balas Surat** | Buat surat keluar balasan (auto-fill) | Staff, Admin |
-| **Distribusikan** | Kirim surat ke unit lain | Staff, Admin |
-| **Arsipkan** | Pindahkan ke arsip | Staff, Admin |
-| **Hapus** | Hapus surat | Admin saja |
+| **Edit** | Ubah data surat | Super Admin, Admin Unit Kerja |
+| **Balas Surat** | Buat surat keluar balasan (auto-fill) | Super Admin, Admin Unit Kerja |
+| **Distribusikan** | Kirim surat ke unit lain | Super Admin, Admin Unit Kerja |
+| **Arsipkan** | Pindahkan ke arsip | Super Admin, Admin Unit Kerja |
+| **Hapus** | Hapus surat | Super Admin, Admin Unit Kerja |
 
 ---
 
@@ -141,6 +141,8 @@ Setelah disimpan, status surat masuk otomatis berubah menjadi **"Sudah Dibalas"*
 1. Klik **ikon pensil** (✏️) di kolom Aksi, atau klik **"Edit"** di halaman detail.
 2. Ubah data yang diperlukan.
 3. Klik **"Simpan"** untuk menyimpan perubahan.
+
+Sifat Rahasia yang sudah tersimpan boleh dipertahankan. Bila diganti lalu disimpan, sifat itu hanya dapat dipilih kembali oleh Super Admin.
 
 ---
 

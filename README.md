@@ -32,7 +32,7 @@ operasional.
 | Database | Neon PostgreSQL; skema dan migrasi Drizzle di `backend/src/db/migrations`. |
 | Berkas digital | Vercel Blob privat; berkas dibuka melalui gateway backend yang terautentikasi. |
 | Login | Better Auth dengan Google OAuth dan email/kata sandi. |
-| Situs panduan | Docusaurus (`docs-site/`), proyek Vercel `simsa-atrbpn`; dipublikasikan manual. |
+| Situs panduan | Docusaurus (`docs-site/`), proyek Vercel `simsa-atrbpn` (https://simsa-atrbpn.vercel.app); dipublikasikan manual. |
 
 Rilis produksi berjalan lewat workflow `.github/workflows/release-vercel.yml`
 yang memerlukan persetujuan, atau lewat jalur manual di

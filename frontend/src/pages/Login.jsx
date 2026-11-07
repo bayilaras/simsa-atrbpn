@@ -112,6 +112,7 @@ export default function Login() {
                                         value={password}
                                         onChange={(event) => setPassword(event.target.value)}
                                         required
+                                        aria-describedby="password-help"
                                         className="h-11 pr-12"
                                     />
                                     <button
@@ -124,6 +125,10 @@ export default function Login() {
                                         {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                     </button>
                                 </div>
+                                {/* No reset email exists; a Super Admin sets a new password. */}
+                                <p id="password-help" className="text-xs text-muted-foreground">
+                                    Lupa kata sandi? Hubungi Super Admin untuk mengatur ulang kata sandi Anda.
+                                </p>
                             </div>
                             <Button type="submit" className="h-11 w-full" size="lg" disabled={loading}>
                                 {loading ? (

@@ -113,7 +113,7 @@ SIMSA mengelola surat dan arsip secara mandiri; integrasi SRIKANDI tidak menjadi
   </a>
   <a href="/layanan-fisik/peminjaman" className="feature-card">
     <h3>🔄 Peminjaman Arsip</h3>
-    <p>Cara meminjam dan mengembalikan arsip</p>
+    <p>Cara mencatat peminjaman dan pengembalian arsip</p>
   </a>
   <a href="/layanan-fisik/lokasi-simpan" className="feature-card">
     <h3>📍 Lokasi Simpan</h3>
@@ -163,7 +163,7 @@ SIMSA mengelola surat dan arsip secara mandiri; integrasi SRIKANDI tidak menjadi
   </a>
   <a href="/administrasi/master-data" className="feature-card">
     <h3>📂 Master Data</h3>
-    <p>Kelola data klasifikasi dan template</p>
+    <p>Kelola klasifikasi arsip dan versi aturan</p>
   </a>
   <a href="/administrasi/settings" className="feature-card">
     <h3>⚙️ Settings</h3>

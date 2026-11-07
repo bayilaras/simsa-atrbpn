@@ -44,6 +44,12 @@ describe('login provider controls', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Masuk', exact: true }))
         await waitFor(() => expect(emailSignIn).toHaveBeenCalledWith('operator@example.test', 'synthetic-password-only'))
     })
+    it('tells users who forgot the password to contact a Super Admin', () => {
+        render(<MemoryRouter><Login /></MemoryRouter>)
+        const password = screen.getByLabelText('Kata sandi')
+        expect(password).toHaveAccessibleDescription(/Lupa kata sandi\? Hubungi Super Admin/)
+        expect(screen.queryByRole('link', { name: /lupa kata sandi/i })).not.toBeInTheDocument()
+    })
     it('holds the login form while server logout is pending', () => {
         logout.signingOut = true
         render(<MemoryRouter><Login /></MemoryRouter>)

@@ -28,7 +28,7 @@ Alur belajar yang disarankan untuk hari pertama:
 2. Kenali Dashboard, sidebar, pencarian, notifikasi, dan menu pengguna.
 3. Cari satu surat atau arsip contoh dan baca halaman detailnya.
 4. Pelajari pekerjaan harian sesuai role pada bagian [alur per peran](#4-alur-belajar-berdasarkan-peran).
-5. Admin mencatat metadata atau mengimpor daftar pada unit yang benar; staf mencari dan memeriksa data. Untuk latihan, gunakan data latihan yang ditetapkan operator.
+5. Admin mencatat metadata atau mengimpor daftar pada unit yang benar, lalu mencari dan memeriksa hasilnya. Untuk latihan, gunakan data latihan yang ditetapkan operator.
 6. Keluar dari aplikasi setelah selesai, terutama pada komputer bersama.
 
 ### Login email dan kata sandi
@@ -37,7 +37,7 @@ Alur belajar yang disarankan untuk hari pertama:
 2. Isi **Email kedinasan** dan **Kata sandi**, lalu klik **Masuk**.
 3. Setelah masuk, periksa peran dan unit kerja Anda sebelum mencatat data.
 
-Aplikasi tidak menyediakan pendaftaran mandiri. Super Admin membuat akun melalui **Administrasi → Manajemen Pengguna → Tambah Pengguna**. Jangan membagikan akun uji untuk pekerjaan resmi.
+Aplikasi tidak menyediakan pendaftaran mandiri dengan email dan kata sandi. Super Admin membuat akun melalui **Administrasi → Manajemen Pengguna → Tambah Pengguna**. Jangan membagikan akun uji untuk pekerjaan resmi. Bila lupa kata sandi, minta Super Admin mengatur ulangnya, lalu ganti kata sandi itu di **Pengaturan → Profil → Ubah Kata Sandi**.
 
 ### Login Google bila tersedia
 
@@ -46,7 +46,7 @@ Aplikasi tidak menyediakan pendaftaran mandiri. Super Admin membuat akun melalui
 3. Pilih akun Google dengan email yang sama seperti akun yang diprovisi Super Admin.
 4. Selesaikan autentikasi Google. Setelah berhasil, Anda kembali ke Dashboard SIMSA.
 
-Login Google hanya digunakan ketika integrasinya sudah dikonfigurasi dan **tidak membuat akun baru secara otomatis**. Jika email belum diprovisi, salah penulisan, dinonaktifkan, atau belum diberi role, hubungi Super Admin.
+Login Google hanya digunakan ketika integrasinya sudah dikonfigurasi. Email Google yang belum terdaftar menjadi akun **Menunggu persetujuan** tanpa akses data sampai Super Admin menetapkan peran dan unit kerjanya; setelah disetujui, masuk kembali. Jika akun dinonaktifkan atau peran/unitnya belum benar, hubungi Super Admin.
 
 ### Sesi dan keluar aplikasi
 
@@ -85,12 +85,13 @@ Gunakan filter lokal pada halaman Surat, Arsip, Laporan, Peminjaman, atau Audit 
 
 | Role | Penggunaan utama |
 |---|---|
-| **Belum aktif** | Hanya melihat Dashboard pemberitahuan aktivasi; minta admin menetapkan role dan unit kerja. |
-| **Staf** | Melihat surat masuk/keluar dan arsip aktif, membuka detail yang diizinkan, mencari data, meminta akses rekod terkendali, serta melihat laporan. Tidak dapat mengubah data. |
-| **Admin Dirjen** | Mengelola operasional surat, arsip, distribusi, dosir, klasifikasi/JRA, retensi, penyusutan, layanan fisik, media, laporan, dan tahapan tata kelola sesuai pemisahan tugas. |
-| **Admin Sesditjen** | Kewenangan operasional setara Admin Dirjen, dengan lingkup unit kerja yang ditetapkan. |
-| **Super Admin** | Seluruh kewenangan admin, pengelolaan pengguna dan pengaturan, keputusan akses, filter lintas unit, serta aktivasi versi aturan. |
-| **Auditor** | Dashboard, Persetujuan Akses miliknya, Versi Aturan, dan Tata Kelola Retensi dalam cakupan pengawasan/baca-saja. Audit Log global saat ini hanya tersedia bagi Super Admin. |
+| **Belum aktif** | Hanya melihat Dashboard pemberitahuan aktivasi; minta Super Admin menetapkan role dan unit kerja. |
+| **Admin Unit Kerja** | Mengelola operasional surat, arsip, distribusi, dosir, retensi, layanan fisik, media, laporan, dan tahapan tata kelola pada unit kerja yang ditetapkan, sesuai pemisahan tugas. Pada penyusutan, role ini membuat, mengusulkan, dan meninjau batch. Persetujuan dan pelaksanaan penyusutan, master klasifikasi/JRA, Autentikasi, Audit Log, Monitoring Operasional, tab **Unit Kerja** di Pengaturan, dan Manajemen Pengguna dikelola Super Admin. |
+| **Super Admin** | Seluruh kewenangan admin untuk semua unit, pengelolaan pengguna dan pengaturan (termasuk tab **Unit Kerja**), master klasifikasi/JRA, Audit Log, Monitoring Operasional, persetujuan dan pelaksanaan penyusutan beserta unggah bukti pelaksanaannya, keputusan akses, filter lintas unit, serta aktivasi versi aturan. |
+
+Super Admin hanya dapat memilih dua role tersebut. Admin Unit Kerja hanya dapat mengubah data unitnya sendiri. Surat unit lain dapat dibaca, tanpa diubah, bila unitnya ikut dalam rangkaian surat tersebut; Admin Unit Kerja pada unit pengawas (Ditjen dan Sesditjen) juga dapat membaca surat Ditjen, Sesditjen, dan seluruh direktorat. Surat lintas unit berklasifikasi Terbatas atau lebih tinggi tetap memerlukan izin akses.
+
+Akun lama tetap mempertahankan hak aksesnya sampai Super Admin menetapkan role baru. Admin Dirjen dan Admin Sesditjen lama hanya dapat mengubah data unit semula (Ditjen atau Sesditjen) dan, sebagai unit pengawas, dapat membaca surat lintas unit seperti di atas; akun Staff dan Auditor lama tidak otomatis mendapat kewenangan menulis.
 
 Prinsip yang harus selalu dipakai:
 
@@ -102,7 +103,7 @@ Prinsip yang harus selalu dipakai:
 
 ## 4. Alur belajar berdasarkan peran
 
-### Staf
+### Semua pengguna
 
 1. Buka Dashboard dan baca notifikasi.
 2. Pelajari daftar serta detail Surat Masuk dan Surat Keluar.
@@ -121,17 +122,17 @@ Prinsip yang harus selalu dipakai:
 
 ### Arsiparis/admin kearsipan
 
-1. Jaga master klasifikasi, JRA, dosir, dan lokasi simpan.
+1. Jaga dosir dan lokasi simpan. Perubahan master klasifikasi dan JRA dilakukan Super Admin melalui **Versi Aturan**.
 2. Catat peristiwa pemicu retensi beserta bukti.
 3. Minta petugas berbeda memverifikasi bukti pemicu.
 4. Gunakan appraisal untuk JRA manual, Dinilai Kembali, atau pengecualian komponen.
 5. Terapkan legal hold bila ada sengketa, audit, pemeriksaan, atau kebutuhan lain yang sah.
 6. Buat usulan penyusutan atau manifest permanen hanya setelah semua prasyarat terpenuhi.
 
-### Penelaah dan auditor
+### Penelaah
 
 1. Periksa sumber, identitas rekod, alasan, bukti, checksum, tanggal, dan jejak pelaku.
-2. Petugas penelaah yang ditunjuk dan memiliki izin keputusan dapat menolak atau mengembalikan pekerjaan yang bukti/alasannya belum memadai. Peran auditor sendiri tidak memberi hak mengubah rekod sumber.
+2. Petugas penelaah yang ditunjuk dan memiliki izin keputusan dapat menolak atau mengembalikan pekerjaan yang bukti/alasannya belum memadai.
 3. Jangan menelaah pekerjaan yang Anda buat sendiri.
 4. Gunakan riwayat dan jejak versi yang tersedia dalam cakupan akses; Audit Log global saat ini hanya tersedia bagi Super Admin.
 
@@ -163,7 +164,7 @@ Pada ikon lonceng:
 Untuk admin:
 
 1. Buka **Surat > Surat Masuk** lalu klik **Tambah Surat Masuk**.
-2. Isi nomor, tanggal surat, tanggal diterima, pengirim, tujuan/perihal, naskah atau sifat surat, klasifikasi, dan metadata lain yang tersedia.
+2. Isi nomor, tanggal surat, tanggal diterima, pengirim, tujuan/perihal, naskah atau sifat surat, klasifikasi, dan metadata lain yang tersedia. Sifat surat terdiri atas Biasa, Segera, Sangat Segera, Rahasia, Undangan, dan Penting; sifat Rahasia hanya dapat ditetapkan oleh Super Admin.
 3. Lampirkan dokumen bila diperlukan dan fasilitas penyimpanan file tersedia. Untuk pencatatan inventaris fisik, metadata dapat disimpan tanpa lampiran.
 4. Periksa nomor, tanggal, pengirim, perihal, unit, dan file sebelum menyimpan.
 5. Buka detail untuk mengedit, membalas, mendistribusikan, atau mengarsipkan sesuai tombol dan kewenangan.
@@ -200,11 +201,11 @@ Impor ini mencatat metadata, bukan mengunggah berkas digital. Impor arsip belum 
 
 ### Unggah massal dan OCR PDF
 
-Gunakan fitur ini hanya ketika penyimpanan privat dan pemeriksaan file telah dikonfigurasi operator. Bila menu unggah tidak tersedia, pencatatan manual atau impor metadata tetap dapat digunakan. Jangan membuat unggahan kosong atau tautan publik untuk mengganti bukti.
+Fitur ini hanya tersedia bila operator mengaktifkan modul Unggah Massal & OCR serta mengonfigurasi penyimpanan privat dan pemeriksaan file. Bila tombol **Unggah Massal** tidak tampil, pencatatan manual atau impor metadata tetap dapat digunakan. Jangan membuat unggahan kosong atau tautan publik untuk mengganti bukti.
 
 Untuk menyiapkan beberapa draft arsip dari PDF sekaligus:
 
-1. Buka **Unggah Massal & OCR** dari Dashboard.
+1. Klik **Unggah Massal** di Dashboard atau di halaman Arsip Aktif untuk membuka halaman **Unggah Massal & OCR**.
 2. Pilih satu unit kerja yang konkret. Super Admin juga wajib memilih unit tujuan sebelum unggah.
 3. Pilih atau seret PDF, maksimal 50 berkas, 50 MiB per berkas, dan 100 MiB per batch.
 4. Klik **Mulai unggah** dan tunggu sampai pemrosesan selesai. PDF yang memiliki text layer dibaca langsung; PDF hasil pindai dirender lalu dikenali dengan OCR Bahasa Indonesia dan Inggris.
@@ -222,7 +223,7 @@ OCR PDF hasil pindai dibatasi maksimal 10 halaman dan dapat gagal bila citra ter
 3. Pilih **Klasifikasi Arsip & Jadwal Retensi**. Pilih klasifikasi dahulu, kemudian butir JRA yang sesuai.
 4. Baca pratinjau retensi aktif, retensi inaktif, hasil JRA, versi, dan referensi.
 5. Isi uraian berkas, unit pengolah, kurun waktu, item arsip, tingkat perkembangan, tanggal, jumlah, dan lokasi fisik.
-6. Tetapkan klasifikasi keamanan dan PIC.
+6. Tetapkan klasifikasi keamanan dan PIC. Admin Unit Kerja hanya dapat memilih Biasa/Terbuka atau Terbatas; bila surat sumber berkelas Rahasia atau Sangat Rahasia, kelas itu dipertahankan pada arsip, dan kelas yang lebih tinggi hanya dapat dipilih Super Admin.
 7. Periksa ulang lalu simpan.
 
 Saran JRA dari aplikasi membantu pencarian, tetapi **bukan keputusan otomatis**. Petugas tetap menilai isi, fungsi, konteks, dan rumusan pemicu. Pemicu retensi juga tidak ditetapkan pada dialog registrasi; catat setelah arsip dibuat melalui **Tata Kelola Retensi**.
@@ -234,8 +235,13 @@ Saran JRA dari aplikasi membantu pencarian, tetapi **bukan keputusan otomatis**.
 - **Tab Jejak Aturan:** menunjukkan versi klasifikasi/JRA dan revisi yang pernah dipakai.
 - **Tab Keamanan:** menunjukkan klasifikasi keamanan dan kontrol akses.
 - **Tab Surat:** menghubungkan arsip dengan surat sumber.
+- **Export:** pilih **Formulir 4** (Daftar Arsip Aktif) atau **Formulir 6** (Daftar Arsip Inaktif), lalu Excel atau PDF. Isi ekspor mengikuti tab, unit, pencarian, dan tahun yang sedang dipilih.
+
+Formulir 4 memuat arsip yang masa aktifnya belum berakhir. Formulir 6 memuat arsip yang masa aktifnya sudah berakhir menurut klasifikasi/JRA dan peristiwa pemicu retensi yang sudah terverifikasi, serta arsip yang pemindahannya ke penyimpanan inaktif sudah dicatat di SIMSA melalui modul Penyusutan; pemindahan di luar SIMSA tidak mengubah isi formulir. Arsip yang belum terverifikasi dan belum dicatat pindah tetap tercantum di Formulir 4, sedangkan arsip yang penyusutannya sudah dilaksanakan tidak tercantum di keduanya. Bila belum ada arsip inaktif untuk filter yang dipilih, Formulir 6 tidak diunduh dan muncul keterangan "Belum ada arsip inaktif untuk filter ini…". Rincian kolom ada di [Arsip Aktif](./siklus-arsip/arsip-aktif.md#ekspor-formulir-4-dan-formulir-6).
 
 Arsip lama berstatus aturan belum terverifikasi dapat dibaca tetapi tidak boleh masuk penyusutan. Admin dapat memilih **Rekonsiliasi Klasifikasi/JRA**, memilih aturan aktif, dan mengisi alasan yang spesifik. Rekonsiliasi tidak tersedia bila arsip sedang legal hold, berada dalam workflow penyusutan, atau sudah dieksekusi.
+
+Untuk memperbaiki data berkas yang salah catat, admin yang berwenang atas unit arsip memilih **Ubah Metadata** di halaman detail. Isian yang dapat diubah: nomor dan uraian berkas, unit pengolah, kurun waktu, nomor dan uraian item, tingkat perkembangan, tanggal arsip, jumlah, media, No. Filing Cabinet, No. Laci, No. Folder, klasifikasi keamanan, PIC, dan keterangan. Hanya isian yang diubah yang disimpan, dan perubahannya tercatat di log audit. Klasifikasi/JRA tetap diubah melalui **Rekonsiliasi Klasifikasi/JRA**. **Ubah Metadata** dikunci bila arsip sedang legal hold, sedang dalam proses penyusutan, atau penyusutannya sudah dilaksanakan. Admin Unit Kerja hanya dapat memilih klasifikasi keamanan Biasa/Terbuka atau Terbatas; kelas yang sudah tersimpan boleh dipertahankan.
 
 ### Dosir dan lokasi fisik
 
@@ -262,10 +268,10 @@ Versi aktif tidak diedit langsung. Alur yang benar:
 3. Sistem menghitung informasi dokumen sumber dan SHA-256; jangan mengganti bukti itu dengan nilai yang diketik sendiri.
 4. Edit/impor isi draft, isi manifest kelengkapan halaman, periksa perbedaan dan dampak.
 5. Jalankan validasi sampai tidak ada kesalahan.
-6. Laksanakan tahapan **Ajukan > Telaah > Setujui > Aktifkan** dengan akun berbeda sesuai pemisahan tugas.
+6. Pilih **Aktifkan**. Tahap ini tidak memerlukan akun penelaah atau penyetuju terpisah; sistem tetap memeriksa sumber, integritas, dan tanggal berlaku saat aktivasi.
 7. Setelah aktif, aturan lama tetap melekat pada arsip lama; jangan melakukan perubahan massal tanpa rekonsiliasi yang dapat diaudit.
 
-Auditor dapat membaca versi, PDF sumber yang tersedia, validasi, dan jejak audit. Aktivasi versi hanya dilakukan Super Admin.
+Menu **Versi Aturan**, termasuk PDF sumber, hasil validasi, dan jejak audit versi, hanya tersedia bagi Super Admin.
 
 ## 9. Retensi, appraisal, pemicu, dan legal hold
 
@@ -311,13 +317,15 @@ Jenis peristiwa yang tersedia mencakup kegiatan selesai, berkas ditutup, serah t
 
 ### Pemindahan, pemusnahan, dan alih media
 
+Menu **Penyusutan** hanya muncul bila modulnya diaktifkan operator. Selama modul belum diaktifkan, pemindahan dan pemusnahan arsip dilakukan di luar SIMSA mengikuti prosedur unit; gunakan **Manajemen Retensi** untuk melihat arsip yang masa retensinya sudah atau hampir habis dan untuk mencetak draf berita acara pemusnahan melalui **Generate Berita Acara**.
+
 Pada menu **Penyusutan**:
 
 1. Pilih tab **Pemindahan**, **Pemusnahan**, atau **Alih Media**.
 2. Klik **Buat Usulan**, pilih kandidat, dan isi keterangan.
 3. Periksa daftar arsip di dalam batch.
-4. Majukan status secara tertib: **Draft > Diusulkan > Ditinjau > Disetujui > Dilaksanakan**.
-5. Gunakan akun/pejabat berbeda pada tahap pemeriksaan jika diwajibkan.
+4. Majukan status secara tertib: **Draft > Diusulkan > Ditinjau > Disetujui > Dilaksanakan**. Admin Unit Kerja dapat mengusulkan dan meninjau batch unitnya. Tahap **Disetujui** dan **Dilaksanakan**, termasuk unggah bukti pelaksanaan pemusnahan, hanya dapat dilakukan Super Admin.
+5. Gunakan akun berbeda untuk setiap tahap pemeriksaan: peninjau berbeda dari pembuat dan pengusul, penyetuju berbeda dari pembuat, pengusul, dan peninjau, dan pelaksana berbeda dari semua akun sebelumnya. Artinya, penyetuju dan pelaksana harus dua akun Super Admin yang berbeda.
 6. Cetak daftar usul atau berita acara pada tahap yang tersedia.
 
 Kandidat dapat tidak muncul karena retensi belum jatuh tempo, pemicu belum terverifikasi, keputusan belum efektif, aturan lama belum direkonsiliasi, legal hold aktif, arsip sedang direservasi workflow lain, atau penyusutan sudah selesai.
@@ -344,7 +352,7 @@ Sebelum serah terima, manifest dapat diajukan untuk pembatalan dengan alasan. Re
 2. Pilih tipe **Per Arsip** atau **Per Box**.
 3. Cari arsip/lokasi dengan minimal tiga karakter dan pilih hasil yang benar.
 4. Isi nama peminjam, unit kerja, tanggal jatuh tempo, dan tujuan.
-5. Simpan, lalu cek tab **Sedang Dipinjam** atau **Terlambat**.
+5. Simpan, lalu cek tab **Dipinjam** atau **Terlambat**.
 6. Gunakan **Perpanjang** untuk mengubah jatuh tempo atau **Kembalikan** untuk mencatat pengembalian dan kondisi/catatan.
 
 Fitur ini mencatat sirkulasi secara langsung; pastikan kewenangan peminjaman telah diperiksa di luar aplikasi bila prosedur unit mensyaratkannya. Cocokkan arsip/box fisik sebelum menyerahkan dan saat menerima kembali.
@@ -352,11 +360,11 @@ Fitur ini mencatat sirkulasi secara langsung; pastikan kewenangan peminjaman tel
 ### Fitur layanan lainnya
 
 - **Layanan Arsip:** catat dan pantau permintaan layanan internal.
-- **Arsip Vital / Arsip Terjaga:** tandai dan kelola arsip yang memerlukan perlindungan khusus sesuai kewenangan.
+- **Arsip Vital / Arsip Terjaga:** tandai dan kelola arsip yang memerlukan perlindungan khusus sesuai kewenangan. Menu Arsip Terjaga hanya muncul bila modulnya diaktifkan operator.
 - **Arsip Elektronik:** kelola media digital dan metadata teknis.
 - **Autentikasi:** catat proses autentikasi arsip.
 - **Tunjuk Silang:** hubungkan rekod yang berkaitan tanpa menggandakan arsip.
-- **Formulir:** galeri ini berisi format referensi kosong. Untuk dokumen berbasis data, gunakan tombol cetak/unduh pada modul Peminjaman, Penyusutan, Arsip Vital/Terjaga, atau Laporan agar isi berasal dari rekod aplikasi.
+- **Formulir:** galeri ini berisi format referensi kosong. Untuk dokumen berbasis data, gunakan tombol cetak/unduh pada modul Peminjaman, Penyusutan, Arsip Vital/Terjaga, atau Laporan agar isi berasal dari rekod aplikasi. Formulir 4 dan Formulir 6 berisi data diunduh dari menu **Export** di halaman Arsip. Bila modul Penyusutan atau Arsip Terjaga belum diaktifkan, template terkait tetap dapat dilihat dan dicetak untuk diisi manual.
 
 ## 12. Persetujuan akses rekod terkendali
 
@@ -384,7 +392,7 @@ File ekspor adalah salinan kerja. Lindungi, batasi distribusi, dan hapus salinan
 
 ### Audit Log
 
-Admin dan Auditor membuka **Administrasi > Audit Log** untuk:
+Super Admin membuka **Administrasi > Audit Log** untuk:
 
 - mencari pengguna/email/ID;
 - memfilter tipe entitas dan aksi;

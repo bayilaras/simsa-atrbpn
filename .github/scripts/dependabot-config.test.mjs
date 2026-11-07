@@ -8,6 +8,8 @@ import test from 'node:test';
 
 const root = resolve(import.meta.dirname, '..', '..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8').replace(/\r\n/g, '\n');
+const TYPES_NODE_MAJOR_IGNORE = '      - dependency-name: "@types/node"\n'
+    + '        update-types: ["version-update:semver-major"]\n';
 
 /** Pecah dependabot.yml menjadi blok `updates` (subset YAML yang dipakai berkas ini). */
 function parseUpdates(text) {
@@ -26,7 +28,11 @@ function parseUpdates(text) {
             directory: scalar('directory'),
             interval: scalar('interval'),
             limit: Number(scalar('open-pull-requests-limit')),
-            ignores: /^ {4}ignore:/m.test(block),
+            ignore: /^ {4}ignore:/m.test(block)
+                // Baris kosong dan komentar tidak memutus daftar YAML; buang dulu
+                // agar entri tambahan di belakangnya tetap ikut dibandingkan.
+                ? (block.replace(/^[ \t]*(?:#.*)?\n/gm, '').match(/^ {4}ignore:\n((?: {6}.*\n?)+)/m)?.[1] ?? '')
+                : null,
             groups,
         };
     });
@@ -58,8 +64,11 @@ test('minor/patch dikelompokkan; pembaruan keamanan tetap PR tersendiri', () => 
         assert.ok(grouped.some((g) => g.updateTypes.includes('minor') && g.updateTypes.includes('patch')), label);
         assert.ok(grouped.every((g) => !g.updateTypes.includes('major')), `${label}: major tidak digabung`);
         assert.ok(update.groups.every((g) => g.appliesTo !== 'security-updates'), `${label}: keamanan tidak digabung`);
-        // `ignore` juga berlaku untuk pembaruan keamanan; jangan menahan perbaikan advisori.
-        assert.equal(update.ignores, false, `${label}: tanpa ignore`);
+        // `ignore` juga bisa menahan pembaruan keamanan; jangan menahan perbaikan advisori.
+        // Satu-satunya pengecualian: kenaikan mayor @types/node (hanya deklarasi
+        // tipe; mayornya mengikuti runtime Node 24).
+        assert.ok(update.ignore === null || update.ignore === TYPES_NODE_MAJOR_IGNORE,
+            `${label}: ignore hanya untuk kenaikan mayor @types/node`);
         assert.ok(Number.isInteger(update.limit) && update.limit >= 1 && update.limit <= 5, `${label}: batas PR terbuka`);
     }
 });

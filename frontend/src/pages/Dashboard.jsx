@@ -107,6 +107,8 @@ export default function Dashboard() {
     const location = useLocation();
     const { user, canWrite } = useAuth();
     const { capabilities } = useAppConfig();
+    // Konvensi sidebar: modul opsional hanya disembunyikan bila bernilai false.
+    const advancedWorkflowsEnabled = capabilities.advancedArchiveWorkflows !== false;
     const isAdmin = canWrite();
     const reducedMotion = useReducedMotion();
     const chartOptions = { ...baseChartOptions, animation: reducedMotion ? false : undefined };
@@ -835,7 +837,7 @@ export default function Dashboard() {
                             </div>
 
                             {/* Row 2: Penyusutan Pipeline */}
-                            <Card className="min-w-0 shadow-sm border-border/60">
+                            {advancedWorkflowsEnabled && <Card className="min-w-0 shadow-sm border-border/60">
                                 <CardHeader className="pb-3">
                                     <div className="flex items-center gap-2">
                                         <div className="p-2 bg-indigo-100/50 rounded-xl">
@@ -876,7 +878,7 @@ export default function Dashboard() {
                                         })}
                                     </div>
                                 </CardContent>
-                            </Card>
+                            </Card>}
 
                             {/* Row 3: Storage Capacity + Vital/Terjaga */}
                             <div className="grid gap-6 md:grid-cols-2">
@@ -943,7 +945,7 @@ export default function Dashboard() {
                                                 <Shield className="h-4 w-4 text-rose-600 dark:text-rose-400" />
                                             </div>
                                             <div>
-                                                <CardTitle className="text-base">Arsip Vital & Terjaga</CardTitle>
+                                                <CardTitle className="text-base">{advancedWorkflowsEnabled ? 'Arsip Vital & Terjaga' : 'Arsip Vital'}</CardTitle>
                                                 <CardDescription className="text-xs">Alert arsip yang perlu tindakan segera</CardDescription>
                                             </div>
                                         </div>
@@ -975,7 +977,7 @@ export default function Dashboard() {
                                             </div>
                                         </div>
 
-                                        <section aria-label="Pelaporan arsip terjaga" className="rounded-lg border bg-background p-4">
+                                        {advancedWorkflowsEnabled && <section aria-label="Pelaporan arsip terjaga" className="rounded-lg border bg-background p-4">
                                             <h3 className="text-sm font-semibold">Pelaporan arsip terjaga</h3>
                                             <p className="mt-1 text-xs text-muted-foreground">Tahap pencatatan dan bukti pada aplikasi. Verifikasi internal bukan konfirmasi dari layanan ANRI.</p>
                                             {widgetData.vitalTerjagaAlerts.terjagaReportingStages ? <dl className="mt-3 space-y-2 text-sm">
@@ -988,8 +990,8 @@ export default function Dashboard() {
                                                     <dd className="font-semibold tabular-nums">{widgetData.vitalTerjagaAlerts.terjagaReportingStages[stage] ?? '—'}</dd>
                                                 </div>)}
                                             </dl> : <p className="mt-3 text-sm text-muted-foreground">Ringkasan tahap pelaporan belum tersedia.</p>}
-                                            {isAdmin && capabilities.advancedArchiveWorkflows !== false && <Button variant="link" className="mt-2 h-auto whitespace-normal px-0 text-left" onClick={() => navigate('/arsip-terjaga')}>Lihat pelaporan arsip terjaga</Button>}
-                                        </section>
+                                            {isAdmin && <Button variant="link" className="mt-2 h-auto whitespace-normal px-0 text-left" onClick={() => navigate('/arsip-terjaga')}>Lihat pelaporan arsip terjaga</Button>}
+                                        </section>}
                                     </CardContent>
                                 </Card>
                             </div>

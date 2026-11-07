@@ -649,6 +649,20 @@ export async function collectReadiness(
     };
 }
 
+// The Blob probe is a list(), an advanced operation capped at 2,000 per 30 days
+// on Vercel Hobby. Served readiness (monitoring page every 60 s, scanner wake,
+// hourly monitor) reuses a passed probe for ten minutes; a failure never is.
+const BLOB_PROBE_REUSE_MS = 10 * 60_000;
+let blobProbeReusableUntil = 0;
+const servingDependencies: ReadinessDependencies = {
+    ...defaultDependencies,
+    async probeBlob(signal) {
+        if (Date.now() < blobProbeReusableUntil) return;
+        await defaultDependencies.probeBlob(signal);
+        if (!signal.aborted) blobProbeReusableUntil = Date.now() + BLOB_PROBE_REUSE_MS;
+    },
+};
+
 let cachedReadiness: Awaited<ReturnType<typeof collectReadiness>> | null = null;
 let cachedUntil = 0;
 let readinessInFlight: Promise<Awaited<ReturnType<typeof collectReadiness>>> | null = null;
@@ -659,7 +673,7 @@ export async function getReadiness(): Promise<Awaited<ReturnType<typeof collectR
     if (cachedReadiness && now < cachedUntil) return cachedReadiness;
     if (readinessInFlight) return readinessInFlight;
 
-    readinessInFlight = collectReadiness().then((result) => {
+    readinessInFlight = collectReadiness(servingDependencies).then((result) => {
         cachedReadiness = result;
         cachedUntil = Date.now() + 5_000;
         return result;

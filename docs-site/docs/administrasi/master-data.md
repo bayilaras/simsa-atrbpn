@@ -8,7 +8,7 @@ Panduan mengelola data master di SIMSA.
 
 ## Apa Itu Master Data?
 
-Master data adalah **data dasar/referensi** yang digunakan oleh seluruh sistem SIMSA. Ada dua jenis master data:
+Master data adalah **data dasar/referensi** yang digunakan oleh seluruh sistem SIMSA. Menu **Master Data** di sidebar berisi dua halaman: **Klasifikasi Arsip** dan **Versi Aturan**.
 
 ---
 
@@ -31,28 +31,15 @@ Daftar kode klasifikasi yang digunakan untuk **mengelompokkan arsip** berdasarka
 
 ### Mengubah Klasifikasi
 
-Versi aktif tidak dapat diedit atau dihapus. Buka **Versi Aturan**, buat draft dari versi aktif, lalu ubah butir pada draft. Setelah validasi dan review, aktifkan draft pada tanggal berlakunya. Lihat [Versi Aturan Klasifikasi dan JRA](versi-aturan.md).
+Versi aktif tidak dapat diedit atau dihapus. Buka **Versi Aturan**, buat draft dari versi aktif, lalu ubah butir pada draft. Setelah validasi berhasil, aktifkan draft pada tanggal berlakunya. Lihat [Versi Aturan Klasifikasi dan JRA](versi-aturan.md).
 
 ---
 
-## 2. Template Surat
+## 2. Versi Aturan
 
-Template surat adalah **format standar** yang bisa digunakan untuk membuat surat keluar dengan cepat.
+Klasifikasi arsip dan Jadwal Retensi Arsip (JRA) disimpan sebagai edisi aturan berversi. Di sidebar, klik **Master Data** > **Versi Aturan** untuk membuat draft, memvalidasi, dan mengaktifkan edisi baru. Langkah lengkapnya ada di [Versi Aturan Klasifikasi dan JRA](versi-aturan.md).
 
-### Melihat Daftar Template
-
-1. Di sidebar, klik **Master Data** > **Template Surat**.
-2. Lihat daftar template yang tersedia.
-
-### Menambah Template Baru
-
-1. Klik **"+ Tambah Template"**.
-2. Isi nama template dan isi template.
-3. Klik **"Simpan"**.
-
-### Menggunakan Template
-
-Saat membuat surat keluar baru, kamu bisa memilih template dari dropdown untuk mengisi form secara otomatis.
+> ℹ️ Format nomor surat otomatis tidak diatur di Master Data. Atur format itu di **Pengaturan** > tab **Template**; lihat [Pengaturan](settings.md).
 
 ---
 

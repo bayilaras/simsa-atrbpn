@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 // This module is imported directly by routes and services, which ESM may
 // evaluate before config/env.ts executes its module body. Load dotenv before
 // constructing the singleton so every consumer observes the same environment.
-dotenv.config();
+dotenv.config({ quiet: true, override: false });
 
 export interface SrikandiConfig {
     enabled: boolean;

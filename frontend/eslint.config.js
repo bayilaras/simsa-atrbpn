@@ -12,6 +12,10 @@ export default defineConfig([
     files: ['**/*.{js,jsx}'],
     extends: [
       js.configs.recommended,
+      // React Compiler rules keep their preset severity. Violations that 7.1
+      // found in existing components are frozen per file in
+      // eslint-suppressions.json, so only new ones fail. After fixing one, run
+      // `npx eslint . --prune-suppressions`.
       reactHooks.configs.flat.recommended,
       reactRefresh.configs.vite,
     ],

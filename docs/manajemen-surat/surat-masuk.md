@@ -60,7 +60,7 @@ Form akan muncul dengan kolom-kolom berikut:
 | **Pengirim** | Nama instansi / perorangan pengirim | ✅ |
 | **Perihal** | Subjek / topik surat | ✅ |
 | **Klasifikasi** | Pilih kode klasifikasi dari dropdown | ✅ |
-| **Sifat Surat** | Biasa / Segera / Sangat Segera | ✅ |
+| **Sifat Surat** | Biasa / Segera / Sangat Segera / Rahasia / Undangan / Penting. Sifat Rahasia hanya dapat ditetapkan oleh Super Admin; Admin Unit Kerja tidak melihat pilihan ini kecuali sifat itu sudah tersimpan pada surat | ✅ |
 | **Lampiran** | Upload file surat (PDF, gambar, dll) | ❌ |
 
 ```
@@ -75,8 +75,7 @@ Form akan muncul dengan kolom-kolom berikut:
 │  Perihal:      [_______________]    │
 │                [_______________]    │
 │  Klasifikasi:  [Pilih kode ▼   ]    │
-│  Sifat Surat:  ○ Biasa ○ Segera    │
-│                ○ Sangat Segera      │
+│  Sifat Surat:  [Pilih sifat ▼  ]    │
 │                                     │
 │  Lampiran:                          │
 │  ┌─────────────────────────────┐    │
@@ -116,10 +115,10 @@ Halaman detail menampilkan semua informasi surat, termasuk lampiran yang bisa di
 
 | Tombol | Fungsi | Akses |
 |--------|--------|-------|
-| **Edit** | Ubah data surat | Staff, Admin |
-| **Distribusikan** | Kirim surat ke unit lain | Staff, Admin |
-| **Arsipkan** | Pindahkan ke arsip | Staff, Admin |
-| **Hapus** | Hapus surat | Admin saja |
+| **Edit** | Ubah data surat | Super Admin, Admin Unit Kerja |
+| **Distribusikan** | Kirim surat ke unit lain | Super Admin, Admin Unit Kerja |
+| **Arsipkan** | Pindahkan ke arsip | Super Admin, Admin Unit Kerja |
+| **Hapus** | Hapus surat | Super Admin, Admin Unit Kerja |
 
 - **Alur Surat**: menampilkan rangkaian, disposisi, dan tindak lanjut surat ini (lihat [Rangkaian Surat](rangkaian-surat.md)).
 
@@ -130,6 +129,8 @@ Halaman detail menampilkan semua informasi surat, termasuk lampiran yang bisa di
 1. Klik **ikon pensil** (✏️) di kolom Aksi, atau klik **"Edit"** di halaman detail.
 2. Ubah data yang diperlukan.
 3. Klik **"Simpan"** untuk menyimpan perubahan.
+
+Sifat Rahasia yang sudah tersimpan boleh dipertahankan. Bila diganti lalu disimpan, sifat itu hanya dapat dipilih kembali oleh Super Admin.
 
 ---
 
