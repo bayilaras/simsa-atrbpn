@@ -23,6 +23,7 @@ describe('record classification access policy', () => {
         expect(isAllowedForClassification({ role: 'staff' }, 'Kilat')).toBe(true);
         expect(isAllowedForClassification({ role: 'staff' }, 'Amat Segera')).toBe(true);
         expect(isAllowedForClassification({ role: 'staff' }, 'Amat Segera/Kilat')).toBe(true);
+        expect(isAllowedForClassification({ role: 'staff' }, 'Amat Segera / Kilat')).toBe(true);
     });
 
     it('fails closed for unrecognised classifications', () => {

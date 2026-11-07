@@ -24,6 +24,7 @@ export const BIASA_SIFAT_ALIASES = [
     'amat_segera',
     'kilat',
     'amat_segera/kilat',
+    'amat_segera_/_kilat',
     'undangan',
     'penting',
 ] as const;

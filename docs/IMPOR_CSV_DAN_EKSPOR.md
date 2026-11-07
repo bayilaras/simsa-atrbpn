@@ -167,9 +167,9 @@ saat impor ulang; baris tanpa keduanya ditolak per baris.
 
 Pada surat masuk, sifat surat sekaligus menjadi klasifikasi keamanan: Biasa,
 Terbatas, Rahasia, atau Sangat Rahasia. Sifat urgensi Segera, Sangat Segera,
-Amat Segera/Kilat (juga Amat Segera atau Kilat saja), Penting, dan Undangan,
-serta Terbuka dan Biasa/Terbuka, dibaca sebagai Biasa. Sel kosong atau berisi
-"-" dicatat sebagai Biasa. Huruf besar-kecil, spasi di tepi, dan tanda hubung
+Amat Segera/Kilat (juga "Amat Segera / Kilat", atau Amat Segera atau Kilat saja),
+Penting, dan Undangan, serta Terbuka dan Biasa/Terbuka, dibaca sebagai Biasa. Sel
+kosong atau berisi "-" dicatat sebagai Biasa. Huruf besar-kecil, spasi di tepi, dan tanda hubung
 tidak berpengaruh, sehingga "SANGAT-SEGERA" sama dengan "Sangat Segera".
 
 Semua jalur impor surat masuk (Google Sheets, CSV/XLSX, dan

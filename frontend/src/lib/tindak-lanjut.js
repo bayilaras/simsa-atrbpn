@@ -2,7 +2,7 @@
 // BIASA_SIFAT_ALIASES di backend/src/services/access/visibility-spec.ts.
 const BIASA_ALIAS = new Set([
     'biasa', 'biasa/terbuka', 'biasa_/_terbuka', 'terbuka', 'segera', 'sangat_segera',
-    'amat_segera', 'kilat', 'amat_segera/kilat', 'undangan', 'penting',
+    'amat_segera', 'kilat', 'amat_segera/kilat', 'amat_segera_/_kilat', 'undangan', 'penting',
 ])
 const TERKENDALI = new Set(['terbatas', 'rahasia', 'sangat_rahasia'])
 

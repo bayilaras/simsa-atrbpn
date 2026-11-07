@@ -21,7 +21,7 @@ describe('kelas keamanan per peran', () => {
     })
 
     it('membaca urgensi Kilat dan Amat Segera/Kilat sebagai Biasa, seperti backend', () => {
-        for (const sifat of ['Kilat', 'Amat Segera', 'Amat Segera/Kilat', 'Biasa / Terbuka']) {
+        for (const sifat of ['Kilat', 'Amat Segera', 'Amat Segera/Kilat', 'Amat Segera / Kilat', 'Biasa / Terbuka']) {
             expect(normalisasiKelas(sifat)).toBe('biasa')
         }
         expect(bolehMemilihKelas('staff', 'Amat Segera/Kilat')).toBe(true)

@@ -15,7 +15,7 @@ const MAX_ROWS_PER_CHECK = 500;
 // src/__tests__/preflight-integrasi-surat.test.ts (sifat_surat_kelas).
 export const BIASA_LIST = Object.freeze([
   'biasa', 'biasa/terbuka', 'biasa_/_terbuka', 'terbuka', 'segera', 'sangat_segera',
-  'amat_segera', 'kilat', 'amat_segera/kilat', 'undangan', 'penting',
+  'amat_segera', 'kilat', 'amat_segera/kilat', 'amat_segera_/_kilat', 'undangan', 'penting',
 ]);
 // Alias yang dipakai SQL lama (CASE per layanan) sebelum rilis paritas sifat
 // surat masuk. Dibekukan agar kelas_lama tetap menggambarkan perilaku produksi

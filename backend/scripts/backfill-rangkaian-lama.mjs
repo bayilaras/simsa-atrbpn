@@ -73,7 +73,7 @@ export const SIFAT_NORM_SEPARATOR_PATTERN = `[${PG_WHITESPACE_CLASS}-]+`;
  */
 export const KELAS_SIFAT_DIKENAL = Object.freeze([
   'biasa', 'biasa/terbuka', 'biasa_/_terbuka', 'terbuka', 'segera', 'sangat_segera',
-  'amat_segera', 'kilat', 'amat_segera/kilat', 'undangan', 'penting',
+  'amat_segera', 'kilat', 'amat_segera/kilat', 'amat_segera_/_kilat', 'undangan', 'penting',
   'terbatas', 'rahasia', 'sangat_rahasia',
 ]);
 

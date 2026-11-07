@@ -16,6 +16,7 @@ describe('normalisasiSifat / isSifatTerkendali', () => {
         expect(normalisasiSifat('')).toBe('biasa')
         expect(normalisasiSifat('Kilat')).toBe('biasa')
         expect(normalisasiSifat('Amat Segera/Kilat')).toBe('biasa')
+        expect(normalisasiSifat('Amat Segera / Kilat')).toBe('biasa')
         expect(normalisasiSifat('Biasa / Terbuka')).toBe('biasa')
     })
 

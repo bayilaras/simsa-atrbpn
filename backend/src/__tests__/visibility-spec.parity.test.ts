@@ -45,6 +45,7 @@ const BASE_VALUES: Array<string | null> = [...new Set<string | null>([
     'Kilat',
     'Amat Segera',
     'Amat Segera/Kilat',
+    'Amat Segera / Kilat',
     'Biasa / Terbuka',
     '-',
     'Konfidensial',
@@ -120,7 +121,7 @@ describe('visibility-spec: normalisasi klasifikasi', () => {
     });
 
     it('urgensi Kilat/Amat Segera dan Biasa / Terbuka menjadi biasa; "-" dan Konfidensial tetap tak dikenal', async () => {
-        for (const value of ['Kilat', 'Amat Segera', 'Amat Segera/Kilat', 'Biasa / Terbuka']) {
+        for (const value of ['Kilat', 'Amat Segera', 'Amat Segera/Kilat', 'Amat Segera / Kilat', 'Biasa / Terbuka']) {
             expect(normalizeSecurityClassification(value)).toBe('biasa');
             expect(await sqlClass(value)).toBe('biasa');
         }

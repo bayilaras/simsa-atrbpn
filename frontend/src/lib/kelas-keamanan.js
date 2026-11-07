@@ -19,6 +19,7 @@ const SIFAT_BIASA = new Set([
     'amat_segera',
     'kilat',
     'amat_segera/kilat',
+    'amat_segera_/_kilat',
     'undangan',
     'penting',
 ])
