@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ImportFromGDrive from './ImportFromGDrive';
+import { CATATAN_KELAS_IMPOR_SURAT_MASUK } from '@/lib/kelas-keamanan';
 
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock('@/services/api', () => ({ default: api }));
@@ -46,6 +47,8 @@ it.each(['surat-masuk', 'surat-keluar'])('shows server mapping for %s and sends 
     expect(within(mapping).getByText('Kolom 2: No. Surat')).toBeInTheDocument();
     expect(within(mapping).getByText('Nomor Surat')).toBeInTheDocument();
     expect(screen.getByText(/baris data ke-3 \(baris kosong tidak dihitung\)/)).toBeInTheDocument();
+    // Only the sifat of an incoming letter is its security class; the preview judges no row.
+    expect(screen.queryAllByText(CATATAN_KELAS_IMPOR_SURAT_MASUK)).toHaveLength(type === 'surat-masuk' ? 1 : 0);
     let finish;
     api.post.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
     const button = screen.getByRole('button', { name: 'Impor 1 baris' });

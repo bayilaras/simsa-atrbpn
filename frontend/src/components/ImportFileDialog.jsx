@@ -6,6 +6,7 @@ import ImportRowReport from '@/components/ImportRowReport'
 import ImportSyncOption from '@/components/ImportSyncOption'
 import ImportUnitRequiredButton from '@/components/ImportUnitRequiredButton'
 import { importResultSummary } from '@/lib/import-report'
+import { CATATAN_KELAS_IMPOR_SURAT_MASUK } from '@/lib/kelas-keamanan'
 import api from '@/services/api'
 import { addImportPart, emptyImportTotals, IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import'
 import { runResumableImport, unfinishedImportNotice } from '@/lib/resumable-import'
@@ -196,6 +197,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
                 </p>
             </div>
             <p className="text-sm text-muted-foreground">Setiap baris perlu tanggal surat yang valid (YYYY-MM-DD atau DD/MM/YYYY). Jika nomor surat kosong atau “-”, isi perihal serta pengirim atau tujuan (untuk surat keluar, tautan dokumen juga cukup) agar data dapat dikenali saat impor ulang.</p>
+            {type === 'surat-masuk' && <p className="text-sm text-muted-foreground">{CATATAN_KELAS_IMPOR_SURAT_MASUK}</p>}
             <div className="overflow-x-auto rounded-lg border">
                 <table className="w-full text-sm">
                     <caption className="p-2 text-left font-medium">Pemetaan kolom ke data SIMSA</caption>

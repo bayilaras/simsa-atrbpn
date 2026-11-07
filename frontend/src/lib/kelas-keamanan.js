@@ -28,6 +28,13 @@ const ADMIN_UNIT_ROLES = new Set(['admin_unit', 'admin_dirjen', 'admin_sesditjen
 export const PESAN_KELAS_TERBATAS_PERAN =
     'Kelas Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin.'
 
+// Catatan pada langkah pratinjau impor surat masuk. Pratinjau (previewRows di
+// backend) tidak memeriksa baris; penolakan baru tampil di rincian hasil.
+export const CATATAN_KELAS_IMPOR_SURAT_MASUK =
+    'Sifat Surat pada surat masuk sekaligus menjadi klasifikasi keamanan; sel kosong atau “-” dicatat sebagai Biasa. '
+    + 'Baris Rahasia atau Sangat Rahasia hanya dapat diimpor oleh Super Admin, dan baris surat baru dengan sifat yang tidak dikenal ditolak. '
+    + 'Pratinjau hanya menampilkan isi sumber; baris yang ditolak terlihat pada Rincian hasil impor setelah Impor, dan baris lain tetap tersimpan.'
+
 /** Kelas keamanan baku untuk nilai klasifikasiKeamanan atau sifatSurat. */
 export function normalisasiKelas(nilai) {
     const trimmed = String(nilai ?? '').trim()

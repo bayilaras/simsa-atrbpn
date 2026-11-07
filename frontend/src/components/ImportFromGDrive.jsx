@@ -8,6 +8,7 @@ import ImportRowReport from '@/components/ImportRowReport';
 import ImportSyncOption from '@/components/ImportSyncOption';
 import ImportUnitRequiredButton from '@/components/ImportUnitRequiredButton';
 import { importResultSummary } from '@/lib/import-report';
+import { CATATAN_KELAS_IMPOR_SURAT_MASUK } from '@/lib/kelas-keamanan';
 import { useAppConfig } from '@/context/app-config-context';
 
 /**
@@ -411,6 +412,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                     <p className="text-sm font-medium">Tujuan: {typeLabel}</p>
                                     <p className="text-xs text-muted-foreground">Judul ditemukan pada baris data ke-{previewData.headerRow} (baris kosong tidak dihitung).</p>
                                     <p className="text-sm text-muted-foreground">Setiap baris perlu tanggal surat yang valid (YYYY-MM-DD atau DD/MM/YYYY). Jika nomor surat kosong atau “-”, isi perihal serta pengirim atau tujuan (untuk surat keluar, tautan dokumen juga cukup) agar data dapat dikenali saat impor ulang.</p>
+                                    {type === 'surat-masuk' && <p className="text-sm text-muted-foreground">{CATATAN_KELAS_IMPOR_SURAT_MASUK}</p>}
                                     <div className="overflow-x-auto rounded-lg border">
                                         <table className="w-full text-sm">
                                             <caption className="p-2 text-left font-medium">Pemetaan kolom ke data SIMSA</caption>
