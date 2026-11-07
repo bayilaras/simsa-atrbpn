@@ -59,13 +59,22 @@ export function normalizeSecurityClassification(
 }
 
 /**
+ * Kunci sifat tanpa pemetaan alias: trim whitespace JS, '' dan NULL → 'biasa',
+ * lower, `[\s-]+` → '_'. 'Sangat Segera' menjadi 'sangat_segera', sama dengan
+ * nilai filter daftar surat masuk. Bagian dasar klasifikasiNormSql.
+ */
+export function sifatKunciSql(column: AnyColumn | SQL): SQL<string> {
+    const trimmed = sql`regexp_replace(${column}, ${PG_TRIM_PATTERN}::text, '', 'g')`;
+    return sql<string>`regexp_replace(lower(coalesce(nullif(${trimmed}, ''), 'biasa')), ${PG_SEPARATOR_PATTERN}::text, '_', 'g')`;
+}
+
+/**
  * Padanan SQL `normalizeSecurityClassification`: trim whitespace JS DULU
  * (idempoten, lihat komentar TS), lalu '' dan NULL → 'biasa', lower,
  * `[\s-]+` → '_', lalu pemetaan alias → 'biasa'.
  */
 export function klasifikasiNormSql(column: AnyColumn | SQL): SQL<string> {
-    const trimmed = sql`regexp_replace(${column}, ${PG_TRIM_PATTERN}::text, '', 'g')`;
-    const base = sql`regexp_replace(lower(coalesce(nullif(${trimmed}, ''), 'biasa')), ${PG_SEPARATOR_PATTERN}::text, '_', 'g')`;
+    const base = sifatKunciSql(column);
     const aliases = sql.join(BIASA_SIFAT_ALIASES.map(alias => sql`${alias}`), sql`, `);
     return sql<string>`(CASE WHEN ${base} IN (${aliases}) THEN 'biasa' ELSE ${base} END)`;
 }

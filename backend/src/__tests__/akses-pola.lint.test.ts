@@ -32,6 +32,10 @@ function countPerFile(match: (line: string) => boolean, skip: (file: string) => 
     return counts;
 }
 
+const normalisasiKelasLokal = (line: string) =>
+    /lower\(coalesce\(|replace\(lower\(|lower\(replace\(coalesce\(/.test(line)
+    && /sifat|klasifikasi_keamanan|klasifikasiKeamanan/i.test(line);
+
 describe('pola akses kelas keamanan', () => {
     it('normalisasi kelas lokal di SQL hanya di tempat yang tercatat; yang baru memakai klasifikasiNormSql', () => {
         // Utang lama: tiap tempat menormalisasi sendiri. Penyatuan ke
@@ -43,21 +47,30 @@ describe('pola akses kelas keamanan', () => {
             'services/arsip-terjaga.service.ts': 1,
             'services/arsip-vital.service.ts': 1,
             'services/arsip.service.ts': 2,
-            'services/dashboard.service.ts': 4,
+            'services/dashboard.service.ts': 2,
             'services/fulltext-search.service.ts': 1,
-            'services/global-search.service.ts': 4,
+            'services/global-search.service.ts': 2,
             'services/layanan-arsip.service.ts': 1,
+            'services/notification.service.ts': 3,
             'services/penyusutan.service.ts': 2,
-            'services/report.service.ts': 3,
+            'services/report.service.ts': 1,
             'services/retention-governance.service.ts': 2,
             'services/surat-keluar.service.ts': 2,
-            'services/surat-masuk.service.ts': 2,
         };
-        const counts = countPerFile(
-            (line) => /lower\(coalesce\(|replace\(lower\(/.test(line) && /sifat|klasifikasi_keamanan|klasifikasiKeamanan/i.test(line),
-            (file) => file.startsWith('services/access/'),
-        );
+        // sifat_surat surat masuk sudah seluruhnya lewat klasifikasiInSql;
+        // sisa daftar ini kolom klasifikasi_keamanan arsip dan surat keluar.
+        const counts = countPerFile(normalisasiKelasLokal, (file) => file.startsWith('services/access/'));
         expect(counts).toEqual(tercatat);
+    });
+
+    it('mengenali bentuk normalisasi sifat_surat lama yang sudah diganti klasifikasiInSql', () => {
+        const salinanLama = [
+            "        WHEN lower(coalesce(${suratMasuk.sifatSurat}, 'biasa'))",
+            "        ELSE replace(replace(lower(coalesce(${suratMasuk.sifatSurat}, 'biasa')), ' ', '_'), '-', '_')",
+            "    const normalized = sql<string>`lower(replace(coalesce(${suratMasuk.sifatSurat}, 'biasa'), '-', '_'))`;",
+        ];
+        expect(salinanLama.filter(normalisasiKelasLokal)).toEqual(salinanLama);
+        expect(normalisasiKelasLokal('    return klasifikasiInSql(suratMasuk.sifatSurat, classes);')).toBe(false);
     });
 
     it('baris arsip penuh hanya dipilih di jalur detail dan kunci tulis', () => {

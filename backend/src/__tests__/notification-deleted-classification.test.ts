@@ -54,4 +54,11 @@ describe('notifikasi surat masuk pending', () => {
         expect(ids).not.toContain(letterId(2));
         expect(ids).not.toContain(letterId(4));
     });
+
+    it('memuat sifat Sangat Segera yang tersimpan seperti di sumber sebagai surat mendesak', async () => {
+        const items = await service.getPendingSuratMasuk('ditjen', 'user-1', ['biasa'], new Set());
+        expect(items.find(item => item.referenceId === letterId(1))).toMatchObject({
+            type: 'urgent', title: 'Surat Sangat Segera belum diproses',
+        });
+    });
 });

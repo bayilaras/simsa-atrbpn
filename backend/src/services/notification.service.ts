@@ -24,32 +24,14 @@ import {
 import { klasifikasiInSql } from './access/visibility-spec';
 import { LABEL_DIKECUALIKAN, readRefKey, recordAccessService, type RecordUser } from './rangkaian/deps.js';
 import { jakartaDate } from '../utils/jakarta-date.js';
+import { normalizeSifatSurat } from './sifat-surat.js';
 
 type SecurityClassScope = string[] | null | undefined;
 const ADMIN_NOTIFICATION_ROLES = new Set(['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']);
 const RETENTION_NOTIFICATION_ROLES = new Set([...ADMIN_NOTIFICATION_ROLES, 'auditor']);
 
 function incomingSecurityCondition(classes: SecurityClassScope) {
-    if (classes === undefined || classes === null) return undefined;
-    if (classes.length === 0) return sql`false`;
-
-    const normalized = sql<string>`lower(replace(coalesce(${suratMasuk.sifatSurat}, 'biasa'), '-', '_'))`;
-    const predicates: SQL[] = [];
-    if (classes.includes('biasa')) {
-        predicates.push(inArray(normalized, [
-            'biasa',
-            'biasa/terbuka',
-            'terbuka',
-            'segera',
-            'sangat_segera',
-            'undangan',
-            'penting',
-        ]));
-    }
-    for (const classification of classes.filter(value => value !== 'biasa')) {
-        predicates.push(eq(normalized, classification));
-    }
-    return predicates.length > 0 ? or(...predicates) : sql`false`;
+    return klasifikasiInSql(suratMasuk.sifatSurat, classes);
 }
 
 function archiveSecurityCondition(classes: SecurityClassScope) {
@@ -238,16 +220,18 @@ export class NotificationService {
             const tanggalSurat = surat.tanggalSurat ? new Date(surat.tanggalSurat) : new Date(surat.createdAt);
             const daysSince = Math.floor((currentDate.getTime() - tanggalSurat.getTime()) / (1000 * 60 * 60 * 24));
 
-            // Determine priority based on sifat surat and age
+            // Determine priority based on sifat surat and age. Sifat hasil impor
+            // tersimpan seperti di sumber ('Sangat Segera'), jadi dibaca sebagai kunci.
+            const kunci = normalizeSifatSurat(surat.sifatSurat);
             let type: 'urgent' | 'warning' | 'info' = 'info';
-            if (surat.sifatSurat === 'sangat_segera' || daysSince > 7) {
+            if (kunci === 'sangat_segera' || daysSince > 7) {
                 type = 'urgent';
-            } else if (surat.sifatSurat === 'segera' || daysSince > 3) {
+            } else if (kunci === 'segera' || daysSince > 3) {
                 type = 'warning';
             }
 
-            const sifatLabel = surat.sifatSurat === 'sangat_segera' ? 'Sangat Segera' :
-                surat.sifatSurat === 'segera' ? 'Segera' : 'Biasa';
+            const sifatLabel = kunci === 'sangat_segera' ? 'Sangat Segera' :
+                kunci === 'segera' ? 'Segera' : 'Biasa';
 
             return {
                 id: statefulId('surat-masuk', surat.id, surat.status || 'pending', type),
