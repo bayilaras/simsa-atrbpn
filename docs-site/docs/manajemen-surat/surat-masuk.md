@@ -52,7 +52,7 @@ Form akan muncul dengan kolom-kolom berikut:
 | **Pengirim** | Nama instansi / perorangan pengirim | ✅ |
 | **Perihal** | Subjek / topik surat | ✅ |
 | **Klasifikasi** | Pilih kode klasifikasi dari dropdown | ✅ |
-| **Sifat Surat** | Biasa / Segera / Sangat Segera / Rahasia / Undangan / Penting. Sifat Rahasia hanya dapat ditetapkan oleh Super Admin; Admin Unit Kerja tidak melihat pilihan ini kecuali sifat itu sudah tersimpan pada surat | ✅ |
+| **Sifat Surat** | Biasa / Segera / Sangat Segera / Terbatas / Rahasia / Sangat Rahasia / Undangan / Penting. Terbatas, Rahasia, dan Sangat Rahasia adalah kelas keamanan surat. Admin Unit Kerja dapat memilih Terbatas; Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin, dan Admin Unit Kerja tidak melihat kedua pilihan itu kecuali sifat itu sudah tersimpan pada surat | ✅ |
 | **Lampiran** | Upload file surat (PDF, gambar, dll) | ❌ |
 
 :::tip Tampilan Form Tambah Surat Masuk
@@ -60,7 +60,7 @@ Form ini berisi kolom-kolom input yang harus diisi:
 - **Nomor Surat**, **Tanggal Surat**, **Tanggal Terima** (dengan date picker 📅)
 - **Pengirim**, **Perihal** (kolom teks)
 - **Klasifikasi** (dropdown pilihan kode)
-- **Sifat Surat** (dropdown: Biasa / Segera / Sangat Segera / Rahasia / Undangan / Penting)
+- **Sifat Surat** (dropdown: Biasa / Segera / Sangat Segera / Terbatas / Rahasia / Sangat Rahasia / Undangan / Penting, sesuai kewenangan peran)
 - **Lampiran** (area drag & drop untuk upload file 📎)
 - Tombol **"Batal"** dan **"Simpan"** di bagian bawah
 :::
@@ -142,7 +142,7 @@ Setelah disimpan, status surat masuk otomatis berubah menjadi **"Sudah Dibalas"*
 2. Ubah data yang diperlukan.
 3. Klik **"Simpan"** untuk menyimpan perubahan.
 
-Sifat Rahasia yang sudah tersimpan boleh dipertahankan. Bila diganti lalu disimpan, sifat itu hanya dapat dipilih kembali oleh Super Admin.
+Sifat Rahasia atau Sangat Rahasia yang sudah tersimpan boleh dipertahankan. Bila diganti lalu disimpan, sifat itu hanya dapat dipilih kembali oleh Super Admin.
 
 ---
 
