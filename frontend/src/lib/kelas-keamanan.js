@@ -8,12 +8,17 @@ export const KELAS_KEAMANAN = Object.freeze(['biasa', 'terbatas', 'rahasia', 'sa
 const KELAS_DIKENAL = new Set(KELAS_KEAMANAN)
 
 // Nilai sifat_surat lama yang menyatakan urgensi/jenis, bukan kerahasiaan.
+// Sama dengan BIASA_SIFAT_ALIASES backend.
 const SIFAT_BIASA = new Set([
     'biasa',
     'biasa/terbuka',
+    'biasa_/_terbuka',
     'terbuka',
     'segera',
     'sangat_segera',
+    'amat_segera',
+    'kilat',
+    'amat_segera/kilat',
     'undangan',
     'penting',
 ])

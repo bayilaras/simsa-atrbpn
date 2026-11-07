@@ -1,6 +1,9 @@
 // Alias sifat/urgensi lama yang BUKAN kelas kerahasiaan. Harus identik dengan
-// BIASA_SIFAT_ALIASES backend/src/services/access/visibility-spec.ts:13-21.
-const BIASA_ALIAS = new Set(['biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting'])
+// BIASA_SIFAT_ALIASES di backend/src/services/access/visibility-spec.ts.
+const BIASA_ALIAS = new Set([
+    'biasa', 'biasa/terbuka', 'biasa_/_terbuka', 'terbuka', 'segera', 'sangat_segera',
+    'amat_segera', 'kilat', 'amat_segera/kilat', 'undangan', 'penting',
+])
 const TERKENDALI = new Set(['terbatas', 'rahasia', 'sangat_rahasia'])
 
 export const JENIS_RELASI_LABEL = Object.freeze({
@@ -10,13 +13,16 @@ export const JENIS_RELASI_LABEL = Object.freeze({
     merujuk: 'Merujuk',
 })
 
-/** Cermin normalizeSecurityClassification backend (visibility-spec.ts:40-59): trim, lower, `[\s-]+`→`_`, alias→biasa. */
+/** Cermin normalizeSecurityClassification backend (visibility-spec.ts): trim, lower, `[\s-]+`→`_`, alias→biasa. */
 export function normalisasiSifat(v) {
     const s = String(v ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_')
     return BIASA_ALIAS.has(s) || s === '' ? 'biasa' : s
 }
 
-/** Hanya terbatas/rahasia/sangat_rahasia terkendali -- nilai tak dikenal dianggap biasa, sama seperti server. */
+/**
+ * Hanya terbatas/rahasia/sangat_rahasia yang terkendali. Nilai tak dikenal juga
+ * false di sini, tetapi server tidak menampilkannya kepada siapa pun.
+ */
 export function isSifatTerkendali(v) {
     return TERKENDALI.has(normalisasiSifat(v))
 }

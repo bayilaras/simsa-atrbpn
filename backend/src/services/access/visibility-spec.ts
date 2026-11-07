@@ -9,13 +9,21 @@ import { resolveEffectiveUnitKerjaId } from '../../utils/resolve-unit-kerja.js';
  */
 export const SECURITY_CLASSES = ['biasa', 'terbatas', 'rahasia', 'sangat_rahasia'] as const;
 
-/** Nilai `sifat_surat` lama yang menyatakan urgensi/jenis, bukan kerahasiaan. */
+/**
+ * Nilai `sifat_surat` lama yang menyatakan urgensi/jenis, bukan kerahasiaan.
+ * Salinan: scripts/backfill-rangkaian-lama.mjs, scripts/preflight-integrasi-surat.mjs,
+ * frontend/src/lib/kelas-keamanan.js, dan frontend/src/lib/tindak-lanjut.js.
+ */
 export const BIASA_SIFAT_ALIASES = [
     'biasa',
     'biasa/terbuka',
+    'biasa_/_terbuka',
     'terbuka',
     'segera',
     'sangat_segera',
+    'amat_segera',
+    'kilat',
+    'amat_segera/kilat',
     'undangan',
     'penting',
 ] as const;

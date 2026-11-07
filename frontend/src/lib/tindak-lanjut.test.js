@@ -14,6 +14,9 @@ describe('normalisasiSifat / isSifatTerkendali', () => {
         expect(normalisasiSifat('biasa/terbuka')).toBe('biasa')
         expect(normalisasiSifat(undefined)).toBe('biasa')
         expect(normalisasiSifat('')).toBe('biasa')
+        expect(normalisasiSifat('Kilat')).toBe('biasa')
+        expect(normalisasiSifat('Amat Segera/Kilat')).toBe('biasa')
+        expect(normalisasiSifat('Biasa / Terbuka')).toBe('biasa')
     })
 
     it('nilai tak dikenal TIDAK dianggap terkendali (beda dari draf awal rencana)', () => {

@@ -288,9 +288,10 @@ describe('dry-run', () => {
         try {
             await database.exec(`UPDATE surat_masuk SET sifat_surat = ' Sangat-Rahasia ' WHERE id = '${S(1)}';
                                  UPDATE surat_masuk SET sifat_surat = 'Rahasia Negara' WHERE id = '${S(2)}';
-                                 UPDATE surat_masuk SET sifat_surat = 'Kilat' WHERE id = '${S(6)}';`);
+                                 UPDATE surat_masuk SET sifat_surat = 'Konfidensial' WHERE id = '${S(6)}';`);
             const ubah = await buildPlan(database, { batas: BATAS_UJI });
             // SM1 'sangat_rahasia' dikenal; SM2 tak dikenal; SM6 tak dikenal tetapi bukan target (label tak terpetakan).
+            // ('Kilat' tidak dipakai lagi di sini: kini alias urgensi yang dibaca biasa.)
             expect(ubah.total.sifat_tak_dikenal).toBe(1);
             expect(ubah.sha256).not.toBe(awal.sha256);
         } finally {

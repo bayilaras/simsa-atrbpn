@@ -20,6 +20,9 @@ describe('record classification access policy', () => {
     it('allows ordinary/open records after unit authorization', () => {
         expect(isAllowedForClassification({ role: 'staff' }, 'Biasa/Terbuka')).toBe(true);
         expect(isAllowedForClassification({ role: 'staff' }, 'Sangat Segera')).toBe(true);
+        expect(isAllowedForClassification({ role: 'staff' }, 'Kilat')).toBe(true);
+        expect(isAllowedForClassification({ role: 'staff' }, 'Amat Segera')).toBe(true);
+        expect(isAllowedForClassification({ role: 'staff' }, 'Amat Segera/Kilat')).toBe(true);
     });
 
     it('fails closed for unrecognised classifications', () => {

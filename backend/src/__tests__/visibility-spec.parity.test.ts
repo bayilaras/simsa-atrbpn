@@ -41,6 +41,13 @@ const BASE_VALUES: Array<string | null> = [...new Set<string | null>([
     'klasifikasi-tidak-dikenal',
     'SÉGERA',
     'constructor',
+    // Nilai register impor: urgensi tata naskah dan penulisan Biasa/Terbuka lain.
+    'Kilat',
+    'Amat Segera',
+    'Amat Segera/Kilat',
+    'Biasa / Terbuka',
+    '-',
+    'Konfidensial',
 ])];
 
 const CASES: Array<string | null> = [
@@ -110,6 +117,18 @@ describe('visibility-spec: normalisasi klasifikasi', () => {
         }
         expect(await sqlClass('Sangat Rahasia')).toBe('sangat_rahasia');
         expect(normalizeSecurityClassification('Sangat Rahasia')).toBe('sangat_rahasia');
+    });
+
+    it('urgensi Kilat/Amat Segera dan Biasa / Terbuka menjadi biasa; "-" dan Konfidensial tetap tak dikenal', async () => {
+        for (const value of ['Kilat', 'Amat Segera', 'Amat Segera/Kilat', 'Biasa / Terbuka']) {
+            expect(normalizeSecurityClassification(value)).toBe('biasa');
+            expect(await sqlClass(value)).toBe('biasa');
+        }
+        for (const [value, token] of [['-', '_'], ['Konfidensial', 'konfidensial']]) {
+            expect(normalizeSecurityClassification(value)).toBe(token);
+            expect(await sqlClass(value)).toBe(token);
+            expect(SECURITY_CLASSES as readonly string[]).not.toContain(token);
+        }
     });
 
     it('klasifikasiInSql: undefined/null tanpa filter, [] selalu false, daftar menjadi IN', async () => {

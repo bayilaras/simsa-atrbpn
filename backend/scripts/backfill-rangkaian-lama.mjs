@@ -72,7 +72,8 @@ export const SIFAT_NORM_SEPARATOR_PATTERN = `[${PG_WHITESPACE_CLASS}-]+`;
  * kesamaannya dijaga test backfill-rangkaian-lama.test.ts.
  */
 export const KELAS_SIFAT_DIKENAL = Object.freeze([
-  'biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting',
+  'biasa', 'biasa/terbuka', 'biasa_/_terbuka', 'terbuka', 'segera', 'sangat_segera',
+  'amat_segera', 'kilat', 'amat_segera/kilat', 'undangan', 'penting',
   'terbatas', 'rahasia', 'sangat_rahasia',
 ]);
 
