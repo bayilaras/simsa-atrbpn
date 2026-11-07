@@ -2,3 +2,8 @@
 // frontend), jadi sebutkan siapa yang berwenang, bukan hanya penolakannya.
 export const PESAN_KELAS_MELEBIHI_KEWENANGAN =
     'Klasifikasi keamanan melebihi kewenangan pengguna. Kelas Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin.';
+
+// Sifat surat masuk sekaligus kelas keamanannya. Kata urgensi yang disebut di
+// sini dibaca Biasa (BIASA_SIFAT_ALIASES di services/access/visibility-spec.ts).
+export const PESAN_SIFAT_TIDAK_DIKENAL =
+    'Sifat surat tidak dikenal. Gunakan Biasa, Terbatas, Rahasia, atau Sangat Rahasia, atau sifat urgensi Segera, Sangat Segera, Amat Segera/Kilat, Penting, atau Undangan.';

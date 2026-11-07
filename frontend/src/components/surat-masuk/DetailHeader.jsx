@@ -8,6 +8,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { TindakLanjutMenu } from '@/components/surat/TindakLanjutMenu';
+import { kunciSifatSuratMasuk } from '@/lib/sifat-surat-masuk';
 
 export function DetailHeader({ surat, onBack, onEdit, onDistribute, onArchive, onTerima, onPenyelesaian, onTautkan, isAdmin }) {
     // Respons lama tanpa aksesMelalui berasal dari jalur pemilik.
@@ -17,6 +18,8 @@ export function DetailHeader({ surat, onBack, onEdit, onDistribute, onArchive, o
     const aksi = Array.isArray(surat.aksiDiizinkan) ? surat.aksiDiizinkan : null;
     const bolehEdit = (aksi ? aksi.includes('edit') : isAdmin) && milik;
     const bolehArsip = (aksi ? aksi.includes('arsipkan') : isAdmin) && milik;
+    // Sifat hasil impor tersimpan seperti di sumber ('Sangat Segera').
+    const kunciSifat = kunciSifatSuratMasuk(surat.sifatSurat);
     const menu = (variant, className) => (
         <TindakLanjutMenu
             jenis="surat_masuk"
@@ -55,12 +58,12 @@ export function DetailHeader({ surat, onBack, onEdit, onDistribute, onArchive, o
                         <div className="min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                                 <h1 className="text-xl md:text-2xl font-bold">Detail Surat Masuk</h1>
-                                {surat.sifatSurat === 'sangat_segera' && (
+                                {kunciSifat === 'sangat_segera' && (
                                     <Badge className="bg-red-500/90 hover:bg-red-500 text-white border-0">
                                         Sangat Segera
                                     </Badge>
                                 )}
-                                {surat.sifatSurat === 'segera' && (
+                                {kunciSifat === 'segera' && (
                                     <Badge className="bg-orange-500/90 hover:bg-orange-500 text-white border-0">
                                         Segera
                                     </Badge>

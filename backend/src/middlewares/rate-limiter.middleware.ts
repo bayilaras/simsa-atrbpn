@@ -1,8 +1,12 @@
+import express, { type Request, type RequestHandler } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { env } from '../config/env';
 import type { AuthRequest } from './auth.middleware';
 import { createRateLimiterStore, usesSharedRateLimits } from '../config/rate-limits.js';
 import { createAuthAttemptLimiter } from './auth-attempt-limiter.middleware.js';
+import {
+    networkRateLimitKey, passwordCheckRateLimitKey, principalRateLimitKey, signInIdentifierKey,
+} from './rate-limit-key.js';
 
 const shared = usesSharedRateLimits();
 
@@ -13,47 +17,131 @@ const shared = usesSharedRateLimits();
  */
 const isDev = !shared && (env.NODE_ENV === 'development' || env.NODE_ENV === 'test');
 
+export const GENERAL_RATE_LIMIT_MAX = isDev ? 1000 : 500;
+
 // Every deployed instance uses the same database-backed policy counters.
+// Each provisioned user has a separate quota, so colleagues behind one office NAT
+// do not use up each other's; requests without such a session share the
+// network quota.
 export const generalLimiter = rateLimit({
     store: createRateLimiterStore('general'),
     passOnStoreError: false,
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: isDev ? 1000 : 500, // Reasonable in dev; 500 per window in production
+    max: GENERAL_RATE_LIMIT_MAX,
+    keyGenerator: principalRateLimitKey,
     message: {
         error: 'Too Many Requests',
-        message: 'Too many requests from this IP, please try again after 15 minutes',
+        message: 'Terlalu banyak permintaan. Coba lagi setelah 15 menit.',
     },
     standardHeaders: true,
     legacyHeaders: false,
 });
 
-// Strict rate limiter for authentication endpoints - 5 attempts per 15 minutes
-export const authLimiter = createAuthAttemptLimiter({
+// Failed authentication attempts per 15 minutes. Each account has its own
+// small budget per network, so one person's typos do not lock colleagues
+// behind the same office NAT out; the network ceiling bounds the total.
+export const AUTH_FAILED_ATTEMPTS_PER_ACCOUNT = 5;
+export const AUTH_FAILED_ATTEMPTS_PER_NETWORK = isDev ? 50 : 30;
+
+// Better Auth routes on the normalized URL (dot segments and backslashes
+// resolved). Only paths already in that form are served, so the gates below
+// see the same path Better Auth acts on.
+const canonicalAuthPath: RequestHandler = (req, res, next) => {
+    const requested = req.originalUrl.split('?')[0];
+    let canonical: string | undefined;
+    try { canonical = new URL(req.originalUrl, 'http://simsa.invalid').pathname; } catch { /* rejected below */ }
+    if (canonical !== requested) {
+        res.status(404).json({ success: false, error: 'Not Found' });
+        return;
+    }
+    next();
+};
+
+const authNetworkLimiter = createAuthAttemptLimiter({
     store: createRateLimiterStore('auth'),
     shared,
-    maximum: isDev ? 50 : 5,
+    maximum: AUTH_FAILED_ATTEMPTS_PER_NETWORK,
+    keyGenerator: networkRateLimitKey,
+    message: 'Terlalu banyak percobaan yang gagal dari jaringan ini. Coba lagi setelah 15 menit.',
 });
 
+// Failed email sign-ins per network and account. A successful sign-in clears
+// that account's earlier failures.
+export const authAccountLimiter = createAuthAttemptLimiter({
+    store: createRateLimiterStore('auth-account'),
+    shared,
+    maximum: AUTH_FAILED_ATTEMPTS_PER_ACCOUNT,
+    keyGenerator: signInIdentifierKey,
+    requestPropertyName: 'authAccountRateLimit',
+    resetOnSuccess: true,
+});
+
+// Failed current-password checks per network and signed-in user (per network
+// without a provisioned session). A successful change proves the current
+// password and clears that key's earlier failures.
+const passwordCheckLimiter = createAuthAttemptLimiter({
+    store: createRateLimiterStore('auth-password'),
+    shared,
+    maximum: AUTH_FAILED_ATTEMPTS_PER_ACCOUNT,
+    keyGenerator: passwordCheckRateLimitKey,
+    requestPropertyName: 'authPasswordRateLimit',
+    message: 'Terlalu banyak percobaan kata sandi yang gagal. Coba lagi setelah 15 menit.',
+    resetOnSuccess: true,
+});
+
+// Trailing slashes and letter case never reach a different Better Auth route.
+const isPostTo = (req: Request, path: string) =>
+    req.method === 'POST' && req.path.replace(/\/+$/, '').toLowerCase() === path;
+
+const readSignInBody = express.text({ type: () => true, limit: '16kb' });
+
+// The account is read from the JSON body before Better Auth runs. When the
+// backend reads the request stream itself, the body is buffered as text (at
+// most 16 KiB) and Better Auth receives exactly that string. When a hosting
+// layer has already parsed the JSON, the limiter and Better Auth both read
+// that parsed object. Only JSON is accepted, so either way they read the same
+// account; a request without a body goes through unchanged.
+const signInAccountGate: RequestHandler = (req, res, next) => {
+    if (!isPostTo(req, '/sign-in/email')) return next();
+    const declaresBody = req.headers['transfer-encoding'] !== undefined || Number(req.headers['content-length']) > 0;
+    if (!declaresBody) return authAccountLimiter(req, res, next);
+    if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Unsupported Media Type', message: 'Gunakan application/json.' });
+        return;
+    }
+    readSignInBody(req, res, error => (error ? next(error) : authAccountLimiter(req, res, next)));
+};
+
+const changePasswordGate: RequestHandler = (req, res, next) =>
+    isPostTo(req, '/change-password') ? passwordCheckLimiter(req, res, next) : next();
+
+// The network limiter wraps the account and password gates, so it also sees
+// (and refunds) their 429 responses, with shared and local counters alike.
+export const authLimiter: RequestHandler[] = [canonicalAuthPath, authNetworkLimiter, signInAccountGate, changePasswordGate];
+
 // Rate limiter for sensitive operations (e.g., delete, export) - 20 per 15 minutes
+// per user (network quota without a provisioned session).
 export const sensitiveLimiter = rateLimit({
     store: createRateLimiterStore('sensitive'),
     passOnStoreError: false,
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 20,
+    keyGenerator: principalRateLimitKey,
     message: {
         error: 'Too Many Requests',
-        message: 'Too many sensitive operations from this IP, please try again later',
+        message: 'Terlalu banyak operasi sensitif. Coba lagi setelah 15 menit.',
     },
     standardHeaders: true,
     legacyHeaders: false,
 });
 
-// Export rate limiter - 5 exports per minute (prevents data dumping)
+// Export rate limiter - 5 exports per minute per user (prevents data dumping)
 export const exportLimiter = rateLimit({
     store: createRateLimiterStore('export'),
     passOnStoreError: false,
     windowMs: 60 * 1000, // 1 minute
     max: 5,
+    keyGenerator: principalRateLimitKey,
     message: {
         error: 'Too Many Exports',
         message: 'Terlalu banyak permintaan export. Coba lagi setelah 1 menit.',
@@ -62,12 +150,16 @@ export const exportLimiter = rateLimit({
     legacyHeaders: false,
 });
 
-// Upload rate limiter - 10 uploads per minute (prevents disk abuse)
+// Upload rate limiter - 10 uploads per minute per user (prevents disk abuse).
+// Reading attachment lists is not an upload; a page may load one list per
+// archive in parallel, and generalLimiter still bounds those reads.
 export const uploadLimiter = rateLimit({
     store: createRateLimiterStore('upload'),
     passOnStoreError: false,
     windowMs: 60 * 1000, // 1 minute
     max: 10,
+    keyGenerator: principalRateLimitKey,
+    skip: req => req.method === 'GET' || req.method === 'HEAD',
     message: {
         error: 'Too Many Uploads',
         message: 'Terlalu banyak upload. Coba lagi setelah 1 menit.',

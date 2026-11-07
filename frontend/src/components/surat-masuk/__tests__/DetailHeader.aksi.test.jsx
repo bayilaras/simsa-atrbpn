@@ -62,6 +62,25 @@ describe('DetailHeader', () => {
         fireEvent.click(await screen.findByRole('menuitem', { name: 'Terima Disposisi' }))
         expect(onTerima).toHaveBeenCalledTimes(1)
     })
+
+    it.each([
+        ['Sangat Segera', 'Sangat Segera'],
+        [' sangat-segera ', 'Sangat Segera'],
+        ['SEGERA', 'Segera'],
+        ['segera', 'Segera'],
+    ])('lencana urgensi membaca sifat %j seperti tersimpan dari impor', (sifatSurat, label) => {
+        tampil({ ...dasar, sifatSurat })
+        expect(screen.getByText(label)).toBeInTheDocument()
+    })
+
+    it('tanpa lencana urgensi untuk sifat Biasa atau kelas keamanan', () => {
+        for (const sifatSurat of ['Biasa', null, 'Rahasia']) {
+            tampil({ ...dasar, sifatSurat })
+            expect(screen.queryByText('Sangat Segera')).toBeNull()
+            expect(screen.queryByText('Segera')).toBeNull()
+            cleanup()
+        }
+    })
 })
 
 describe('StatusSidebar', () => {

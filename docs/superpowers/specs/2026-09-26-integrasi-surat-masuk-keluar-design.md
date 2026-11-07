@@ -585,7 +585,7 @@ Unit lain (misalnya `bagian_*` atau direktorat yang tidak terlibat) ditolak 422 
   - Klien memakai debounce 300 ms, minimal 3 karakter, AbortController, penjaga urutan basi, dan cache 20 entri.
   - Server memakai `lacakLimiter` per user.
   - Ctrl+K GlobalSearch tidak menambah request; hanya ada item "Lacak rangkaian 'q'".
-  - Masalah NAT pada `generalLimiter` (500/15 menit per IP, `app.ts:344`) dijadikan **tugas terpisah**: re-key per user terautentikasi, dengan sign-off. Limiter ini tidak di-skip.
+  - Masalah NAT pada `generalLimiter` (500/15 menit per IP, `app.ts:344`) dijadikan **tugas terpisah**: re-key per user terautentikasi, dengan sign-off. Limiter ini tidak di-skip. **Sudah diselesaikan:** kuota `generalLimiter`, `sensitiveLimiter`, `exportLimiter` dan `uploadLimiter` kini per pengguna aktif yang sudah diprovisikan, dan login gagal dihitung per akun per jaringan dengan plafon per jaringan. Rinciannya di runbook P3 §8.1 ("Kebijakan batas laju").
 
 ---
 
@@ -848,7 +848,7 @@ Kata "Kembalikan" **tidak** dipakai untuk penyerahan berkas karena sudah dipakai
 | Berkas tertutup berubah diam-diam (disposisi baru, surat induk dihapus/diubah) | Trigger penutupan atas `surat_distributions`; guard update/delete surat masuk anggota; filter `is_deleted` di semua recompute |
 | Salah pilih unit/klasifikasi saat pemberkasan | Konfirmasi dua langkah; Koreksi Berkas maker-checker via GUC dan audit |
 | Siklus atau sisa rangkaian setelah gabung/tautan | Kunci baris berurutan, pemindahan distribusi, tautan 1-anggota = gabung, trigger anti-siklus |
-| Batas `generalLimiter` terbagi di belakang NAT | `lacakLimiter` per user, debounce; re-key sebagai tugas terpisah dengan sign-off |
+| Batas `generalLimiter` terbagi di belakang NAT | `lacakLimiter` per user, debounce. **Sudah diselesaikan:** `generalLimiter` kini per pengguna aktif yang sudah diprovisikan (runbook P3 §8.1) |
 | Rebase dengan PR #15 dan branch snapshot | Dimerge setelah PR #15; `getStats`, `arsip.service`, `ArchiveDialog`, `KlasifikasiPicker`, `dosir.service` tidak disentuh; hook diletakkan setelah insert |
 | Churn test create berbasis mock | Hook hanya berjalan bila payload tindak lanjut/disposisi ada dan dimuat dari modul yang dapat di-mock; waktunya sudah dianggarkan di P3 |
 | Instruksi multi-baris diratakan | `MULTILINE_FIELDS` |

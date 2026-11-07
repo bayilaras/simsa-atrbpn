@@ -10,21 +10,38 @@ function reportRefundFailure() {
     catch { /* Keep the request counted if even telemetry is unavailable. */ }
 }
 
-/** Count failed attempts; success or downstream admission rejection refunds only its own window. */
-export function createAuthAttemptLimiter({ store, shared, maximum }: {
+const DEFAULT_MESSAGE = 'Terlalu banyak percobaan masuk yang gagal. Coba lagi setelah 15 menit.';
+
+/**
+ * Count failed attempts; success or downstream admission rejection refunds only its own window.
+ * Nested limiters need distinct request property names so each reads its own reservation.
+ * With resetOnSuccess, a 2xx response clears the key's earlier failures.
+ * Shared and local counters follow the same rules.
+ */
+export function createAuthAttemptLimiter({
+    store, shared, maximum, keyGenerator, message = DEFAULT_MESSAGE,
+    requestPropertyName = 'authRateLimit', resetOnSuccess = false,
+}: {
     store?: PostgresRateLimitStore; shared: boolean; maximum: number;
+    keyGenerator?: (req: Request) => string | Promise<string>;
+    message?: string; requestPropertyName?: string; resetOnSuccess?: boolean;
 }) {
+    const reservation = (req: Request) => (req as unknown as Record<string, RateLimitInfo | undefined>)[requestPropertyName];
     const limiter = rateLimit({
         store, passOnStoreError: false, windowMs: 15 * 60 * 1000, max: maximum,
-        requestPropertyName: 'authRateLimit',
-        message: { error: 'Too Many Attempts', message: 'Too many login attempts from this IP, please try again after 15 minutes' },
+        keyGenerator, requestPropertyName,
+        message: { error: 'Too Many Attempts', message },
         standardHeaders: true, legacyHeaders: false,
         skip: req => shared && (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || req.path === '/sign-out'),
+        // Shared counters refund in the wrapper below. Local counters refund
+        // here, with the same rule: a 429 from this or a nested limiter never
+        // checked credentials, so it is not a failed attempt.
         skipSuccessfulRequests: !shared,
+        requestWasSuccessful: (_req, res) => res.statusCode < 400 || res.statusCode === 429,
         handler: async (req, res, next, options) => {
             try {
                 if (shared) {
-                    const info = (req as Request & { authRateLimit?: RateLimitInfo }).authRateLimit;
+                    const info = reservation(req);
                     // A saturated PostgreSQL integer may not represent a new
                     // reservation. Keep that counter closed rather than refund
                     // a hit this request did not add.
@@ -55,7 +72,7 @@ export function createAuthAttemptLimiter({ store, shared, maximum }: {
     });
     const wrapper: RequestHandler = (req, res, next) => limiter(req, res, error => {
         if (error) return next(error);
-        const info = (req as Request & { authRateLimit?: RateLimitInfo }).authRateLimit;
+        const info = reservation(req);
         if (shared && store && info?.resetTime) {
             // Copy before downstream middleware can overwrite request metadata.
             const key = info.key;
@@ -66,10 +83,17 @@ export function createAuthAttemptLimiter({ store, shared, maximum }: {
                 res.once('finish', finish);
                 res.once('close', close);
             }).then(async finished => {
+                if (!finished) return;
+                // A successful sign-in proves the password, so this key's
+                // earlier failures no longer count.
+                if (resetOnSuccess && res.statusCode >= 200 && res.statusCode < 300) {
+                    await store.resetKey(key);
+                    return;
+                }
                 // Better Auth's shorter burst limiter may reject with 429
                 // before checking credentials. It must keep its own quota,
                 // without turning the rejection into a 15-minute login failure.
-                if (finished && ((res.statusCode >= 200 && res.statusCode < 400) || res.statusCode === 429)) {
+                if ((res.statusCode >= 200 && res.statusCode < 400) || res.statusCode === 429) {
                     await store.decrementInWindow(key, resetTime);
                 }
             }).catch(reportRefundFailure);
@@ -78,6 +102,13 @@ export function createAuthAttemptLimiter({ store, shared, maximum }: {
             if (process.env.VERCEL === '1') {
                 try { waitUntil(work); } catch { reportRefundFailure(); }
             }
+        } else if (!shared && resetOnSuccess && info) {
+            // Local counters: express-rate-limit's own success refund runs
+            // after this reset and leaves the cleared key at zero.
+            const key = info.key;
+            res.once('finish', () => {
+                if (res.statusCode >= 200 && res.statusCode < 300) void Promise.resolve(limiter.resetKey(key)).catch(() => {});
+            });
         }
         next();
     });

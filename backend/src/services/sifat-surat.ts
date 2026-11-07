@@ -13,3 +13,14 @@ export function normalizeSifatSurat(raw: string | null | undefined): string | nu
     const key = value.toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_|_$/g, '');
     return SIFAT_KEYS.has(key) ? key : value.slice(0, 50);
 }
+
+/**
+ * The sifat of an imported surat masuk, which is also its security class: an
+ * empty cell or "-" means Biasa, anything else is kept as written. Never
+ * truncated, so the class is judged on the whole value
+ * (assertSifatSuratMasukDapatDisimpan rejects one over the column length).
+ */
+export function sifatSuratMasukSumber(raw: string | null | undefined): string {
+    const value = raw?.trim() ?? '';
+    return !value || value === '-' ? 'Biasa' : value;
+}

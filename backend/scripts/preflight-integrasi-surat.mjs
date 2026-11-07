@@ -13,7 +13,17 @@ const MAX_ROWS_PER_CHECK = 500;
 // Harus sama dengan BIASA_SIFAT_ALIASES dan JS_WHITESPACE_CODEPOINTS di
 // src/services/access/visibility-spec.ts. Paritas dijaga oleh
 // src/__tests__/preflight-integrasi-surat.test.ts (sifat_surat_kelas).
-const BIASA_LIST = `'biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting'`;
+export const BIASA_LIST = Object.freeze([
+  'biasa', 'biasa/terbuka', 'biasa_/_terbuka', 'terbuka', 'segera', 'sangat_segera',
+  'amat_segera', 'kilat', 'amat_segera/kilat', 'amat_segera_/_kilat', 'undangan', 'penting',
+]);
+// Alias yang dipakai SQL lama (CASE per layanan) sebelum rilis paritas sifat
+// surat masuk. Dibekukan agar kelas_lama tetap menggambarkan perilaku produksi
+// sebelum rilis itu; jangan diselaraskan dengan BIASA_LIST.
+export const LEGACY_BIASA_LIST = Object.freeze([
+  'biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting',
+]);
+const sqlDaftar = values => values.map(value => `'${value}'`).join(', ');
 const JS_WHITESPACE_CODEPOINTS = [
   0x0009, 0x000a, 0x000b, 0x000c, 0x000d, 0x0020, 0x00a0, 0x1680,
   0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a,
@@ -22,7 +32,7 @@ const JS_WHITESPACE_CODEPOINTS = [
 const WS = JS_WHITESPACE_CODEPOINTS.map(cp => `\\u${cp.toString(16).padStart(4, '0')}`).join('');
 
 function kelasLamaSql(column) {
-  return `CASE WHEN lower(coalesce(${column}, 'biasa')) IN (${BIASA_LIST}) THEN 'biasa' `
+  return `CASE WHEN lower(coalesce(${column}, 'biasa')) IN (${sqlDaftar(LEGACY_BIASA_LIST)}) THEN 'biasa' `
     + `ELSE replace(replace(lower(coalesce(${column}, 'biasa')), ' ', '_'), '-', '_') END`;
 }
 
@@ -33,7 +43,7 @@ function kelasBaruSql(column) {
   // yang berbeda dari normalizeSecurityClassification('')==='biasa').
   const trimmed = `regexp_replace(${column}, '^[${WS}]+|[${WS}]+$', '', 'g')`;
   const base = `regexp_replace(lower(coalesce(nullif(${trimmed}, ''), 'biasa')), '[${WS}-]+', '_', 'g')`;
-  return `CASE WHEN ${base} IN (${BIASA_LIST}) THEN 'biasa' ELSE ${base} END`;
+  return `CASE WHEN ${base} IN (${sqlDaftar(BIASA_LIST)}) THEN 'biasa' ELSE ${base} END`;
 }
 
 export const PREFLIGHT_CHECKS = [
@@ -247,7 +257,7 @@ ORDER BY jumlah DESC, literal`,
   {
     id: 'sifat_surat_kelas',
     judul: 'Kelas keamanan per nilai sifat_surat: SQL lama vs normalisasi P0',
-    keputusan: 'Baris dengan kelas_lama berbeda dari kelas_baru adalah surat yang tampil/berubah di kotak disposisi setelah P0.',
+    keputusan: 'Baris dengan kelas_lama berbeda dari kelas_baru adalah surat yang tampil/berubah di kotak disposisi setelah P0, dan di daftar, statistik, laporan, pencarian, serta notifikasi surat masuk setelah rilis paritas sifat. kelas_baru di luar biasa/terbatas/rahasia/sangat_rahasia tidak terbaca oleh siapa pun; perbaikan per id dengan audit.',
     sql: `SELECT s.sifat_surat AS nilai, format('%L', s.sifat_surat) AS literal,
        ${kelasLamaSql('s.sifat_surat')} AS kelas_lama,
        ${kelasBaruSql('s.sifat_surat')} AS kelas_baru,

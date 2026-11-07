@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { PESAN_KELAS_TERBATAS_PERAN } from '@/lib/kelas-keamanan'
 import {
+    PESAN_ALASAN_TERKUNCI,
     PESAN_ARSIP_TIDAK_DAPAT_DIUBAH,
+    PESAN_REKONSILIASI_DIKUNCI,
     formAwal,
     kelasPerluPersetujuan,
     payloadPerubahan,
     pesanGalatUbahArsip,
+    statusAksiArsip,
     tanggalValid,
     validasiForm,
 } from './edit-arsip-form'
@@ -131,5 +134,71 @@ describe('pembantu lain', () => {
         expect(pesanGalatUbahArsip({ status: 400, message: 'Validation failed', details: [{ message: 'Tanggal tidak valid' }] }))
             .toBe('Tanggal tidak valid')
         expect(pesanGalatUbahArsip({})).toBe('Gagal memperbarui metadata arsip.')
+    })
+})
+
+describe('statusAksiArsip', () => {
+    const aktif = { disposalStatus: 'active', legalHold: false, disposalBatchId: null }
+
+    it('hak aksi dari server menang atas keadaan rekod', () => {
+        const dikunci = { ...aktif, aksiDiizinkan: [], alasanTerkunci: 'tidak_berwenang' }
+        expect(statusAksiArsip(dikunci)).toEqual({ boleh: false, alasan: PESAN_ALASAN_TERKUNCI.tidak_berwenang })
+        const dibuka = { ...aktif, legalHold: true, aksiDiizinkan: ['ubah_metadata', 'rekonsiliasi_aturan'], alasanTerkunci: null }
+        expect(statusAksiArsip(dibuka)).toEqual({ boleh: true, alasan: '' })
+        expect(statusAksiArsip(dibuka, 'rekonsiliasi_aturan')).toEqual({ boleh: true, alasan: '' })
+    })
+
+    it('perlu_izin_kelola menyebut halaman, mode saat ini, dan jalan keluarnya', () => {
+        const arsip = {
+            ...aktif,
+            aksiDiizinkan: [],
+            alasanTerkunci: 'perlu_izin_kelola',
+            izinAkses: { mode: 'download', berlakuSampai: '2026-12-01T03:00:00.000Z' },
+        }
+        const { boleh, alasan } = statusAksiArsip(arsip)
+        expect(boleh).toBe(false)
+        expect(alasan).toContain('Persetujuan Akses Rekod')
+        expect(alasan).toContain('"Tayang dan unduh"')
+        expect(alasan).toContain('"Tayang dan kelola"')
+        expect(alasan).toMatch(/Super Admin mencabutnya atau tunggu sampai masa berlakunya berakhir/)
+        expect(alasan).toContain(new Date('2026-12-01T03:00:00.000Z').toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }))
+        expect(alasan).not.toContain('Izin Akses Rekod')
+        // Kunci yang sama untuk rekonsiliasi, bukan kalimat legal hold.
+        expect(statusAksiArsip(arsip, 'rekonsiliasi_aturan').alasan).toBe(alasan)
+
+        const tayang = statusAksiArsip({ ...arsip, izinAkses: { mode: 'view', berlakuSampai: null } }).alasan
+        expect(tayang).toContain('"Tayang saja"')
+        expect(tayang).not.toContain('berlaku sampai')
+    })
+
+    it('kode tak dikenal jatuh ke tidak_berwenang', () => {
+        expect(statusAksiArsip({ ...aktif, aksiDiizinkan: [], alasanTerkunci: 'kode_baru' }).alasan)
+            .toBe(PESAN_ALASAN_TERKUNCI.tidak_berwenang)
+        expect(statusAksiArsip({ ...aktif, aksiDiizinkan: [], alasanTerkunci: '__proto__' }).alasan)
+            .toBe(PESAN_ALASAN_TERKUNCI.tidak_berwenang)
+        expect(statusAksiArsip({ ...aktif, aksiDiizinkan: ['rekonsiliasi_aturan'], alasanTerkunci: null }))
+            .toEqual({ boleh: false, alasan: PESAN_ALASAN_TERKUNCI.tidak_berwenang })
+    })
+
+    it('rekonsiliasi_aturan diperiksa terpisah dari ubah_metadata', () => {
+        const arsip = { ...aktif, aksiDiizinkan: ['ubah_metadata'], alasanTerkunci: null }
+        expect(statusAksiArsip(arsip, 'ubah_metadata').boleh).toBe(true)
+        expect(statusAksiArsip(arsip, 'rekonsiliasi_aturan').boleh).toBe(false)
+        const ditahan = { ...aktif, aksiDiizinkan: [], alasanTerkunci: 'legal_hold' }
+        expect(statusAksiArsip(ditahan).alasan).toBe(PESAN_ALASAN_TERKUNCI.legal_hold)
+        expect(statusAksiArsip(ditahan, 'rekonsiliasi_aturan').alasan).toBe(PESAN_REKONSILIASI_DIKUNCI)
+    })
+
+    it('tanpa aksiDiizinkan memakai keadaan rekod seperti sebelumnya', () => {
+        expect(statusAksiArsip(aktif)).toEqual({ boleh: true, alasan: '' })
+        expect(statusAksiArsip(aktif, 'rekonsiliasi_aturan')).toEqual({ boleh: true, alasan: '' })
+        expect(statusAksiArsip({ ...aktif, disposalStatus: 'executed' }).alasan)
+            .toBe('Metadata dikunci karena penyusutan arsip ini sudah dilaksanakan.')
+        expect(statusAksiArsip({ ...aktif, legalHold: true }).alasan)
+            .toBe('Metadata dikunci karena arsip sedang dalam legal hold.')
+        expect(statusAksiArsip({ ...aktif, disposalBatchId: 'batch-1' }).alasan)
+            .toBe('Metadata dikunci karena arsip sedang dalam proses penyusutan.')
+        expect(statusAksiArsip({ ...aktif, disposalStatus: 'proposed_musnah' }, 'rekonsiliasi_aturan'))
+            .toEqual({ boleh: false, alasan: PESAN_REKONSILIASI_DIKUNCI })
     })
 })

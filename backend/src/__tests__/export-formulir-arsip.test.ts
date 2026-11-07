@@ -3,10 +3,12 @@ import request from 'supertest';
 import ExcelJS from 'exceljs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ findAll: vi.fn(), audit: vi.fn() }));
+const state = vi.hoisted(() => ({ findAll: vi.fn(), jenisLama: vi.fn(), audit: vi.fn() }));
 vi.mock('../services/surat-masuk.service', () => ({ suratMasukService: { findAll: vi.fn() } }));
 vi.mock('../services/surat-keluar.service', () => ({ suratKeluarService: { findAll: vi.fn() } }));
-vi.mock('../services/arsip.service', () => ({ arsipService: { findAll: state.findAll } }));
+vi.mock('../services/arsip.service', () => ({
+    arsipService: { findAll: state.findAll, jenisPenyusutanLamaPerArsip: state.jenisLama },
+}));
 vi.mock('../services/audit-log.service', () => ({ auditLogService: { logActionOrThrow: state.audit } }));
 vi.mock('../middlewares/auth.middleware', () => ({ authMiddleware: (req: any, _res: any, next: any) => {
     req.user = { id: 'admin-a', email: 'admin@example.test', role: 'admin_unit', unitKerjaId: 'unit-a' }; next();
@@ -53,6 +55,7 @@ describe('Formulir 4 dan Formulir 6 memisahkan arsip aktif dan inaktif', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         state.audit.mockResolvedValue(undefined);
+        state.jenisLama.mockResolvedValue(new Map());
     });
 
     it('Formulir 6 Excel hanya memuat arsip inaktif', async () => {
@@ -146,5 +149,85 @@ describe('Formulir 4 dan Formulir 6 memisahkan arsip aktif dan inaktif', () => {
         const response = await request(app).get('/api/export/arsip/excel?formulirType=formulir9').expect(200);
         expect(response.headers['content-disposition']).toContain('arsip-aktif-');
         expect(state.audit.mock.calls[0][0].changes.formulirType).toBe('formulir4');
+    });
+});
+
+describe('arsip executed dari pemindahan dan alih media lama', () => {
+    // Sebelum migrasi 0035 pemindahan dan alih media juga menandai arsip executed.
+    const tereksekusi = (id: string, over: Record<string, unknown> = {}) =>
+        arsipBaris(id, { disposalStatus: 'executed', canonicalRetention: evaluasi('aktif'), ...over });
+    const penyusutanLama = () => [
+        arsipBaris('AKTIF-1'),
+        tereksekusi('PINDAH-LAMA'),
+        tereksekusi('ALIH-MEDIA-LAMA'),
+        tereksekusi('DIMUSNAHKAN', { canonicalRetention: evaluasi('kadaluarsa') }),
+        tereksekusi('DISERAHKAN', { canonicalRetention: evaluasi('kadaluarsa') }),
+    ];
+    const jenisLama = () => new Map([['PINDAH-LAMA', 'pemindahan'], ['ALIH-MEDIA-LAMA', 'alih_media']]);
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        state.audit.mockResolvedValue(undefined);
+        state.jenisLama.mockResolvedValue(jenisLama());
+    });
+
+    it('Formulir 6 Excel memuat pemindahan lama tanpa arsip yang dimusnahkan atau diserahkan', async () => {
+        state.findAll.mockResolvedValue(hasil(penyusutanLama()));
+        const isi = await isiExcel(await exportService.generateExcelArsip({ unitKerjaId: 'unit-a' }, 'formulir6'));
+        expect(isi).toContain('Berkas PINDAH-LAMA');
+        for (const id of ['AKTIF-1', 'ALIH-MEDIA-LAMA', 'DIMUSNAHKAN', 'DISERAHKAN']) expect(isi).not.toContain(`Berkas ${id}`);
+    });
+
+    it('Formulir 4 Excel memuat alih media lama yang masih aktif menurut JRA', async () => {
+        state.findAll.mockResolvedValue(hasil(penyusutanLama()));
+        const isi = await isiExcel(await exportService.generateExcelArsip({ unitKerjaId: 'unit-a' }, 'formulir4'));
+        expect(isi).toContain('Berkas AKTIF-1');
+        expect(isi).toContain('Berkas ALIH-MEDIA-LAMA');
+        for (const id of ['PINDAH-LAMA', 'DIMUSNAHKAN', 'DISERAHKAN']) expect(isi).not.toContain(`Berkas ${id}`);
+    });
+
+    it.each(['generateExcelArsip', 'generatePdfArsip'] as const)('%s Formulir 6 dengan pemindahan lama sebagai satu-satunya arsip inaktif menghasilkan berkas', async method => {
+        state.findAll.mockResolvedValue(hasil([arsipBaris('AKTIF-1'), tereksekusi('PINDAH-LAMA'), tereksekusi('DIMUSNAHKAN')]));
+        const buffer = await exportService[method]({ unitKerjaId: 'unit-a' }, 'formulir6');
+        if (method === 'generateExcelArsip') {
+            const isi = await isiExcel(buffer);
+            expect(isi).toContain('Berkas PINDAH-LAMA');
+            expect(isi).not.toContain('Berkas DIMUSNAHKAN');
+        } else {
+            expect(buffer.subarray(0, 4).toString()).toBe('%PDF');
+        }
+    });
+
+    it('rute Formulir 6 dengan pemindahan lama sebagai satu-satunya arsip inaktif mengembalikan 200 dan diaudit', async () => {
+        state.findAll.mockResolvedValue(hasil([arsipBaris('AKTIF-1'), tereksekusi('PINDAH-LAMA')]));
+        const response = await request(app).get('/api/export/arsip/pdf?formulirType=formulir6&tahun=2026').expect(200);
+        expect(response.headers['content-disposition']).toContain('arsip-inaktif-2026-');
+        expect(state.audit).toHaveBeenCalledTimes(1);
+    });
+
+    it('pencarian jenis dipanggil sekali dengan id unik arsip executed saja', async () => {
+        state.findAll.mockResolvedValue(hasil([...penyusutanLama(), tereksekusi('PINDAH-LAMA')]));
+        await exportService.generateExcelArsip({ unitKerjaId: 'unit-a' }, 'formulir6');
+        expect(state.jenisLama).toHaveBeenCalledExactlyOnceWith(['PINDAH-LAMA', 'ALIH-MEDIA-LAMA', 'DIMUSNAHKAN', 'DISERAHKAN']);
+    });
+
+    it.each(['formulir4', 'formulir6'])('pencarian jenis tidak dipanggil bila tidak ada arsip executed (%s)', async formulirType => {
+        state.findAll.mockResolvedValue(hasil([arsipBaris('AKTIF-1'), arsipBaris('INAKTIF-JRA', { canonicalRetention: evaluasi('inaktif') })]));
+        await exportService.generateExcelArsip({ unitKerjaId: 'unit-a' }, formulirType);
+        expect(state.jenisLama).not.toHaveBeenCalled();
+    });
+
+    it.each(['generateExcelArsip', 'generatePdfArsip'] as const)('%s tanpa formulirType (ekspor Laporan) tidak mencari jenis dan memuat semua arsip', async method => {
+        state.findAll.mockResolvedValue(hasil(penyusutanLama()));
+        const buffer = await exportService[method]({ unitKerjaId: 'unit-a' });
+        expect(state.jenisLama).not.toHaveBeenCalled();
+        if (method === 'generateExcelArsip') {
+            const isi = await isiExcel(buffer);
+            for (const id of ['AKTIF-1', 'PINDAH-LAMA', 'ALIH-MEDIA-LAMA', 'DIMUSNAHKAN', 'DISERAHKAN']) {
+                expect(isi).toContain(`Berkas ${id}`);
+            }
+        } else {
+            expect(buffer.subarray(0, 4).toString()).toBe('%PDF');
+        }
     });
 });

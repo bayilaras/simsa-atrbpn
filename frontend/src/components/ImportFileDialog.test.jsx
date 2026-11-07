@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ImportFileDialog from './ImportFileDialog'
+import { CATATAN_KELAS_IMPOR_SURAT_MASUK } from '@/lib/kelas-keamanan'
 
 const mocks = vi.hoisted(() => ({ post: vi.fn() }))
 vi.mock('@/services/api', () => ({ default: { post: mocks.post } }))
@@ -105,6 +106,16 @@ describe('CSV/XLSX import dialog', () => {
         expect(await screen.findByText('1 baris diperbarui dari sumber')).toBeInTheDocument()
         expect(fields(mocks.post.mock.calls[1])).toEqual({ unitKerjaId: 'unit-a', startRow: '0', sinkron: 'true' })
         expect(onImportComplete).toHaveBeenCalledOnce()
+    })
+
+    // The preview judges no row, so the class ceiling is stated before Impor.
+    it.each([['surat-masuk', 1], ['surat-keluar', 0]])('%s preview shows the incoming-letter class note %i time(s)', async (type, count) => {
+        await open(type)
+        await choose(csv())
+        mocks.post.mockResolvedValueOnce(preview({ format: 'csv', sheet: undefined, importType: type }))
+        click('Pratinjau')
+        await screen.findByRole('table', { name: 'Pemetaan kolom ke data SIMSA' })
+        expect(screen.queryAllByText(CATATAN_KELAS_IMPOR_SURAT_MASUK)).toHaveLength(count)
     })
 
     it('does not call a sinkron whose changes were all refused a success', async () => {

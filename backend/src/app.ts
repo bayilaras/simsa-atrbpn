@@ -207,7 +207,10 @@ app.get('/api/capabilities', (_req: Request, res: Response) => {
 });
 
 // Apply rate limiting to auth endpoints BEFORE Better Auth handler
-// This protects against brute force login attempts
+// This protects against brute force login attempts. For POST
+// /sign-in/email the limiter reads the JSON body to count failures per account.
+// When it reads the stream itself, Better Auth receives that same string
+// unchanged; a body a hosting layer already parsed reaches both as one object.
 app.use('/api/auth', authLimiter);
 
 // Explicit OPTIONS preflight handler for auth routes
@@ -229,7 +232,8 @@ app.options('/api/auth/*splat', (req: Request, res: Response) => {
 });
 
 // Better Auth handler - Express v5 uses /*splat pattern
-// MUST be before express.json()
+// MUST be before express.json(): Better Auth reads the raw request itself,
+// except a sign-in body authLimiter (or the hosting layer) already read.
 // Documentation: https://www.better-auth.com/docs/integrations/express
 // Handle both patterns for compatibility
 let betterAuthHandlerPromise: Promise<(req: Request, res: Response) => Promise<void>> | null = null;
@@ -391,18 +395,29 @@ app.use((req: Request, res: Response) => {
     res.status(404).json({ success: false, error: 'Not Found', path: req.path });
 });
 
+// Request body errors raised by body-parser that are the client's, by type.
+// Their public messages never echo the submitted data.
+const BODY_PARSER_ERRORS = new Map<string, { status: number; error: string; message: string; code: string }>([
+    ['entity.parse.failed', { status: 400, error: 'Bad Request', message: 'Format JSON tidak valid.', code: 'VALIDATION_ERROR' }],
+    ['entity.too.large', { status: 413, error: 'Payload Too Large', message: 'Ukuran data melebihi batas yang diizinkan.', code: 'PAYLOAD_TOO_LARGE' }],
+    ['request.aborted', { status: 400, error: 'Bad Request', message: 'Data permintaan tidak diterima lengkap.', code: 'VALIDATION_ERROR' }],
+    ['request.size.invalid', { status: 400, error: 'Bad Request', message: 'Data permintaan tidak diterima lengkap.', code: 'VALIDATION_ERROR' }],
+    ['charset.unsupported', { status: 415, error: 'Unsupported Media Type', message: 'Pengodean karakter data tidak didukung.', code: 'UNSUPPORTED_MEDIA_TYPE' }],
+    ['encoding.unsupported', { status: 415, error: 'Unsupported Media Type', message: 'Kompresi data tidak didukung.', code: 'UNSUPPORTED_MEDIA_TYPE' }],
+]);
+
 // Global error handler — handles custom AppError instances and unexpected errors
 export function globalErrorHandler(err: Error, req: Request, res: Response, next: NextFunction) {
     if (res.headersSent) return next(err);
     const requestId = res.locals?.requestId;
     const parserError = err as Error & { type?: string; status?: number };
-    if ((parserError.type === 'entity.parse.failed' && parserError.status === 400)
-        || (parserError.type === 'entity.too.large' && parserError.status === 413)) {
-        res.status(parserError.status).json({
+    const bodyError = typeof parserError.type === 'string' ? BODY_PARSER_ERRORS.get(parserError.type) : undefined;
+    if (bodyError && parserError.status === bodyError.status) {
+        res.status(bodyError.status).json({
             success: false,
-            error: parserError.status === 413 ? 'Payload Too Large' : 'Bad Request',
-            message: parserError.status === 413 ? 'Ukuran data melebihi batas yang diizinkan.' : 'Format JSON tidak valid.',
-            code: parserError.status === 413 ? 'PAYLOAD_TOO_LARGE' : 'VALIDATION_ERROR',
+            error: bodyError.error,
+            message: bodyError.message,
+            code: bodyError.code,
             requestId,
         });
         return;

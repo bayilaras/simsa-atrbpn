@@ -8,6 +8,8 @@ Perubahan ini memperbaiki alur aplikasi. Keabsahan keputusan, kewenangan pejabat
 
 Arsip lama yang terlanjur bertanda `executed` karena pemindahan tidak diubah otomatis oleh migrasi. Administrator lain dapat memakai **Pulihkan kelanjutan retensi** pada detail batch setelah memeriksa rekam pelaksanaan dan menulis alasan. API: `POST /api/penyusutan/:id/recover-transfer?unitKerjaId=...`, `{reason}`. Proses mengunci batch/arsip, menolak legal hold, perubahan pemilik batch, perbaikan berulang, unit yang berbeda, dan jenis selain pemindahan. Audit menyimpan alasan, pelaksana/tanggal lama, serta perubahan status. Batch lama tetap tidak diubah.
 
+Pemulihan hanya membuka kembali perubahan metadata dan penyusutan lanjutan atas arsip tersebut; pemulihan tidak diperlukan agar arsip tercantum di daftar. Tanpa pemulihan pun, arsip anggota batch pemindahan lama yang sudah dilaksanakan tercantum di Formulir 6 (ekspor dan cetak), kecuali arsip itu juga anggota batch pemusnahan atau penyerahan yang sudah dilaksanakan. Alih media lama mengikuti aturan masa aktif biasa. Batch yang dilaksanakan sebelum pelaksananya dicatat (sebelum 25 Agustus 2026, migrasi 0011) tidak dapat dipulihkan sama sekali; arsipnya tetap terkunci, tetapi tetap tercantum di daftar.
+
 ## Pemusnahan final
 
 `PUT /api/penyusutan/:id/status` untuk transisi pemusnahan `approved → executed` sekarang memerlukan `executionEvidence`:

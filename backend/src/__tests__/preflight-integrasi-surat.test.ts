@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+    BIASA_LIST,
+    LEGACY_BIASA_LIST,
     PREFLIGHT_CHECKS,
     PREFLIGHT_TRANSACTION,
     assertReadOnlySql,
@@ -207,6 +209,13 @@ describe('pre-flight P0 integrasi surat di PGlite', () => {
             .map(row => ({ nilai: row.nilai, sql: row.kelas_baru, ts: normalizeSecurityClassification(row.nilai) }));
         expect(mismatches).toEqual([]);
         expect(rows.find(row => row.nilai === 'Sangat Segera')).toMatchObject({ kelas_lama: 'sangat_segera', kelas_baru: 'biasa' });
+        // kelas_lama tetap memakai alias SQL lama, jadi alias urgensi baru terlihat sebagai perubahan.
+        expect(rows.find(row => row.nilai === 'kilat')).toMatchObject({ kelas_lama: 'kilat', kelas_baru: 'biasa' });
+    });
+
+    it('memakai alias backend untuk kelas_baru dan alias SQL lama yang dibekukan untuk kelas_lama', () => {
+        expect([...BIASA_LIST]).toEqual([...BIASA_SIFAT_ALIASES]);
+        expect([...LEGACY_BIASA_LIST]).toEqual(['biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting']);
     });
 
     // F2: nilai spasi-saja (' ' dan '\t') harus dinormalisasi ke 'biasa' lewat

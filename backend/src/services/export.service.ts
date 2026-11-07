@@ -5,7 +5,7 @@ import { suratKeluarService, SuratKeluarFilters } from './surat-keluar.service';
 import { arsipService, ArsipFilters } from './arsip.service';
 import { ASAL_NASKAH_LABEL, resolveBalasanLabels } from './export-balasan';
 import { sifatSuratLabel } from './sifat-surat.js';
-import { jenisFormulirArsip, saringFormulirArsip } from './arsip-fase.js';
+import { jenisFormulirArsip, lengkapiJenisPenyusutanLama, saringFormulirArsip } from './arsip-fase.js';
 import { AppError } from '../utils/errors.js';
 import { loadExcelJS, loadPdfKit } from '../utils/lazy-libraries.js';
 
@@ -265,6 +265,9 @@ export class ExportService {
      * tidak pernah menjadi potongan diam-diam dari hasil yang melebihi batas.
      * Tanpa formulirType (ekspor Laporan) semua arsip ikut, seperti sebelumnya;
      * penyaringan fase hanya untuk pilihan Formulir 4/6 di menu Export arsip.
+     * Arsip `executed` dari pemindahan atau alih media lama dikenali lewat
+     * keanggotaan batchnya; id yang diperiksa berasal dari hasil findAll yang
+     * sudah tersaring unit dan kelas keamanan.
      */
     private async dataFormulirArsip(filters: ArsipFilters, formulirType?: string) {
         const result = await arsipService.findAll({
@@ -275,7 +278,11 @@ export class ExportService {
         const lengkap = requireCompleteExport(result);
         if (formulirType === undefined) return lengkap;
         const formulir = jenisFormulirArsip(formulirType);
-        const data = saringFormulirArsip(lengkap, formulir);
+        const dilengkapi = await lengkapiJenisPenyusutanLama(
+            lengkap,
+            (ids) => arsipService.jenisPenyusutanLamaPerArsip(ids),
+        );
+        const data = saringFormulirArsip(dilengkapi, formulir);
         if (formulir === 'formulir6' && data.length === 0) {
             throw new ExportFormulirKosongError();
         }

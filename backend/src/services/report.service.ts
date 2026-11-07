@@ -105,15 +105,7 @@ class ReportService {
     }
 
     private incomingClassificationCondition(classes: string[] | null | undefined) {
-        if (classes === undefined || classes === null) return undefined;
-        if (classes.length === 0) return sql`false`;
-        const normalized = sql<string>`CASE
-            WHEN lower(coalesce(${suratMasuk.sifatSurat}, 'biasa'))
-                IN ('biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting')
-            THEN 'biasa'
-            ELSE replace(replace(lower(coalesce(${suratMasuk.sifatSurat}, 'biasa')), ' ', '_'), '-', '_')
-        END`;
-        return inArray(normalized, classes);
+        return klasifikasiInSql(suratMasuk.sifatSurat, classes);
     }
 
     private arsipClassificationCondition(classes: string[] | null | undefined) {

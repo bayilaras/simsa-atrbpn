@@ -1,7 +1,7 @@
 import { db } from '../config/database';
 import { suratMasuk, suratKeluar, arsip, dosir } from '../db/schema';
 import { sql, or, ilike, desc, and, eq, isNull, inArray } from 'drizzle-orm';
-import { bacaArsipSql, type PenggunaVisibilitas } from './access/visibility-spec';
+import { bacaArsipSql, klasifikasiInSql, type PenggunaVisibilitas } from './access/visibility-spec';
 import { escapeLike, LIKE_ESCAPE } from '../utils/nomor-surat';
 
 export interface GlobalSearchParams {
@@ -63,15 +63,7 @@ class GlobalSearchService {
     }
 
     private suratMasukClassificationCondition(classes: string[] | null | undefined) {
-        if (classes === undefined || classes === null) return undefined;
-        if (classes.length === 0) return sql`false`;
-        const normalized = sql<string>`CASE
-            WHEN lower(coalesce(${suratMasuk.sifatSurat}, 'biasa'))
-                IN ('biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting')
-            THEN 'biasa'
-            ELSE replace(replace(lower(coalesce(${suratMasuk.sifatSurat}, 'biasa')), ' ', '_'), '-', '_')
-        END`;
-        return inArray(normalized, classes);
+        return klasifikasiInSql(suratMasuk.sifatSurat, classes);
     }
 
     /**

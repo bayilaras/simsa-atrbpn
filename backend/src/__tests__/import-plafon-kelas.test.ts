@@ -15,9 +15,9 @@ vi.mock('../services/surat-keluar.service.js', async () => {
 });
 vi.mock('../utils/logger', () => ({ createLogger: () => ({ warn: vi.fn() }) }));
 import { GoogleDriveImportService } from '../services/google-drive-import.service.js';
-import { assertImportedKelasSuratMasuk } from '../services/import-plafon-kelas.js';
-import { PESAN_KELAS_MELEBIHI_KEWENANGAN } from '../constants/pesan-akses.js';
-import { ForbiddenError } from '../utils/errors.js';
+import { assertImportedKelasSuratMasuk, assertSifatSuratMasukDapatDisimpan } from '../services/import-plafon-kelas.js';
+import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_SIFAT_TIDAK_DIKENAL } from '../constants/pesan-akses.js';
+import { ForbiddenError, ValidationError } from '../utils/errors.js';
 
 const importer = (role: string | undefined) => ({ userId: '11111111-1111-4111-8111-111111111111', role });
 const adminUnit = importer('admin_unit');
@@ -63,8 +63,27 @@ describe('class ceiling of an imported surat masuk', () => {
         for (const sifat of [' RAHASIA ', 'sangat-rahasia', 'Sangat  Rahasia', ' Rahasia']) expect(allowed('admin_unit', sifat)).toBe(false);
     });
 
-    it('leaves a sifat that names no class to the existing import behaviour', () => {
+    it('leaves a sifat that names no class to assertSifatSuratMasukDapatDisimpan', () => {
         expect(allowed('admin_unit', 'Konfidensial')).toBe(true);
+    });
+});
+
+describe('sifat of a new imported surat masuk', () => {
+    it.each(['Konfidensial', 'R', 'x'.repeat(51)])('rejects %j for every role, a super admin included', sifat => {
+        // The check takes no importer: no role can read a letter whose sifat names no class.
+        expect(() => assertSifatSuratMasukDapatDisimpan(sifat)).toThrow(ValidationError);
+        for (const role of ['super_admin', 'admin_unit', 'staff']) {
+            expect(() => assertImportedKelasSuratMasuk(importer(role), sifat)).not.toThrow();
+        }
+    });
+
+    it('names the accepted words, and judges an over-long value on its whole length', () => {
+        expect(() => assertSifatSuratMasukDapatDisimpan('Konfidensial')).toThrow(PESAN_SIFAT_TIDAK_DIKENAL);
+        expect(() => assertSifatSuratMasukDapatDisimpan(`Biasa${' '.repeat(45)}Rahasia`)).toThrow('Sifat surat maksimal 50 karakter.');
+    });
+
+    it.each(['Biasa', 'Kilat', 'Amat Segera/Kilat', 'Biasa / Terbuka', 'Sangat Segera', 'Terbatas', 'Sangat Rahasia', ''])('accepts %j', sifat => {
+        expect(() => assertSifatSuratMasukDapatDisimpan(sifat)).not.toThrow();
     });
 });
 
@@ -132,6 +151,20 @@ describe('importing rows above the importer\'s class ceiling', () => {
         const afterRejected = parts[2];
         const sameRows = await part(superAdmin, { startRow: 2, prefixHash: parts[1].prefixHash });
         expect(sameRows).toMatchObject({ nextRow: 3, prefixHash: afterRejected.prefixHash, importedRows: 1 });
+    });
+
+    it('rejects a new row whose sifat names no class, for a super admin too, and stores "-" as Biasa', async () => {
+        const rows = [header, masuk(1, 'Konfidensial'), masuk(2, '-'), masuk(3, 'Amat Segera/Kilat')];
+        const result = await service.importRows('surat-masuk', rows, 'unit-a', superAdmin);
+        expect(result).toMatchObject({ success: false, importedRows: 2, skippedRows: 1 });
+        expect(result.errors).toEqual([`Row 1: ${PESAN_SIFAT_TIDAK_DIKENAL} (VALIDATION_ERROR)`]);
+        expect(result.rows?.map(row => [row.nomorSurat, row.status, row.reason])).toEqual([
+            ['SM-1/2026', 'invalid', PESAN_SIFAT_TIDAK_DIKENAL],
+            ['SM-2/2026', 'imported', undefined],
+            ['SM-3/2026', 'imported', undefined],
+        ]);
+        expect(mocks.incoming.mock.calls.map(([record]) => [record.nomorSurat, record.sifatSurat]))
+            .toEqual([['SM-2/2026', 'Biasa'], ['SM-3/2026', 'Amat Segera/Kilat']]);
     });
 
     it('leaves surat keluar alone: its sifat is urgency, and an import never sets its security class', async () => {

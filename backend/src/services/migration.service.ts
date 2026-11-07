@@ -12,8 +12,8 @@ import { currentRequestId } from '../utils/request-context.js';
 import { createLogger } from '../utils/logger.js';
 import { DuplicateSuratImportError, type SuratImportIdentityKey } from './surat-import-identity.js';
 import { assertImportResumable, importPrefixHash, type ImportResume } from './import-resume.js';
-import { normalizeSifatSurat } from './sifat-surat.js';
-import { assertImportedKelasSuratMasuk, type ImportAuditContext } from './import-plafon-kelas.js';
+import { normalizeSifatSurat, sifatSuratMasukSumber } from './sifat-surat.js';
+import { assertImportedKelasSuratMasuk, assertSifatSuratMasukDapatDisimpan, type ImportAuditContext } from './import-plafon-kelas.js';
 
 const log = createLogger('MigrationService');
 
@@ -184,9 +184,12 @@ async function runImport(
 export const migrationService = {
     async importSuratMasuk(csvContent: string, unitKerjaId: string, auditContext: ImportAuditContext, options: ImportOptions = {}): Promise<ImportResult> {
         return runImport(csvContent, ['Tanggal Surat'], (row, date, year, position) => {
-            const sifatSurat = row['Sifat Surat'] || 'Biasa';
-            // A class above the importer's ceiling makes the row invalid, in a dry run too.
+            const sifatSurat = sifatSuratMasukSumber(row['Sifat Surat']);
+            // A class above the importer's ceiling, or a sifat that names no
+            // class, makes the row invalid, in a dry run too. This path has no
+            // sinkron, so every row it accepts is a new letter.
             assertImportedKelasSuratMasuk(auditContext, sifatSurat);
+            assertSifatSuratMasukDapatDisimpan(sifatSurat);
             const nomorSurat = row['Nomor Surat'] || '';
             const perihal = row['Perihal'] || '';
             const dari = row['Dari'] || '';

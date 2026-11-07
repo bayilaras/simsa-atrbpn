@@ -11,10 +11,19 @@ import type {
  * dihitung. Arsip yang sudah dipindahkan ke penyimpanan inaktif tetap inaktif
  * apa pun hasil evaluasinya. Arsip yang penyusutannya sudah dieksekusi
  * (dimusnahkan/diserahkan) tidak boleh muncul di kedua daftar.
+ *
+ * Sebelum migrasi 0035, pelaksanaan pemindahan dan alih media juga menandai
+ * arsip `executed`. Bila bukti keanggotaan batch menunjukkan arsip itu hanya
+ * dipindahkan (jenisPenyusutanTereksekusi 'pemindahan'), arsip tetap inaktif;
+ * alih media lama mengikuti aturan JRA biasa. Tanpa bukti itu arsip
+ * `executed` tetap dianggap selesai.
  */
 export type FaseArsip = 'aktif' | 'inaktif' | 'selesai';
 
 export type JenisFormulirArsip = 'formulir4' | 'formulir6';
+
+/** Jenis batch tereksekusi yang tidak mengakhiri siklus arsip. */
+export type JenisPenyusutanLama = 'pemindahan' | 'alih_media';
 
 export const STATUS_MASA_AKTIF_BERAKHIR: readonly ArchiveLifecycleStatus[] = [
     'inaktif',
@@ -30,6 +39,8 @@ export interface BarisFaseArsip {
     currentRetentionTriggerEventId?: string | null;
     /** Evaluasi dari arsipService.evaluateCanonicalRetention (read model findAll). */
     canonicalRetention?: EvaluasiFase | null;
+    /** Hanya untuk arsip `executed`; dari arsipService.jenisPenyusutanLamaPerArsip. */
+    jenisPenyusutanTereksekusi?: JenisPenyusutanLama | null;
 }
 
 export function masaAktifBerakhir(evaluation: EvaluasiFase | null | undefined): boolean {
@@ -39,7 +50,10 @@ export function masaAktifBerakhir(evaluation: EvaluasiFase | null | undefined): 
 }
 
 export function faseArsip(row: BarisFaseArsip): FaseArsip {
-    if (row.disposalStatus === 'executed') return 'selesai';
+    if (row.disposalStatus === 'executed') {
+        if (row.jenisPenyusutanTereksekusi === 'pemindahan') return 'inaktif';
+        if (row.jenisPenyusutanTereksekusi !== 'alih_media') return 'selesai';
+    }
     if (row.inactiveTransferredAt) return 'inaktif';
     // Evaluasi terverifikasi selalu bertumpu pada peristiwa pemicu; cek pemicu
     // di sini hanya invarian gagal-tertutup, sama seperti seleksi pemindahan.
@@ -57,4 +71,22 @@ export function jenisFormulirArsip(value: unknown): JenisFormulirArsip {
 export function saringFormulirArsip<T extends BarisFaseArsip>(rows: T[], formulir: JenisFormulirArsip): T[] {
     const fase: FaseArsip = formulir === 'formulir6' ? 'inaktif' : 'aktif';
     return rows.filter((row) => faseArsip(row) === fase);
+}
+
+/**
+ * Melengkapi baris `executed` dengan jenis batch tereksekusinya sebelum
+ * disaring per formulir. Pencarian dipanggil sekali dengan id unik, dan tidak
+ * dipanggil sama sekali bila tidak ada baris `executed`. Id yang tidak dikenali
+ * pencarian tetap tanpa jenis, sehingga arsipnya tetap selesai.
+ */
+export async function lengkapiJenisPenyusutanLama<T extends BarisFaseArsip & { id: string }>(
+    rows: T[],
+    cari: (arsipIds: string[]) => Promise<Map<string, JenisPenyusutanLama>>,
+): Promise<T[]> {
+    const ids = [...new Set(rows.filter((row) => row.disposalStatus === 'executed').map((row) => row.id))];
+    if (ids.length === 0) return rows;
+    const jenis = await cari(ids);
+    return rows.map((row) => (row.disposalStatus === 'executed'
+        ? { ...row, jenisPenyusutanTereksekusi: jenis.get(row.id) ?? null }
+        : row));
 }
