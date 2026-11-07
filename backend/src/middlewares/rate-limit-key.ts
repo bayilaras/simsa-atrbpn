@@ -46,6 +46,17 @@ export async function principalRateLimitKey(req: Request): Promise<string> {
     return networkRateLimitKey(req);
 }
 
+/**
+ * Failed current-password checks per network and signed-in user, like
+ * sign-in: failures from one network do not block the same user's password
+ * change from another network.
+ */
+export async function passwordCheckRateLimitKey(req: Request): Promise<string> {
+    const network = networkRateLimitKey(req);
+    const principal = await principalRateLimitKey(req);
+    return principal === network ? network : `${network}|${principal}`;
+}
+
 // Sign-in bodies are a few hundred bytes; the gate buffers at most 16 KiB.
 const SIGN_IN_BODY_LIMIT = 16 * 1024;
 

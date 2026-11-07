@@ -15,7 +15,9 @@ vi.mock('../db/schema', () => ({
 
 const { auth } = await import('../config/auth');
 const { db } = await import('../config/database');
-const { networkRateLimitKey, principalRateLimitKey, signInIdentifierKey, SESSION_COOKIE } = await import('../middlewares/rate-limit-key');
+const {
+    networkRateLimitKey, passwordCheckRateLimitKey, principalRateLimitKey, signInIdentifierKey, SESSION_COOKIE,
+} = await import('../middlewares/rate-limit-key');
 const { generalLimiter } = await import('../middlewares/rate-limiter.middleware');
 const { authMiddleware } = await import('../middlewares/auth.middleware');
 const { verifyRequestIdentity } = await import('../services/request-identity.service');
@@ -163,6 +165,24 @@ describe('principalRateLimitKey', () => {
         await as().expect(200);
         await as().expect(429);
         await as('token-pending').expect(429);
+    });
+});
+
+describe('passwordCheckRateLimitKey', () => {
+    it('keys current-password checks by network and provisioned user', async () => {
+        getSession.mockImplementation(sessionFromCookie);
+        await expect(passwordCheckRateLimitKey(fakeRequest({ user: { id: 'staff-a' } })))
+            .resolves.toBe(`ip:${OFFICE_IP}|user:staff-a`);
+        await expect(passwordCheckRateLimitKey(sessionRequest('token-staff-a', { ip: '203.0.113.20' })))
+            .resolves.toBe('ip:203.0.113.20|user:staff-a');
+        // Sessions without a per-user quota stay on the network key.
+        await expect(passwordCheckRateLimitKey(sessionRequest('token-pending'))).resolves.toBe(`ip:${OFFICE_IP}`);
+        await expect(passwordCheckRateLimitKey(fakeRequest())).resolves.toBe(`ip:${OFFICE_IP}`);
+    });
+
+    it('fails closed without a client address', async () => {
+        await expect(passwordCheckRateLimitKey(fakeRequest({ ip: undefined, user: { id: 'staff-a' } })))
+            .rejects.toThrow(ServiceUnavailableError);
     });
 });
 

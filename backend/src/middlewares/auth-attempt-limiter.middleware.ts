@@ -15,7 +15,8 @@ const DEFAULT_MESSAGE = 'Terlalu banyak percobaan masuk yang gagal. Coba lagi se
 /**
  * Count failed attempts; success or downstream admission rejection refunds only its own window.
  * Nested limiters need distinct request property names so each reads its own reservation.
- * With resetOnSuccess, a 2xx response clears the key's earlier failures in shared mode.
+ * With resetOnSuccess, a 2xx response clears the key's earlier failures.
+ * Shared and local counters follow the same rules.
  */
 export function createAuthAttemptLimiter({
     store, shared, maximum, keyGenerator, message = DEFAULT_MESSAGE,
@@ -32,7 +33,11 @@ export function createAuthAttemptLimiter({
         message: { error: 'Too Many Attempts', message },
         standardHeaders: true, legacyHeaders: false,
         skip: req => shared && (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || req.path === '/sign-out'),
+        // Shared counters refund in the wrapper below. Local counters refund
+        // here, with the same rule: a 429 from this or a nested limiter never
+        // checked credentials, so it is not a failed attempt.
         skipSuccessfulRequests: !shared,
+        requestWasSuccessful: (_req, res) => res.statusCode < 400 || res.statusCode === 429,
         handler: async (req, res, next, options) => {
             try {
                 if (shared) {
@@ -97,6 +102,13 @@ export function createAuthAttemptLimiter({
             if (process.env.VERCEL === '1') {
                 try { waitUntil(work); } catch { reportRefundFailure(); }
             }
+        } else if (!shared && resetOnSuccess && info) {
+            // Local counters: express-rate-limit's own success refund runs
+            // after this reset and leaves the cleared key at zero.
+            const key = info.key;
+            res.once('finish', () => {
+                if (res.statusCode >= 200 && res.statusCode < 300) void Promise.resolve(limiter.resetKey(key)).catch(() => {});
+            });
         }
         next();
     });

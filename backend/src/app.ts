@@ -208,8 +208,9 @@ app.get('/api/capabilities', (_req: Request, res: Response) => {
 
 // Apply rate limiting to auth endpoints BEFORE Better Auth handler
 // This protects against brute force login attempts. For POST
-// /sign-in/email the limiter reads the JSON body as raw text to count failures
-// per account; Better Auth then receives that same string unchanged.
+// /sign-in/email the limiter reads the JSON body to count failures per account.
+// When it reads the stream itself, Better Auth receives that same string
+// unchanged; a body a hosting layer already parsed reaches both as one object.
 app.use('/api/auth', authLimiter);
 
 // Explicit OPTIONS preflight handler for auth routes
@@ -232,7 +233,7 @@ app.options('/api/auth/*splat', (req: Request, res: Response) => {
 
 // Better Auth handler - Express v5 uses /*splat pattern
 // MUST be before express.json(): Better Auth reads the raw request itself,
-// except the sign-in body authLimiter already buffered as a string.
+// except a sign-in body authLimiter (or the hosting layer) already read.
 // Documentation: https://www.better-auth.com/docs/integrations/express
 // Handle both patterns for compatibility
 let betterAuthHandlerPromise: Promise<(req: Request, res: Response) => Promise<void>> | null = null;

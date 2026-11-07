@@ -51,9 +51,9 @@ async function repeat(times: number, send: () => request.Test, status: number) {
     for (let i = 0; i < times; i += 1) await send().expect(status);
 }
 
-function deployedDevelopment() {
+function deployedDevelopment(vercel = '1') {
     vi.stubEnv('NODE_ENV', 'development');
-    vi.stubEnv('VERCEL', '1');
+    vi.stubEnv('VERCEL', vercel);
     vi.stubEnv('AUTH_PROVIDER', 'better-auth');
     vi.stubEnv('BETTER_AUTH_SECRET', 'synthetic-config-secret-at-least-32-characters');
     vi.stubEnv('BETTER_AUTH_URL', 'https://simsa.example.test');
@@ -61,6 +61,9 @@ function deployedDevelopment() {
     vi.stubEnv('GOOGLE_OAUTH_ENABLED', 'false');
     vi.resetModules();
 }
+
+/** Local development: per-process counters instead of the shared store. */
+const localDevelopment = () => deployedDevelopment('');
 
 const OFFICE_IP = '198.51.100.7';
 const OTHER_IP = '203.0.113.20';
@@ -74,8 +77,8 @@ const signInOutcome: express.RequestHandler = (req, res) => {
 };
 
 /** The deployed auth limiter chain in front of a stand-in auth handler. */
-async function authApp(signIn: express.RequestHandler = signInOutcome) {
-    deployedDevelopment();
+async function authApp(signIn: express.RequestHandler = signInOutcome, environment = deployedDevelopment) {
+    environment();
     const limits = await import('../middlewares/rate-limiter.middleware.js');
     const reached = vi.fn();
     const app = express();
@@ -238,16 +241,48 @@ describe('deployed rate limit policy', { timeout: 30_000 }, () => {
         expect(refused.body).toEqual({ type: 'entity.too.large' });
     });
 
-    it('limits failed current-password checks per signed-in user', async () => {
+    it('limits failed current-password checks per signed-in user on each network', async () => {
         const { app } = await authApp();
-        const changePassword = (user: string, result = 'salah', path = '/api/auth/change-password') =>
-            asUser(request(app).post(path).set('x-test-result', result), user);
+        const changePassword = (user: string, result = 'salah', { path = '/api/auth/change-password', ip = OFFICE_IP } = {}) =>
+            asUser(request(app).post(path).set('x-test-ip', ip).set('x-test-result', result), user);
         await repeat(5, () => changePassword('staff-a'), 400);
         const limited = await changePassword('staff-a').expect(429);
         expect(limited.body.message).toBe('Terlalu banyak percobaan kata sandi yang gagal. Coba lagi setelah 15 menit.');
-        await changePassword('staff-a', 'ok', '/api/auth/Change-Password/').expect(429);
+        await changePassword('staff-a', 'ok', { path: '/api/auth/Change-Password/' }).expect(429);
         await changePassword('staff-b').expect(400);
         await changePassword('staff-b', 'ok').expect(200);
+
+        // Failures from another network leave the user's own network admitted.
+        await repeat(5, () => changePassword('staff-c', 'salah', { ip: OTHER_IP }), 400);
+        await changePassword('staff-c', 'ok', { ip: OTHER_IP }).expect(429);
+        await changePassword('staff-c', 'ok').expect(200);
+    });
+
+    it('clears failed current-password checks after a successful change', async () => {
+        const { app } = await authApp();
+        const changePassword = (result = 'salah') =>
+            asUser(request(app).post('/api/auth/change-password').set('x-test-result', result), 'staff-a');
+        await repeat(4, () => changePassword(), 400);
+        await changePassword('ok').expect(200);
+        await settleRefunds();
+        expect(await stores.get('auth-password')!.get(`${OFFICE_NETWORK}|user:staff-a`)).toBeUndefined();
+        await repeat(5, () => changePassword(), 400);
+        await changePassword().expect(429);
+    });
+
+    it('applies the same refunds and account reset with local counters', async () => {
+        const { signInAs, limits } = await authApp(signInOutcome, localDevelopment);
+        expect(limits.AUTH_FAILED_ATTEMPTS_PER_NETWORK).toBe(50);
+        await repeat(5, () => signInAs('a@x.test'), 401);
+        // Retrying a locked account is not another failure for the network.
+        await repeat(limits.AUTH_FAILED_ATTEMPTS_PER_NETWORK, () => signInAs('a@x.test'), 429);
+        await signInAs('b@x.test').expect(401);
+
+        // A successful sign-in clears that account's earlier failures.
+        await repeat(4, () => signInAs('c@x.test'), 401);
+        await signInAs('c@x.test', 'benar').expect(200);
+        await repeat(5, () => signInAs('c@x.test'), 401);
+        await signInAs('c@x.test').expect(429);
     });
 
     it('keeps a separate general quota for each provisioned user behind one office IP', async () => {

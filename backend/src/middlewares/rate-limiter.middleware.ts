@@ -4,7 +4,9 @@ import { env } from '../config/env';
 import type { AuthRequest } from './auth.middleware';
 import { createRateLimiterStore, usesSharedRateLimits } from '../config/rate-limits.js';
 import { createAuthAttemptLimiter } from './auth-attempt-limiter.middleware.js';
-import { networkRateLimitKey, principalRateLimitKey, signInIdentifierKey } from './rate-limit-key.js';
+import {
+    networkRateLimitKey, passwordCheckRateLimitKey, principalRateLimitKey, signInIdentifierKey,
+} from './rate-limit-key.js';
 
 const shared = usesSharedRateLimits();
 
@@ -74,15 +76,17 @@ export const authAccountLimiter = createAuthAttemptLimiter({
     resetOnSuccess: true,
 });
 
-// Failed current-password checks per signed-in user (per network without a
-// provisioned session).
+// Failed current-password checks per network and signed-in user (per network
+// without a provisioned session). A successful change proves the current
+// password and clears that key's earlier failures.
 const passwordCheckLimiter = createAuthAttemptLimiter({
     store: createRateLimiterStore('auth-password'),
     shared,
     maximum: AUTH_FAILED_ATTEMPTS_PER_ACCOUNT,
-    keyGenerator: principalRateLimitKey,
+    keyGenerator: passwordCheckRateLimitKey,
     requestPropertyName: 'authPasswordRateLimit',
     message: 'Terlalu banyak percobaan kata sandi yang gagal. Coba lagi setelah 15 menit.',
+    resetOnSuccess: true,
 });
 
 // Trailing slashes and letter case never reach a different Better Auth route.
@@ -91,10 +95,12 @@ const isPostTo = (req: Request, path: string) =>
 
 const readSignInBody = express.text({ type: () => true, limit: '16kb' });
 
-// The account is read from the JSON body before Better Auth runs. The body is
-// buffered as text and Better Auth receives exactly that string. Only JSON is
-// accepted, so the limiter and Better Auth always read the same account; a
-// request without a body goes through unchanged.
+// The account is read from the JSON body before Better Auth runs. When the
+// backend reads the request stream itself, the body is buffered as text (at
+// most 16 KiB) and Better Auth receives exactly that string. When a hosting
+// layer has already parsed the JSON, the limiter and Better Auth both read
+// that parsed object. Only JSON is accepted, so either way they read the same
+// account; a request without a body goes through unchanged.
 const signInAccountGate: RequestHandler = (req, res, next) => {
     if (!isPostTo(req, '/sign-in/email')) return next();
     const declaresBody = req.headers['transfer-encoding'] !== undefined || Number(req.headers['content-length']) > 0;
@@ -110,7 +116,7 @@ const changePasswordGate: RequestHandler = (req, res, next) =>
     isPostTo(req, '/change-password') ? passwordCheckLimiter(req, res, next) : next();
 
 // The network limiter wraps the account and password gates, so it also sees
-// (and refunds) their 429 responses.
+// (and refunds) their 429 responses, with shared and local counters alike.
 export const authLimiter: RequestHandler[] = [canonicalAuthPath, authNetworkLimiter, signInAccountGate, changePasswordGate];
 
 // Rate limiter for sensitive operations (e.g., delete, export) - 20 per 15 minutes
