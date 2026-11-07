@@ -17,7 +17,8 @@ vi.mock('../services/surat-keluar.service.js', async () => {
 vi.mock('../utils/logger', () => ({ createLogger: () => ({ warn: vi.fn() }) }));
 import { GoogleDriveImportService } from '../services/google-drive-import.service.js';
 
-const audit = { userId: '11111111-1111-4111-8111-111111111111' };
+// The importer's role caps the security class a surat masuk row may carry.
+const audit = { userId: '11111111-1111-4111-8111-111111111111', role: 'admin_unit' };
 const header = ['No', 'Nomor Surat', 'Tanggal Surat', 'Hal', 'Sifat Surat', 'Get link'];
 const link = (n: number) => `https://drive.google.com/file/d/synthetic-${n}/view`;
 const letter = (no: number, nomor: string, tanggal: string, hal: string) => [String(no), nomor, tanggal, hal, 'Biasa', link(no)];

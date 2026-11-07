@@ -13,6 +13,7 @@ import { createLogger } from '../utils/logger.js';
 import { DuplicateSuratImportError, type SuratImportIdentityKey } from './surat-import-identity.js';
 import { assertImportResumable, importPrefixHash, type ImportResume } from './import-resume.js';
 import { normalizeSifatSurat } from './sifat-surat.js';
+import { assertImportedKelasSuratMasuk, type ImportAuditContext } from './import-plafon-kelas.js';
 
 const log = createLogger('MigrationService');
 
@@ -181,8 +182,11 @@ async function runImport(
 }
 
 export const migrationService = {
-    async importSuratMasuk(csvContent: string, unitKerjaId: string, auditContext: CriticalAuditContext, options: ImportOptions = {}): Promise<ImportResult> {
+    async importSuratMasuk(csvContent: string, unitKerjaId: string, auditContext: ImportAuditContext, options: ImportOptions = {}): Promise<ImportResult> {
         return runImport(csvContent, ['Tanggal Surat'], (row, date, year, position) => {
+            const sifatSurat = row['Sifat Surat'] || 'Biasa';
+            // A class above the importer's ceiling makes the row invalid, in a dry run too.
+            assertImportedKelasSuratMasuk(auditContext, sifatSurat);
             const nomorSurat = row['Nomor Surat'] || '';
             const perihal = row['Perihal'] || '';
             const dari = row['Dari'] || '';
@@ -192,7 +196,7 @@ export const migrationService = {
             const identity = numbered ? [unitKerjaId, year, nomorSurat] : [unitKerjaId, date, perihal, dari];
             const record = {
                 unitKerjaId, noUrut: parseInt(row['No'] || '0') || position, tahun: year,
-                jenisSurat: row['Jenis Surat'] || 'Surat Dinas', sifatSurat: row['Sifat Surat'] || 'Biasa',
+                jenisSurat: row['Jenis Surat'] || 'Surat Dinas', sifatSurat,
                 nomorSurat, tanggalSurat: date, perihal, dari, kepada: row['Kepada'] || '',
                 status: row['Status'] || 'belum_dibalas', disposisi: row['Disposisi'] ? [row['Disposisi']] : [],
                 createdBy: auditContext.userId,

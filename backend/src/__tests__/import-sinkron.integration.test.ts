@@ -3,6 +3,7 @@ import type { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import * as schema from '../db/schema';
 import { createMigratedPglite, insertRangkaian, insertSuratKeluar, insertUser, resetRangkaianFixture, seedUnits, uid, type PenggunaUji } from './helpers/lacak-pglite';
+import { PESAN_KELAS_MELEBIHI_KEWENANGAN } from '../constants/pesan-akses';
 
 // "Sinkron" updates letters an earlier import created when the source changed
 // them later, through the canonical update path and its guards.
@@ -12,7 +13,7 @@ vi.mock('../config/database', () => ({ get db() { return holder.db; } }));
 let database: PGlite;
 let importer: typeof import('../services/google-drive-import.service').googleDriveImportService;
 const admin = { id: uid(921), email: 'bppt@example.test', name: 'Admin BPPT', role: 'admin_unit', unitKerjaId: 'dir_bppt' } satisfies PenggunaUji;
-const audit = { userId: admin.id, userEmail: admin.email };
+const audit = { userId: admin.id, userEmail: admin.email, role: admin.role };
 const sinkron = { actor: admin };
 const link = (n: number) => `https://drive.google.com/file/d/synthetic-${n}/view`;
 
@@ -174,7 +175,8 @@ describe('sinkron surat masuk', () => {
 
     it('never changes the sifat, which is the letter\'s security classification', async () => {
         await importer.importRows('surat-masuk', [header, masuk('SM-1/2026', 'Permohonan data')], 'dir_bppt', audit);
-        const result = await importer.importRows('surat-masuk', [header, masuk('SM-1/2026', 'Permohonan data pertanahan', 'Rahasia', 'Nota Dinas')],
+        // Terbatas is within an Admin Unit Kerja's ceiling, so the row is applied without its sifat.
+        const result = await importer.importRows('surat-masuk', [header, masuk('SM-1/2026', 'Permohonan data pertanahan', 'Terbatas', 'Nota Dinas')],
             'dir_bppt', audit, {}, undefined, sinkron);
         expect(result.rows?.[0]).toMatchObject({ status: 'updated', changes: [
             { field: 'perihal', label: 'Perihal', before: 'Permohonan data', after: 'Permohonan data pertanahan' },
@@ -201,5 +203,53 @@ describe('sinkron surat masuk', () => {
         expect(result.rows?.[0]).toMatchObject({ status: 'locked',
             reason: expect.stringMatching(/^Tidak diperbarui: Perubahan nomor\/perihal\/sifat .* wajib disertai alasan/) });
         expect((await perihalOf('SM-2/2026')).perihal).toBe('Undangan');
+    });
+});
+
+// The sifat of a surat masuk is its security class; an import sets only what the importer could set in the form.
+describe('class ceiling of imported surat masuk', () => {
+    const superAdmin = { id: uid(922), email: 'super@example.test', name: 'Super Admin', role: 'super_admin', unitKerjaId: null } satisfies PenggunaUji;
+    const superAudit = { userId: superAdmin.id, userEmail: superAdmin.email, role: superAdmin.role };
+    const header = ['Nomor Surat', 'Tanggal Surat', 'Perihal', 'Dari', 'Sifat Surat'];
+    const masuk = (nomor: string, perihal: string, sifat: string) => [nomor, '02/03/2026', perihal, 'Kantah A', sifat];
+    const letters = async () => (await database.query<{ id: string; nomor_surat: string; perihal: string; sifat_surat: string }>(
+        "SELECT id, nomor_surat, perihal, sifat_surat FROM surat_masuk WHERE unit_kerja_id = 'dir_bppt' ORDER BY nomor_surat")).rows;
+    const created = async () => Number((await database.query<{ n: string }>("SELECT count(*) AS n FROM audit_log WHERE entity_type = 'surat_masuk' AND action = 'create'")).rows[0].n);
+    beforeEach(async () => { await insertUser(database, superAdmin); });
+
+    it('rejects an Admin Unit Kerja\'s Rahasia and Sangat Rahasia rows without writing them, and imports the rest', async () => {
+        const result = await importer.importRows('surat-masuk', [header, masuk('SM-B/2026', 'Biasa', 'Biasa'),
+            masuk('SM-R/2026', 'Rahasia', 'Rahasia'), masuk('SM-SR/2026', 'Sangat rahasia', 'Sangat Rahasia'),
+            masuk('SM-T/2026', 'Terbatas', 'Terbatas')], 'dir_bppt', audit);
+
+        expect(result).toMatchObject({ success: false, importedRows: 2, skippedRows: 2, duplicateRows: 0 });
+        expect(result.rows?.map(row => [row.nomorSurat, row.status, row.reason])).toEqual([
+            ['SM-B/2026', 'imported', undefined],
+            ['SM-R/2026', 'invalid', PESAN_KELAS_MELEBIHI_KEWENANGAN],
+            ['SM-SR/2026', 'invalid', PESAN_KELAS_MELEBIHI_KEWENANGAN],
+            ['SM-T/2026', 'imported', undefined],
+        ]);
+        expect((await letters()).map(row => [row.nomor_surat, row.sifat_surat])).toEqual([['SM-B/2026', 'Biasa'], ['SM-T/2026', 'Terbatas']]);
+        expect(await created()).toBe(2);
+    });
+
+    it('lets a super admin import them; an Admin Unit Kerja\'s sinkron rejects those rows instead of matching their letters', async () => {
+        const rows = (suffix: string) => [header, masuk('SM-B/2026', `Biasa${suffix}`, 'Biasa'),
+            masuk('SM-R/2026', `Rahasia${suffix}`, 'Rahasia'), masuk('SM-SR/2026', `Sangat rahasia${suffix}`, 'Sangat Rahasia')];
+        expect(await importer.importRows('surat-masuk', rows(''), 'dir_bppt', superAudit)).toMatchObject({ success: true, importedRows: 3 });
+        expect((await letters()).map(row => row.sifat_surat)).toEqual(['Biasa', 'Rahasia', 'Sangat Rahasia']);
+        await database.exec('TRUNCATE audit_log');
+
+        const result = await importer.importRows('surat-masuk', rows(' diubah'), 'dir_bppt', audit, {}, undefined, sinkron);
+
+        expect(result).toMatchObject({ success: false, updatedRows: 1, duplicateRows: 0, skippedRows: 2 });
+        expect(result.rows?.map(row => [row.status, row.reason])).toEqual([
+            ['updated', undefined], ['invalid', PESAN_KELAS_MELEBIHI_KEWENANGAN], ['invalid', PESAN_KELAS_MELEBIHI_KEWENANGAN]]);
+        const [biasa, rahasia, sangatRahasia] = await letters();
+        expect(biasa.perihal).toBe('Biasa diubah');
+        for (const letter of [rahasia, sangatRahasia]) {
+            expect(letter.perihal).not.toMatch(/diubah$/);
+            expect(await updates(letter.id)).toEqual([]);
+        }
     });
 });

@@ -13,7 +13,8 @@ import { GoogleDriveImportService, googleDriveImportService } from '../services/
 import { fileImportService } from '../services/file-import.service.js';
 import { REGISTER_HEADERS, driveLink, registerWorkbook, singleSheetWorkbook, upload } from './helpers/import-file-fixtures.js';
 
-const audit = { userId: '11111111-1111-4111-8111-111111111111' };
+// The importer's role caps the security class a surat masuk row may carry.
+const audit = { userId: '11111111-1111-4111-8111-111111111111', role: 'admin_unit' };
 const csv = (text: string) => upload(Buffer.from(text, 'utf8'), 'register.csv', 'text/csv');
 const registerCsv = (delimiter: string) => [
     'REGISTER SURAT KELUAR 2026',
@@ -75,6 +76,18 @@ describe('file import shares the Google Sheets mapping and import path', () => {
         expect(result).toMatchObject({ importedRows: 1, duplicateRows: 2 });
         expect(mocks.existing).toHaveBeenCalledOnce();
         expect(created()).toEqual([expect.objectContaining({ nomorSurat: '-' })]);
+    });
+
+    it('rejects a CSV surat masuk row above the importer class ceiling and imports the rest', async () => {
+        const file = csv(['Nomor Surat;Tanggal Surat;Perihal;Dari;Sifat Surat', 'SM-1/2026;05/01/2026;Permohonan;Kantah A;Biasa',
+            'SM-2/2026;05/01/2026;Laporan;Kantah A;Rahasia'].join('\n'));
+        const result = await fileImportService.importSurat('surat-masuk', file, undefined, 'unit-a', audit);
+        expect(result).toMatchObject({ success: false, importedRows: 1, skippedRows: 1 });
+        expect(result.rows?.[1]).toMatchObject({ status: 'invalid', reason: expect.stringMatching(/^Klasifikasi keamanan melebihi kewenangan pengguna\./) });
+        expect(mocks.incoming.mock.calls.map(([record]) => record.nomorSurat)).toEqual(['SM-1/2026']);
+        mocks.incoming.mockClear();
+        expect(await fileImportService.importSurat('surat-masuk', file, undefined, 'unit-a', { ...audit, role: 'super_admin' }))
+            .toMatchObject({ success: true, importedRows: 2 });
     });
 
     it('imports surat masuk from an XLSX file', async () => {

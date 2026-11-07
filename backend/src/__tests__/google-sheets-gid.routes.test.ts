@@ -43,6 +43,9 @@ describe('Google Sheets routes select tabs by gid', () => {
         // Without startRow the request is a single, unbudgeted import (no resume position).
         expect(kind === 'masuk' ? mocks.incoming : mocks.outgoing).toHaveBeenCalledWith(
             'synthetic-sheet', { gid: '0' }, 'unit-a', expect.any(Object), expect.any(Object), undefined, undefined);
+        // The importer's role caps the security class of each surat masuk row.
+        expect((kind === 'masuk' ? mocks.incoming : mocks.outgoing).mock.calls[0][3]).toEqual(
+            { userId: 'synthetic-user', userEmail: undefined, ipAddress: expect.any(String), role: 'super_admin' });
     });
 
     it.each(['masuk', 'keluar'])('asks a surat %s import to sinkron recorded letters for the importing user only when sent', async kind => {

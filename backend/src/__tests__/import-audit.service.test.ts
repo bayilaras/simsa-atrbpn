@@ -46,6 +46,7 @@ const auditContext = {
     userId: '11111111-1111-4111-8111-111111111111',
     userEmail: 'importer@example.test',
     ipAddress: '127.0.0.1',
+    role: 'admin_unit',
 };
 
 describe('fail-closed canonical imports', () => {

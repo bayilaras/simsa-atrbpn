@@ -44,7 +44,8 @@ const pools = [0, 1].map(index => new Pool({ connectionString: target.toString()
     application_name: `simsa-import-${suffix}-${index}` }));
 let created = false;
 const userId = randomUUID();
-const audit = { userId, userEmail: `import-${suffix}@example.test` };
+// The importer is a super admin, whose role allows every security class.
+const audit = { userId, userEmail: `import-${suffix}@example.test`, role: 'super_admin' };
 
 beforeAll(async () => {
     await administrator.connect();
@@ -143,6 +144,28 @@ describe('atomic Sheets import on real PostgreSQL transactions', () => {
         expect(await importRow(service(csv.replace('2026-09-12', '2027-09-12')), 'masuk', firstUnit)).toMatchObject({ importedRows: 1 });
         expect(await importRow(service(csv), 'masuk', secondUnit)).toMatchObject({ importedRows: 1 });
         expect(Number((await pools[0].query('SELECT count(*) FROM surat_masuk WHERE unit_kerja_id=ANY($1::text[])', [[firstUnit, secondUnit]])).rows[0].count)).toBe(3);
+    });
+
+    it('rejects surat masuk rows above an Admin Unit Kerja class ceiling and imports the rest', async () => {
+        const unit = `kelas-${suffix}`, adminId = randomUUID(), adminEmail = `admin-${suffix}@example.test`;
+        await pools[0].query('INSERT INTO unit_kerja(id,name) VALUES ($1,$2)', [unit, 'Synthetic class ceiling']);
+        await pools[0].query("INSERT INTO users(id,email,name,role,unit_kerja_id,is_active) VALUES ($1,$2,'Synthetic unit admin','admin_unit',$3,true)",
+            [adminId, adminEmail, unit]);
+        const csv = ['Nomor Urut,No. Surat,Tanggal Surat,Perihal,Dari,Sifat Surat',
+            '1,SM-K1,2026-09-12,Biasa,Kantah sintetis,Biasa',
+            '2,SM-K2,2026-09-12,Rahasia,Kantah sintetis,Rahasia',
+            '3,SM-K3,2026-09-12,Sangat rahasia,Kantah sintetis,Sangat Rahasia',
+            '4,SM-K4,2026-09-12,Terbatas,Kantah sintetis,Terbatas'].join('\n');
+        const result = await service(csv).importSuratMasuk('sheet', 'Data', unit, { userId: adminId, userEmail: adminEmail, role: 'admin_unit' });
+        expect(result).toMatchObject({ success: false, importedRows: 2, skippedRows: 2, duplicateRows: 0 });
+        expect(result.rows?.map(row => [row.nomorSurat, row.status])).toEqual(
+            [['SM-K1', 'imported'], ['SM-K2', 'invalid'], ['SM-K3', 'invalid'], ['SM-K4', 'imported']]);
+        const stored = async () => (await pools[0].query('SELECT nomor_surat, sifat_surat FROM surat_masuk WHERE unit_kerja_id=$1 ORDER BY nomor_surat', [unit])).rows;
+        expect(await stored()).toEqual([{ nomor_surat: 'SM-K1', sifat_surat: 'Biasa' }, { nomor_surat: 'SM-K4', sifat_surat: 'Terbatas' }]);
+        expect(Number((await pools[0].query("SELECT count(*) FROM audit_log WHERE user_id=$1 AND action='create'", [adminId])).rows[0].count)).toBe(2);
+        // A super admin imports the rejected rows; the recorded ones are duplicates.
+        expect(await service(csv).importSuratMasuk('sheet', 'Data', unit, audit)).toMatchObject({ success: true, importedRows: 2, duplicateRows: 2 });
+        expect((await stored()).map(row => row.sifat_surat)).toEqual(['Biasa', 'Rahasia', 'Sangat Rahasia', 'Terbatas']);
     });
 
     it('answers the advisory bulk lookup exactly as the canonical transaction does, soft-deleted rows included', async () => {

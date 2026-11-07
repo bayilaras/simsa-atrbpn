@@ -53,7 +53,7 @@ describe('file import routes', () => {
         const response = await post(`/surat-${kind}`, { unitKerjaId: 'unit-a', sheet: '2026' }).expect(200);
         expect(response.body).toEqual({ success: true, importedRows: 1 });
         expect(mocks.importSurat).toHaveBeenCalledWith(`surat-${kind}`, expect.objectContaining({ originalname: 'register.xlsx' }), '2026', 'unit-a',
-            { userId: 'synthetic-user', userEmail: undefined, ipAddress: expect.any(String) }, { signal: expect.any(AbortSignal) }, undefined, undefined);
+            { userId: 'synthetic-user', userEmail: undefined, ipAddress: expect.any(String), role: 'super_admin' }, { signal: expect.any(AbortSignal) }, undefined, undefined);
     });
 
     it('asks the import to sinkron recorded letters for the importing user only when sent', async () => {

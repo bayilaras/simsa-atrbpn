@@ -23,7 +23,7 @@ vi.mock('../services/surat-keluar.service.js', async () => {
 });
 vi.mock('../services/arsip.service.js', () => ({ arsipService: { create: mocks.arsip } }));
 const { migrationService } = await import('../services/migration.service');
-const actor = { userId: 'operator-a', userEmail: 'operator@example.test', ipAddress: '127.0.0.1' };
+const actor = { userId: 'operator-a', userEmail: 'operator@example.test', ipAddress: '127.0.0.1', role: 'admin_unit' };
 const types = [
     ['importSuratMasuk', 'masuk', 'Nomor Surat,Tanggal Surat,Perihal,Dari,Kepada', 'SM-1', 'tanggalSurat'],
     ['importSuratKeluar', 'keluar', 'Nomor Surat,Tanggal Surat,Perihal,Dari,Kepada', 'SK-1', 'tanggalSurat'],
@@ -175,5 +175,31 @@ describe('CSV date fidelity and mutation-free preview', () => {
         const result = await migrationService.importSuratMasuk('\ufeffNomor Surat,Tanggal Surat,Perihal,Dari\nSM-1,2026-09-11,"Arsip, tanah\nbaris kedua",Unit A', 'unit-a', actor);
         expect(result).toMatchObject({ success: true, imported: 1 });
         expect(mocks.masuk).toHaveBeenCalledWith(expect.objectContaining({ perihal: 'Arsip, tanah\nbaris kedua' }), actor);
+    });
+});
+
+describe('class ceiling of a CSV surat masuk row', () => {
+    const rejected = 'Klasifikasi keamanan melebihi kewenangan pengguna. Kelas Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin.';
+    const source = ['Nomor Surat,Tanggal Surat,Perihal,Dari,Sifat Surat', 'SM-1,2026-09-11,Biasa,Unit A,Biasa',
+        'SM-2,2026-09-11,Rahasia,Unit A,Rahasia', 'SM-3,2026-09-11,Sangat rahasia,Unit A,Sangat Rahasia',
+        'SM-4,2026-09-11,Terbatas,Unit A,Terbatas', 'SM-5,2026-09-11,Tanpa sifat,Unit A,'].join('\n');
+    beforeEach(() => { vi.clearAllMocks(); mocks.queue.length = 0; mocks.masuk.mockResolvedValue({ id: 'a' }); });
+
+    it.each([true, false])('rejects rows above an Admin Unit Kerja ceiling (dry run %s) and keeps the others', async dryRun => {
+        const result = await migrationService.importSuratMasuk(source, 'unit-a', actor, { dryRun });
+        const ok = dryRun ? 'valid' : 'imported';
+        expect(result).toMatchObject({ success: false, skipped: 2, valid: 3, imported: dryRun ? 0 : 3, duplicates: 0 });
+        expect(result.rows.map(row => [row.row, row.status, row.message])).toEqual([
+            [2, ok, undefined], [3, 'invalid', rejected], [4, 'invalid', rejected], [5, ok, undefined], [6, ok, undefined]]);
+        expect(result.errors).toEqual([`Row 3: ${rejected}`, `Row 4: ${rejected}`]);
+        // Rejected rows are never looked up or written.
+        expect(mocks.existing.mock.calls.flat(2).map((key: any) => key.nomorSurat)).toEqual(['SM-1', 'SM-4', 'SM-5']);
+        expect(mocks.masuk.mock.calls.map(([record]) => record.sifatSurat)).toEqual(dryRun ? [] : ['Biasa', 'Terbatas', 'Biasa']);
+    });
+
+    it('imports every row for a super admin', async () => {
+        const result = await migrationService.importSuratMasuk(source, 'unit-a', { ...actor, role: 'super_admin' });
+        expect(result).toMatchObject({ success: true, imported: 5, skipped: 0 });
+        expect(mocks.masuk.mock.calls.map(([record]) => record.sifatSurat)).toEqual(['Biasa', 'Rahasia', 'Sangat Rahasia', 'Terbatas', 'Biasa']);
     });
 });
