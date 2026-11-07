@@ -19,6 +19,7 @@ import { hasPermission, type Role } from '../config/permissions';
 import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-lock';
 import { isAllowedForClassification, recordAccessService } from './record-access.service';
 import { kelasSumberSurat, normalizeSecurityClassification, rankKelas } from './access/visibility-spec';
+import { alasanArsipTerkunci } from './access/arsip-aksi';
 import { ARSIP_KOLOM_DAFTAR } from './access/kolom-rekaman';
 import {
     archiveRuleAssignmentService,
@@ -588,7 +589,8 @@ export class ArsipService {
                     // A revocation may have committed while the grant lock was pending.
                     access = await recordAccessService.check(actor, 'arsip', id, tx);
                 }
-                if (!access.allowed || !access.mutable || access.grantId !== lockedGrantId || existing.disposalBatchId) {
+                // Predikat yang sama dengan hak aksi pada GET /api/arsip/:id.
+                if (access.grantId !== lockedGrantId || alasanArsipTerkunci(actor.role, access, existing) !== null) {
                     throw new ForbiddenError('Izin kelola arsip tidak tersedia atau arsip ditahan dalam penyusutan.');
                 }
                 assertGrantCurrent = () => {

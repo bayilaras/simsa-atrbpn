@@ -401,6 +401,21 @@ describe('ArsipService', () => {
             );
         });
 
+        it('rejects an audited update once the archive is reserved in a disposal batch', async () => {
+            enqueue(
+                [{ id: '1', disposalStatus: 'active', disposalBatchId: 'batch-1', legalHold: false }],
+                [{ id: 'user-1', email: 'operator@example.test', role: 'admin_dirjen', unitKerjaId: 'ditjen', isActive: true }],
+            );
+
+            await expect(svc.update('1', { keterangan: 'updated' } as any, {
+                userId: 'user-1',
+                userEmail: 'operator@example.test',
+            })).rejects.toThrow('Izin kelola arsip tidak tersedia atau arsip ditahan dalam penyusutan.');
+
+            expect(auditMocks.logActionOrThrow).not.toHaveBeenCalled();
+            expect(transactionRollbacks).toBe(1);
+        });
+
         it('should allow non-retention metadata while an archive is held or in a batch', async () => {
             enqueue(
                 [{
