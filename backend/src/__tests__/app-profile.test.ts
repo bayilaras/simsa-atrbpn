@@ -202,11 +202,31 @@ describe('backend application profile', () => {
         expect(JSON.stringify(response.body)).not.toContain('secret-input');
     });
 
+    it('answers a sign-in body in an unsupported charset with 415', async () => {
+        const response = await request(app).post('/api/auth/sign-in/email')
+            .set('Content-Type', 'application/json; charset=x-tidak-dikenal').send('{"email":"a@x.test"}').expect(415);
+        expect(response.body).toMatchObject({ success: false, code: 'UNSUPPORTED_MEDIA_TYPE' });
+    });
+
     it('returns 413 for the body parser size limit without echoing its input', () => {
         const response = { locals: { requestId: 'server-id' }, status: vi.fn().mockReturnThis(), json: vi.fn() };
         globalErrorHandler(Object.assign(new Error('secret-input'), { type: 'entity.too.large', status: 413 }),
             { path: '/api/surat-masuk', method: 'POST' } as any, response as any, vi.fn());
         expect(response.status).toHaveBeenCalledWith(413);
+        expect(JSON.stringify(response.json.mock.calls)).not.toContain('secret-input');
+    });
+
+    it.each([
+        ['charset.unsupported', 415],
+        ['encoding.unsupported', 415],
+        ['request.aborted', 400],
+        ['request.size.invalid', 400],
+    ])('returns the body parser error %s as a client error without echoing its input', (type, status) => {
+        const response = { locals: { requestId: 'server-id' }, status: vi.fn().mockReturnThis(), json: vi.fn() };
+        globalErrorHandler(Object.assign(new Error('secret-input'), { type, status }),
+            { path: '/api/auth/sign-in/email', method: 'POST' } as any, response as any, vi.fn());
+        expect(response.status).toHaveBeenCalledWith(status);
+        expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, requestId: 'server-id' }));
         expect(JSON.stringify(response.json.mock.calls)).not.toContain('secret-input');
     });
 

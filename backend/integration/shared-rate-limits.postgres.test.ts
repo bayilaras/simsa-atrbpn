@@ -185,3 +185,74 @@ describe('shared rate limits on native PostgreSQL', () => {
         expect((await pools[0]!.query("SELECT hits FROM public.shared_rate_limits WHERE bucket='better-auth-burst'")).rows[0].hits).toBe(10);
     });
 });
+
+describe('network and account login windows on native PostgreSQL', () => {
+    // The deployed chain: a network window wraps a per-account window, each
+    // with its own request property, on two independent pools.
+    function nestedLoginServers() {
+        let checkedCredentials = 0;
+        const apps = [0, 1].map(index => {
+            const app = express();
+            const burst = store('better-auth', index);
+            app.use(createAuthAttemptLimiter({ store: store('auth', index), shared: true, maximum: 30 }));
+            app.use(createAuthAttemptLimiter({
+                store: store('auth-account', index), shared: true, maximum: 5,
+                keyGenerator: req => `acct:${req.header('x-test-account') ?? ''}`,
+                requestPropertyName: 'authAccountRateLimit', resetOnSuccess: true,
+            }));
+            app.post('/', async (req, res) => {
+                // Better Auth's burst gate may reject before checking credentials.
+                if (req.header('x-test-result') === 'burst') {
+                    const admission = await burst.consume('sign-in:office-network', { window: 10, max: 1 });
+                    if (!admission.allowed) return res.sendStatus(429);
+                }
+                checkedCredentials++;
+                res.sendStatus(req.header('x-test-result') === 'success' ? 200 : 401);
+            });
+            return app;
+        });
+        const attempt = (index: number, account: string, result = 'failure') =>
+            request(apps[index % 2]!).post('/').set('x-test-account', account).set('x-test-result', result);
+        return { attempt, checked: () => checkedCredentials };
+    }
+    // Hit counts of a bucket's rows, ascending; keys are stored only as HMACs.
+    const hits = async (bucket: string) => (await pools[0]!.query(
+        'SELECT hits FROM public.shared_rate_limits WHERE bucket = $1', [bucket],
+    )).rows.map(row => Number(row.hits)).sort((left, right) => left - right);
+
+    it('counts a failed login in both windows and refunds both when the account window rejects', async () => {
+        const { attempt, checked } = nestedLoginServers();
+        for (let index = 0; index < 5; index++) await attempt(index, 'a@x.test').expect(401);
+        await expect.poll(() => hits('auth')).toEqual([5]);
+        await expect.poll(() => hits('auth-account')).toEqual([5]);
+        await attempt(0, 'a@x.test').expect(429);
+        await attempt(1, 'a@x.test', 'success').expect(429);
+        expect(checked()).toBe(5);
+        await expect.poll(() => hits('auth')).toEqual([5]);
+        await expect.poll(() => hits('auth-account')).toEqual([5]);
+        // Another account on the same network keeps its own window.
+        await attempt(1, 'b@x.test').expect(401);
+        await expect.poll(() => hits('auth')).toEqual([6]);
+    });
+
+    it('refunds a successful login in both windows and clears that account', async () => {
+        const { attempt } = nestedLoginServers();
+        for (let index = 0; index < 3; index++) await attempt(index, 'a@x.test').expect(401);
+        await expect.poll(() => hits('auth-account')).toEqual([3]);
+        await attempt(1, 'a@x.test', 'success').expect(200);
+        await expect.poll(() => hits('auth-account')).toEqual([]);
+        await expect.poll(() => hits('auth')).toEqual([3]);
+        for (let index = 0; index < 5; index++) await attempt(index, 'a@x.test').expect(401);
+        await attempt(0, 'a@x.test').expect(429);
+    });
+
+    it("refunds both windows when Better Auth's burst gate rejects", async () => {
+        const { attempt, checked } = nestedLoginServers();
+        await attempt(0, 'a@x.test', 'burst').expect(401);
+        await attempt(1, 'a@x.test', 'burst').expect(429);
+        await attempt(0, 'b@x.test', 'burst').expect(429);
+        expect(checked()).toBe(1);
+        await expect.poll(() => hits('auth')).toEqual([1]);
+        await expect.poll(() => hits('auth-account')).toEqual([0, 1]);
+    });
+});
