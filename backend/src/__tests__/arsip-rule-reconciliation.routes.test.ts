@@ -201,6 +201,40 @@ describe('arsip rule reconciliation routes', () => {
         });
     });
 
+    describe('GET detail carries the server write capability inside data', () => {
+        const aktif = { disposalStatus: 'active', legalHold: false, disposalBatchId: null };
+
+        it('allows both actions for a writable admin on an active archive', async () => {
+            mocks.arsip.findById.mockResolvedValue({ id: ARCHIVE_ID, unitKerjaId: 'ditjen', ...aktif });
+            const response = await request(app).get(`/arsip/${ARCHIVE_ID}`).expect(200);
+            expect(response.body.data).toMatchObject({
+                id: ARCHIVE_ID,
+                aksiDiizinkan: ['ubah_metadata', 'rekonsiliasi_aturan'],
+                alasanTerkunci: null,
+                izinAkses: null,
+            });
+            expect(response.body).not.toHaveProperty('aksiDiizinkan');
+        });
+
+        it('locks both actions when the grant only allows viewing', async () => {
+            mocks.arsip.findById.mockResolvedValue({ id: ARCHIVE_ID, unitKerjaId: 'ditjen', ...aktif });
+            mocks.recordAccess.check.mockResolvedValue({
+                ...access(false), classification: 'terbatas', grantId: 'g', grantAccessMode: 'view', grantExpiresAt: null,
+            });
+            const response = await request(app).get(`/arsip/${ARCHIVE_ID}`).expect(200);
+            expect(response.body.data).toMatchObject({
+                aksiDiizinkan: [],
+                alasanTerkunci: 'perlu_izin_kelola',
+                izinAkses: { mode: 'view', berlakuSampai: null },
+            });
+        });
+
+        it('fails closed when the read model has no disposal state', async () => {
+            const response = await request(app).get(`/arsip/${ARCHIVE_ID}`).expect(200);
+            expect(response.body.data).toMatchObject({ aksiDiizinkan: [], alasanTerkunci: 'proses_penyusutan' });
+        });
+    });
+
     it('returns rule history only after record-level access succeeds', async () => {
         await request(app)
             .get(`/arsip/${ARCHIVE_ID}/rule-history`)

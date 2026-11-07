@@ -20,7 +20,13 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { KlasifikasiPicker } from '@/components/KlasifikasiPicker'
 import { EditArsipDialog } from '@/components/arsip/EditArsipDialog'
-import { kelasPerluPersetujuan } from '@/components/arsip/edit-arsip-form'
+import {
+    FIELD_CERMIN_ITEM,
+    kelasPerluPersetujuan,
+    PESAN_ARSIP_TIDAK_DAPAT_DIUBAH,
+    PESAN_ITEM_BELUM_TERMUAT,
+    statusAksiArsip,
+} from '@/components/arsip/edit-arsip-form'
 import { arsipService } from '@/services/arsip.service'
 import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/hooks/use-toast'
@@ -44,17 +50,6 @@ function formatRelative(dateStr) {
     } catch {
         return ''
     }
-}
-
-// Cermin penolakan PUT /api/arsip/:id (record-access mutable dan
-// arsipService.update) agar tombol dikunci dengan alasan, bukan gagal saat simpan.
-function alasanMetadataDikunci(arsip) {
-    if (arsip.disposalStatus === 'executed') return 'Metadata dikunci karena penyusutan arsip ini sudah dilaksanakan.'
-    if (arsip.legalHold) return 'Metadata dikunci karena arsip sedang dalam legal hold.'
-    if (arsip.disposalStatus !== 'active' || arsip.disposalBatchId) {
-        return 'Metadata dikunci karena arsip sedang dalam proses penyusutan.'
-    }
-    return ''
 }
 
 // ─── Sub-Components ─────────────────────────────────────────
@@ -383,7 +378,9 @@ export default function ArsipDetail() {
                 description: 'Klasifikasi dan JRA aktif telah dicatat sebagai revisi baru.',
             })
         } catch (err) {
-            setReconcileError(err.message || 'Gagal merekonsiliasi aturan arsip')
+            setReconcileError(err?.status === 404
+                ? PESAN_ARSIP_TIDAK_DAPAT_DIUBAH
+                : err?.message || 'Gagal merekonsiliasi aturan arsip')
         } finally {
             setReconcileSaving(false)
         }
@@ -402,12 +399,30 @@ export default function ArsipDetail() {
         try {
             const refreshed = await arsipService.getById(id)
             setArsip(refreshed?.data || refreshed)
-        } catch {
+        } catch (err) {
+            const kelasTerkendali = kelasPerluPersetujuan(perubahan.klasifikasiKeamanan)
+            const ditolak = err?.status === 404
+            // Server sudah memperbarui daftar item, tetapi tab Item Arsip baru
+            // berubah setelah muat ulang, yang tidak lagi mungkin bila ditolak.
+            const itemBelumTermuat = ditolak
+                && (arsip?.items?.length ?? 0) > 0
+                && FIELD_CERMIN_ITEM.some(field => Object.hasOwn(perubahan, field))
+            // 404: server tidak lagi membuka arsip ini untuk akun ini (mis. kelas
+            // dinaikkan tanpa persetujuan untuk kelas baru), jadi hak aksi lama
+            // tidak berlaku. Galat jaringan/server tidak mengunci tombol.
+            if (ditolak) {
+                setArsip(current => ({
+                    ...current,
+                    aksiDiizinkan: [],
+                    alasanTerkunci: kelasTerkendali ? 'perlu_persetujuan_akses' : 'tidak_berwenang',
+                }))
+            }
+            const keterangan = kelasTerkendali
+                ? 'Arsip kini berkelas Terbatas atau lebih tinggi dan memerlukan persetujuan akses sebelum dapat dibuka kembali.'
+                : 'Perubahan sudah tersimpan. Muat ulang halaman untuk melihat data terbaru.'
             toast({
                 title: 'Data terbaru belum dapat dimuat',
-                description: kelasPerluPersetujuan(perubahan.klasifikasiKeamanan)
-                    ? 'Arsip kini berkelas Terbatas atau lebih tinggi dan memerlukan persetujuan akses sebelum dapat dibuka kembali.'
-                    : 'Perubahan sudah tersimpan. Muat ulang halaman untuk melihat data terbaru.',
+                description: itemBelumTermuat ? `${keterangan} ${PESAN_ITEM_BELUM_TERMUAT}` : keterangan,
             })
         }
     }
@@ -445,11 +460,13 @@ export default function ArsipDetail() {
     const suratUrl = arsip.sourceSuratId ? `/surat/${suratType}/${arsip.sourceSuratId}` : null
     const itemCount = arsip.items?.length || (arsip.nomorItem ? 1 : 0)
     const jenisLabel = arsip.jenisArsip === 'masuk' ? 'Surat Masuk' : 'Surat Keluar'
+    // Tombol tampil untuk penulis unit arsip; aktif/nonaktif mengikuti hak aksi
+    // dari server (atau keadaan rekod bila respons belum membawanya).
     const isEditor = canWrite(arsip.unitKerjaId)
-    const reconciliationBlocked = Boolean(
-        arsip.legalHold || arsip.disposalStatus !== 'active' || arsip.disposalBatchId
-    )
-    const metadataLockReason = alasanMetadataDikunci(arsip)
+    const ubah = statusAksiArsip(arsip, 'ubah_metadata')
+    const rekon = statusAksiArsip(arsip, 'rekonsiliasi_aturan')
+    const reconciliationBlocked = !rekon.boleh
+    const metadataLockReason = ubah.alasan
     const provenanceStatus = arsip.ruleProvenanceStatus || 'legacy_unverified'
     const provenanceMeta = RULE_STATUS[provenanceStatus] || RULE_STATUS.legacy_unverified
 
@@ -832,6 +849,7 @@ export default function ArsipDetail() {
                                                     size="sm"
                                                     className="gap-2"
                                                     disabled={reconciliationBlocked}
+                                                    title={rekon.alasan || undefined}
                                                     onClick={openReconciliation}
                                                 >
                                                     <RefreshCw className="h-4 w-4" /> Rekonsiliasi Aturan
@@ -847,9 +865,7 @@ export default function ArsipDetail() {
                                     }`}>
                                         {provenanceMeta.description}
                                         {isEditor && reconciliationBlocked && (
-                                            <p className="mt-1 font-medium">
-                                                Rekonsiliasi dikunci karena arsip berada dalam legal hold atau workflow penyusutan.
-                                            </p>
+                                            <p className="mt-1 font-medium">{rekon.alasan}</p>
                                         )}
                                     </div>
 
@@ -986,6 +1002,7 @@ export default function ArsipDetail() {
                                     size="sm"
                                     className="w-full justify-start gap-2"
                                     disabled={reconciliationBlocked}
+                                    title={rekon.alasan || undefined}
                                     onClick={openReconciliation}
                                 >
                                     <RefreshCw className="h-4 w-4" /> Rekonsiliasi Klasifikasi/JRA

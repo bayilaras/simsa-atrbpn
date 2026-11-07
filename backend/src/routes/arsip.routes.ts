@@ -24,6 +24,7 @@ import {
 } from '../services/record-access.service.js';
 import { PESAN_KELAS_MELEBIHI_KEWENANGAN } from '../constants/pesan-akses.js';
 import { normalizeSecurityClassification } from '../services/access/visibility-spec.js';
+import { aksiArsipPayload } from '../services/access/arsip-aksi.js';
 
 const router = Router();
 
@@ -231,7 +232,9 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
             return res.status(404).json({ error: 'Arsip not found' });
         }
 
-        res.json({ success: true, data: result });
+        // Hak aksi ikut di dalam `data` (pola detail surat) agar halaman detail
+        // mengunci tombol dengan predikat yang sama dengan PUT.
+        res.json({ success: true, data: { ...result, ...aksiArsipPayload(req.user?.role, access, result) } });
     } catch (error) {
         next(error);
     }

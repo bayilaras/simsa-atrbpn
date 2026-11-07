@@ -256,7 +256,7 @@ function FormUbahArsip({ arsip, saving, setSaving, onClose, onSaved }) {
             <Bagian judul="Item Arsip">
                 {punyaRincianItem && (
                     <p className="text-xs text-muted-foreground">
-                        Bagian ini memperbarui ringkasan item pada berkas. Daftar di tab Item Arsip tidak ikut berubah.
+                        Bila nomor, uraian, tingkat perkembangan, tanggal, atau lokasi diubah, item yang menjadi ringkasan berkas di tab Item Arsip disamakan dengan semua isian tersebut pada formulir ini, termasuk yang tidak diubah, bila item itu dapat dikenali. Jumlah dan media tidak mengubah daftar item.
                     </p>
                 )}
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -290,6 +290,11 @@ function FormUbahArsip({ arsip, saving, setSaving, onClose, onSaved }) {
             </Bagian>
 
             <Bagian judul="Lokasi Penyimpanan Fisik">
+                {punyaRincianItem && (
+                    <p className="text-xs text-muted-foreground">
+                        Lokasi baru juga diterapkan pada item yang tersimpan di lokasi lama yang sama.
+                    </p>
+                )}
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                     {teksInput('lokasiFc', { wajib: true, placeholder: 'Contoh: FC-01' })}
                     {teksInput('lokasiLaci', { wajib: true, placeholder: 'Contoh: L-02' })}

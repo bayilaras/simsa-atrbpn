@@ -187,9 +187,33 @@ describe('EditArsipDialog', () => {
     it('kurun waktu lama berformat bebas tetap disunting sebagai teks', async () => {
         tampilkan({ ...rekod, kurunWaktu: 'Januari s/d Maret 2020', items: [{ id: 'item-1' }] })
         expect(screen.getByLabelText('Kurun Waktu')).toHaveValue('Januari s/d Maret 2020')
-        expect(screen.getByText(/Daftar di tab Item Arsip tidak ikut berubah/)).toBeInTheDocument()
+        expect(screen.getByText(/item yang menjadi ringkasan berkas di tab Item Arsip disamakan dengan semua isian tersebut pada formulir ini, termasuk yang tidak diubah/)).toBeInTheDocument()
         ketik('Kurun Waktu', 'Januari s/d April 2020')
         fireEvent.click(tombolSimpan())
         await waitFor(() => expect(mocks.update).toHaveBeenCalledWith('arsip-1', { kurunWaktu: 'Januari s/d April 2020' }))
+    })
+
+    it('catatan sinkron item dan lokasi hanya tampil bila berkas punya daftar item', () => {
+        tampilkan({ ...rekod, items: [{ id: 'item-1' }, { id: 'item-2' }] })
+        expect(screen.getByText(/Jumlah dan media tidak mengubah daftar item\./)).toBeInTheDocument()
+        expect(screen.getByText('Lokasi baru juga diterapkan pada item yang tersimpan di lokasi lama yang sama.')).toBeInTheDocument()
+        cleanup()
+
+        tampilkan()
+        expect(screen.queryByText(/Jumlah dan media tidak mengubah daftar item\./)).not.toBeInTheDocument()
+        expect(screen.queryByText(/Lokasi baru juga diterapkan/)).not.toBeInTheDocument()
+    })
+
+    it('409 dari server ditampilkan apa adanya dan dialog tetap terbuka', async () => {
+        const pesan = 'Ringkasan item dan lokasi arsip tidak dapat diubah selama appraisal JRA masih terbuka atau sedang ditelaah.'
+        mocks.update.mockRejectedValue(Object.assign(new Error('ConflictError'), { status: 409, data: { error: 'ConflictError', message: pesan } }))
+        const { onOpenChange, onSaved } = tampilkan({ ...rekod, items: [{ id: 'item-1' }] })
+        ketik(/^No\. Folder/, 'F-004')
+        fireEvent.click(tombolSimpan())
+        const alert = await screen.findByRole('alert')
+        expect(within(alert).getByText(pesan)).toBeInTheDocument()
+        expect(onOpenChange).not.toHaveBeenCalled()
+        expect(onSaved).not.toHaveBeenCalled()
+        expect(mocks.toast).not.toHaveBeenCalled()
     })
 })

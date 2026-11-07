@@ -401,6 +401,71 @@ describe('ArsipService', () => {
             );
         });
 
+        it('does not query arsip_items when no item summary field changes', async () => {
+            enqueue(
+                [{ id: '1', disposalStatus: 'active', disposalBatchId: null, legalHold: false, keterangan: 'lama' }],
+                [{ id: 'user-1', email: 'operator@example.test', role: 'admin_dirjen', unitKerjaId: 'ditjen', isActive: true }],
+                [{ id: '1', keterangan: 'updated' }],
+            );
+
+            const res = await svc.update('1', { keterangan: 'updated' } as any, { userId: 'user-1' });
+
+            expect(res).toEqual({ id: '1', keterangan: 'updated' });
+            expect(resultQueue).toHaveLength(0);
+            expect(capturedSets).toHaveLength(1);
+            expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    changes: expect.objectContaining({ fields: ['keterangan'], items: [], itemSync: 'tidak_perlu' }),
+                }),
+                mockDb,
+            );
+        });
+
+        it('returns the updated row when a changed item summary has no item rows', async () => {
+            enqueue(
+                [{ id: '1', disposalStatus: 'active', disposalBatchId: null, legalHold: false, nomorItem: '1' }],
+                [{ id: '1', nomorItem: '2' }],
+                [],
+            );
+
+            const res = await svc.update('1', { nomorItem: '2' } as any);
+
+            expect(res).toEqual({ id: '1', nomorItem: '2' });
+            expect(resultQueue).toHaveLength(0);
+            expect(capturedSets).toHaveLength(1);
+            expect(transactionCommits).toBe(1);
+        });
+
+        it('rejects an item summary change while a JRA appraisal is still open', async () => {
+            enqueue(
+                [{ id: '1', disposalStatus: 'active', disposalBatchId: null, legalHold: false, nomorItem: '1' }],
+                [{ id: '1', nomorItem: '2' }],
+                [{ id: 'item-1', arsipId: '1', nomorItem: '1' }],
+                [{ id: 'case-1' }],
+            );
+
+            await expect(svc.update('1', { nomorItem: '2' } as any))
+                .rejects.toThrow(/appraisal JRA masih terbuka/);
+
+            expect(capturedSets).toHaveLength(1);
+            expect(transactionRollbacks).toBe(1);
+        });
+
+        it('rejects an audited update once the archive is reserved in a disposal batch', async () => {
+            enqueue(
+                [{ id: '1', disposalStatus: 'active', disposalBatchId: 'batch-1', legalHold: false }],
+                [{ id: 'user-1', email: 'operator@example.test', role: 'admin_dirjen', unitKerjaId: 'ditjen', isActive: true }],
+            );
+
+            await expect(svc.update('1', { keterangan: 'updated' } as any, {
+                userId: 'user-1',
+                userEmail: 'operator@example.test',
+            })).rejects.toThrow('Izin kelola arsip tidak tersedia atau arsip ditahan dalam penyusutan.');
+
+            expect(auditMocks.logActionOrThrow).not.toHaveBeenCalled();
+            expect(transactionRollbacks).toBe(1);
+        });
+
         it('should allow non-retention metadata while an archive is held or in a batch', async () => {
             enqueue(
                 [{
