@@ -24,7 +24,10 @@ const BATCH = {
     musnah: '69000000-0000-4000-8000-000000000003',
     pindahDisetujui: '69000000-0000-4000-8000-000000000004',
     pindahBaru: '69000000-0000-4000-8000-000000000005',
+    serah: '69000000-0000-4000-8000-000000000006',
 } as const;
+// Serah terima arsip permanen ke lembaga kearsipan: manifest, bukan batch penyusutan.
+const MANIFEST = '69000000-0000-4000-8000-000000000010';
 const PENUNJUK_ASING = '69000000-0000-4000-8000-0000000000ff';
 const arsipId = (n: number) => `6a000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const ARSIP = {
@@ -37,6 +40,8 @@ const ARSIP = {
     penunjukTertimpa: arsipId(7), // anggota P dan batch disetujui, penunjuk ke batch disetujui
     dipindahkanBaru: arsipId(8), // pemindahan sesudah 0035: active + inactive_transferred_at
     aktif: arsipId(9),
+    diserahkanAnri: arsipId(10), // pemindahan baru, lalu serah terima permanen yang sudah diterima
+    pindahDanSerah: arsipId(11), // anggota P dan batch penyerahan yang dilaksanakan
 } as const;
 const nomor = (id: string) => `PL-${id.slice(-2)}`;
 const KELAS = ['biasa'];
@@ -68,7 +73,8 @@ beforeAll(async () => {
             ('${BATCH.alihMedia}','sesditjen','alih_media','executed','2026-03-03',NULL,NULL,NULL),
             ('${BATCH.musnah}','sesditjen','pemusnahan','executed','2026-03-01','${USER_ID.superAdmin}',$1,'${'a'.repeat(64)}'),
             ('${BATCH.pindahDisetujui}','sesditjen','pemindahan','approved',NULL,NULL,NULL,NULL),
-            ('${BATCH.pindahBaru}','sesditjen','pemindahan','executed','2026-10-01','${USER_ID.superAdmin}',NULL,NULL)
+            ('${BATCH.pindahBaru}','sesditjen','pemindahan','executed','2026-10-01','${USER_ID.superAdmin}',NULL,NULL),
+            ('${BATCH.serah}','sesditjen','penyerahan','executed','2026-03-04','${USER_ID.superAdmin}',$1,'${'b'.repeat(64)}')
     `, [bukti]);
     await database.exec(`
         INSERT INTO arsip (id, unit_kerja_id, jenis_arsip, tahun, klasifikasi_keamanan, nomor_berkas, uraian_berkas,
@@ -83,6 +89,8 @@ beforeAll(async () => {
                 baris(ARSIP.penunjukTertimpa, 'executed', BATCH.pindahDisetujui),
                 baris(ARSIP.dipindahkanBaru, 'active', null, '2026-10-01T00:00:00+07:00'),
                 baris(ARSIP.aktif, 'active', null),
+                baris(ARSIP.diserahkanAnri, 'executed', MANIFEST, '2026-10-01T00:00:00+07:00'),
+                baris(ARSIP.pindahDanSerah, 'executed', BATCH.serah),
             ].join(',\n')};
         INSERT INTO penyusutan_items (penyusutan_id, arsip_id) VALUES
             ('${BATCH.pindahLama}','${ARSIP.pindahPenunjuk}'),
@@ -93,7 +101,28 @@ beforeAll(async () => {
             ('${BATCH.pindahDisetujui}','${ARSIP.hanyaDisetujui}'),
             ('${BATCH.pindahLama}','${ARSIP.penunjukTertimpa}'),
             ('${BATCH.pindahDisetujui}','${ARSIP.penunjukTertimpa}'),
-            ('${BATCH.pindahBaru}','${ARSIP.dipindahkanBaru}');
+            ('${BATCH.pindahBaru}','${ARSIP.dipindahkanBaru}'),
+            ('${BATCH.pindahBaru}','${ARSIP.diserahkanAnri}'),
+            ('${BATCH.pindahLama}','${ARSIP.pindahDanSerah}'),
+            ('${BATCH.serah}','${ARSIP.pindahDanSerah}');
+    `);
+    // Serah terima yang sudah diterima mengakhiri siklus arsip walaupun arsip itu
+    // tetap tercatat sebagai anggota batch pemindahan. Keputusan appraisal dan
+    // pemicu finalisasi tidak relevan di sini, jadi FK dan pemicu dimatikan
+    // sementara dengan hak administrator PGlite.
+    const sha = 'c'.repeat(64);
+    await database.exec(`
+        RESET ROLE;
+        SET session_replication_role = replica;
+        INSERT INTO permanent_transfer_manifests (id, unit_kerja_id, manifest_number, destination, created_by) VALUES
+            ('${MANIFEST}','sesditjen','MAN-UJI-01','Lembaga kearsipan nasional','${USER_ID.superAdmin}');
+        INSERT INTO permanent_transfer_manifest_items (manifest_id, arsip_id, appraisal_decision_id, object_uri, object_sha256) VALUES
+            ('${MANIFEST}','${ARSIP.diserahkanAnri}','69000000-0000-4000-8000-0000000000aa','uji://objek/01','${sha}');
+        INSERT INTO permanent_transfer_events (manifest_id, event_type, event_at, reference_number, counterparty, document_uri, document_sha256, actor_id) VALUES
+            ('${MANIFEST}','handover','2026-10-05T00:00:00+07:00','BA-001','Lembaga kearsipan','uji://dok/serah','${sha}','${USER_ID.superAdmin}'),
+            ('${MANIFEST}','acknowledgement','2026-10-06T00:00:00+07:00','TT-001','Lembaga kearsipan','uji://dok/terima','${sha}','${USER_ID.superAdmin}');
+        SET session_replication_role = origin;
+        SET ROLE simsa_migrator;
     `);
 }, 90_000);
 afterAll(async () => { await database?.close(); });
