@@ -164,7 +164,7 @@ Pada ikon lonceng:
 Untuk admin:
 
 1. Buka **Surat > Surat Masuk** lalu klik **Tambah Surat Masuk**.
-2. Isi nomor, tanggal surat, tanggal diterima, pengirim, tujuan/perihal, naskah atau sifat surat, klasifikasi, dan metadata lain yang tersedia. Sifat surat terdiri atas Biasa, Segera, Sangat Segera, Terbatas, Rahasia, Sangat Rahasia, Undangan, dan Penting. Terbatas, Rahasia, dan Sangat Rahasia adalah kelas keamanan surat: admin dapat memilih Terbatas, sedangkan sifat Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin.
+2. Isi nomor, tanggal surat, tanggal diterima, pengirim, tujuan/perihal, naskah atau sifat surat, klasifikasi, dan metadata lain yang tersedia. Sifat surat terdiri atas Biasa, Segera, Sangat Segera, Terbatas, Rahasia, Sangat Rahasia, Undangan, dan Penting. Terbatas, Rahasia, dan Sangat Rahasia adalah kelas keamanan surat: admin dapat memilih Terbatas, sedangkan sifat Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin. Surat Terbatas, Rahasia, atau Sangat Rahasia hanya dapat dibuka atau diubah dengan persetujuan akses berjangka, juga oleh pencatatnya; ajukan persetujuan akses setelah menyimpan.
 3. Lampirkan dokumen bila diperlukan dan fasilitas penyimpanan file tersedia. Untuk pencatatan inventaris fisik, metadata dapat disimpan tanpa lampiran.
 4. Periksa nomor, tanggal, pengirim, perihal, unit, dan file sebelum menyimpan.
 5. Buka detail untuk mengedit, membalas, mendistribusikan, atau mengarsipkan sesuai tombol dan kewenangan.

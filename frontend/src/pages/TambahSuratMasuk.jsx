@@ -39,7 +39,7 @@ import { useDisposisiOpsi } from '@/hooks/use-disposisi-opsi';
 import { ReferensiSection } from '@/components/surat-keluar/ReferensiSection';
 import { DisposisiRegistrasiSection } from '@/components/surat-masuk/DisposisiRegistrasiSection';
 import { PESAN_TERKENDALI, isSifatTerkendali } from '@/lib/tindak-lanjut';
-import { PESAN_KELAS_TERBATAS_PERAN, adaKelasTersembunyi, bolehMemilihKelas, saringOpsiKelas } from '@/lib/kelas-keamanan';
+import { PESAN_KELAS_TERBATAS_PERAN, PESAN_SURAT_MASUK_PERLU_PERSETUJUAN, adaKelasTersembunyi, bolehMemilihKelas, normalisasiKelas, saringOpsiKelas } from '@/lib/kelas-keamanan';
 import {
     MailOpen,
     ChevronLeft,
@@ -232,7 +232,11 @@ export default function TambahSuratMasuk() {
     // Sifat tersimpan di atas plafon tetap boleh dipertahankan (tidak dikirim ulang),
     // jadi pesan umum "hanya Super Admin" diganti agar tidak bertentangan.
     const sifatDipertahankan = isEditMode && Boolean(sifatTersimpan) && !bolehMemilihKelas(user?.role, sifatTersimpan);
-    const bantuanSifat = sifatDiganti || sifatDibatasi;
+    // Sifat Terbatas ke atas yang baru dipilih membuat surat hanya dapat dibuka
+    // lewat persetujuan akses; persetujuan lama terikat pada kelas sebelumnya.
+    const sifatPerluPersetujuan = isSifatTerkendali(sifatSurat)
+        && (!isEditMode || normalisasiKelas(sifatSurat) !== normalisasiKelas(sifatTersimpan));
+    const bantuanSifat = sifatDiganti || sifatDibatasi || sifatPerluPersetujuan;
     const labelSifat = (value) => SIFAT_SURAT_OPTIONS.find(opt => opt.value === value)?.label ?? value;
 
     // Restore draft on mount (only for new entries, not edit mode)
@@ -686,6 +690,12 @@ export default function TambahSuratMasuk() {
                                                 {sifatDipertahankan
                                                     ? `Sifat ${labelSifat(sifatTersimpan)} yang sudah tersimpan boleh dipertahankan. Bila diganti lalu disimpan, sifat ini hanya dapat dipilih kembali oleh Super Admin.`
                                                     : PESAN_KELAS_TERBATAS_PERAN}
+                                            </p>
+                                        )}
+                                        {sifatPerluPersetujuan && (
+                                            <p className="text-xs text-amber-700 dark:text-amber-300 flex items-start gap-1">
+                                                <Info className="h-3 w-3 mt-0.5 shrink-0" aria-hidden="true" />
+                                                {PESAN_SURAT_MASUK_PERLU_PERSETUJUAN}
                                             </p>
                                         )}
                                     </div>

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import TambahSuratMasuk from './TambahSuratMasuk'
-import { PESAN_KELAS_TERBATAS_PERAN } from '@/lib/kelas-keamanan'
+import { PESAN_KELAS_TERBATAS_PERAN, PESAN_SURAT_MASUK_PERLU_PERSETUJUAN } from '@/lib/kelas-keamanan'
 import { memoryDrafts } from '@/lib/memory-drafts'
 import { readSuratArchiveSelection } from '@/lib/surat-archive-selection'
 
@@ -98,6 +98,8 @@ describe('sifat surat masuk menurut peran', () => {
         await screen.findByRole('option', { name: 'Dit. BPPT' })
         expect(opsiSifat()).toEqual(['biasa', 'segera', 'sangat_segera', 'terbatas', 'rahasia', 'sangat_rahasia', 'undangan', 'penting'])
         expect(screen.queryByText(PESAN_KELAS_TERBATAS_PERAN)).toBeNull()
+        expect(screen.queryByText(PESAN_SURAT_MASUK_PERLU_PERSETUJUAN)).toBeNull()
+        expect(document.getElementById('sifat-surat')).not.toHaveAttribute('aria-describedby')
     })
 
     it('surat terkendali dengan disposisi ditolak di klien selama jalur akses mati', async () => {
@@ -185,9 +187,35 @@ describe('sifat surat masuk menurut peran', () => {
         await screen.findByRole('option', { name: 'Dit. BPPT' })
         fireEvent.change(document.getElementById('sifat-surat'), { target: { value: sifat } })
         expect(document.getElementById('sifat-surat')).toHaveValue(sifat)
+        // Pencatat pun memerlukan persetujuan akses untuk membuka surat terkendali.
+        expect(document.getElementById('sifat-surat-bantuan')).toHaveTextContent(PESAN_SURAT_MASUK_PERLU_PERSETUJUAN)
+        expect(document.getElementById('sifat-surat')).toHaveAttribute('aria-describedby', 'sifat-surat-bantuan')
         fireEvent.submit(view.container.querySelector('form'))
         await waitFor(() => expect(mocks.masuk.create).toHaveBeenCalled())
         expect(mocks.masuk.create.mock.calls[0][0].sifatSurat).toBe(sifat)
+    })
+
+    it.each([
+        ['Biasa', 'terbatas', true],
+        ['Rahasia', 'terbatas', true],
+        ['Terbatas', 'terbatas', false],
+        ['Terbatas', 'biasa', false],
+    ])('mode ubah: sifat tersimpan %s diganti %s menampilkan catatan persetujuan akses: %s', async (tersimpan, baru, tampilCatatan) => {
+        mocks.user = SUPER_ADMIN
+        mocks.masuk.getById.mockResolvedValue({
+            id: 'sm-4', unitKerjaId: 'sesditjen', jenisSurat: 'Nota Dinas', sifatSurat: tersimpan,
+            nomorSurat: 'B-4/2026', tanggalSurat: '2026-09-01', perihal: 'Ganti sifat',
+            dari: 'A', kepada: 'B', disposisi: ['Ditjen'], aksiDiizinkan: ['edit'], rangkaian: null,
+        })
+        tampil('/surat/masuk/edit/sm-4')
+        await screen.findByDisplayValue('Ganti sifat')
+        expect(screen.queryByText(PESAN_SURAT_MASUK_PERLU_PERSETUJUAN)).toBeNull()
+        fireEvent.change(document.getElementById('sifat-surat'), { target: { value: baru } })
+        if (tampilCatatan) {
+            expect(screen.getByText(PESAN_SURAT_MASUK_PERLU_PERSETUJUAN)).toBeInTheDocument()
+        } else {
+            expect(screen.queryByText(PESAN_SURAT_MASUK_PERLU_PERSETUJUAN)).toBeNull()
+        }
     })
 
     it.each([

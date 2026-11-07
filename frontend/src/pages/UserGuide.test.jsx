@@ -29,6 +29,7 @@ describe('panduan impor surat masuk', () => {
         expect(surat).toHaveTextContent('Pratinjau hanya menampilkan isi sumber')
         // Formulir surat masuk menyediakan Terbatas bagi admin serta Rahasia dan Sangat Rahasia bagi Super Admin.
         expect(surat).toHaveTextContent('admin dapat memilih sifat Terbatas')
+        expect(surat).toHaveTextContent('hanya dapat dibuka atau diubah dengan persetujuan akses berjangka, juga oleh pencatatnya')
         expect(surat).toHaveTextContent('menyediakan pilihan Rahasia dan Sangat Rahasia bagi Super Admin')
         expect(surat).toHaveTextContent('sifat surat masuk tidak ikut diubah, dan surat yang sedang atau telah disetujui')
         expect(topik('mulai-inventaris-internal'))

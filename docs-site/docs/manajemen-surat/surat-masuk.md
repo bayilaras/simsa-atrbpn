@@ -52,7 +52,7 @@ Form akan muncul dengan kolom-kolom berikut:
 | **Pengirim** | Nama instansi / perorangan pengirim | ✅ |
 | **Perihal** | Subjek / topik surat | ✅ |
 | **Klasifikasi** | Pilih kode klasifikasi dari dropdown | ✅ |
-| **Sifat Surat** | Biasa / Segera / Sangat Segera / Terbatas / Rahasia / Sangat Rahasia / Undangan / Penting. Terbatas, Rahasia, dan Sangat Rahasia adalah kelas keamanan surat. Admin Unit Kerja dapat memilih Terbatas; Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin, dan Admin Unit Kerja tidak melihat kedua pilihan itu kecuali sifat itu sudah tersimpan pada surat | ✅ |
+| **Sifat Surat** | Biasa / Segera / Sangat Segera / Terbatas / Rahasia / Sangat Rahasia / Undangan / Penting. Terbatas, Rahasia, dan Sangat Rahasia adalah kelas keamanan surat. Admin Unit Kerja dapat memilih Terbatas; Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin, dan Admin Unit Kerja tidak melihat kedua pilihan itu kecuali sifat itu sudah tersimpan pada surat. Surat Terbatas, Rahasia, atau Sangat Rahasia hanya dapat dibuka atau diubah dengan persetujuan akses berjangka, juga oleh pencatatnya; ajukan persetujuan akses setelah menyimpan. | ✅ |
 | **Lampiran** | Upload file surat (PDF, gambar, dll) | ❌ |
 
 :::tip Tampilan Form Tambah Surat Masuk

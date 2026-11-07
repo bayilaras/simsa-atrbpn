@@ -29,6 +29,12 @@ const ADMIN_UNIT_ROLES = new Set(['admin_unit', 'admin_dirjen', 'admin_sesditjen
 export const PESAN_KELAS_TERBATAS_PERAN =
     'Kelas Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin.'
 
+// Rekod Terbatas ke atas hanya dibuka lewat persetujuan akses yang terikat pada
+// rekod dan kelasnya, juga bagi unit pencatat dan Super Admin.
+export const PESAN_SURAT_MASUK_PERLU_PERSETUJUAN =
+    'Surat Terbatas, Rahasia, atau Sangat Rahasia hanya dapat dibuka atau diubah dengan persetujuan akses berjangka, juga oleh pencatatnya. '
+    + 'Setelah disimpan, ajukan persetujuan akses untuk membuka surat ini.'
+
 // Catatan pada langkah pratinjau impor surat masuk. Pratinjau (previewRows di
 // backend) tidak memeriksa baris; penolakan baru tampil di rincian hasil.
 export const CATATAN_KELAS_IMPOR_SURAT_MASUK =
