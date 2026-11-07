@@ -187,7 +187,10 @@ export const querySuratMasukSchema = paginationSchema.extend({
     tanggalDari: dateSchema.optional(),
     tanggalSampai: dateSchema.optional(),
     jenisSurat: z.string().max(100).optional(),
-    sifatSurat: z.enum(['biasa', 'segera', 'sangat_segera', 'rahasia', 'undangan', 'penting']).optional(),
+    // Kunci opsi formulir; dicocokkan dengan sifatKunciSql dan tetap dibatasi kelas yang boleh dibaca.
+    sifatSurat: z.enum([
+        'biasa', 'segera', 'sangat_segera', 'terbatas', 'rahasia', 'sangat_rahasia', 'undangan', 'penting',
+    ]).optional(),
     status: z.enum(['pending', 'diproses', 'selesai', 'arsip', 'belum_dibalas', 'sudah_dibalas']).optional(),
     disposisi: z.string().max(100).optional(),
     search: z.string().max(255).optional(),

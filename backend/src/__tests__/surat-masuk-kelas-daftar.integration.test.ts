@@ -104,5 +104,20 @@ describe('kelas sifat surat masuk sama di setiap daftar', () => {
         expect(await filter('biasa')).toEqual(['', ' biasa', 'Biasa', 'biasa', null].sort());
         expect(await filter('sangat_segera')).toEqual(['SANGAT SEGERA', 'Sangat Segera', 'Sangat-Segera'].sort());
         expect(await filter('rahasia')).toEqual(['Rahasia ']);
+        expect(await filter('terbatas')).toEqual(['Terbatas']);
+        expect(await filter('sangat_rahasia')).toEqual(['Sangat  Rahasia', 'Sangat Rahasia'].sort());
+    });
+
+    it.each(ROLES)('filter sifat kelas tidak memperluas daftar yang boleh dibaca %s', async role => {
+        const classes = kelasUntukRole(role);
+        for (const sifatSurat of ['terbatas', 'rahasia', 'sangat_rahasia']) {
+            const list = await suratMasukService.findAll({ unitKerjaId: UNIT, sifatSurat, securityClassifications: classes, limit: 100 });
+            const ids = sorted(list.data.map(row => row.id));
+            const harapan = classes.includes(sifatSurat)
+                ? terbaca(role).filter(id => normalizeSecurityClassification(ID_SIFAT.get(id)) === sifatSurat)
+                : [];
+            expect(ids).toEqual(harapan);
+            expect(list.pagination.total).toBe(harapan.length);
+        }
     });
 });
