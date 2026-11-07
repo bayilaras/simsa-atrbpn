@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import ArsipDetail from './ArsipDetail'
-import { PESAN_ARSIP_TIDAK_DAPAT_DIUBAH } from '@/components/arsip/edit-arsip-form'
+import { PESAN_ARSIP_TIDAK_DAPAT_DIUBAH, PESAN_ITEM_BELUM_TERMUAT } from '@/components/arsip/edit-arsip-form'
 
 const mocks = vi.hoisted(() => ({
     user: { id: 'admin-1', role: 'admin_unit', unitKerjaId: 'unit-1' },
@@ -85,6 +85,10 @@ async function bukaJejakAturan() {
     fireEvent.mouseDown(screen.getByRole('tab', { name: /Jejak Aturan/ }), { button: 0, ctrlKey: false })
     return screen.findByRole('button', { name: 'Rekonsiliasi Aturan' })
 }
+
+const toastMuatUlang = () => mocks.toast.mock.calls
+    .map(([argumen]) => argumen)
+    .find(argumen => argumen?.title === 'Data terbaru belum dapat dimuat')
 
 async function simpanKelasTerbatas() {
     fireEvent.click(tombolUbah()[0])
@@ -245,6 +249,41 @@ describe('ArsipDetail - Ubah Metadata', () => {
             'Arsip kini berkelas Terbatas atau lebih tinggi dan memerlukan persetujuan akses sebelum dapat dibuka atau diubah kembali.',
         )
         expect(tombolRekonsiliasiSamping()).toBeDisabled()
+    })
+
+    it('404 setelah kelas dan lokasi diubah menyebut daftar item yang belum termuat', async () => {
+        const items = [
+            { id: 'item-1', nomorItem: '1', uraianItem: 'Surat permohonan', lokasiFc: 'FC-01', lokasiLaci: 'L-02', lokasiFolder: 'F-003' },
+            { id: 'item-2', nomorItem: '2', uraianItem: 'Lampiran', lokasiFc: 'FC-01', lokasiLaci: 'L-02', lokasiFolder: 'F-003' },
+        ]
+        mocks.getById.mockResolvedValue({ ...rekod, items })
+        tampilkan()
+        await screen.findByRole('heading', { name: 'Detail Arsip' })
+        fireEvent.click(tombolUbah()[0])
+        await screen.findByRole('dialog', { name: 'Ubah Metadata Arsip' })
+
+        mocks.update.mockResolvedValue({ ...rekod, items: undefined, klasifikasiKeamanan: 'terbatas', lokasiFc: 'FC-02' })
+        mocks.getById.mockRejectedValue(Object.assign(new Error('Arsip not found'), { status: 404 }))
+        fireEvent.change(document.querySelector('select[name="klasifikasiKeamanan"]'), { target: { value: 'terbatas' } })
+        fireEvent.change(screen.getByLabelText(/^No\. Filing Cabinet/), { target: { value: 'FC-02' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Simpan' }))
+
+        await waitFor(() => expect(mocks.update).toHaveBeenCalledWith('arsip-1', { lokasiFc: 'FC-02', klasifikasiKeamanan: 'terbatas' }))
+        await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+            title: 'Data terbaru belum dapat dimuat',
+            description: expect.stringContaining(PESAN_ITEM_BELUM_TERMUAT),
+        })))
+        expect(toastMuatUlang().description).toMatch(/memerlukan persetujuan akses/)
+    })
+
+    it('404 setelah hanya kelas diubah tidak menyebut daftar item', async () => {
+        mocks.getById.mockResolvedValue({ ...rekod, items: [{ id: 'item-1', nomorItem: '1' }] })
+        tampilkan()
+        await screen.findByRole('heading', { name: 'Detail Arsip' })
+        mocks.getById.mockRejectedValue(Object.assign(new Error('Arsip not found'), { status: 404 }))
+        await simpanKelasTerbatas()
+
+        expect(toastMuatUlang().description).not.toContain(PESAN_ITEM_BELUM_TERMUAT)
     })
 
     it('galat jaringan saat muat ulang tidak mengunci tombol', async () => {

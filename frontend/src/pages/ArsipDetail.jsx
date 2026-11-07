@@ -21,8 +21,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { KlasifikasiPicker } from '@/components/KlasifikasiPicker'
 import { EditArsipDialog } from '@/components/arsip/EditArsipDialog'
 import {
+    FIELD_CERMIN_ITEM,
     kelasPerluPersetujuan,
     PESAN_ARSIP_TIDAK_DAPAT_DIUBAH,
+    PESAN_ITEM_BELUM_TERMUAT,
     statusAksiArsip,
 } from '@/components/arsip/edit-arsip-form'
 import { arsipService } from '@/services/arsip.service'
@@ -399,21 +401,28 @@ export default function ArsipDetail() {
             setArsip(refreshed?.data || refreshed)
         } catch (err) {
             const kelasTerkendali = kelasPerluPersetujuan(perubahan.klasifikasiKeamanan)
+            const ditolak = err?.status === 404
+            // Server sudah memperbarui daftar item, tetapi tab Item Arsip baru
+            // berubah setelah muat ulang, yang tidak lagi mungkin bila ditolak.
+            const itemBelumTermuat = ditolak
+                && (arsip?.items?.length ?? 0) > 0
+                && FIELD_CERMIN_ITEM.some(field => Object.hasOwn(perubahan, field))
             // 404: server tidak lagi membuka arsip ini untuk akun ini (mis. kelas
             // dinaikkan tanpa persetujuan untuk kelas baru), jadi hak aksi lama
             // tidak berlaku. Galat jaringan/server tidak mengunci tombol.
-            if (err?.status === 404) {
+            if (ditolak) {
                 setArsip(current => ({
                     ...current,
                     aksiDiizinkan: [],
                     alasanTerkunci: kelasTerkendali ? 'perlu_persetujuan_akses' : 'tidak_berwenang',
                 }))
             }
+            const keterangan = kelasTerkendali
+                ? 'Arsip kini berkelas Terbatas atau lebih tinggi dan memerlukan persetujuan akses sebelum dapat dibuka kembali.'
+                : 'Perubahan sudah tersimpan. Muat ulang halaman untuk melihat data terbaru.'
             toast({
                 title: 'Data terbaru belum dapat dimuat',
-                description: kelasTerkendali
-                    ? 'Arsip kini berkelas Terbatas atau lebih tinggi dan memerlukan persetujuan akses sebelum dapat dibuka kembali.'
-                    : 'Perubahan sudah tersimpan. Muat ulang halaman untuk melihat data terbaru.',
+                description: itemBelumTermuat ? `${keterangan} ${PESAN_ITEM_BELUM_TERMUAT}` : keterangan,
             })
         }
     }

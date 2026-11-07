@@ -43,6 +43,21 @@ export const PESAN_KELAS_PERLU_PERSETUJUAN =
 export const PESAN_ARSIP_TIDAK_DAPAT_DIUBAH =
     'Arsip ini tidak dapat diubah dengan akun Anda. Arsip mungkin sedang dikunci untuk penyusutan atau legal hold, memerlukan izin kelola, atau sudah tidak tersedia. Muat ulang halaman untuk melihat kondisi terbaru.'
 
+// Isian ringkasan yang juga diterapkan server pada daftar item berkas
+// (KOLOM_ITEM_CERMIN di backend services/arsip.service.ts).
+export const FIELD_CERMIN_ITEM = Object.freeze([
+    'nomorItem',
+    'uraianItem',
+    'tingkatPerkembangan',
+    'tanggalArsip',
+    'lokasiFc',
+    'lokasiLaci',
+    'lokasiFolder',
+])
+
+export const PESAN_ITEM_BELUM_TERMUAT =
+    'Daftar di tab Item Arsip pada halaman ini mungkin belum menampilkan pembaruan item.'
+
 export const PESAN_REKONSILIASI_DIKUNCI =
     'Rekonsiliasi dikunci karena arsip berada dalam legal hold atau workflow penyusutan.'
 
