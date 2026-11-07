@@ -530,4 +530,14 @@ Setiap baris dicatat **disahkan** atau **ditolak** sebelum produksi:
 | Langkah CI "Run Lacak EXPLAIN and p95 gate (LACAK_PERF)" hijau pada PG16/17/18 (EXPLAIN index dan non-vakum D7 adalah gerbang keras; p95 < 150 ms hanya dicetak, bukan diasersi — target spec:582). Gerbang rilis mencatat angka p50/p95 dari log CI, bersama penerimaan pemilik bila p95 ≥ 150 ms | `ci.yml`, §10-P4, P4-T22-2 | gerbang keras (bukti) |
 | Uji asap manual staging §8 langkah 6 (butir 1–11) dijalankan dan hasilnya dicatat di PR | §10-P4 D7 | gerbang keras (bukti) |
 | Nilai `RANGKAIAN_DATA_LAMA_SEBELUM` (atau `batasDataLama` dari uji env-kosong 4b) dicatat dan disematkan | §8 langkah 1, 4b, 5 | gerbang keras |
-| Anggaran `generalLimiter` per IP: (jumlah tab FULL_ADMIN di balik NAT kantor × 15 + polling notifikasi yang ada) < 500 per 15 menit — pemilik menerima, atau menjadwalkan re-key per pengguna (P5 Task 15) dengan sign-off | `rate-limiter.middleware.ts` | pemilik |
+| Anggaran `generalLimiter` per IP: (jumlah tab FULL_ADMIN di balik NAT kantor × 15 + polling notifikasi yang ada) < 500 per 15 menit — **diselesaikan**: kuota kini dihitung per pengguna, lihat "Kebijakan batas laju" di bawah | `rate-limiter.middleware.ts` | tidak berlaku |
+
+**Kebijakan batas laju.** Satu kantor di balik satu alamat jaringan (NAT) tidak lagi berbagi satu kuota:
+
+- `generalLimiter` (500 permintaan per 15 menit), `sensitiveLimiter` (20 per 15 menit), `exportLimiter` (5 per menit) dan `uploadLimiter` (10 per menit) dihitung per pengguna aktif yang sudah diprovisikan (punya peran dan unit). Permintaan tanpa sesi sah, akun Google yang masih tertunda dan akun nonaktif tetap berbagi kuota per jaringan (IPv6 per /56). Membaca daftar lampiran (GET/HEAD `/api/upload/...`) tidak memakai kuota unggah.
+- Login gagal dihitung dalam jendela tetap 15 menit: paling banyak 5 per akun email per jaringan (`POST /api/auth/sign-in/email`) dan 30 per jaringan untuk semua `POST /api/auth/*`. Rekan yang salah ketik tidak lagi mengunci login orang lain. Login yang berhasil menghapus hitungan gagal akun itu; respons 2xx/3xx dan 429 dari Better Auth tidak dihitung.
+- Pemeriksaan kata sandi saat ini di `POST /api/auth/change-password` dibatasi 5 kegagalan per 15 menit per pengguna. `/api/auth/verify-password` tidak dilayani lewat HTTP.
+- Body login email harus `application/json` (selain itu 415) dan paling besar 16 KiB. Better Auth menerima body itu persis seperti yang dikirim klien. Path `/api/auth` yang tidak dalam bentuk kanonik dijawab 404.
+- Batas burst Better Auth untuk `/sign-in/email` dan `/sign-in/social` menjadi 10 per 10 detik per jaringan (aturan bawaan lain tetap 3 per 10 detik).
+- Kunci tetap disimpan sebagai HMAC di `shared_rate_limits` (bucket baru `auth-account` dan `auth-password`), jadi tidak ada migrasi. Hitungan dengan format kunci lama habis sendiri dalam 15 menit.
+- Sebelum promosi, uji di Vercel Preview: login benar, kata sandi salah, kata sandi salah keenam (429), rekan pada jaringan yang sama tetap bisa login, path `/api/auth` non-kanonik (404), dan ganti kata sandi.

@@ -236,7 +236,7 @@ Status: **belum** / **disahkan** (nama, tanggal) / **ditolak** / **tidak berlaku
 | P4-9 | Gerbang C-12 P3 disahkan sebelum P4 ke produksi | P4-D-18 | Keamanan + Spec | belum |
 | P4-10 | CI PG16/17/18 hijau pada head P4, termasuk `lacak-explain` dan `asal-naskah.postgres` | P4-D-18 | CI | belum |
 | P4-11 | Frontend + backend satu deploy | P4-D-18 | Operator | belum |
-| P4-12 | Anggaran `generalLimiter` per IP diterima (re-key P5 Task 15 dilewati) | P4-C-7 | Spec | belum |
+| P4-12 | Anggaran `generalLimiter` per IP diterima (re-key P5 Task 15 dilewati). Kuota kini per pengguna, sehingga anggaran per IP tidak perlu diterima lagi (runbook P3 §8.1, "Kebijakan batas laju") | P4-C-7 | Spec | tidak berlaku |
 | P4-13 | Bukti `LACAK_PERF=1`: p50/p95, tiga rencana EXPLAIN, ringkasan D7 ditempel di PR | P4-T22-2 | CI | belum |
 | P4-14 | Uji asap manual staging (runbook P3 §8.6, butir 1–11) | §10-P4 D7 | Operator | belum |
 | P4-15 | `RANGKAIAN_DATA_LAMA_SEBELUM` (atau `batasDataLama` turunan) dicatat dan disematkan (langkah 9) | P4-D-19, P5-C-6 | Operator | belum (setelah deploy) |
