@@ -13,15 +13,17 @@ import {
     users,
     recordAccessGrants,
 } from '../db/schema';
-import { eq, and, desc, sql, ilike, or, isNotNull, isNull, ne, inArray, getTableColumns } from 'drizzle-orm';
+import { eq, and, desc, sql, ilike, or, isNotNull, isNull, ne, inArray, getTableColumns, type SQL } from 'drizzle-orm';
 import { AppError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors';
 import { PESAN_KELAS_MELEBIHI_KEWENANGAN } from '../constants/pesan-akses.js';
 import { hasPermission, type Role } from '../config/permissions';
 import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-lock';
 import { isAllowedForClassification, recordAccessService } from './record-access.service';
-import { kelasSumberSurat, normalizeSecurityClassification, rankKelas } from './access/visibility-spec';
+import { barisDari, kelasSumberSurat, normalizeSecurityClassification, rankKelas } from './access/visibility-spec';
 import { alasanArsipTerkunci } from './access/arsip-aksi';
 import { ARSIP_KOLOM_DAFTAR } from './access/kolom-rekaman';
+import { uuidArraySql } from './rangkaian/sql-rows';
+import type { JenisPenyusutanLama } from './arsip-fase';
 import {
     archiveRuleAssignmentService,
     CURRENT_APPRAISAL_CASE_JOIN,
@@ -369,6 +371,47 @@ export class ArsipService {
                 totalPages: Math.ceil(count / limit),
             },
         };
+    }
+
+    /**
+     * Jenis batch penyusutan yang menandai arsip `executed` tanpa mengakhiri
+     * siklusnya (pemindahan atau alih media yang dilaksanakan sebelum migrasi
+     * 0035). Bukti diambil dari keanggotaan penyusutan_items, bukan dari
+     * disposal_batch_id. Arsip yang juga anggota batch tereksekusi jenis lain
+     * (pemusnahan, penyerahan, atau jenis tak dikenal), atau yang serah terima
+     * permanennya sudah diterima, tidak dikembalikan sehingga tetap selesai.
+     *
+     * Tidak menyaring unit atau kelas keamanan: pemanggil wajib meneruskan id
+     * dari baris yang sudah tersaring unit dan kelasnya.
+     */
+    async jenisPenyusutanLamaPerArsip(arsipIds: string[]): Promise<Map<string, JenisPenyusutanLama>> {
+        const hasil = new Map<string, JenisPenyusutanLama>();
+        if (arsipIds.length === 0) return hasil;
+        const anggotaBatchTereksekusi = (syaratJenis: SQL) => sql`exists (
+            select 1 from penyusutan_items i
+            join penyusutan_arsip b on b.id = i.penyusutan_id
+            where i.arsip_id = a.id and b.status = 'executed' and ${syaratJenis})`;
+        const rows = barisDari<{ id: string; jenis: JenisPenyusutanLama | null }>(await db.execute(sql`
+            select a.id,
+                case
+                    when ${anggotaBatchTereksekusi(sql`b.jenis_penyusutan = 'pemindahan'`)} then 'pemindahan'
+                    when ${anggotaBatchTereksekusi(sql`b.jenis_penyusutan = 'alih_media'`)} then 'alih_media'
+                end as jenis
+            from arsip a
+            where a.id = any(${uuidArraySql(arsipIds)})
+              and a.disposal_status = 'executed'
+              and not ${anggotaBatchTereksekusi(sql`b.jenis_penyusutan not in ('pemindahan', 'alih_media')`)}
+              and not exists (
+                  select 1 from permanent_transfer_manifest_items mi
+                  where mi.arsip_id = a.id
+                    and exists (
+                        select 1 from permanent_transfer_events e
+                        where e.manifest_id = mi.manifest_id and e.event_type = 'acknowledgement'))
+        `));
+        for (const row of rows) {
+            if (row.jenis === 'pemindahan' || row.jenis === 'alih_media') hasil.set(row.id, row.jenis);
+        }
+        return hasil;
     }
 
     async findById(id: string) {

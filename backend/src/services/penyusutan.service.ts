@@ -8,6 +8,7 @@ import {
 } from '../db/schema';
 import { eq, and, desc, sql, inArray, isNotNull, getTableColumns, gt, or, asc } from 'drizzle-orm';
 import { ARSIP_KOLOM_DAFTAR, arsipService } from './arsip.service';
+import { lengkapiJenisPenyusutanLama, saringFormulirArsip } from './arsip-fase.js';
 import {
     CURRENT_APPRAISAL_CASE_JOIN,
     CURRENT_APPRAISAL_DECISION_JOIN,
@@ -1338,6 +1339,20 @@ class PenyusutanService {
     }
 
     /**
+     * Baris daftar cetak dilengkapi evaluasi JRA dan jenis penyusutan lama agar
+     * Formulir 4/6 cetak memakai faseArsip yang sama dengan ekspor arsip. Id
+     * berasal dari query yang sudah tersaring unit dan kelas keamanan.
+     */
+    private async barisFaseDaftarArsip<
+        T extends Parameters<typeof arsipService.evaluateCanonicalRetention>[0] & { id: string },
+    >(rows: T[]) {
+        return lengkapiJenisPenyusutanLama(
+            rows.map(arch => ({ ...arch, canonicalRetention: arsipService.evaluateCanonicalRetention(arch) })),
+            ids => arsipService.jenisPenyusutanLamaPerArsip(ids),
+        );
+    }
+
+    /**
      * Generate Daftar Arsip Aktif data (Formulir 4)
      */
     async generateDaftarArsipAktif(
@@ -1360,15 +1375,9 @@ class PenyusutanService {
             .where(and(...conditions))
             .orderBy(arsip.kodeKlasifikasi, arsip.nomorBerkas);
 
-        // Filter to aktif status only
-        const aktifArchives = allArchives.filter(arch => {
-            if (!arch.currentRetentionTriggerEventId) return true; // Undetermined remains active, never disposable
-            const evaluation = arsipService.evaluateCanonicalRetention(arch);
-            if (!evaluation.verified || !evaluation.calculationEligible) return true;
-            return evaluation.status === 'belum_ditentukan'
-                || evaluation.status === 'aktif'
-                || evaluation.status === 'akan_inaktif';
-        });
+        // Fase sama dengan ekspor Formulir 4: arsip yang sudah dipindahkan atau
+        // penyusutannya selesai tidak dicetak sebagai arsip aktif.
+        const aktifArchives = saringFormulirArsip(await this.barisFaseDaftarArsip(allArchives), 'formulir4');
 
         return {
             unitKerjaId,
@@ -1416,15 +1425,9 @@ class PenyusutanService {
             .where(and(...conditions))
             .orderBy(arsip.kodeKlasifikasi, arsip.nomorBerkas);
 
-        // Filter to inaktif status
-        const inaktifArchives = allArchives.filter(arch => {
-            if (!arch.currentRetentionTriggerEventId) return false;
-            const evaluation = arsipService.evaluateCanonicalRetention(arch);
-            if (!evaluation.verified || !evaluation.calculationEligible) return false;
-            return evaluation.status === 'inaktif'
-                || evaluation.status === 'akan_kadaluarsa'
-                || evaluation.status === 'kadaluarsa';
-        });
+        // Fase sama dengan ekspor Formulir 6: termasuk arsip yang sudah
+        // dipindahkan, tanpa arsip yang sudah dimusnahkan atau diserahkan.
+        const inaktifArchives = saringFormulirArsip(await this.barisFaseDaftarArsip(allArchives), 'formulir6');
 
         return {
             unitKerjaId,

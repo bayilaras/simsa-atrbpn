@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
     faseArsip,
     jenisFormulirArsip,
+    lengkapiJenisPenyusutanLama,
     masaAktifBerakhir,
     saringFormulirArsip,
     type BarisFaseArsip,
@@ -39,6 +40,47 @@ describe('fase arsip untuk Formulir 4 dan Formulir 6', () => {
         expect(faseArsip(row)).toBe(expected);
     });
 
+    describe('arsip executed dari penyusutan sebelum migrasi 0035', () => {
+        const tereksekusi = (jenis: unknown, over: Partial<BarisFaseArsip> = {}) => baris({
+            disposalStatus: 'executed',
+            jenisPenyusutanTereksekusi: jenis as BarisFaseArsip['jenisPenyusutanTereksekusi'],
+            ...over,
+        });
+
+        it.each([
+            ['evaluasi aktif', evaluasi('aktif')],
+            ['evaluasi belum terverifikasi', evaluasi('aktif', { verified: false })],
+            ['tanpa evaluasi', null],
+        ])('pemindahan lama tetap inaktif (%s)', (_label, canonicalRetention) => {
+            expect(faseArsip(tereksekusi('pemindahan', { canonicalRetention }))).toBe('inaktif');
+            expect(faseArsip(tereksekusi('pemindahan', { canonicalRetention, currentRetentionTriggerEventId: null }))).toBe('inaktif');
+        });
+
+        it.each([
+            ['masih aktif menurut JRA', evaluasi('aktif'), 'aktif'],
+            ['belum terverifikasi', evaluasi('kadaluarsa', { verified: false }), 'aktif'],
+            ['masa aktif berakhir menurut JRA', evaluasi('inaktif'), 'inaktif'],
+            ['kedaluwarsa', evaluasi('kadaluarsa'), 'inaktif'],
+        ])('alih media lama mengikuti aturan JRA biasa: %s', (_label, canonicalRetention, expected) => {
+            expect(faseArsip(tereksekusi('alih_media', { canonicalRetention }))).toBe(expected);
+        });
+
+        it.each([null, undefined, '', 'pemusnahan', 'penyerahan', 'Pemindahan', 'jenis_lain'])(
+            'jenis %s tetap selesai',
+            (jenis) => {
+                expect(faseArsip(tereksekusi(jenis, { canonicalRetention: evaluasi('kadaluarsa') }))).toBe('selesai');
+                expect(faseArsip(tereksekusi(jenis, { inactiveTransferredAt: new Date() }))).toBe('selesai');
+            },
+        );
+
+        it.each(['active', 'approved', 'proposed_serah', null])('jenis diabaikan bila status penyusutan %s', (disposalStatus) => {
+            expect(faseArsip(baris({ disposalStatus, jenisPenyusutanTereksekusi: 'pemindahan' }))).toBe('aktif');
+            expect(faseArsip(baris({
+                disposalStatus, jenisPenyusutanTereksekusi: 'alih_media', canonicalRetention: evaluasi('kadaluarsa'),
+            }))).toBe('inaktif');
+        });
+    });
+
     it('masaAktifBerakhir menuntut evaluasi terverifikasi dan dapat dihitung', () => {
         expect(masaAktifBerakhir(evaluasi('inaktif'))).toBe(true);
         expect(masaAktifBerakhir(evaluasi('inaktif', { verified: false }))).toBe(false);
@@ -54,12 +96,40 @@ describe('fase arsip untuk Formulir 4 dan Formulir 6', () => {
             { id: 'kedaluwarsa', ...baris({ canonicalRetention: evaluasi('kadaluarsa') }) },
             { id: 'belum-terverifikasi', ...baris({ canonicalRetention: evaluasi('inaktif', { verified: false }) }) },
             { id: 'dimusnahkan', ...baris({ disposalStatus: 'executed', canonicalRetention: evaluasi('kadaluarsa') }) },
+            { id: 'pemindahan-lama', ...baris({ disposalStatus: 'executed', jenisPenyusutanTereksekusi: 'pemindahan' }) },
+            { id: 'alih-media-lama', ...baris({ disposalStatus: 'executed', jenisPenyusutanTereksekusi: 'alih_media' }) },
+            { id: 'alih-media-lama-inaktif', ...baris({ disposalStatus: 'executed', jenisPenyusutanTereksekusi: 'alih_media', canonicalRetention: evaluasi('inaktif') }) },
+            { id: 'pemusnahan-tanpa-jenis', ...baris({ disposalStatus: 'executed', jenisPenyusutanTereksekusi: null, canonicalRetention: evaluasi('aktif') }) },
         ];
         const formulir4 = saringFormulirArsip(rows, 'formulir4').map((row) => row.id);
         const formulir6 = saringFormulirArsip(rows, 'formulir6').map((row) => row.id);
-        expect(formulir4).toEqual(['aktif', 'belum-terverifikasi']);
-        expect(formulir6).toEqual(['dipindahkan', 'kedaluwarsa']);
+        expect(formulir4).toEqual(['aktif', 'belum-terverifikasi', 'alih-media-lama']);
+        expect(formulir6).toEqual(['dipindahkan', 'kedaluwarsa', 'pemindahan-lama', 'alih-media-lama-inaktif']);
         expect(formulir4.filter((id) => formulir6.includes(id))).toEqual([]);
+    });
+
+    describe('lengkapiJenisPenyusutanLama', () => {
+        it('memanggil pencarian sekali dengan id unik baris executed saja', async () => {
+            const cari = vi.fn().mockResolvedValue(new Map([['lama-1', 'pemindahan']]));
+            const rows = [
+                { id: 'aktif', ...baris() },
+                { id: 'lama-1', ...baris({ disposalStatus: 'executed' }) },
+                { id: 'lama-1', ...baris({ disposalStatus: 'executed' }) },
+                { id: 'musnah', ...baris({ disposalStatus: 'executed' }) },
+            ];
+            const hasil = await lengkapiJenisPenyusutanLama(rows, cari);
+            expect(cari).toHaveBeenCalledExactlyOnceWith(['lama-1', 'musnah']);
+            expect(hasil.map((row) => row.jenisPenyusutanTereksekusi)).toEqual([undefined, 'pemindahan', 'pemindahan', null]);
+            expect(hasil[0]).toBe(rows[0]);
+        });
+
+        it('tidak memanggil pencarian bila tidak ada baris executed', async () => {
+            const cari = vi.fn();
+            const rows = [{ id: 'aktif', ...baris() }, { id: 'dipindahkan', ...baris({ inactiveTransferredAt: new Date() }) }];
+            expect(await lengkapiJenisPenyusutanLama(rows, cari)).toBe(rows);
+            expect(await lengkapiJenisPenyusutanLama([], cari)).toEqual([]);
+            expect(cari).not.toHaveBeenCalled();
+        });
     });
 
     it('nilai formulirType selain formulir6 tetap berarti Formulir 4', () => {
