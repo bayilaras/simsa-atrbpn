@@ -295,7 +295,11 @@ Maksimal 10.000 rekod dapat diekspor dalam satu permintaan.
 - Ekspor arsip memisahkan Formulir 4 (arsip aktif) dan Formulir 6 (arsip
   inaktif: masa aktif berakhir menurut klasifikasi/JRA dan pemicu retensi
   terverifikasi, atau pemindahannya sudah dicatat melalui modul Penyusutan).
-  Arsip yang penyusutannya sudah dilaksanakan tidak masuk keduanya. Batas
+  Hanya arsip yang sudah dimusnahkan atau diserahkan yang tidak masuk
+  keduanya. Pemindahan yang dilaksanakan sebelum pembaruan siklus arsip pada
+  September 2026 tetap masuk Formulir 6 tanpa pemulihan batch, dan alih media
+  dari masa itu mengikuti aturan masa aktif biasa. Formulir 4 dan Formulir 6
+  yang dicetak dari modul Penyusutan memakai aturan yang sama. Batas
   10.000 dihitung dari seluruh hasil filter sebelum dipisah per formulir.
   Formulir 6 tanpa arsip inaktif menghasilkan 422 `EXPORT_FORMULIR6_EMPTY`
   beserta pesan penjelasan; tidak ada file kosong. Ekspor arsip dari menu
