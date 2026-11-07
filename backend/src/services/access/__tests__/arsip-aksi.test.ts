@@ -4,7 +4,7 @@ import { aksiArsipPayload, alasanArsipTerkunci, type AksesArsip, type KeadaanArs
 const aktif: KeadaanArsip = { disposalStatus: 'active', legalHold: false, disposalBatchId: null };
 const biasaBolehUbah: AksesArsip = { allowed: true, mutable: true, grantId: null, grantAccessMode: null };
 const berakhir = new Date('2026-12-01T00:00:00Z');
-const akses = (patch: Partial<AksesArsip> = {}) => ({ ...biasaBolehUbah, grantExpiresAt: null, ...patch });
+const akses = (patch: Partial<AksesArsip & { grantExpiresAt: Date | null }> = {}) => ({ ...biasaBolehUbah, grantExpiresAt: null, ...patch });
 
 describe('alasanArsipTerkunci', () => {
     it.each(['staff', 'auditor', 'user', '', null, undefined])('peran %s hanya membaca', role => {
