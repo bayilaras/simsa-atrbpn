@@ -256,7 +256,7 @@ function FormUbahArsip({ arsip, saving, setSaving, onClose, onSaved }) {
             <Bagian judul="Item Arsip">
                 {punyaRincianItem && (
                     <p className="text-xs text-muted-foreground">
-                        Perubahan nomor, uraian, tingkat perkembangan, dan tanggal juga diterapkan pada item yang menjadi ringkasan berkas di tab Item Arsip bila item itu dapat dikenali. Jumlah dan media tidak mengubah daftar item.
+                        Bila nomor, uraian, tingkat perkembangan, tanggal, atau lokasi diubah, item yang menjadi ringkasan berkas di tab Item Arsip disamakan dengan semua isian tersebut pada formulir ini, termasuk yang tidak diubah, bila item itu dapat dikenali. Jumlah dan media tidak mengubah daftar item.
                     </p>
                 )}
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

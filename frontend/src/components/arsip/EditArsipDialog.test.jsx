@@ -187,7 +187,7 @@ describe('EditArsipDialog', () => {
     it('kurun waktu lama berformat bebas tetap disunting sebagai teks', async () => {
         tampilkan({ ...rekod, kurunWaktu: 'Januari s/d Maret 2020', items: [{ id: 'item-1' }] })
         expect(screen.getByLabelText('Kurun Waktu')).toHaveValue('Januari s/d Maret 2020')
-        expect(screen.getByText(/item yang menjadi ringkasan berkas di tab Item Arsip bila item itu dapat dikenali/)).toBeInTheDocument()
+        expect(screen.getByText(/item yang menjadi ringkasan berkas di tab Item Arsip disamakan dengan semua isian tersebut pada formulir ini, termasuk yang tidak diubah/)).toBeInTheDocument()
         ketik('Kurun Waktu', 'Januari s/d April 2020')
         fireEvent.click(tombolSimpan())
         await waitFor(() => expect(mocks.update).toHaveBeenCalledWith('arsip-1', { kurunWaktu: 'Januari s/d April 2020' }))
