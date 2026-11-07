@@ -28,40 +28,42 @@ const mib=1024*1024,row=(n,size,name=n)=>({id:`00000000-0000-4000-8000-${String(
 test('document budget counts unique stored objects, keeps the reference sanity bound, and warns at 75 percent',()=>{
  const shared=documentBudgetUsage(documentReferences(Array.from({length:5},(_,n)=>row(n,50*mib,'shared')),[]));
  assert.deepEqual([shared.references,shared.objects,shared.bytes],[5,1,50*mib]);
- const full=[row(0,50*mib),row(1,50*mib),row(2,50*mib),row(3,10*mib)];
- assert.equal(documentReferences(full,[]).length,4);assert.equal(documentBudgetUsage(documentReferences(full,[])).bytes,DOCUMENT_BUDGET.maxTotalBytes);
- assert.throws(()=>documentReferences([...full,row(4,1)],[]),/DOCUMENT_BYTES_OUTSIDE_BUDGET/);
+ const full=[...Array.from({length:20},(_,n)=>row(n,50*mib)),row(20,24*mib)];
+ assert.equal(documentReferences(full,[]).length,21);assert.equal(documentBudgetUsage(documentReferences(full,[])).bytes,DOCUMENT_BUDGET.maxTotalBytes);
+ assert.throws(()=>documentReferences([...full,row(21,1)],[]),/DOCUMENT_BYTES_OUTSIDE_BUDGET/);
  const many=Array.from({length:DOCUMENT_BUDGET.maxObjects},(_,n)=>row(n,1));
- assert.equal(documentReferences(many,[]).length,100);assert.throws(()=>documentReferences([...many,row(100,1)],[]),/DOCUMENT_OBJECTS_OUTSIDE_BUDGET/);
- assert.equal(documentBudgetUsage(documentReferences(many.slice(0,74),[])).ratioWarning,false);assert.equal(documentBudgetUsage(documentReferences(many.slice(0,75),[])).ratioWarning,true);
- assert.equal(documentReferences(Array.from({length:1000},(_,n)=>row(n,1,'shared')),[]).length,1000);
- assert.throws(()=>documentReferences(Array.from({length:1001},(_,n)=>row(n,1,'shared')),[]),/DOCUMENT_COUNT_OUTSIDE_BUDGET/);
+ assert.equal(documentReferences(many,[]).length,1000);assert.throws(()=>documentReferences([...many,row(1000,1)],[]),/DOCUMENT_OBJECTS_OUTSIDE_BUDGET/);
+ assert.equal(documentBudgetUsage(documentReferences(many.slice(0,749),[])).ratioWarning,false);assert.equal(documentBudgetUsage(documentReferences(many.slice(0,750),[])).ratioWarning,true);
+ assert.equal(documentReferences(Array.from({length:2000},(_,n)=>row(n,1,'shared')),[]).length,2000);
+ assert.throws(()=>documentReferences(Array.from({length:2001},(_,n)=>row(n,1,'shared')),[]),/DOCUMENT_COUNT_OUTSIDE_BUDGET/);
  assert.throws(()=>documentReferences([row(0,1,'shared'),row(1,2,'shared')],[]),/CONFLICTING_DOCUMENT_REFERENCES/);
 });
-test('budget warns once the room left is smaller than one bulk-upload batch, which a 75 percent ratio alone misses',()=>{
+test('budget warns once the room left is smaller than one bulk-upload batch',()=>{
  const batch=DOCUMENT_BUDGET.bulkUploadBatch,perFile=Math.floor(batch.bytes/batch.objects);
- // 19 unique objects, 77,723,422 bytes: below 75 percent, yet one batch more fails the hard check.
+ // 19 unique objects, 77,723,422 bytes on 31 October 2026: far from every limit, and one more batch still fits.
  const today=Array.from({length:19},(_,n)=>row(n,n<18?4090706:77723422-18*4090706));
  const usage=documentBudgetUsage(documentReferences(today,[]));
- assert.deepEqual([usage.objects,usage.bytes,usage.ratioWarning,usage.headroomWarning,usage.warning],[19,77723422,false,true,true]);
+ assert.deepEqual([usage.objects,usage.bytes,usage.ratioWarning,usage.headroomWarning,usage.warning],[19,77723422,false,false,false]);
  assert.equal(usage.bytesHeadroom,DOCUMENT_BUDGET.maxTotalBytes-77723422);
- const oneBatch=Array.from({length:batch.objects},(_,n)=>row(100+n,perFile));
- assert.throws(()=>documentReferences([...today,...oneBatch],[]),error=>error.safeCode==='DOCUMENT_BYTES_OUTSIDE_BUDGET'
-  &&error.documentBudget.objects===69&&error.documentBudget.bytes===77723422+batch.objects*perFile&&error.documentBudget.bytesHeadroom<0);
+ assert.equal(documentReferences([...today,...Array.from({length:batch.objects},(_,n)=>row(100+n,perFile))],[]).length,69);
+ // A hard failure carries its usage record.
+ assert.throws(()=>documentReferences([...Array.from({length:20},(_,n)=>row(n,50*mib)),row(20,24*mib),row(21,1)],[]),error=>error.safeCode==='DOCUMENT_BYTES_OUTSIDE_BUDGET'
+  &&error.documentBudget.objects===22&&error.documentBudget.bytesHeadroom===-1);
  // Bytes: exactly one batch of room is quiet, one byte less warns.
- const shortBy=extra=>documentBudgetUsage(documentReferences([row(0,30*mib),row(1,DOCUMENT_BUDGET.maxTotalBytes-batch.bytes-30*mib+extra)],[]));
- assert.equal(shortBy(0).bytesHeadroom,batch.bytes);assert.equal(shortBy(0).warning,false);assert.equal(shortBy(1).headroomWarning,true);
- // Objects: 50 objects leave room for one batch, 51 do not, both below the 75 percent ratio.
+ const shortBy=extra=>documentBudgetUsage(documentReferences([...Array.from({length:18},(_,n)=>row(n,50*mib)),row(18,DOCUMENT_BUDGET.maxTotalBytes-batch.bytes-18*50*mib+extra)],[]));
+ assert.equal(shortBy(0).bytesHeadroom,batch.bytes);assert.equal(shortBy(0).headroomWarning,false);assert.equal(shortBy(1).headroomWarning,true);
+ // Objects: room for exactly one batch is quiet, one object more warns.
  const objects=n=>documentBudgetUsage(documentReferences(Array.from({length:n},(_,i)=>row(i,1)),[]));
- assert.equal(objects(50).warning,false);assert.deepEqual([objects(51).ratioWarning,objects(51).headroomWarning],[false,true]);
- assert.throws(()=>documentReferences(Array.from({length:101},(_,i)=>row(i,1)),[]),error=>error.safeCode==='DOCUMENT_OBJECTS_OUTSIDE_BUDGET'&&error.documentBudget.objects===101);
+ assert.equal(objects(950).headroomWarning,false);assert.equal(objects(951).headroomWarning,true);
+ assert.throws(()=>documentReferences(Array.from({length:1001},(_,i)=>row(i,1)),[]),error=>error.safeCode==='DOCUMENT_OBJECTS_OUTSIDE_BUDGET'&&error.documentBudget.objects===1001);
 });
 test('budget annotation states the numbers and the one-batch risk without workflow-command escapes',()=>{
  const today=documentBudgetUsage(documentReferences(Array.from({length:19},(_,n)=>row(n,n<18?4090706:77723422-18*4090706)),[]));
- const warning=documentBudgetAnnotation(today);
- assert.match(warning,/^::warning title=SIMSA backup mendekati batas::19\/100 objek unik, 74\.1\/160\.0 MiB, 19\/1000 referensi\. Sisa ruang \(81 objek, 85\.9 MiB\) lebih kecil dari satu batch unggah massal \(50 berkas, 100\.0 MiB\)/);
- assert.equal(documentBudgetAnnotation(documentBudgetUsage(documentReferences([row(0,mib)],[]))),null);
- assert.match(documentBudgetAnnotation(documentBudgetUsage(documentReferences([row(0,mib)],[])),{failed:true}),/^::error title=SIMSA backup melewati batas dokumen::1\/100 objek unik/);
+ assert.equal(documentBudgetAnnotation(today),null);
+ const nearFull=documentBudgetUsage(documentReferences([...Array.from({length:19},(_,n)=>row(n,50*mib)),row(19,10*mib)],[]));
+ const warning=documentBudgetAnnotation(nearFull);
+ assert.match(warning,/^::warning title=SIMSA backup mendekati batas::20\/1000 objek unik, 960\.0\/1024\.0 MiB, 20\/2000 referensi\. Sisa ruang \(980 objek, 64\.0 MiB\) lebih kecil dari satu batch unggah massal \(50 berkas, 100\.0 MiB\)/);
+ assert.match(documentBudgetAnnotation(documentBudgetUsage(documentReferences([row(0,mib)],[])),{failed:true}),/^::error title=SIMSA backup melewati batas dokumen::1\/1000 objek unik/);
  for(const line of [warning,documentBudgetAnnotation(today,{failed:true})])assert.doesNotMatch(line,/[%\r\n]/);
 });
 test('bulk-upload batch mirrors the backend and frontend upload limits',async()=>{

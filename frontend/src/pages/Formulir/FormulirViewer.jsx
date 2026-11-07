@@ -1,7 +1,8 @@
 import { lazy } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ErrorBoundary from '@/components/ErrorBoundary';
-import { getFormulirMetadata } from './formulir-metadata';
+import { useAppConfig } from '@/context/app-config-context';
+import { getFormulirMetadata, isFormulirModuleAvailable } from './formulir-metadata';
 
 // The print route's Suspense boundary waits for just the selected template.
 // Keep the other 32 documents out of its initial module graph.
@@ -43,6 +44,8 @@ const FormulirTemplate = () => {
     const { id } = useParams();
     const formId = parseInt(id);
     const metadata = getFormulirMetadata(formId);
+    const { capabilities } = useAppConfig();
+    const moduleLink = isFormulirModuleAvailable(metadata, capabilities) ? metadata : null;
 
     // Map IDs to components
     const renderForm = () => {
@@ -130,12 +133,12 @@ const FormulirTemplate = () => {
                     <p className="text-xs text-muted-foreground">Pratinjau ini tidak terisi dari data aplikasi.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                    {metadata && (
+                    {moduleLink && (
                         <Link
-                            to={metadata.path}
+                            to={moduleLink.path}
                             className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted"
                         >
-                            {metadata.label}
+                            {moduleLink.label}
                         </Link>
                     )}
                 <button

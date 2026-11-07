@@ -52,7 +52,7 @@ Admin dapat menggunakan **Layanan & Fisik → Lokasi Simpan** untuk mengelola da
 
 ## 5. Tambahkan berkas digital ketika fasilitasnya siap
 
-Apabila menu unggah tidak tersedia, lanjutkan pencatatan metadata dan inventaris fisik. Lampiran, unggah massal, OCR, serta proses berbukti file memerlukan penyimpanan privat dan pemeriksaan file yang dikonfigurasi operator. Jangan membuat berkas kosong atau tautan publik untuk melewati kebutuhan bukti. Berkas yang dikarantina belum dapat dipakai sampai pemeriksaannya lulus.
+Apabila menu unggah tidak tersedia, lanjutkan pencatatan metadata dan inventaris fisik. Lampiran, unggah massal, OCR, serta proses berbukti file memerlukan penyimpanan privat dan pemeriksaan file yang dikonfigurasi operator; unggah massal dan OCR juga hanya tersedia bila modul Unggah Massal & OCR diaktifkan operator. Jangan membuat berkas kosong atau tautan publik untuk melewati kebutuhan bukti. Berkas yang dikarantina belum dapat dipakai sampai pemeriksaannya lulus.
 
 ## Instrumen kearsipan dan SRIKANDI
 

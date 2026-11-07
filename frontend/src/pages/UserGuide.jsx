@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/context/AuthContext'
+import { useAppConfig } from '@/context/app-config-context'
 
 const ALL_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor']
 const ADMIN_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']
@@ -67,7 +68,7 @@ const GUIDE_SECTIONS = [
         roles: ALL_ROLES,
         keywords: ['mulai', 'inventaris', 'fisik', 'csv', 'impor', 'akun', 'unit kerja', 'srikandi'],
         steps: [
-            'Masuk dengan email dan kata sandi dari administrator. Gunakan akun pribadi dengan peran dan unit kerja yang benar; staf membaca data, sedangkan admin mencatat dan mengubahnya.',
+            'Masuk dengan email dan kata sandi dari administrator. Gunakan akun pribadi dengan peran dan unit kerja yang benar: Super Admin mengelola seluruh unit, sedangkan Admin Unit Kerja mencatat dan mengubah data unitnya sendiri. Akun lama Staf atau Auditor hanya dapat membaca data.',
             'Admin membuka Surat Masuk atau Surat Keluar, mencari nomor yang sama lebih dahulu, lalu mencatat metadata. Untuk daftar yang sudah tersedia (CSV atau Excel .xlsx), pilih satu unit kerja dan gunakan Impor CSV/XLSX → Pratinjau → Impor; judul kolom dikenali seperti impor Google Sheets.',
             'Untuk inventaris arsip yang sudah ada, admin membuka Arsip Aktif → Arsip Surat Masuk atau Arsip Surat Keluar lalu Impor CSV. Isi tanggal sumber yang benar; impor tidak otomatis memverifikasi klasifikasi atau JRA.',
             'Saat mengarsipkan surat yang selesai diproses, isi klasifikasi/JRA yang sesuai serta No. Filing Cabinet, No. Laci, dan No. Folder pada dialog Arsipkan. Pada CSV arsip, catatan lokasi dapat dimasukkan ke Keterangan; kolom lokasi terstruktur belum dipetakan oleh impor.',
@@ -199,6 +200,20 @@ const GUIDE_SECTIONS = [
             'Jika proses harus dibatalkan, gunakan alur pembatalan agar alasan dan riwayat tetap tercatat.',
         ],
         action: { label: 'Buka Penyusutan', to: '/penyusutan' },
+        optionalModule: 'advancedArchiveWorkflows',
+        // Ditampilkan selama modul Penyusutan dimatikan agar panduan tidak
+        // mengarahkan ke halaman "Modul belum diaktifkan".
+        moduleOff: {
+            summary: 'Modul Penyusutan belum diaktifkan. Pemindahan dan pemusnahan arsip dilakukan di luar SIMSA.',
+            steps: [
+                'Ikuti prosedur penyusutan yang berlaku di unit Anda; SIMSA hanya menyediakan data pendukungnya.',
+                'Penyerahan arsip permanen tetap dicatat di Tata Kelola Retensi, tab Penyerahan Permanen.',
+                'Gunakan Manajemen Retensi untuk melihat arsip yang masa retensinya sudah atau hampir habis sebagai bahan usulan.',
+                'Pastikan keputusan retensi sudah sah dan arsip tidak sedang terkena legal hold sebelum diproses.',
+                'Draf berita acara pemusnahan dapat dicetak dari Manajemen Retensi melalui tombol Generate Berita Acara.',
+            ],
+            action: { label: 'Buka Manajemen Retensi', to: '/retention' },
+        },
     },
     {
         id: 'akses-dan-layanan',
@@ -302,17 +317,28 @@ const TROUBLESHOOTING = [
 
 const normalizeSearch = (value) => value.trim().toLocaleLowerCase('id-ID')
 
+// Sama dengan sidebar: hanya nilai false eksplisit yang menandai modul mati.
+function resolveGuideSections(capabilities = {}) {
+    return GUIDE_SECTIONS.map((section) => (
+        section.optionalModule && capabilities[section.optionalModule] === false
+            ? { ...section, ...section.moduleOff }
+            : section
+    ))
+}
+
 export default function UserGuide() {
     const { user } = useAuth()
+    const { capabilities } = useAppConfig()
     const currentRole = ALL_ROLES.includes(user?.role) ? user.role : 'semua'
     const [query, setQuery] = useState('')
     const [category, setCategory] = useState('semua')
     const [roleFilter, setRoleFilter] = useState(currentRole)
+    const guideSections = useMemo(() => resolveGuideSections(capabilities), [capabilities])
 
     const filteredSections = useMemo(() => {
         const normalizedQuery = normalizeSearch(query)
 
-        return GUIDE_SECTIONS.filter((section) => {
+        return guideSections.filter((section) => {
             const matchesCategory = category === 'semua' || section.category === category
             const matchesRole = roleFilter === 'semua' || section.roles.includes(roleFilter)
             const searchableText = [
@@ -324,7 +350,7 @@ export default function UserGuide() {
 
             return matchesCategory && matchesRole && (!normalizedQuery || searchableText.includes(normalizedQuery))
         })
-    }, [category, query, roleFilter])
+    }, [category, guideSections, query, roleFilter])
 
     const visibleRoleFlows = roleFilter === 'semua'
         ? ROLE_FLOWS
@@ -438,7 +464,7 @@ export default function UserGuide() {
                         ['2', 'Baca Dashboard', 'Kenali ringkasan dan pekerjaan yang relevan.'],
                         ['3', 'Cari dahulu', 'Cegah duplikasi sebelum membuat rekod.'],
                         ['4', 'Periksa metadata', 'Cocokkan data dengan dokumen sumber.'],
-                        ['5', 'Periksa hasil', 'Admin memastikan hasil simpan; staf melaporkan koreksi kepada admin.'],
+                        ['5', 'Periksa hasil', 'Buka kembali detail yang disimpan untuk memastikan datanya benar; akun baca-saja melaporkan koreksi kepada admin unit.'],
                     ].map(([number, title, description]) => (
                         <li key={number} className="rounded-lg border bg-card p-4 print:break-inside-avoid">
                             <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground" aria-hidden="true">

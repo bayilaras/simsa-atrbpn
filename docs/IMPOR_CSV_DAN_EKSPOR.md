@@ -292,6 +292,14 @@ Maksimal 10.000 rekod dapat diekspor dalam satu permintaan.
   `total`, `limit`, dan petunjuk mempersempit filter. Tidak ada file parsial.
 - Jumlah hasil yang berbeda antara penghitungan dan pembacaan menghasilkan
   409 `EXPORT_RESULT_CHANGED`; muat ulang daftar dan coba lagi.
+- Ekspor arsip memisahkan Formulir 4 (arsip aktif) dan Formulir 6 (arsip
+  inaktif: masa aktif berakhir menurut klasifikasi/JRA dan pemicu retensi
+  terverifikasi, atau pemindahannya sudah dicatat melalui modul Penyusutan).
+  Arsip yang penyusutannya sudah dilaksanakan tidak masuk keduanya. Batas
+  10.000 dihitung dari seluruh hasil filter sebelum dipisah per formulir.
+  Formulir 6 tanpa arsip inaktif menghasilkan 422 `EXPORT_FORMULIR6_EMPTY`
+  beserta pesan penjelasan; tidak ada file kosong. Ekspor arsip dari menu
+  Laporan tidak dipisah per fase dan tetap memuat semua arsip sesuai filter.
 - Ekspor besar secara asynchronous belum disediakan. Batas ini tidak
   membuktikan kapasitas atau waktu respons pada lingkungan produksi.
 

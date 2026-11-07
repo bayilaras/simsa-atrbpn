@@ -13,13 +13,13 @@ Dashboard SIMSA terdiri dari beberapa bagian utama (dari atas ke bawah):
 2. **📊 Kartu Statistik** — 6 kartu berisi angka ringkasan: Surat Masuk, Surat Keluar, Total Arsip, Arsip Masuk, Arsip Keluar, dan Segera Musnah.
 3. **📈 Grafik Trend** — Grafik garis membandingkan volume surat masuk & keluar selama 12 bulan terakhir.
 4. **📊 Perbandingan Unit Kerja** — Grafik batang horizontal menampilkan volume surat per unit kerja.
-5. **⚡ Aksi Cepat** — 4 tombol shortcut: Surat Masuk, Surat Keluar, Laporan, Upload.
+5. **⚡ Aksi Cepat** — 4 tombol shortcut: Surat Masuk, Surat Keluar, Laporan, Unggah Massal.
 6. **⚠️ Masa Retensi** — Daftar arsip yang mendekati batas musnah (🔴 kritis, 🟡 peringatan, 🔵 informasi).
 7. **📋 Aktivitas Terbaru** — 8 surat terakhir yang diinput ke sistem.
 8. **🍩 Status Siklus Arsip** *(baru v1.1)* — Donut chart distribusi arsip: Aktif, Inaktif, Kadaluarsa, Belum Ditentukan.
 9. **💿 Jenis Media Arsip** *(baru v1.1)* — Progress bar distribusi per jenis media (kertas, foto, video, audio, elektronik).
 10. **📖 Peminjaman Arsip** *(baru v1.1)* — Jumlah arsip dipinjam dan yang terlambat dikembalikan.
-11. **📋 Pipeline Penyusutan** *(baru v1.1)* — Status 5 tahap alur penyusutan arsip.
+11. **📋 Pipeline Penyusutan** *(baru v1.1)* — Status 5 tahap alur penyusutan arsip. Hanya tampil bila modul Penyusutan diaktifkan operator.
 12. **🏢 Kapasitas Penyimpanan** *(baru v1.1)* — Utilisasi ruang arsip per gedung.
 13. **🛡️ Arsip Vital & Terjaga** *(baru v1.1)* — Alert arsip belum diproteksi/dilaporkan ke ANRI.
 :::
@@ -66,7 +66,7 @@ Baris kartu yang menampilkan angka-angka ringkasan:
 | 📨 Surat Masuk | Langsung ke form tambah surat masuk |
 | 📤 Surat Keluar | Langsung ke form tambah surat keluar |
 | 📊 Laporan | Langsung ke halaman laporan |
-| 📁 Upload | Langsung ke halaman bulk upload |
+| 📁 Unggah Massal | Langsung ke halaman Unggah Massal & OCR. Hanya muncul bila modul Unggah Massal & OCR diaktifkan operator dan unggah file tersedia |
 
 ### 6. Masa Retensi
 
@@ -129,6 +129,8 @@ Menampilkan status alur persetujuan penyusutan arsip dalam **5 tahap berurutan**
 
 Setiap tahap menunjukkan jumlah arsip yang sedang berada di tahap tersebut.
 
+Widget ini hanya tampil bila modul Penyusutan diaktifkan operator. Selama modul belum diaktifkan, pemindahan dan pemusnahan arsip dilakukan di luar SIMSA.
+
 ### 12. Kapasitas Penyimpanan Fisik
 
 **Progress bar** menampilkan utilisasi ruang arsip per gedung:
@@ -148,6 +150,8 @@ Tombol **"Kelola Penyimpanan"** mengarah ke halaman Lokasi Simpan.
 - **Arsip Terjaga** — jumlah arsip terjaga yang belum dilaporkan ke **ANRI** (kuning jika ada)
 
 Jika semua arsip sudah diproteksi/dilaporkan, warnanya berubah menjadi **hijau** ✅.
+
+Bagian arsip terjaga hanya tampil bila modul Arsip Terjaga diaktifkan operator; tanpa modul itu kartu bernama **Arsip Vital**.
 
 :::info Semua Widget Filter per Unit Kerja
 Semua widget otomatis menyesuaikan dengan **unit kerja yang dipilih** oleh Super Admin. Untuk admin biasa, data ditampilkan sesuai unit kerja masing-masing.

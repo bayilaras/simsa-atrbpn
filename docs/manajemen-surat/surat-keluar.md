@@ -38,6 +38,7 @@ Klik tombol **"+ Tambah Surat Keluar"** berwarna biru di pojok kanan atas.
 | **Penerima** | Tujuan pengiriman surat | ❌ |
 | **Perihal** | Subjek / topik surat | ✅ |
 | **Klasifikasi** | Pilih kode klasifikasi dari aturan aktif | ❌ |
+| **Klasifikasi Keamanan** | Biasa / Terbuka, Terbatas, Rahasia, atau Sangat Rahasia. Admin Unit Kerja hanya dapat memilih Biasa / Terbuka atau Terbatas; Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin. Rekod Terbatas atau lebih tinggi memerlukan persetujuan akses sebelum dapat ditayangkan atau dikelola | ✅ |
 | **Link Dokumen** | Tautan dokumen kerja bila diperlukan | ❌ |
 | **Lampiran** | Upload file surat keluar | ❌ |
 
@@ -77,6 +78,8 @@ Alur ini adalah persetujuan proses internal. SIMSA tidak membuat tanda tangan el
 ## Mengedit dan Menghapus
 
 Edit dan hapus hanya tersedia bagi admin berwenang ketika surat masih **Draft** atau **Ditolak** dan belum diarsipkan. Saat surat **Menunggu Persetujuan** atau **Disetujui**, perubahan ditolak untuk menjaga konsistensi keputusan. Jangan menghapus surat hanya untuk memperbaiki metadata; gunakan edit pada status yang diizinkan agar jejak proses tetap dapat ditelusuri.
+
+Klasifikasi keamanan Rahasia atau Sangat Rahasia yang sudah tersimpan boleh dipertahankan saat mengedit. Bila diganti lalu disimpan, kelas itu hanya dapat dipilih kembali oleh Super Admin.
 
 ---
 
