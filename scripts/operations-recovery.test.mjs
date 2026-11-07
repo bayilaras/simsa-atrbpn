@@ -24,9 +24,9 @@ test('portable recovery key envelope roundtrip rejects wrong passphrase and unbo
 });
 test('a document budget failure still records its counts and sizes in the run report',()=>{
  const row=n=>({id:`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`,file_url:`https://teststore123.private.blob.vercel-storage.com/${n}.pdf`,sha256:sha256(String(n)),size_bytes:1,storage_access:'private'});
- let error;try{documentReferences(Array.from({length:101},(_,n)=>row(n)),[]);}catch(caught){error=caught;}
+ let error;try{documentReferences(Array.from({length:1001},(_,n)=>row(n)),[]);}catch(caught){error=caught;}
  const failed=recordRecoveryFailure({status:'failed'},'document_inventory',error);
- assert.deepEqual([failed.failureStage,failed.failureCode,failed.documentBudget.objects,failed.documentBudget.objectsHeadroom],['document_inventory','DOCUMENT_OBJECTS_OUTSIDE_BUDGET',101,-1]);
+ assert.deepEqual([failed.failureStage,failed.failureCode,failed.documentBudget.objects,failed.documentBudget.objectsHeadroom],['document_inventory','DOCUMENT_OBJECTS_OUTSIDE_BUDGET',1001,-1]);
  const other=recordRecoveryFailure({},'database_snapshot',Object.assign(new Error('raw detail'),{documentBudget:{objects:1}}));
  assert.deepEqual(other,{failureStage:'database_snapshot',failureCode:'RECOVERY_FAILED_DETAILS_SUPPRESSED'});
 });
