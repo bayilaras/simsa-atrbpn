@@ -3,6 +3,7 @@ import { env } from '../config/env';
 import type { AuthRequest } from './auth.middleware';
 import { createRateLimiterStore, usesSharedRateLimits } from '../config/rate-limits.js';
 import { createAuthAttemptLimiter } from './auth-attempt-limiter.middleware.js';
+import { principalRateLimitKey } from './rate-limit-key.js';
 
 const shared = usesSharedRateLimits();
 
@@ -13,15 +14,21 @@ const shared = usesSharedRateLimits();
  */
 const isDev = !shared && (env.NODE_ENV === 'development' || env.NODE_ENV === 'test');
 
+export const GENERAL_RATE_LIMIT_MAX = isDev ? 1000 : 500;
+
 // Every deployed instance uses the same database-backed policy counters.
+// Each provisioned user has a separate quota, so colleagues behind one office NAT
+// do not use up each other's; requests without such a session share the
+// network quota.
 export const generalLimiter = rateLimit({
     store: createRateLimiterStore('general'),
     passOnStoreError: false,
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: isDev ? 1000 : 500, // Reasonable in dev; 500 per window in production
+    max: GENERAL_RATE_LIMIT_MAX,
+    keyGenerator: principalRateLimitKey,
     message: {
         error: 'Too Many Requests',
-        message: 'Too many requests from this IP, please try again after 15 minutes',
+        message: 'Terlalu banyak permintaan. Coba lagi setelah 15 menit.',
     },
     standardHeaders: true,
     legacyHeaders: false,
@@ -35,25 +42,28 @@ export const authLimiter = createAuthAttemptLimiter({
 });
 
 // Rate limiter for sensitive operations (e.g., delete, export) - 20 per 15 minutes
+// per user (network quota without a provisioned session).
 export const sensitiveLimiter = rateLimit({
     store: createRateLimiterStore('sensitive'),
     passOnStoreError: false,
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 20,
+    keyGenerator: principalRateLimitKey,
     message: {
         error: 'Too Many Requests',
-        message: 'Too many sensitive operations from this IP, please try again later',
+        message: 'Terlalu banyak operasi sensitif. Coba lagi setelah 15 menit.',
     },
     standardHeaders: true,
     legacyHeaders: false,
 });
 
-// Export rate limiter - 5 exports per minute (prevents data dumping)
+// Export rate limiter - 5 exports per minute per user (prevents data dumping)
 export const exportLimiter = rateLimit({
     store: createRateLimiterStore('export'),
     passOnStoreError: false,
     windowMs: 60 * 1000, // 1 minute
     max: 5,
+    keyGenerator: principalRateLimitKey,
     message: {
         error: 'Too Many Exports',
         message: 'Terlalu banyak permintaan export. Coba lagi setelah 1 menit.',
@@ -62,12 +72,16 @@ export const exportLimiter = rateLimit({
     legacyHeaders: false,
 });
 
-// Upload rate limiter - 10 uploads per minute (prevents disk abuse)
+// Upload rate limiter - 10 uploads per minute per user (prevents disk abuse).
+// Reading attachment lists is not an upload; a page may load one list per
+// archive in parallel, and generalLimiter still bounds those reads.
 export const uploadLimiter = rateLimit({
     store: createRateLimiterStore('upload'),
     passOnStoreError: false,
     windowMs: 60 * 1000, // 1 minute
     max: 10,
+    keyGenerator: principalRateLimitKey,
+    skip: req => req.method === 'GET' || req.method === 'HEAD',
     message: {
         error: 'Too Many Uploads',
         message: 'Terlalu banyak upload. Coba lagi setelah 1 menit.',
