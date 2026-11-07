@@ -110,8 +110,8 @@ Sangat Segera) disimpan sebagai sifat surat; teks lain disimpan apa adanya.
 Untuk CSV surat masuk, `Sifat Surat` adalah klasifikasi keamanan: baris Rahasia
 dan Sangat Rahasia dari pengguna selain Super Admin ditolak per baris, begitu
 pula baris dengan sifat yang tidak dikenal untuk semua pengguna, juga saat
-pratinjau. Sel kosong atau "-" dicatat sebagai Biasa (lihat
-[batas klasifikasi keamanan](#sifat-surat-masuk-dan-batas-klasifikasi-keamanan)).
+pratinjau CSV lama (`dryRun=true`). Sel kosong atau "-" dicatat sebagai Biasa
+(lihat [batas klasifikasi keamanan](#sifat-surat-masuk-dan-batas-klasifikasi-keamanan)).
 
 ## Kontrak API
 
@@ -174,7 +174,7 @@ tidak berpengaruh, sehingga "SANGAT-SEGERA" sama dengan "Sangat Segera".
 
 Semua jalur impor surat masuk (Google Sheets, CSV/XLSX, dan
 `POST /api/migration/surat-masuk`) menerapkan batas kelas yang sama dengan
-formulir: Admin Unit Kerja, Admin Ditjen, dan Admin Sesditjen hanya dapat
+formulir: Admin Unit Kerja, Admin Dirjen, dan Admin Sesditjen hanya dapat
 mengimpor baris Biasa dan Terbatas; baris **Rahasia** dan **Sangat Rahasia**
 hanya dapat diimpor oleh Super Admin.
 
