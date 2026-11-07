@@ -45,3 +45,31 @@ export async function principalRateLimitKey(req: Request): Promise<string> {
     }
     return networkRateLimitKey(req);
 }
+
+// Sign-in bodies are a few hundred bytes; the gate buffers at most 16 KiB.
+const SIGN_IN_BODY_LIMIT = 16 * 1024;
+
+/** Account identifier from the JSON sign-in body, normalized like Better Auth. */
+function signInEmail(req: Request): string {
+    try {
+        // The gate buffers the body as text. If a hosting layer already parsed
+        // the JSON, Better Auth receives that object serialized again.
+        const body: unknown = req.body;
+        const parsed: unknown = typeof body === 'string'
+            ? (body.length > SIGN_IN_BODY_LIMIT ? undefined : JSON.parse(body))
+            : body;
+        const email = parsed !== null && typeof parsed === 'object' ? (parsed as { email?: unknown }).email : undefined;
+        return typeof email === 'string' ? email.trim().toLowerCase().slice(0, 320) : '';
+    } catch {
+        return '';
+    }
+}
+
+/**
+ * Failed sign-ins per network and account, so one account's failures do not
+ * block colleagues behind the same NAT. Bodies without a readable email share
+ * one bucket per network.
+ */
+export function signInIdentifierKey(req: Request): string {
+    return `${networkRateLimitKey(req)}|acct:${signInEmail(req)}`;
+}

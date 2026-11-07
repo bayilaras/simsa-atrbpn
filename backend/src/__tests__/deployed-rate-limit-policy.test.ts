@@ -1,5 +1,8 @@
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import express from 'express';
 import request from 'supertest';
+import type { MemoryStore } from 'express-rate-limit';
 import { getIP } from '@better-auth/core/utils/ip';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,12 +17,14 @@ vi.mock('better-auth/api', () => ({
 }));
 // Storage atomicity is covered by PostgreSQL suites. Here a fresh MemoryStore
 // makes the deployed admission policy observable without a live database.
+const stores = vi.hoisted(() => new Map<string, MemoryStore>());
 vi.mock('../config/rate-limits.js', async importOriginal => {
     const { MemoryStore } = await import('express-rate-limit');
     return {
         ...await importOriginal<typeof import('../config/rate-limits.js')>(),
-        createRateLimiterStore: () => {
+        createRateLimiterStore: (bucket: string) => {
             const store = new MemoryStore();
+            stores.set(bucket, store);
             return Object.assign(store, {
                 async decrementInWindow(key: string, resetTime: Date) {
                     const current = await store.get(key);
@@ -57,7 +62,73 @@ function deployedDevelopment() {
     vi.resetModules();
 }
 
-describe('deployed rate limit policy', () => {
+const OFFICE_IP = '198.51.100.7';
+const OTHER_IP = '203.0.113.20';
+const OFFICE_NETWORK = `ip:${OFFICE_IP}`;
+const ACCOUNT_MESSAGE = 'Terlalu banyak percobaan masuk yang gagal. Coba lagi setelah 15 menit.';
+
+// Stands in for Better Auth: 'benar' is the correct password of every account.
+const signInOutcome: express.RequestHandler = (req, res) => {
+    const { password } = JSON.parse(typeof req.body === 'string' && req.body ? req.body : '{}');
+    res.sendStatus(password === 'benar' ? 200 : 401);
+};
+
+/** The deployed auth limiter chain in front of a stand-in auth handler. */
+async function authApp(signIn: express.RequestHandler = signInOutcome) {
+    deployedDevelopment();
+    const limits = await import('../middlewares/rate-limiter.middleware.js');
+    const reached = vi.fn();
+    const app = express();
+    // Simulates distinct client networks without relying on proxy headers.
+    app.use((req, _res, next) => {
+        Object.defineProperty(req, 'ip', { value: req.header('x-test-ip') ?? OFFICE_IP, configurable: true });
+        next();
+    });
+    app.use('/api/auth', limits.authLimiter);
+    app.post('/api/auth/sign-in/email', signIn);
+    app.post('/api/auth/change-password', (req, res) => res.sendStatus(req.header('x-test-result') === 'ok' ? 200 : 400));
+    app.all('/api/auth/*splat', (_req, res) => { reached(); res.sendStatus(200); });
+    app.use((error: { status?: number; type?: string }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+        res.status(error.status ?? 500).json({ type: error.type });
+    });
+    const signInAs = (email: string, password = 'salah', ip = OFFICE_IP) => request(app).post('/api/auth/sign-in/email')
+        .set('x-test-ip', ip).set('Content-Type', 'application/json').send(JSON.stringify({ email, password }));
+    return { app, limits, reached, signInAs };
+}
+
+/** Wait for the refunds the limiters handed to waitUntil. */
+async function settleRefunds() {
+    const { waitUntil } = await import('@vercel/functions');
+    await Promise.all(vi.mocked(waitUntil).mock.calls.map(([work]) => work));
+}
+
+async function hits(bucket: string, key: string) {
+    return (await stores.get(bucket)!.get(key))?.totalHits ?? 0;
+}
+
+/** Sends the path exactly as given; HTTP clients would resolve dot segments first. */
+async function rawPost(app: express.Express, path: string, body: string) {
+    const server = app.listen(0);
+    try {
+        await new Promise(resolve => server.once('listening', resolve));
+        const { port } = server.address() as AddressInfo;
+        return await new Promise<number>((resolve, reject) => {
+            const call = http.request({
+                host: '127.0.0.1', port, method: 'POST', path,
+                headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+            }, response => {
+                response.resume();
+                response.on('end', () => resolve(response.statusCode ?? 0));
+            });
+            call.on('error', reject);
+            call.end(body);
+        });
+    } finally {
+        await new Promise(resolve => server.close(resolve));
+    }
+}
+
+describe('deployed rate limit policy', { timeout: 30_000 }, () => {
     it('enforces five failed auth attempts even if a deployed runtime says development', async () => {
         deployedDevelopment();
         const { authLimiter } = await import('../middlewares/rate-limiter.middleware.js');
@@ -66,6 +137,117 @@ describe('deployed rate limit policy', () => {
         app.post('/api/auth/sign-in/email', (_req, res) => res.sendStatus(401));
         for (let i = 0; i < 5; i += 1) await request(app).post('/api/auth/sign-in/email').expect(401);
         await request(app).post('/api/auth/sign-in/email').expect(429);
+    });
+
+    it('limits failed sign-ins per account so colleagues on the same network can still sign in', async () => {
+        const { signInAs } = await authApp();
+        await repeat(5, () => signInAs('a@x.test'), 401);
+        const locked = await signInAs('a@x.test').expect(429);
+        expect(locked.body).toEqual({ error: 'Too Many Attempts', message: ACCOUNT_MESSAGE });
+        // The account waits for its window on this network, even with the right password.
+        await signInAs('a@x.test', 'benar').expect(429);
+        await signInAs('b@x.test').expect(401);
+        await signInAs('b@x.test', 'benar').expect(200);
+        await signInAs('a@x.test', 'benar', OTHER_IP).expect(200);
+    });
+
+    it('counts differently written forms of one email as the same account', async () => {
+        const { signInAs } = await authApp();
+        await repeat(3, () => signInAs('a@x.test'), 401);
+        await repeat(2, () => signInAs(' A@X.test '), 401);
+        await signInAs('a@x.test').expect(429);
+        await signInAs('A@x.TEST').expect(429);
+    });
+
+    it('keeps a ceiling of 30 failed attempts per network across accounts', async () => {
+        const { signInAs } = await authApp();
+        for (let i = 0; i < 30; i += 1) await signInAs(`staf${i}@x.test`).expect(401);
+        const limited = await signInAs('baru@x.test').expect(429);
+        expect(limited.body).toEqual({
+            error: 'Too Many Attempts',
+            message: 'Terlalu banyak percobaan yang gagal dari jaringan ini. Coba lagi setelah 15 menit.',
+        });
+        await signInAs('baru@x.test', 'salah', OTHER_IP).expect(401);
+    });
+
+    it('refunds a successful sign-in in both windows and clears that account', async () => {
+        const { signInAs, limits } = await authApp();
+        const account = `${OFFICE_NETWORK}|acct:a@x.test`;
+        await repeat(4, () => signInAs('a@x.test'), 401);
+        await signInAs('a@x.test', 'benar').expect(200);
+        await settleRefunds();
+        expect(await hits('auth', OFFICE_NETWORK)).toBe(4);
+        expect(await stores.get('auth-account')!.get(account)).toBeUndefined();
+
+        await repeat(5, () => signInAs('a@x.test'), 401);
+        await signInAs('a@x.test').expect(429);
+        await settleRefunds();
+        // The account gate's own rejection is not another network failure.
+        expect(await hits('auth', OFFICE_NETWORK)).toBe(9);
+        expect(await hits('auth-account', account)).toBe(5);
+
+        // A colleague's success refunds only their own attempt.
+        await signInAs('b@x.test', 'benar').expect(200);
+        await settleRefunds();
+        expect(await hits('auth', OFFICE_NETWORK)).toBe(9);
+        expect(await hits('auth-account', account)).toBe(5);
+
+        await limits.authAccountLimiter.resetKey(account);
+        await signInAs('a@x.test').expect(401);
+    });
+
+    it('passes the exact JSON sign-in body to the auth handler', async () => {
+        const received: unknown[] = [];
+        const { app } = await authApp((req, res) => { received.push(req.body); res.sendStatus(401); });
+        const raw = '{ "email" : "A@x.test",\n  "password": "kata \\u0073andi é☃", "extra": [1, {"a": null}] }';
+        await request(app).post('/api/auth/sign-in/email')
+            .set('Content-Type', 'application/json; charset=utf-8').send(raw).expect(401);
+        expect(received).toEqual([raw]);
+    });
+
+    it.each([
+        '/api/auth/sign-in/%2e/email',
+        '/api/auth/sign-in/%2E/email',
+        '/api/auth/sign-in/./email',
+        '/api/auth/x/../sign-in/email',
+        '/api/auth/x/%2e%2e/sign-in/email',
+        '/api/auth/sign-in\\email',
+    ])('serves only the canonical form of auth path %s', async path => {
+        const { app, reached } = await authApp();
+        const body = JSON.stringify({ email: 'a@x.test', password: 'salah' });
+        expect(await rawPost(app, path, body)).toBe(404);
+        expect(reached).not.toHaveBeenCalled();
+        expect(await rawPost(app, '/api/auth/sign-in/email', body)).toBe(401);
+    });
+
+    it.each([
+        ['application/x-www-form-urlencoded', 'email=a%40x.test&password=salah'],
+        ['application/json-seq', '{"email":"a@x.test","password":"salah"}'],
+        ['text/plain', '{"email":"a@x.test","password":"salah"}'],
+    ])('refuses a %s sign-in body', async (type, body) => {
+        const { app, reached } = await authApp();
+        const refused = await request(app).post('/api/auth/sign-in/email').set('Content-Type', type).send(body).expect(415);
+        expect(refused.body).toEqual({ error: 'Unsupported Media Type', message: 'Gunakan application/json.' });
+        expect(reached).not.toHaveBeenCalled();
+    });
+
+    it('refuses an oversized sign-in body before the auth handler', async () => {
+        const { app } = await authApp();
+        const body = JSON.stringify({ email: 'a@x.test', password: 'x'.repeat(17 * 1024) });
+        const refused = await request(app).post('/api/auth/sign-in/email').set('Content-Type', 'application/json').send(body).expect(413);
+        expect(refused.body).toEqual({ type: 'entity.too.large' });
+    });
+
+    it('limits failed current-password checks per signed-in user', async () => {
+        const { app } = await authApp();
+        const changePassword = (user: string, result = 'salah', path = '/api/auth/change-password') =>
+            asUser(request(app).post(path).set('x-test-result', result), user);
+        await repeat(5, () => changePassword('staff-a'), 400);
+        const limited = await changePassword('staff-a').expect(429);
+        expect(limited.body.message).toBe('Terlalu banyak percobaan kata sandi yang gagal. Coba lagi setelah 15 menit.');
+        await changePassword('staff-a', 'ok', '/api/auth/Change-Password/').expect(429);
+        await changePassword('staff-b').expect(400);
+        await changePassword('staff-b', 'ok').expect(200);
     });
 
     it('keeps a separate general quota for each provisioned user behind one office IP', async () => {
@@ -149,5 +331,10 @@ describe('deployed rate limit policy', () => {
             'x-forwarded-for': '203.0.113.99, 198.51.100.1',
         }), auth.options)).toBe('192.0.2.10');
         expect(auth.options.advanced?.ipAddress?.ipv6Subnet).toBe(56);
+        expect(auth.options.disabledPaths).toEqual(['/verify-password']);
+        expect(auth.options.rateLimit?.customRules).toEqual({
+            '/sign-in/email': { window: 10, max: 10 },
+            '/sign-in/social': { window: 10, max: 10 },
+        });
     }, 30_000);
 });

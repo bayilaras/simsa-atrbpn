@@ -120,9 +120,21 @@ export const auth = betterAuth({
         },
     },
     trustedOrigins: getTrustedOrigins(),
+    // The application never calls this endpoint over HTTP, and it has no
+    // dedicated burst rule.
+    disabledPaths: ['/verify-password'],
     // Better Auth's per-endpoint burst policies share atomic counters too.
     // Express separately enforces the longer login-attempt window at admission.
-    rateLimit: { enabled: deployedRuntime, customStorage: createRateLimiterStore('better-auth') },
+    // The sign-in bursts are counted per network, so an office NAT gets room
+    // for several colleagues signing in at the same time.
+    rateLimit: {
+        enabled: deployedRuntime,
+        customStorage: createRateLimiterStore('better-auth'),
+        customRules: {
+            '/sign-in/email': { window: 10, max: 10 },
+            '/sign-in/social': { window: 10, max: 10 },
+        },
+    },
     session: {
         expiresIn: 60 * 60 * 24, // 24 hours — hardened for government document security
         updateAge: 60 * 60 * 4,  // 4 hours — refresh session more frequently

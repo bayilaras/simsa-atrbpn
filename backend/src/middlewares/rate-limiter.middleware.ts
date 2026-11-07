@@ -1,9 +1,10 @@
+import express, { type Request, type RequestHandler } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { env } from '../config/env';
 import type { AuthRequest } from './auth.middleware';
 import { createRateLimiterStore, usesSharedRateLimits } from '../config/rate-limits.js';
 import { createAuthAttemptLimiter } from './auth-attempt-limiter.middleware.js';
-import { principalRateLimitKey } from './rate-limit-key.js';
+import { networkRateLimitKey, principalRateLimitKey, signInIdentifierKey } from './rate-limit-key.js';
 
 const shared = usesSharedRateLimits();
 
@@ -34,12 +35,83 @@ export const generalLimiter = rateLimit({
     legacyHeaders: false,
 });
 
-// Strict rate limiter for authentication endpoints - 5 attempts per 15 minutes
-export const authLimiter = createAuthAttemptLimiter({
+// Failed authentication attempts per 15 minutes. Each account has its own
+// small budget per network, so one person's typos do not lock colleagues
+// behind the same office NAT out; the network ceiling bounds the total.
+export const AUTH_FAILED_ATTEMPTS_PER_ACCOUNT = 5;
+export const AUTH_FAILED_ATTEMPTS_PER_NETWORK = isDev ? 50 : 30;
+
+// Better Auth routes on the normalized URL (dot segments and backslashes
+// resolved). Only paths already in that form are served, so the gates below
+// see the same path Better Auth acts on.
+const canonicalAuthPath: RequestHandler = (req, res, next) => {
+    const requested = req.originalUrl.split('?')[0];
+    let canonical: string | undefined;
+    try { canonical = new URL(req.originalUrl, 'http://simsa.invalid').pathname; } catch { /* rejected below */ }
+    if (canonical !== requested) {
+        res.status(404).json({ success: false, error: 'Not Found' });
+        return;
+    }
+    next();
+};
+
+const authNetworkLimiter = createAuthAttemptLimiter({
     store: createRateLimiterStore('auth'),
     shared,
-    maximum: isDev ? 50 : 5,
+    maximum: AUTH_FAILED_ATTEMPTS_PER_NETWORK,
+    keyGenerator: networkRateLimitKey,
+    message: 'Terlalu banyak percobaan yang gagal dari jaringan ini. Coba lagi setelah 15 menit.',
 });
+
+// Failed email sign-ins per network and account. A successful sign-in clears
+// that account's earlier failures.
+export const authAccountLimiter = createAuthAttemptLimiter({
+    store: createRateLimiterStore('auth-account'),
+    shared,
+    maximum: AUTH_FAILED_ATTEMPTS_PER_ACCOUNT,
+    keyGenerator: signInIdentifierKey,
+    requestPropertyName: 'authAccountRateLimit',
+    resetOnSuccess: true,
+});
+
+// Failed current-password checks per signed-in user (per network without a
+// provisioned session).
+const passwordCheckLimiter = createAuthAttemptLimiter({
+    store: createRateLimiterStore('auth-password'),
+    shared,
+    maximum: AUTH_FAILED_ATTEMPTS_PER_ACCOUNT,
+    keyGenerator: principalRateLimitKey,
+    requestPropertyName: 'authPasswordRateLimit',
+    message: 'Terlalu banyak percobaan kata sandi yang gagal. Coba lagi setelah 15 menit.',
+});
+
+// Trailing slashes and letter case never reach a different Better Auth route.
+const isPostTo = (req: Request, path: string) =>
+    req.method === 'POST' && req.path.replace(/\/+$/, '').toLowerCase() === path;
+
+const readSignInBody = express.text({ type: () => true, limit: '16kb' });
+
+// The account is read from the JSON body before Better Auth runs. The body is
+// buffered as text and Better Auth receives exactly that string. Only JSON is
+// accepted, so the limiter and Better Auth always read the same account; a
+// request without a body goes through unchanged.
+const signInAccountGate: RequestHandler = (req, res, next) => {
+    if (!isPostTo(req, '/sign-in/email')) return next();
+    const declaresBody = req.headers['transfer-encoding'] !== undefined || Number(req.headers['content-length']) > 0;
+    if (!declaresBody) return authAccountLimiter(req, res, next);
+    if (!req.is('application/json')) {
+        res.status(415).json({ error: 'Unsupported Media Type', message: 'Gunakan application/json.' });
+        return;
+    }
+    readSignInBody(req, res, error => (error ? next(error) : authAccountLimiter(req, res, next)));
+};
+
+const changePasswordGate: RequestHandler = (req, res, next) =>
+    isPostTo(req, '/change-password') ? passwordCheckLimiter(req, res, next) : next();
+
+// The network limiter wraps the account and password gates, so it also sees
+// (and refunds) their 429 responses.
+export const authLimiter: RequestHandler[] = [canonicalAuthPath, authNetworkLimiter, signInAccountGate, changePasswordGate];
 
 // Rate limiter for sensitive operations (e.g., delete, export) - 20 per 15 minutes
 // per user (network quota without a provisioned session).

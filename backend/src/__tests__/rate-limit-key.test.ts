@@ -15,7 +15,7 @@ vi.mock('../db/schema', () => ({
 
 const { auth } = await import('../config/auth');
 const { db } = await import('../config/database');
-const { networkRateLimitKey, principalRateLimitKey, SESSION_COOKIE } = await import('../middlewares/rate-limit-key');
+const { networkRateLimitKey, principalRateLimitKey, signInIdentifierKey, SESSION_COOKIE } = await import('../middlewares/rate-limit-key');
 const { generalLimiter } = await import('../middlewares/rate-limiter.middleware');
 const { authMiddleware } = await import('../middlewares/auth.middleware');
 const { verifyRequestIdentity } = await import('../services/request-identity.service');
@@ -163,6 +163,39 @@ describe('principalRateLimitKey', () => {
         await as().expect(200);
         await as().expect(429);
         await as('token-pending').expect(429);
+    });
+});
+
+describe('signInIdentifierKey', () => {
+    const signIn = (body: unknown, ip = OFFICE_IP) => signInIdentifierKey(fakeRequest({ ip, body }));
+
+    it('keys failed sign-ins by network and normalized email', () => {
+        expect(signIn('{"email":"a@x.test","password":"p"}')).toBe(`ip:${OFFICE_IP}|acct:a@x.test`);
+        expect(signIn('{ "email": "  A@X.Test\\t", "password": "p" }')).toBe(`ip:${OFFICE_IP}|acct:a@x.test`);
+        expect(signIn('{"email":"a@x.test"}', '2001:db8:abcd:12ff::1')).toBe('ip:2001:db8:abcd:1200::/56|acct:a@x.test');
+        expect(signIn(`{"email":"${'a'.repeat(400)}@x.test"}`)).toBe(`ip:${OFFICE_IP}|acct:${'a'.repeat(320)}`);
+        // A body a hosting layer already parsed is keyed the same way.
+        expect(signIn({ email: ' A@x.test ', password: 'p' })).toBe(`ip:${OFFICE_IP}|acct:a@x.test`);
+    });
+
+    it.each([
+        ['no body', undefined],
+        ['an empty body', ''],
+        ['a parsed array', [{ email: 'a@x.test' }]],
+        ['a parsed body without an email', { password: 'p' }],
+        ['malformed JSON', '{"email":"a@x.test"'],
+        ['JSON null', 'null'],
+        ['a JSON array', '[{"email":"a@x.test"}]'],
+        ['a non-string email', '{"email":["a@x.test"]}'],
+        ['a missing email', '{"password":"p"}'],
+        ['an oversized body', JSON.stringify({ email: 'a@x.test', padding: 'x'.repeat(17 * 1024) })],
+    ])('puts %s in the network bucket without an account', (_label, body) => {
+        expect(signIn(body)).toBe(`ip:${OFFICE_IP}|acct:`);
+    });
+
+    it('fails closed without a client address', () => {
+        expect(() => signInIdentifierKey(fakeRequest({ ip: undefined, body: '{"email":"a@x.test"}' })))
+            .toThrow(ServiceUnavailableError);
     });
 });
 
