@@ -13,6 +13,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ExportButton } from '@/components/ExportButton';
 import { canExportReports } from '@/lib/provisioning-access';
+import { kunciSifatSuratMasuk, labelSifatSuratMasuk } from '@/lib/sifat-surat-masuk';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
 import ImportFileDialog from '@/components/ImportFileDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
@@ -72,6 +73,15 @@ import { PageHeader } from '@/components/PageHeader'
 // Generate year options
 const currentYear = new Date().getFullYear();
 const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - i);
+
+// Warna lencana sifat di daftar; Rahasia dan Sangat Rahasia sama-sama merah.
+function warnaLencanaSifat(sifatSurat) {
+    const kunci = kunciSifatSuratMasuk(sifatSurat);
+    if (kunci === 'penting') return 'bg-yellow-50 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-200';
+    if (kunci === 'rahasia' || kunci === 'sangat_rahasia') return 'bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200';
+    if (kunci === 'terbatas') return 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-200';
+    return 'bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200';
+}
 
 export default function SuratMasuk() {
     const navigate = useNavigate();
@@ -550,7 +560,9 @@ export default function SuratMasuk() {
                                                 <SelectItem value="biasa">Biasa</SelectItem>
                                                 <SelectItem value="segera">Segera</SelectItem>
                                                 <SelectItem value="sangat_segera">Sangat Segera</SelectItem>
+                                                <SelectItem value="terbatas">Terbatas</SelectItem>
                                                 <SelectItem value="rahasia">Rahasia</SelectItem>
+                                                <SelectItem value="sangat_rahasia">Sangat Rahasia</SelectItem>
                                                 <SelectItem value="undangan">Undangan</SelectItem>
                                                 <SelectItem value="penting">Penting</SelectItem>
                                             </SelectContent>
@@ -672,12 +684,9 @@ export default function SuratMasuk() {
                                                         <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground sm:justify-start">
                                                             <span className="sm:max-w-[150px] sm:truncate" title={row.dari}>Oleh: {row.dari}</span>
                                                             {row.jenisSurat && <span className="px-1.5 py-0.5 rounded-full bg-muted/50 border border-border/50 text-[10px]">{row.jenisSurat}</span>}
-                                                            {row.sifatSurat && row.sifatSurat !== 'biasa' && (
-                                                                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${row.sifatSurat === 'penting' ? 'bg-yellow-50 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-200' :
-                                                                    row.sifatSurat === 'rahasia' ? 'bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200' :
-                                                                        'bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200'
-                                                                    }`}>
-                                                                    {row.sifatSurat.replace('_', ' ')}
+                                                            {kunciSifatSuratMasuk(row.sifatSurat) !== 'biasa' && (
+                                                                <span data-badge="sifat-surat" className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${warnaLencanaSifat(row.sifatSurat)}`}>
+                                                                    {labelSifatSuratMasuk(row.sifatSurat)}
                                                                 </span>
                                                             )}
                                                         </div>

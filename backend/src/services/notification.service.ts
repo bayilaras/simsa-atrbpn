@@ -21,7 +21,7 @@ import {
     isValidNotificationId,
     MAX_NOTIFICATION_READ_IDS,
 } from '../utils/notification-id.js';
-import { klasifikasiInSql } from './access/visibility-spec';
+import { klasifikasiInSql, normalizeSecurityClassification } from './access/visibility-spec';
 import { LABEL_DIKECUALIKAN, readRefKey, recordAccessService, type RecordUser } from './rangkaian/deps.js';
 import { jakartaDate } from '../utils/jakarta-date.js';
 
@@ -29,27 +29,38 @@ type SecurityClassScope = string[] | null | undefined;
 const ADMIN_NOTIFICATION_ROLES = new Set(['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']);
 const RETENTION_NOTIFICATION_ROLES = new Set([...ADMIN_NOTIFICATION_ROLES, 'auditor']);
 
-function incomingSecurityCondition(classes: SecurityClassScope) {
-    if (classes === undefined || classes === null) return undefined;
-    if (classes.length === 0) return sql`false`;
+// Sifat hasil impor tersimpan seperti di sumber ('Sangat Segera', 'Amat Segera/Kilat'),
+// jadi dibaca dengan kunci yang sama dengan sifatKunciSql (trim, lower, `[\s-]+` -> '_').
+const URGENSI_SURAT_MASUK = new Map<string, { type: 'urgent' | 'warning'; label: string }>([
+    ['sangat_segera', { type: 'urgent', label: 'Sangat Segera' }],
+    ['segera', { type: 'warning', label: 'Segera' }],
+    ['kilat', { type: 'urgent', label: 'Kilat' }],
+    ['amat_segera', { type: 'urgent', label: 'Amat Segera' }],
+    ['amat_segera/kilat', { type: 'urgent', label: 'Amat Segera/Kilat' }],
+    ['amat_segera_/_kilat', { type: 'urgent', label: 'Amat Segera/Kilat' }],
+]);
+const LABEL_KELAS_SURAT_MASUK = new Map([
+    ['terbatas', 'Terbatas'],
+    ['rahasia', 'Rahasia'],
+    ['sangat_rahasia', 'Sangat Rahasia'],
+]);
 
-    const normalized = sql<string>`lower(replace(coalesce(${suratMasuk.sifatSurat}, 'biasa'), '-', '_'))`;
-    const predicates: SQL[] = [];
-    if (classes.includes('biasa')) {
-        predicates.push(inArray(normalized, [
-            'biasa',
-            'biasa/terbuka',
-            'terbuka',
-            'segera',
-            'sangat_segera',
-            'undangan',
-            'penting',
-        ]));
-    }
-    for (const classification of classes.filter(value => value !== 'biasa')) {
-        predicates.push(eq(normalized, classification));
-    }
-    return predicates.length > 0 ? or(...predicates) : sql`false`;
+/** Urgensi dan label sifat untuk notifikasi surat masuk yang belum diproses. */
+export function sifatNotifikasiSuratMasuk(sifatSurat: string | null | undefined): {
+    urgensi: 'urgent' | 'warning' | null;
+    label: string;
+} {
+    const kunci = (sifatSurat ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+    const urgensi = URGENSI_SURAT_MASUK.get(kunci);
+    if (urgensi) return { urgensi: urgensi.type, label: urgensi.label };
+    return {
+        urgensi: null,
+        label: LABEL_KELAS_SURAT_MASUK.get(normalizeSecurityClassification(sifatSurat)) ?? 'Biasa',
+    };
+}
+
+function incomingSecurityCondition(classes: SecurityClassScope) {
+    return klasifikasiInSql(suratMasuk.sifatSurat, classes);
 }
 
 function archiveSecurityCondition(classes: SecurityClassScope) {
@@ -239,15 +250,13 @@ export class NotificationService {
             const daysSince = Math.floor((currentDate.getTime() - tanggalSurat.getTime()) / (1000 * 60 * 60 * 24));
 
             // Determine priority based on sifat surat and age
+            const { urgensi, label: sifatLabel } = sifatNotifikasiSuratMasuk(surat.sifatSurat);
             let type: 'urgent' | 'warning' | 'info' = 'info';
-            if (surat.sifatSurat === 'sangat_segera' || daysSince > 7) {
+            if (urgensi === 'urgent' || daysSince > 7) {
                 type = 'urgent';
-            } else if (surat.sifatSurat === 'segera' || daysSince > 3) {
+            } else if (urgensi === 'warning' || daysSince > 3) {
                 type = 'warning';
             }
-
-            const sifatLabel = surat.sifatSurat === 'sangat_segera' ? 'Sangat Segera' :
-                surat.sifatSurat === 'segera' ? 'Segera' : 'Biasa';
 
             return {
                 id: statefulId('surat-masuk', surat.id, surat.status || 'pending', type),

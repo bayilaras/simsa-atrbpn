@@ -8,12 +8,18 @@ export const KELAS_KEAMANAN = Object.freeze(['biasa', 'terbatas', 'rahasia', 'sa
 const KELAS_DIKENAL = new Set(KELAS_KEAMANAN)
 
 // Nilai sifat_surat lama yang menyatakan urgensi/jenis, bukan kerahasiaan.
+// Sama dengan BIASA_SIFAT_ALIASES backend.
 const SIFAT_BIASA = new Set([
     'biasa',
     'biasa/terbuka',
+    'biasa_/_terbuka',
     'terbuka',
     'segera',
     'sangat_segera',
+    'amat_segera',
+    'kilat',
+    'amat_segera/kilat',
+    'amat_segera_/_kilat',
     'undangan',
     'penting',
 ])
@@ -22,6 +28,19 @@ const ADMIN_UNIT_ROLES = new Set(['admin_unit', 'admin_dirjen', 'admin_sesditjen
 
 export const PESAN_KELAS_TERBATAS_PERAN =
     'Kelas Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin.'
+
+// Rekod Terbatas ke atas hanya dibuka lewat persetujuan akses yang terikat pada
+// rekod dan kelasnya, juga bagi unit pencatat dan Super Admin.
+export const PESAN_SURAT_MASUK_PERLU_PERSETUJUAN =
+    'Surat Terbatas, Rahasia, atau Sangat Rahasia hanya dapat dibuka atau diubah dengan persetujuan akses berjangka, juga oleh pencatatnya. '
+    + 'Setelah disimpan, ajukan persetujuan akses untuk membuka surat ini.'
+
+// Catatan pada langkah pratinjau impor surat masuk. Pratinjau (previewRows di
+// backend) tidak memeriksa baris; penolakan baru tampil di rincian hasil.
+export const CATATAN_KELAS_IMPOR_SURAT_MASUK =
+    'Sifat Surat pada surat masuk sekaligus menjadi klasifikasi keamanan; sel kosong atau “-” dicatat sebagai Biasa. '
+    + 'Baris Rahasia atau Sangat Rahasia hanya dapat diimpor oleh Super Admin, dan baris surat baru dengan sifat yang tidak dikenal ditolak. '
+    + 'Pratinjau hanya menampilkan isi sumber; baris yang ditolak terlihat pada Rincian hasil impor setelah Impor, dan baris lain tetap tersimpan.'
 
 /** Kelas keamanan baku untuk nilai klasifikasiKeamanan atau sifatSurat. */
 export function normalisasiKelas(nilai) {

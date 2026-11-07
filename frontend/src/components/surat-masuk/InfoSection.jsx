@@ -6,35 +6,15 @@ import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import { useAppConfig } from '@/context/app-config-context';
 import { SuratRetentionSummary } from '@/components/SuratRetentionSummary';
+import { kunciSifatSuratMasuk, labelSifatSuratMasuk } from '@/lib/sifat-surat-masuk';
 
-const SIFAT_LABELS = new Map([
-    ['biasa', 'Biasa'],
-    ['biasa/terbuka', 'Biasa/Terbuka'],
-    ['terbuka', 'Terbuka'],
-    ['segera', 'Segera'],
-    ['sangat_segera', 'Sangat Segera'],
-    ['undangan', 'Undangan'],
-    ['penting', 'Penting'],
-    ['terbatas', 'Terbatas'],
-    ['rahasia', 'Rahasia'],
-    ['sangat_rahasia', 'Sangat Rahasia'],
-]);
 const SIFAT_DESTRUCTIVE = new Set(['sangat_segera', 'rahasia', 'sangat_rahasia']);
 const SIFAT_EMPHASIS = new Set(['segera', 'terbatas']);
 
-// Normalisasi sama dengan normalizeSecurityClassification (backend) tanpa
-// pemetaan kelas, agar nilai impor seperti "Sangat Segera" atau "RAHASIA"
-// tidak tampil sebagai "Biasa".
-function sifatKey(value) {
-    const raw = typeof value === 'string' && value.length > 0 ? value : 'biasa';
-    return raw.trim().toLowerCase().replace(/[\s-]+/g, '_');
-}
-
 function sifatBadge(value) {
-    const key = sifatKey(value);
-    const fallback = typeof value === 'string' && value.trim() ? value.trim() : 'Biasa';
+    const key = kunciSifatSuratMasuk(value);
     return {
-        label: SIFAT_LABELS.get(key) || fallback,
+        label: labelSifatSuratMasuk(value),
         variant: SIFAT_DESTRUCTIVE.has(key) ? 'destructive' : SIFAT_EMPHASIS.has(key) ? 'default' : 'secondary',
     };
 }

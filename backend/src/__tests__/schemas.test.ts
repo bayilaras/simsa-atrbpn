@@ -18,6 +18,7 @@ import {
     markAllReadSchema,
     createSuratKeluarSchema,
     updateSuratKeluarSchema,
+    querySuratMasukSchema,
     dateSchema,
 } from '../validators/schemas';
 
@@ -101,6 +102,20 @@ describe('surat keluar sifat (urgensi)', () => {
 
     it('rejects a sifat longer than the column', () => {
         expect(createSuratKeluarSchema.safeParse({ ...base, sifatSurat: 'x'.repeat(51) }).success).toBe(false);
+    });
+});
+
+describe('filter sifat daftar surat masuk', () => {
+    it.each(['biasa', 'segera', 'sangat_segera', 'terbatas', 'rahasia', 'sangat_rahasia', 'undangan', 'penting'])(
+        'menerima kunci formulir %s',
+        sifatSurat => {
+            const parsed = querySuratMasukSchema.safeParse({ sifatSurat });
+            expect(parsed.success && parsed.data.sifatSurat).toBe(sifatSurat);
+        },
+    );
+
+    it.each(['Sangat Rahasia', 'konfidensial', ''])('menolak nilai di luar kunci formulir %j', sifatSurat => {
+        expect(querySuratMasukSchema.safeParse({ sifatSurat }).success).toBe(false);
     });
 });
 

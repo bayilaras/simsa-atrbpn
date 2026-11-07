@@ -25,6 +25,7 @@ import {
     CURRENT_RETENTION_VERIFICATION_JOIN,
     RETENTION_GOVERNANCE_EVIDENCE_SELECT,
 } from './archive-rule-assignment.service.js';
+import { klasifikasiInSql } from './access/visibility-spec.js';
 
 const log = createLogger('DashboardService');
 
@@ -42,15 +43,7 @@ function arsipClassificationCondition(classes: string[] | null | undefined) {
 }
 
 function incomingClassificationCondition(classes: string[] | null | undefined) {
-    if (classes === undefined || classes === null) return undefined;
-    if (classes.length === 0) return sql`false`;
-    const normalized = sql<string>`CASE
-        WHEN lower(coalesce(${suratMasuk.sifatSurat}, 'biasa'))
-            IN ('biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting')
-        THEN 'biasa'
-        ELSE replace(replace(lower(coalesce(${suratMasuk.sifatSurat}, 'biasa')), ' ', '_'), '-', '_')
-    END`;
-    return inArray(normalized, classes);
+    return klasifikasiInSql(suratMasuk.sifatSurat, classes);
 }
 
 function outgoingClassificationCondition(classes: string[] | null | undefined) {

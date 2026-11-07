@@ -24,7 +24,14 @@ const LETTERS: InboxFixtureLetter[] = [
     { n: 3, sifatSurat: 'biasa', isDeleted: null, distributionStatus: 'received' },
     { n: 4, sifatSurat: 'Rahasia' },
     { n: 5, sifatSurat: 'biasa', distributionStatus: 'processed' },
+    // Surat baru (tanggal hari ini) agar prioritas tidak ditentukan umur surat.
+    { n: 6, sifatSurat: 'Kilat', distributionStatus: 'processed' },
+    { n: 7, sifatSurat: 'Amat Segera / Kilat', distributionStatus: 'processed' },
+    { n: 8, sifatSurat: 'Sangat Rahasia', distributionStatus: 'processed' },
+    { n: 9, sifatSurat: 'Undangan', distributionStatus: 'processed' },
 ];
+const SURAT_BARU = [6, 7, 8, 9];
+const SEMUA_KELAS = ['biasa', 'terbatas', 'rahasia', 'sangat_rahasia'];
 
 let client: PGlite;
 let service: typeof import('../services/notification.service').notificationService;
@@ -32,6 +39,10 @@ let service: typeof import('../services/notification.service').notificationServi
 beforeAll(async () => {
     const fixture = await createInboxDatabase(LETTERS);
     client = fixture.client;
+    await client.query(
+        `UPDATE surat_masuk SET tanggal_surat = CURRENT_DATE WHERE id = ANY($1::uuid[])`,
+        [SURAT_BARU.map(letterId)],
+    );
     holder.db = fixture.db;
     ({ notificationService: service } = await import('../services/notification.service'));
 }, 20_000);
@@ -53,5 +64,35 @@ describe('notifikasi surat masuk pending', () => {
         expect(ids).toContain(letterId(5));
         expect(ids).not.toContain(letterId(2));
         expect(ids).not.toContain(letterId(4));
+    });
+
+    it('memuat sifat Sangat Segera yang tersimpan seperti di sumber sebagai surat mendesak', async () => {
+        const items = await service.getPendingSuratMasuk('ditjen', 'user-1', ['biasa'], new Set());
+        expect(items.find(item => item.referenceId === letterId(1))).toMatchObject({
+            type: 'urgent', title: 'Surat Sangat Segera belum diproses',
+        });
+    });
+
+    it('sifat urgensi Kilat dan Amat Segera/Kilat menjadi notifikasi mendesak, bukan Biasa', async () => {
+        const items = await service.getPendingSuratMasuk('ditjen', 'user-1', ['biasa'], new Set());
+        expect(items.find(item => item.referenceId === letterId(6))).toMatchObject({
+            type: 'urgent', title: 'Surat Kilat belum diproses',
+        });
+        expect(items.find(item => item.referenceId === letterId(7))).toMatchObject({
+            type: 'urgent', title: 'Surat Amat Segera/Kilat belum diproses',
+        });
+        expect(items.find(item => item.referenceId === letterId(9))).toMatchObject({
+            type: 'info', title: 'Surat Biasa belum diproses',
+        });
+    });
+
+    it('surat berkelas keamanan berlabel kelasnya; prioritasnya tetap menurut umur surat', async () => {
+        const items = await service.getPendingSuratMasuk('ditjen', 'user-1', SEMUA_KELAS, new Set());
+        expect(items.find(item => item.referenceId === letterId(8))).toMatchObject({
+            type: 'info', title: 'Surat Sangat Rahasia belum diproses',
+        });
+        expect(items.find(item => item.referenceId === letterId(4))).toMatchObject({
+            type: 'urgent', title: 'Surat Rahasia belum diproses',
+        });
     });
 });

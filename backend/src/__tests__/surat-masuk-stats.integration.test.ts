@@ -30,7 +30,11 @@ beforeAll(async () => {
         ('unit-a', 2025, 'biasa', 'sudah_dibalas', true, false),
         ('unit-b', 2026, 'biasa', 'belum_dibalas', false, false),
         ('unit-a', 2026, 'sangat_segera', 'sudah_dibalas', false, NULL),
-        ('unit-deleted', 2026, 'biasa', 'belum_dibalas', true, true);`);
+        ('unit-deleted', 2026, 'biasa', 'belum_dibalas', true, true),
+        ('unit-impor', 2027, 'Sangat Segera', 'belum_dibalas', false, false),
+        ('unit-impor', 2027, '', 'sudah_dibalas', false, false),
+        ('unit-impor', 2027, ' Biasa', 'belum_dibalas', true, false),
+        ('unit-impor', 2027, 'Konfidensial', 'belum_dibalas', true, false);`);
     holder.db = drizzle(database);
     const { SuratMasukService } = await import('../services/surat-masuk.service');
     service = new SuratMasukService();
@@ -48,6 +52,10 @@ describe('incoming statistics SQL and query budget', () => {
         ['unit-a', 2026, [], { total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0 }],
         ['unit-empty', 2026, ['biasa'], { total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0 }],
         ['unit-deleted', 2026, ['biasa'], { total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0 }],
+        // Sifat hasil impor tersimpan seperti di sumber; yang tidak menyebut kelas tidak pernah dihitung.
+        ['unit-impor', 2027, ['biasa'], { total: 3, belumDibalas: 2, sudahDibalas: 1, diarsipkan: 1 }],
+        ['unit-impor', 2027, ['biasa', 'terbatas', 'rahasia', 'sangat_rahasia'], { total: 3, belumDibalas: 2, sudahDibalas: 1, diarsipkan: 1 }],
+        ['unit-impor', 2027, ['terbatas'], { total: 0, belumDibalas: 0, sudahDibalas: 0, diarsipkan: 0 }],
     ] as const)('counts unit %s / year %s / security %j without changing visibility', async (unit, year, security, expected) => {
         expect(await service.getStats(unit, year, security === null ? null : [...security])).toEqual(expected);
         expect(holder.queries).toBe(1);

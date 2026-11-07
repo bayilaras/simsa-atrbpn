@@ -108,9 +108,10 @@ impor tidak menetapkan JRA atau mengesahkan aturan retensi.
 Untuk CSV surat keluar, kolom opsional `Sifat Surat` (Biasa, Penting, Segera,
 Sangat Segera) disimpan sebagai sifat surat; teks lain disimpan apa adanya.
 Untuk CSV surat masuk, `Sifat Surat` adalah klasifikasi keamanan: baris Rahasia
-dan Sangat Rahasia dari pengguna selain Super Admin ditolak per baris, juga saat
-pratinjau (lihat
-[batas klasifikasi keamanan](#sifat-surat-masuk-dan-batas-klasifikasi-keamanan)).
+dan Sangat Rahasia dari pengguna selain Super Admin ditolak per baris, begitu
+pula baris dengan sifat yang tidak dikenal untuk semua pengguna, juga saat
+pratinjau CSV lama (`dryRun=true`). Sel kosong atau "-" dicatat sebagai Biasa
+(lihat [batas klasifikasi keamanan](#sifat-surat-masuk-dan-batas-klasifikasi-keamanan)).
 
 ## Kontrak API
 
@@ -164,25 +165,46 @@ saat impor ulang; baris tanpa keduanya ditolak per baris.
 
 ### Sifat surat masuk dan batas klasifikasi keamanan
 
-Pada surat masuk, sifat surat sekaligus menjadi klasifikasi keamanan (sifat
-urgensi seperti Segera, Penting, atau Undangan dibaca sebagai Biasa; sel kosong
-menjadi Biasa). Semua jalur impor surat masuk (Google Sheets, CSV/XLSX, dan
+Pada surat masuk, sifat surat sekaligus menjadi klasifikasi keamanan: Biasa,
+Terbatas, Rahasia, atau Sangat Rahasia. Sifat urgensi Segera, Sangat Segera,
+Amat Segera/Kilat (juga "Amat Segera / Kilat", atau Amat Segera atau Kilat saja),
+Penting, dan Undangan, serta Terbuka dan Biasa/Terbuka, dibaca sebagai Biasa. Sel
+kosong atau berisi "-" dicatat sebagai Biasa. Huruf besar-kecil, spasi di tepi, dan tanda hubung
+tidak berpengaruh, sehingga "SANGAT-SEGERA" sama dengan "Sangat Segera".
+
+Semua jalur impor surat masuk (Google Sheets, CSV/XLSX, dan
 `POST /api/migration/surat-masuk`) menerapkan batas kelas yang sama dengan
-formulir: Admin Unit Kerja, Admin Ditjen, dan Admin Sesditjen hanya dapat
+formulir: Admin Unit Kerja, Admin Dirjen, dan Admin Sesditjen hanya dapat
 mengimpor baris Biasa dan Terbatas; baris **Rahasia** dan **Sangat Rahasia**
 hanya dapat diimpor oleh Super Admin.
 
 - Baris di atas batas itu **ditolak per baris** dengan keterangan "Klasifikasi
   keamanan melebihi kewenangan pengguna. Kelas Rahasia dan Sangat Rahasia hanya
   dapat ditetapkan oleh Super Admin." Baris lain tetap diimpor, dan impor tidak
-  gagal seluruhnya. Pratinjau CSV lama (`dryRun=true`) sudah menandai baris itu
-  tidak valid.
+  gagal seluruhnya.
 - Baris yang ditolak tidak dicocokkan dengan surat yang sudah tercatat, juga saat
   sinkron, dan tidak dihitung sebagai baris sebelumnya untuk pemeriksaan ganda.
   Impor ulang lembar yang sama oleh Admin tetap melaporkannya sebagai ditolak,
   meskipun Super Admin sudah mengimpornya.
 - Minta Super Admin mengimpor lembar tersebut atau mencatat surat itu melalui
   formulir.
+- Sifat lain yang tidak dikenal (misalnya "Konfidensial" atau singkatan "R")
+  **ditolak per baris untuk semua pengguna**, termasuk Super Admin, dengan
+  keterangan "Sifat surat tidak dikenal. Gunakan Biasa, Terbatas, Rahasia, atau
+  Sangat Rahasia, atau sifat urgensi Segera, Sangat Segera, Amat Segera/Kilat,
+  Penting, atau Undangan." Surat dengan sifat seperti itu tidak dapat dibaca
+  siapa pun, jadi tidak dicatat. Sifat yang lebih dari 50 karakter juga ditolak.
+  Perbaiki sifat di sumber lalu impor ulang.
+- Penolakan sifat tak dikenal hanya berlaku untuk baris yang akan dicatat
+  sebagai surat baru. Saat sinkron, baris yang cocok dengan surat yang sudah
+  tercatat tetap memperbarui perihal, tanggal, dan jenis surat, karena sinkron
+  tidak pernah mengubah sifat surat masuk.
+- Pratinjau Google Sheets dan berkas CSV/XLSX hanya menampilkan pemetaan kolom
+  dan contoh baris, tanpa memeriksa sifat per baris; penolakan baru terlihat di
+  rincian hasil setelah **Impor**. Hanya pratinjau CSV lama (`dryRun=true`) yang
+  sudah menandai kedua jenis baris itu tidak valid.
+- `POST` dan `PUT /api/surat-masuk` menolak sifat yang tidak dikenal dengan 400
+  dan pesan yang sama; kelas yang dikenal di atas kewenangan tetap dijawab 403.
 - Surat keluar tidak terpengaruh: sifat surat keluar adalah urgensi, dan impor
   selalu mencatat klasifikasi keamanannya sebagai Biasa.
 

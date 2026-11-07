@@ -1,9 +1,9 @@
 import express from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { PESAN_KELAS_MELEBIHI_KEWENANGAN } from '../constants/pesan-akses';
+import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_SIFAT_TIDAK_DIKENAL } from '../constants/pesan-akses';
 
-const mocks = vi.hoisted(() => ({ findById: vi.fn(), update: vi.fn(), check: vi.fn() }));
+const mocks = vi.hoisted(() => ({ findById: vi.fn(), update: vi.fn(), create: vi.fn(), check: vi.fn() }));
 vi.mock('../middlewares/auth.middleware', () => ({
     authMiddleware: (req: any, _res: any, next: any) => {
         req.user = { id: 'user-bppt', email: 'b@example.test', name: 'B', role: 'admin_unit', unitKerjaId: 'dir_bppt' };
@@ -12,7 +12,7 @@ vi.mock('../middlewares/auth.middleware', () => ({
 }));
 vi.mock('../middlewares/role.middleware', () => ({ canWriteMiddleware: () => (_req: any, _res: any, next: any) => next() }));
 vi.mock('../services/surat-masuk.service', () => ({
-    suratMasukService: { findById: mocks.findById, update: mocks.update },
+    suratMasukService: { findById: mocks.findById, update: mocks.update, create: mocks.create },
 }));
 vi.mock('../services/record-access.service.js', () => {
     const normalize = (value?: string | null) => String(value ?? '').trim().toLowerCase() || 'biasa';
@@ -54,5 +54,31 @@ describe('PUT /api/surat-masuk/:id: plafon kelas', () => {
         const res = await request(app).put(`/api/surat-masuk/${ID}`).send({ sifatSurat: 'rahasia', dari: 'Kanwil Baru' });
         expect(res.status).not.toBe(403);
         expect(res.body.error).not.toBe(PESAN_KELAS_MELEBIHI_KEWENANGAN);
+    });
+
+    it('menolak sifat yang tidak menyebut kelas dengan 400', async () => {
+        mocks.findById.mockResolvedValue(surat('biasa'));
+        const res = await request(app).put(`/api/surat-masuk/${ID}`).send({ sifatSurat: 'Konfidensial' }).expect(400);
+        expect(res.body.error).toBe(PESAN_SIFAT_TIDAK_DIKENAL);
+        expect(mocks.update).not.toHaveBeenCalled();
+    });
+});
+
+describe('POST /api/surat-masuk: sifat surat', () => {
+    beforeEach(() => { mocks.create.mockReset(); });
+    const body = (sifatSurat: string) => ({
+        unitKerjaId: 'dir_bppt', sifatSurat, tanggalSurat: '2026-09-01', perihal: 'Perihal uji', dari: 'Kanwil A',
+    });
+
+    it('menolak sifat yang tidak menyebut kelas dengan 400, sebelum pemeriksaan kewenangan', async () => {
+        const res = await request(app).post('/api/surat-masuk').send(body('Konfidensial')).expect(400);
+        expect(res.body.error).toBe(PESAN_SIFAT_TIDAK_DIKENAL);
+        expect(mocks.create).not.toHaveBeenCalled();
+    });
+
+    it('tetap menjawab 403 untuk kelas yang dikenal di atas kewenangan', async () => {
+        const res = await request(app).post('/api/surat-masuk').send(body('Rahasia')).expect(403);
+        expect(res.body.error).toBe(PESAN_KELAS_MELEBIHI_KEWENANGAN);
+        expect(mocks.create).not.toHaveBeenCalled();
     });
 });

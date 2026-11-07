@@ -4,7 +4,7 @@ import { createLogger } from '../utils/logger';
 import { suratMasukService } from './surat-masuk.service.js';
 import { suratKeluarService } from './surat-keluar.service.js';
 import type { CriticalAuditContext } from './audit-log.service.js';
-import { assertImportedKelasSuratMasuk, type ImportAuditContext } from './import-plafon-kelas.js';
+import { assertImportedKelasSuratMasuk, assertSifatSuratMasukDapatDisimpan, type ImportAuditContext } from './import-plafon-kelas.js';
 import { AppError, PayloadTooLargeError, ValidationError } from '../utils/errors.js';
 import { publicErrorResponse } from '../utils/public-error.js';
 import { currentRequestId } from '../utils/request-context.js';
@@ -13,7 +13,7 @@ import { GOOGLE_SHEETS_LIMITS, GoogleSheetsAccessError, GoogleSheetsSource, asse
 import { isWebAddress, resolveSheetMapping, type GoogleSheetsImportType, type SheetColumnMapping } from './google-sheets-import-mapping.js';
 import { DuplicateSuratImportError, type SuratImportIdentityKey, type SuratImportMatch } from './surat-import-identity.js';
 import { assertImportResumable, importPrefixHash, type ImportResume } from './import-resume.js';
-import { normalizeSifatSurat } from './sifat-surat.js';
+import { normalizeSifatSurat, sifatSuratMasukSumber } from './sifat-surat.js';
 import {
     SYNC_REASONS, syncImportedLetter, syncSourceText, type ImportCounterpart, type ImportDuplicateKind, type ImportFieldChange,
     type ImportSync, type ImportSyncTarget,
@@ -364,6 +364,8 @@ export class GoogleDriveImportService {
             ? this.importRecords(dataRows, incoming, write, {
                 summary, build: (row, i) => this.incomingRecord(row, i, colMap, unitKerjaId, auditContext),
                 admit: record => assertImportedKelasSuratMasuk(auditContext, record.sifatSurat),
+                // Sinkron never writes the sifat, so only a row that would be stored must name a class.
+                admitInsert: record => assertSifatSuratMasukDapatDisimpan(record.sifatSurat),
                 syncSource: row => syncSource(row, ['perihal', 'tanggalSurat', 'jenisSurat'], { field: 'dari', label: 'Pengirim' }) })
             : this.importRecords(dataRows, outgoing, write, {
                 summary, build: (row, i) => this.outgoingRecord(row, i, colMap, unitKerjaId, auditContext),
@@ -393,7 +395,7 @@ export class GoogleDriveImportService {
             noUrut: noUrut,
             tahun: effectiveTahun,
             jenisSurat: this.getField(row, colMap, 'jenisSurat') || 'Surat Dinas',
-            sifatSurat: this.getField(row, colMap, 'sifatSurat') || 'Biasa',
+            sifatSurat: sifatSuratMasukSumber(this.getField(row, colMap, 'sifatSurat')),
             nomorSurat: nomorSurat || '-',
             tanggalSurat: parsedDate,
             perihal: this.getField(row, colMap, 'perihal') || '',
@@ -469,11 +471,13 @@ export class GoogleDriveImportService {
             unitKerjaId: string; auditContext: CriticalAuditContext; options: GoogleSheetsRequestOptions;
             resume: ImportResume | undefined; sync: ImportSync | undefined;
         },
-        { summary, build, admit, syncSource }: {
+        { summary, build, admit, admitInsert, syncSource }: {
             summary: (row: string[]) => RowSummary;
             build: (row: string[], index: number) => T | null;
             /** Throws for a row this importer may not write; checked after the resume digest. */
             admit?: (record: T) => void;
+            /** Throws for a row that may not be stored as a new letter; a matched (sinkron) row is not checked. */
+            admitInsert?: (record: T) => void;
             syncSource: (row: string[]) => ImportSyncSource;
         },
     ): Promise<ImportResult> {
@@ -566,6 +570,7 @@ export class GoogleDriveImportService {
             try {
                 if ('error' in item) throw item.error;
                 if (options.signal?.aborted) throw new AppError('Permintaan impor dibatalkan.', 499);
+                admitInsert?.(item.record);
                 await target.createImported(item.record, auditContext, options);
                 importedRows++;
                 report(i, 'imported');

@@ -39,7 +39,7 @@ import { useDisposisiOpsi } from '@/hooks/use-disposisi-opsi';
 import { ReferensiSection } from '@/components/surat-keluar/ReferensiSection';
 import { DisposisiRegistrasiSection } from '@/components/surat-masuk/DisposisiRegistrasiSection';
 import { PESAN_TERKENDALI, isSifatTerkendali } from '@/lib/tindak-lanjut';
-import { PESAN_KELAS_TERBATAS_PERAN, adaKelasTersembunyi, bolehMemilihKelas, saringOpsiKelas } from '@/lib/kelas-keamanan';
+import { PESAN_KELAS_TERBATAS_PERAN, PESAN_SURAT_MASUK_PERLU_PERSETUJUAN, adaKelasTersembunyi, bolehMemilihKelas, normalisasiKelas, saringOpsiKelas } from '@/lib/kelas-keamanan';
 import {
     MailOpen,
     ChevronLeft,
@@ -112,17 +112,20 @@ const JENIS_SURAT_OPTIONS = [
     'Pembatalan Hak',
 ];
 
-// Sifat Surat options with colors
+// Sifat Surat options with colors. Terbatas, Rahasia, dan Sangat Rahasia adalah
+// kelas keamanan; saringOpsiKelas menyembunyikan yang di atas plafon peran.
 const SIFAT_SURAT_OPTIONS = [
     { value: 'biasa', label: 'Biasa', color: 'bg-muted text-foreground border-border' },
     { value: 'segera', label: 'Segera', color: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-200' },
     { value: 'sangat_segera', label: 'Sangat Segera', color: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200' },
+    { value: 'terbatas', label: 'Terbatas', color: 'bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-200' },
     { value: 'rahasia', label: 'Rahasia', color: 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-200' },
+    { value: 'sangat_rahasia', label: 'Sangat Rahasia', color: 'bg-rose-100 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-200' },
     { value: 'undangan', label: 'Undangan', color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200' },
     { value: 'penting', label: 'Penting', color: 'bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-200' },
 ];
 
-// Nilai impor seperti 'Rahasia' atau 'Sangat Segera' dipetakan ke nilai opsi
+// Nilai impor seperti 'Rahasia', 'Sangat Rahasia', atau 'Sangat Segera' dipetakan ke nilai opsi
 // agar pilihan tampil terpilih; nilai di luar daftar dibiarkan apa adanya.
 const nilaiOpsiSifat = (nilai) => {
     const kunci = String(nilai ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
@@ -229,7 +232,11 @@ export default function TambahSuratMasuk() {
     // Sifat tersimpan di atas plafon tetap boleh dipertahankan (tidak dikirim ulang),
     // jadi pesan umum "hanya Super Admin" diganti agar tidak bertentangan.
     const sifatDipertahankan = isEditMode && Boolean(sifatTersimpan) && !bolehMemilihKelas(user?.role, sifatTersimpan);
-    const bantuanSifat = sifatDiganti || sifatDibatasi;
+    // Sifat Terbatas ke atas yang baru dipilih membuat surat hanya dapat dibuka
+    // lewat persetujuan akses; persetujuan lama terikat pada kelas sebelumnya.
+    const sifatPerluPersetujuan = isSifatTerkendali(sifatSurat)
+        && (!isEditMode || normalisasiKelas(sifatSurat) !== normalisasiKelas(sifatTersimpan));
+    const bantuanSifat = sifatDiganti || sifatDibatasi || sifatPerluPersetujuan;
     const labelSifat = (value) => SIFAT_SURAT_OPTIONS.find(opt => opt.value === value)?.label ?? value;
 
     // Restore draft on mount (only for new entries, not edit mode)
@@ -683,6 +690,12 @@ export default function TambahSuratMasuk() {
                                                 {sifatDipertahankan
                                                     ? `Sifat ${labelSifat(sifatTersimpan)} yang sudah tersimpan boleh dipertahankan. Bila diganti lalu disimpan, sifat ini hanya dapat dipilih kembali oleh Super Admin.`
                                                     : PESAN_KELAS_TERBATAS_PERAN}
+                                            </p>
+                                        )}
+                                        {sifatPerluPersetujuan && (
+                                            <p className="text-xs text-amber-700 dark:text-amber-300 flex items-start gap-1">
+                                                <Info className="h-3 w-3 mt-0.5 shrink-0" aria-hidden="true" />
+                                                {PESAN_SURAT_MASUK_PERLU_PERSETUJUAN}
                                             </p>
                                         )}
                                     </div>

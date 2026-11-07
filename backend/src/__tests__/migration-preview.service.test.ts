@@ -23,6 +23,7 @@ vi.mock('../services/surat-keluar.service.js', async () => {
 });
 vi.mock('../services/arsip.service.js', () => ({ arsipService: { create: mocks.arsip } }));
 const { migrationService } = await import('../services/migration.service');
+const { PESAN_SIFAT_TIDAK_DIKENAL } = await import('../constants/pesan-akses');
 const actor = { userId: 'operator-a', userEmail: 'operator@example.test', ipAddress: '127.0.0.1', role: 'admin_unit' };
 const types = [
     ['importSuratMasuk', 'masuk', 'Nomor Surat,Tanggal Surat,Perihal,Dari,Kepada', 'SM-1', 'tanggalSurat'],
@@ -201,5 +202,21 @@ describe('class ceiling of a CSV surat masuk row', () => {
         const result = await migrationService.importSuratMasuk(source, 'unit-a', { ...actor, role: 'super_admin' });
         expect(result).toMatchObject({ success: true, imported: 5, skipped: 0 });
         expect(mocks.masuk.mock.calls.map(([record]) => record.sifatSurat)).toEqual(['Biasa', 'Rahasia', 'Sangat Rahasia', 'Terbatas', 'Biasa']);
+    });
+});
+
+describe('sifat that names no class in a CSV surat masuk row', () => {
+    const source = ['Nomor Surat,Tanggal Surat,Perihal,Dari,Sifat Surat', 'SM-1,2026-09-11,Satu,Unit A,Konfidensial',
+        'SM-2,2026-09-11,Dua,Unit A,-', 'SM-3,2026-09-11,Tiga,Unit A,Amat Segera/Kilat'].join('\n');
+    beforeEach(() => { vi.clearAllMocks(); mocks.queue.length = 0; mocks.masuk.mockResolvedValue({ id: 'a' }); });
+
+    it.each([true, false])('rejects the row for a super admin too (dry run %s), and reads "-" as Biasa', async dryRun => {
+        const result = await migrationService.importSuratMasuk(source, 'unit-a', { ...actor, role: 'super_admin' }, { dryRun });
+        const ok = dryRun ? 'valid' : 'imported';
+        expect(result).toMatchObject({ success: false, skipped: 1, valid: 2, imported: dryRun ? 0 : 2 });
+        expect(result.rows.map(row => [row.row, row.status, row.message])).toEqual([
+            [2, 'invalid', PESAN_SIFAT_TIDAK_DIKENAL], [3, ok, undefined], [4, ok, undefined]]);
+        expect(mocks.existing.mock.calls.flat(2).map((key: any) => key.nomorSurat)).toEqual(['SM-2', 'SM-3']);
+        expect(mocks.masuk.mock.calls.map(([record]) => record.sifatSurat)).toEqual(dryRun ? [] : ['Biasa', 'Amat Segera/Kilat']);
     });
 });

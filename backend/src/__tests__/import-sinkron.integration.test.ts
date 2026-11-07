@@ -3,7 +3,7 @@ import type { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import * as schema from '../db/schema';
 import { createMigratedPglite, insertRangkaian, insertSuratKeluar, insertUser, resetRangkaianFixture, seedUnits, uid, type PenggunaUji } from './helpers/lacak-pglite';
-import { PESAN_KELAS_MELEBIHI_KEWENANGAN } from '../constants/pesan-akses';
+import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_SIFAT_TIDAK_DIKENAL } from '../constants/pesan-akses';
 
 // "Sinkron" updates letters an earlier import created when the source changed
 // them later, through the canonical update path and its guards.
@@ -183,6 +183,20 @@ describe('sinkron surat masuk', () => {
             { field: 'jenisSurat', label: 'Jenis surat', before: 'Surat Dinas', after: 'Nota Dinas' },
         ] });
         expect(await perihalOf('SM-1/2026')).toMatchObject({ perihal: 'Permohonan data pertanahan', sifat_surat: 'Biasa', jenis_surat: 'Nota Dinas' });
+    });
+
+    it('still updates a recorded letter from a row whose sifat names no class, but never stores such a row as a new letter', async () => {
+        await importer.importRows('surat-masuk', [header, masuk('SM-3/2026', 'Permohonan data')], 'dir_bppt', audit);
+        const result = await importer.importRows('surat-masuk', [header,
+            ['SM-3/2026', '04/03/2026', 'Permohonan data pertanahan', 'Kantah A', 'Konfidensial', 'Nota Dinas'],
+            masuk('SM-4/2026', 'Surat baru', 'Konfidensial')], 'dir_bppt', audit, {}, undefined, sinkron);
+
+        expect(result).toMatchObject({ success: false, updatedRows: 1, importedRows: 0, skippedRows: 1 });
+        expect(result.rows?.map(row => [row.nomorSurat, row.status, row.reason])).toEqual([
+            ['SM-3/2026', 'updated', undefined], ['SM-4/2026', 'invalid', PESAN_SIFAT_TIDAK_DIKENAL]]);
+        expect(result.rows?.[0].changes?.map(change => change.field)).toEqual(['perihal', 'tanggalSurat', 'jenisSurat']);
+        expect(await perihalOf('SM-3/2026')).toMatchObject({ perihal: 'Permohonan data pertanahan', sifat_surat: 'Biasa', jenis_surat: 'Nota Dinas' });
+        expect(await perihalOf('SM-4/2026')).toBeUndefined();
     });
 
     it('leaves a letter of another sender with the same number alone', async () => {

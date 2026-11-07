@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { suratMasuk, NewSuratMasuk, SuratMasuk } from '../db/schema';
-import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull, inArray } from 'drizzle-orm';
+import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull } from 'drizzle-orm';
 import { ConflictError, DatabaseError } from '../utils/errors';
 import { denganRetryDeadlock } from '../utils/deadlock-retry.js';
 import { createLogger } from '../utils/logger';
@@ -32,6 +32,7 @@ import {
 import { afterSuratMasukInsert, afterSuratMasukMutation, guardSuratMasukMutation } from './rangkaian/tindak-lanjut.hook.js';
 import type { DisposisiRoutingInput } from '../validators/schemas.js';
 import type { RecordUser } from './record-access.service.js';
+import { klasifikasiInSql, sifatKunciSql } from './access/visibility-spec.js';
 
 export type CreateSuratMasukInput = Omit<NewSuratMasuk, 'disposisi'> & {
     disposisi?: string[] | DisposisiRoutingInput | null;
@@ -58,16 +59,7 @@ export interface SuratMasukFilters {
 const log = createLogger('SuratMasukService');
 
 function securityClassificationCondition(classes: string[] | null | undefined) {
-    if (classes === undefined || classes === null) return undefined;
-    if (classes.length === 0) return sql`false`;
-
-    const normalized = sql<string>`CASE
-        WHEN lower(coalesce(${suratMasuk.sifatSurat}, 'biasa'))
-            IN ('biasa', 'biasa/terbuka', 'terbuka', 'segera', 'sangat_segera', 'undangan', 'penting')
-        THEN 'biasa'
-        ELSE replace(replace(lower(coalesce(${suratMasuk.sifatSurat}, 'biasa')), ' ', '_'), '-', '_')
-    END`;
-    return inArray(normalized, classes);
+    return klasifikasiInSql(suratMasuk.sifatSurat, classes);
 }
 
 export class SuratMasukService {
@@ -100,7 +92,9 @@ export class SuratMasukService {
             conditions.push(eq(suratMasuk.jenisSurat, jenisSurat));
         }
         if (sifatSurat) {
-            conditions.push(eq(suratMasuk.sifatSurat, sifatSurat));
+            // Nilai filter berupa kunci formulir ('sangat_segera'); sifat hasil
+            // impor tersimpan seperti di sumber ('Sangat Segera', ' Biasa').
+            conditions.push(eq(sifatKunciSql(suratMasuk.sifatSurat), sifatSurat));
         }
         if (status) {
             conditions.push(eq(suratMasuk.status, status));

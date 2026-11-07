@@ -28,7 +28,8 @@ import {
     normalizeSecurityClassification,
     recordAccessService,
 } from '../services/record-access.service.js';
-import { PESAN_KELAS_MELEBIHI_KEWENANGAN } from '../constants/pesan-akses.js';
+import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_SIFAT_TIDAK_DIKENAL } from '../constants/pesan-akses.js';
+import { rankKelas } from '../services/access/visibility-spec.js';
 import auditLogService from '../services/audit-log.service.js';
 import { suratAksiPayload } from '../services/rangkaian/aksi.js';
 import { fileValidationMiddleware } from '../middlewares/file-validation.middleware.js';
@@ -228,6 +229,9 @@ router.post('/',
             if (!bodyValidation.success) {
                 return sendValidationFailure(res, bodyValidation.error.issues);
             }
+            if (rankKelas(bodyValidation.data.sifatSurat) === null) {
+                return res.status(400).json({ success: false, error: PESAN_SIFAT_TIDAK_DIKENAL });
+            }
             if (!isAllowedForClassification(req.user, bodyValidation.data.sifatSurat)) {
                 return res.status(403).json({ error: PESAN_KELAS_MELEBIHI_KEWENANGAN });
             }
@@ -360,6 +364,9 @@ router.put('/:id', validateIdParam(),
 
             if (!bodyValidation.success) {
                 return sendValidationFailure(res, bodyValidation.error.issues);
+            }
+            if (bodyValidation.data.sifatSurat !== undefined && rankKelas(bodyValidation.data.sifatSurat) === null) {
+                return res.status(400).json({ success: false, error: PESAN_SIFAT_TIDAK_DIKENAL });
             }
             // Mengirim ulang sifat yang sudah melekat (mis. 'Rahasia' hasil impor
             // yang dikirim balik sebagai 'rahasia') bukan kenaikan kelas.

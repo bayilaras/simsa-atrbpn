@@ -27,7 +27,7 @@ Jika sudah memiliki daftar dalam CSV atau Excel (.xlsx):
 4. Klik **Impor**. Berkas panjang diimpor per bagian; periksa hasil sebelum mengulang. Baris yang berhasil tetap tersimpan walaupun baris lain gagal, dan baris yang sudah tersimpan dikenali sebagai duplikat saat impor ulang.
 5. Periksa **Rincian hasil impor per baris** (filter "Perlu dicek" menampilkan baris yang ganda di sumber, cocok dengan surat yang sudah dihapus, atau ditolak, beserta alasannya) atau simpan dengan **Unduh laporan (CSV)**, lalu perbaiki baris yang ditolak pada sumbernya.
 
-Pada surat masuk, kolom Sifat Surat sekaligus menjadi klasifikasi keamanan. Baris bersifat **Rahasia** atau **Sangat Rahasia** hanya dapat diimpor oleh Super Admin. Bila Admin Unit Kerja mengimpornya, baris itu ditolak dengan keterangan "Klasifikasi keamanan melebihi kewenangan pengguna…" dan baris lain tetap tersimpan. Minta Super Admin mengimpor atau mencatat surat tersebut.
+Pada surat masuk, kolom Sifat Surat sekaligus menjadi klasifikasi keamanan. Baris bersifat **Rahasia** atau **Sangat Rahasia** hanya dapat diimpor oleh Super Admin. Bila Admin Unit Kerja, Admin Dirjen, atau Admin Sesditjen mengimpornya, baris itu ditolak dengan keterangan "Klasifikasi keamanan melebihi kewenangan pengguna…" dan baris lain tetap tersimpan. Minta Super Admin mengimpor atau mencatat surat tersebut.
 
 Bila sumber diubah setelah diimpor (misalnya perihal diperbaiki), centang **Sinkronkan surat yang sudah tercatat** sebelum mengimpor ulang. Perihal, tanggal, sifat, tautan dokumen, dan jenis naskah surat keluar (surat masuk: perihal, tanggal, jenis surat) yang berbeda diperbarui dan dicatat di log audit; sel kosong tidak menghapus data, dan surat yang sudah disetujui, diarsipkan, atau dihapus tidak diubah.
 
