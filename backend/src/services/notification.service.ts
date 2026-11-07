@@ -21,14 +21,43 @@ import {
     isValidNotificationId,
     MAX_NOTIFICATION_READ_IDS,
 } from '../utils/notification-id.js';
-import { klasifikasiInSql } from './access/visibility-spec';
+import { klasifikasiInSql, normalizeSecurityClassification } from './access/visibility-spec';
 import { LABEL_DIKECUALIKAN, readRefKey, recordAccessService, type RecordUser } from './rangkaian/deps.js';
 import { jakartaDate } from '../utils/jakarta-date.js';
-import { normalizeSifatSurat } from './sifat-surat.js';
 
 type SecurityClassScope = string[] | null | undefined;
 const ADMIN_NOTIFICATION_ROLES = new Set(['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']);
 const RETENTION_NOTIFICATION_ROLES = new Set([...ADMIN_NOTIFICATION_ROLES, 'auditor']);
+
+// Sifat hasil impor tersimpan seperti di sumber ('Sangat Segera', 'Amat Segera/Kilat'),
+// jadi dibaca dengan kunci yang sama dengan sifatKunciSql (trim, lower, `[\s-]+` -> '_').
+const URGENSI_SURAT_MASUK = new Map<string, { type: 'urgent' | 'warning'; label: string }>([
+    ['sangat_segera', { type: 'urgent', label: 'Sangat Segera' }],
+    ['segera', { type: 'warning', label: 'Segera' }],
+    ['kilat', { type: 'urgent', label: 'Kilat' }],
+    ['amat_segera', { type: 'urgent', label: 'Amat Segera' }],
+    ['amat_segera/kilat', { type: 'urgent', label: 'Amat Segera/Kilat' }],
+    ['amat_segera_/_kilat', { type: 'urgent', label: 'Amat Segera/Kilat' }],
+]);
+const LABEL_KELAS_SURAT_MASUK = new Map([
+    ['terbatas', 'Terbatas'],
+    ['rahasia', 'Rahasia'],
+    ['sangat_rahasia', 'Sangat Rahasia'],
+]);
+
+/** Urgensi dan label sifat untuk notifikasi surat masuk yang belum diproses. */
+export function sifatNotifikasiSuratMasuk(sifatSurat: string | null | undefined): {
+    urgensi: 'urgent' | 'warning' | null;
+    label: string;
+} {
+    const kunci = (sifatSurat ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+    const urgensi = URGENSI_SURAT_MASUK.get(kunci);
+    if (urgensi) return { urgensi: urgensi.type, label: urgensi.label };
+    return {
+        urgensi: null,
+        label: LABEL_KELAS_SURAT_MASUK.get(normalizeSecurityClassification(sifatSurat)) ?? 'Biasa',
+    };
+}
 
 function incomingSecurityCondition(classes: SecurityClassScope) {
     return klasifikasiInSql(suratMasuk.sifatSurat, classes);
@@ -220,18 +249,14 @@ export class NotificationService {
             const tanggalSurat = surat.tanggalSurat ? new Date(surat.tanggalSurat) : new Date(surat.createdAt);
             const daysSince = Math.floor((currentDate.getTime() - tanggalSurat.getTime()) / (1000 * 60 * 60 * 24));
 
-            // Determine priority based on sifat surat and age. Sifat hasil impor
-            // tersimpan seperti di sumber ('Sangat Segera'), jadi dibaca sebagai kunci.
-            const kunci = normalizeSifatSurat(surat.sifatSurat);
+            // Determine priority based on sifat surat and age
+            const { urgensi, label: sifatLabel } = sifatNotifikasiSuratMasuk(surat.sifatSurat);
             let type: 'urgent' | 'warning' | 'info' = 'info';
-            if (kunci === 'sangat_segera' || daysSince > 7) {
+            if (urgensi === 'urgent' || daysSince > 7) {
                 type = 'urgent';
-            } else if (kunci === 'segera' || daysSince > 3) {
+            } else if (urgensi === 'warning' || daysSince > 3) {
                 type = 'warning';
             }
-
-            const sifatLabel = kunci === 'sangat_segera' ? 'Sangat Segera' :
-                kunci === 'segera' ? 'Segera' : 'Biasa';
 
             return {
                 id: statefulId('surat-masuk', surat.id, surat.status || 'pending', type),
