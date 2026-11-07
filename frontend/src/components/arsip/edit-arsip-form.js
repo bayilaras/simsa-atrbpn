@@ -43,6 +43,91 @@ export const PESAN_KELAS_PERLU_PERSETUJUAN =
 export const PESAN_ARSIP_TIDAK_DAPAT_DIUBAH =
     'Arsip ini tidak dapat diubah dengan akun Anda. Arsip mungkin sedang dikunci untuk penyusutan atau legal hold, memerlukan izin kelola, atau sudah tidak tersedia. Muat ulang halaman untuk melihat kondisi terbaru.'
 
+export const PESAN_REKONSILIASI_DIKUNCI =
+    'Rekonsiliasi dikunci karena arsip berada dalam legal hold atau workflow penyusutan.'
+
+// Label mode sama dengan halaman Persetujuan Akses Rekod (RecordAccessGrants.jsx).
+const LABEL_MODE_IZIN = Object.freeze({
+    view: 'Tayang saja',
+    download: 'Tayang dan unduh',
+    manage: 'Tayang dan kelola (tanpa unduh)',
+})
+
+function formatBerlakuSampai(nilai) {
+    if (!nilai) return ''
+    const tanggal = new Date(nilai)
+    if (Number.isNaN(tanggal.getTime())) return ''
+    return tanggal.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+// Permohonan baru ditolak selama grant yang disetujui masih berlaku, dan
+// hanya Super Admin yang dapat mencabutnya; saran di bawah mengikuti itu.
+function pesanPerluIzinKelola(izinAkses) {
+    const mode = LABEL_MODE_IZIN[izinAkses?.mode] || LABEL_MODE_IZIN.view
+    const sampai = formatBerlakuSampai(izinAkses?.berlakuSampai)
+    return [
+        'Arsip berkelas Terbatas atau lebih tinggi hanya dapat diubah dengan persetujuan akses mode "Tayang dan kelola".',
+        `Persetujuan Anda saat ini: "${mode}"${sampai ? `, berlaku sampai ${sampai}` : ''}.`,
+        'Selama persetujuan itu masih berlaku, permohonan baru akan ditolak. Minta Super Admin mencabutnya atau tunggu sampai masa berlakunya berakhir,',
+        'lalu ajukan mode "Tayang dan kelola" di halaman Persetujuan Akses Rekod (menu Persetujuan Akses Arsip).',
+    ].join(' ')
+}
+
+/** Teks per kode `alasanTerkunci` dari GET /api/arsip/:id (backend services/access/arsip-aksi.ts). */
+export const PESAN_ALASAN_TERKUNCI = Object.freeze({
+    peran_baca_saja: 'Peran Anda hanya dapat melihat arsip ini.',
+    penyusutan_dieksekusi: 'Metadata dikunci karena penyusutan arsip ini sudah dilaksanakan.',
+    legal_hold: 'Metadata dikunci karena arsip sedang dalam legal hold.',
+    proses_penyusutan: 'Metadata dikunci karena arsip sedang dalam proses penyusutan.',
+    perlu_izin_kelola: pesanPerluIzinKelola,
+    // Kode khusus frontend: muat ulang setelah kelas dinaikkan ditolak server.
+    perlu_persetujuan_akses:
+        'Arsip kini berkelas Terbatas atau lebih tinggi dan memerlukan persetujuan akses sebelum dapat dibuka atau diubah kembali.',
+    tidak_berwenang: 'Arsip ini tidak dapat diubah dengan akun Anda.',
+})
+
+// Kunci karena keadaan rekod; untuk rekonsiliasi tetap memakai kalimat lamanya.
+const ALASAN_KEADAAN_REKOD = new Set(['penyusutan_dieksekusi', 'legal_hold', 'proses_penyusutan'])
+
+function teksAlasanTerkunci(kode, izinAkses) {
+    const pesan = Object.hasOwn(PESAN_ALASAN_TERKUNCI, kode ?? '')
+        ? PESAN_ALASAN_TERKUNCI[kode]
+        : PESAN_ALASAN_TERKUNCI.tidak_berwenang
+    return typeof pesan === 'function' ? pesan(izinAkses) : pesan
+}
+
+// Cadangan bila respons belum membawa aksiDiizinkan (backend lama): cermin
+// keadaan rekod dari record-access mutable dan arsipService.update.
+function alasanMetadataDikunci(arsip) {
+    if (arsip.disposalStatus === 'executed') return PESAN_ALASAN_TERKUNCI.penyusutan_dieksekusi
+    if (arsip.legalHold) return PESAN_ALASAN_TERKUNCI.legal_hold
+    if (arsip.disposalStatus !== 'active' || arsip.disposalBatchId) return PESAN_ALASAN_TERKUNCI.proses_penyusutan
+    return ''
+}
+
+function alasanRekonsiliasiDikunci(arsip) {
+    return arsip.legalHold || arsip.disposalStatus !== 'active' || arsip.disposalBatchId
+        ? PESAN_REKONSILIASI_DIKUNCI
+        : ''
+}
+
+/**
+ * Boleh tidaknya aksi pada halaman detail arsip. Bila server mengirim
+ * aksiDiizinkan, server yang menentukan; bila tidak, keadaan rekod saja.
+ */
+export function statusAksiArsip(arsip = {}, aksi = 'ubah_metadata') {
+    if (Array.isArray(arsip.aksiDiizinkan)) {
+        const boleh = arsip.aksiDiizinkan.includes(aksi)
+        if (boleh) return { boleh, alasan: '' }
+        if (aksi === 'rekonsiliasi_aturan' && ALASAN_KEADAAN_REKOD.has(arsip.alasanTerkunci)) {
+            return { boleh, alasan: PESAN_REKONSILIASI_DIKUNCI }
+        }
+        return { boleh, alasan: teksAlasanTerkunci(arsip.alasanTerkunci, arsip.izinAkses) }
+    }
+    const alasan = aksi === 'rekonsiliasi_aturan' ? alasanRekonsiliasiDikunci(arsip) : alasanMetadataDikunci(arsip)
+    return { boleh: !alasan, alasan }
+}
+
 export const LABEL_FIELD = Object.freeze({
     nomorBerkas: 'Nomor Berkas',
     unitPengolah: 'Unit Pengolah',
