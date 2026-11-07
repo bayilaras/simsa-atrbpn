@@ -48,6 +48,12 @@ const ENTITY_CONFIG = {
     'surat_distribution': { label: 'Disposisi', color: 'text-teal-700', bgColor: 'bg-teal-50 dark:bg-teal-500/15' },
 };
 
+// Status changes.itemSync pada audit ubah arsip (StatusSinkronItemArsip di
+// backend services/arsip.service.ts); hanya status yang perlu penjelasan.
+const LABEL_SINKRON_ITEM = {
+    'item_utama_ambigu': 'Item yang menjadi ringkasan berkas tidak dapat dikenali, sehingga isian item tidak diselaraskan. Hanya item di lokasi lama yang sama yang ikut dipindahkan bila lokasi diubah.',
+};
+
 export default function AuditLog() {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -132,6 +138,27 @@ export default function AuditLog() {
         return colors[index];
     };
 
+    const renderFieldChange = (field, before, after) => (
+        <div key={field} className="grid grid-cols-1 sm:grid-cols-[120px_1fr] gap-1 sm:gap-4 text-xs sm:text-sm">
+            <span className="font-medium text-muted-foreground capitalize">{field.replace('_', ' ')}:</span>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                {before?.[field] !== undefined && (
+                    <span className="text-red-600 line-through bg-red-50 dark:bg-red-500/15 px-1 rounded truncate max-w-xs block" title={String(before[field])}>
+                        {String(before[field])}
+                    </span>
+                )}
+                {before?.[field] !== undefined && after?.[field] !== undefined && (
+                    <span className="text-muted-foreground hidden sm:inline">→</span>
+                )}
+                {after?.[field] !== undefined && (
+                    <span className="text-green-600 bg-green-50 dark:bg-green-500/15 px-1 rounded font-medium break-all" title={String(after[field])}>
+                        {String(after[field])}
+                    </span>
+                )}
+            </div>
+        </div>
+    );
+
     const renderChanges = (changes) => {
         if (!changes) return null;
 
@@ -139,6 +166,10 @@ export default function AuditLog() {
         if (!before && !after) return null;
 
         const changedFields = fields || Object.keys({ ...before, ...after });
+        // Item berkas yang ikut diperbarui saat ringkasan arsip diubah
+        // (arsipService.update di backend).
+        const changedItems = Array.isArray(changes.items) ? changes.items : [];
+        const itemSyncNote = Object.hasOwn(LABEL_SINKRON_ITEM, changes.itemSync ?? '') ? LABEL_SINKRON_ITEM[changes.itemSync] : null;
 
         return (
             <div className="mt-3 bg-muted/30 rounded-lg text-sm border border-border/50 overflow-hidden">
@@ -147,27 +178,22 @@ export default function AuditLog() {
                     <span className="font-medium text-xs uppercase text-muted-foreground">Detail Perubahan</span>
                 </div>
                 <div className="p-3 space-y-2">
-                    {changedFields.map(field => (
-                        <div key={field} className="grid grid-cols-1 sm:grid-cols-[120px_1fr] gap-1 sm:gap-4 text-xs sm:text-sm">
-                            <span className="font-medium text-muted-foreground capitalize">{field.replace('_', ' ')}:</span>
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
-                                {before?.[field] !== undefined && (
-                                    <span className="text-red-600 line-through bg-red-50 dark:bg-red-500/15 px-1 rounded truncate max-w-xs block" title={String(before[field])}>
-                                        {String(before[field])}
-                                    </span>
-                                )}
-                                {before?.[field] !== undefined && after?.[field] !== undefined && (
-                                    <span className="text-muted-foreground hidden sm:inline">→</span>
-                                )}
-                                {after?.[field] !== undefined && (
-                                    <span className="text-green-600 bg-green-50 dark:bg-green-500/15 px-1 rounded font-medium break-all" title={String(after[field])}>
-                                        {String(after[field])}
-                                    </span>
-                                )}
-                            </div>
-                        </div>
-                    ))}
+                    {changedFields.map(field => renderFieldChange(field, before, after))}
                 </div>
+                {(changedItems.length > 0 || itemSyncNote) && (
+                    <div className="p-3 space-y-3 border-t border-border/50">
+                        <span className="block font-medium text-xs uppercase text-muted-foreground">Daftar Item Arsip</span>
+                        {itemSyncNote && <p className="text-xs text-muted-foreground">{itemSyncNote}</p>}
+                        {changedItems.map(item => (
+                            <div key={item.id} className="space-y-2">
+                                <p className="text-xs text-muted-foreground">
+                                    Item <span className="font-mono break-all">{item.id}</span>
+                                </p>
+                                {Object.keys({ ...item.before, ...item.after }).map(field => renderFieldChange(field, item.before, item.after))}
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
         );
     };
