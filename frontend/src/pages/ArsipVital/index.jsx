@@ -18,6 +18,7 @@ import { KATEGORI_CONFIG, KEKRITISAN_CONFIG, STATUS_PROTEKSI_CONFIG } from './co
 import ArsipVitalTable from './ArsipVitalTable'
 import ArsipVitalForm from './ArsipVitalForm'
 import ArsipVitalDetail from './ArsipVitalDetail'
+import { buildCreatePayload, buildUpdatePayload, formFromItem } from './payload'
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 
@@ -132,7 +133,7 @@ export default function ArsipVital() {
             return
         }
         try {
-            await arsipVitalService.create({ ...form, unitKerjaId })
+            await arsipVitalService.create(buildCreatePayload(form, unitKerjaId))
             toast({ title: 'Berhasil', description: 'Arsip vital berhasil ditetapkan' })
             setShowCreateDialog(false)
             loadData(); loadStats()
@@ -143,7 +144,7 @@ export default function ArsipVital() {
 
     const handleUpdate = async () => {
         try {
-            await arsipVitalService.update(selectedItem.id, form)
+            await arsipVitalService.update(selectedItem.id, buildUpdatePayload(form, formFromItem(selectedItem)))
             toast({ title: 'Berhasil', description: 'Data berhasil diperbarui' })
             setShowDetailDialog(false); setIsEditing(false); loadData()
         } catch (err) {
@@ -164,16 +165,7 @@ export default function ArsipVital() {
 
     const openDetail = (item) => {
         setSelectedItem(item)
-        setForm({
-            arsipId: item.arsipId, kategoriVital: item.kategoriVital,
-            tingkatKekritisan: item.tingkatKekritisan, alasanPenetapan: item.alasanPenetapan,
-            metodeProteksi: item.metodeProteksi, lokasiBackup: item.lokasiBackup,
-            mediaBackup: item.mediaBackup, jadwalBackup: item.jadwalBackup,
-            penanggungJawab: item.penanggungJawab,
-            tanggalPenetapan: item.tanggalPenetapan?.split('T')[0],
-            tanggalReviewSelanjutnya: item.tanggalReviewSelanjutnya?.split('T')[0],
-            statusProteksi: item.statusProteksi
-        })
+        setForm(formFromItem(item))
         setIsEditing(false)
         setShowDetailDialog(true)
     }
@@ -200,7 +192,7 @@ export default function ArsipVital() {
 
     const getStatValue = (arr, key) => {
         if (!arr) return 0
-        const item = arr.find(x => x.status === key || x.kategori === key || x.kekritisan === key)
+        const item = arr.find(x => x.status === key || x.kategori === key || x.tingkat === key)
         return item ? parseInt(item.count) : 0
     }
 

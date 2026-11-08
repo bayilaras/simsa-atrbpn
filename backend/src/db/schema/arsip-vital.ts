@@ -19,7 +19,7 @@ export const arsipVital = pgTable('arsip_vital', {
 
     // Kategori & Tingkat Kekritisan
     kategoriVital: varchar('kategori_vital', { length: 30 }).notNull(),
-    // 'hak_keperdataan' | 'operasional' | 'keuangan' | 'keamanan'
+    // KATEGORI_ARSIP_VITAL: 'aset' | 'hukum' | 'personal' | 'keuangan' | 'kebijakan'
     tingkatKekritisan: varchar('tingkat_kekritisan', { length: 20 }).notNull(),
     // 'sangat_kritis' | 'kritis' | 'penting'
     alasanPenetapan: text('alasan_penetapan'),

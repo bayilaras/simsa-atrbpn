@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import Dosir from './Dosir';
 import DosirDetail from './DosirDetail';
 const mocks = vi.hoisted(() => ({ user: {}, create: vi.fn(), update: vi.fn(), getAll: vi.fn(), getById: vi.fn(), units: vi.fn() }));
-vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: mocks.user }) }));
+vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: mocks.user, canWrite: () => true }) }));
 vi.mock('@/services/settings.service', () => ({ default: { getAllUnitKerja: mocks.units } }));
 vi.mock('@/services/dosir.service', () => ({ default: { getAll: mocks.getAll, getById: mocks.getById, getTimeline: async () => [], getStats: async () => ({}), create: mocks.create, update: mocks.update } }));
 beforeEach(() => {

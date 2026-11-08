@@ -23,7 +23,10 @@ import {
     ArrowRight, Plus, Loader2
 } from 'lucide-react'
 import dosirService from '@/services/dosir.service'
+import { useAuth } from '@/context/AuthContext'
+import { useToast } from '@/hooks/use-toast'
 import { TimelineItem } from '@/components/surat/TimelineItem'
+import { TambahSuratDosirDialog } from '@/components/dosir/TambahSuratDosirDialog'
 import { format, parseISO, formatDistanceToNow } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
 
@@ -69,6 +72,8 @@ function EmptyState({ icon: Icon, title, description, action }) {
 export default function DosirDetail() {
     const { id } = useParams()
     const navigate = useNavigate()
+    const { canWrite } = useAuth()
+    const { toast } = useToast()
     const [dosir, setDosir] = useState(null)
     const [timeline, setTimeline] = useState([])
     const [loading, setLoading] = useState(true)
@@ -76,12 +81,14 @@ export default function DosirDetail() {
     const [editForm, setEditForm] = useState({})
     const [saveLoading, setSaveLoading] = useState(false)
     const [saveError, setSaveError] = useState('')
+    const [activeTab, setActiveTab] = useState('timeline')
+    const [addSurat, setAddSurat] = useState({ open: false, jenis: 'masuk' })
     const invalidDateRange = Boolean(editForm.tanggalMulai && editForm.tanggalSelesai && editForm.tanggalSelesai < editForm.tanggalMulai)
 
-    // Data fetching
-    const fetchData = useCallback(async () => {
+    // Data fetching. A silent refresh keeps the page mounted, so the scroll position stays put.
+    const fetchData = useCallback(async ({ silent = false } = {}) => {
         try {
-            setLoading(true)
+            if (!silent) setLoading(true)
             const [dosirRes, timelineRes] = await Promise.all([
                 dosirService.getById(id),
                 dosirService.getTimeline(id),
@@ -134,6 +141,17 @@ export default function DosirDetail() {
         }
     }
 
+    const openAddSurat = (jenis) => setAddSurat({ open: true, jenis })
+
+    const handleSuratAdded = ({ jenis, surat }) => {
+        const label = surat.nomorSurat || surat.perihal
+        toast({
+            title: 'Surat ditambahkan ke dosir',
+            description: `${jenis === 'keluar' ? 'Surat keluar' : 'Surat masuk'}${label ? ` ${label}` : ''} kini tercatat di dosir ini.`,
+        })
+        fetchData({ silent: true })
+    }
+
     if (loading) {
         return (
             <div className="flex items-center justify-center h-[50vh]">
@@ -160,6 +178,7 @@ export default function DosirDetail() {
     }
 
     const statusConf = STATUS_OPTIONS.find(s => s.value === dosir.status) || STATUS_OPTIONS[0]
+    const canAddSurat = canWrite(dosir.unitKerjaId)
 
     // Sort timeline descending by date
     const sortedTimeline = [...timeline].sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
@@ -355,23 +374,31 @@ export default function DosirDetail() {
 
                 {/* Left Column: Timeline & Lists */}
                 <div className="lg:col-span-2 space-y-6">
-                    <Tabs defaultValue="timeline" className="w-full">
-                        <TabsList className="w-full justify-start bg-muted p-1 rounded-xl mb-6">
-                            <TabsTrigger value="timeline" className="flex-1 sm:flex-none rounded-lg data-[state=active]:bg-card data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm">
-                                <Clock className="mr-2 h-4 w-4" />
-                                Kronologi
-                            </TabsTrigger>
-                            <TabsTrigger value="masuk" className="flex-1 sm:flex-none rounded-lg data-[state=active]:bg-card data-[state=active]:text-emerald-600 data-[state=active]:shadow-sm">
-                                <MailPlus className="mr-2 h-4 w-4" />
-                                Surat Masuk
-                                <Badge variant="secondary" className="ml-2 bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 h-5 px-1.5">{dosir.suratMasuk?.length || 0}</Badge>
-                            </TabsTrigger>
-                            <TabsTrigger value="keluar" className="flex-1 sm:flex-none rounded-lg data-[state=active]:bg-card data-[state=active]:text-blue-600 data-[state=active]:shadow-sm">
-                                <MailMinus className="mr-2 h-4 w-4" />
-                                Surat Keluar
-                                <Badge variant="secondary" className="ml-2 bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 h-5 px-1.5">{dosir.suratKeluar?.length || 0}</Badge>
-                            </TabsTrigger>
-                        </TabsList>
+                    <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+                            <TabsList className="w-full justify-start bg-muted p-1 rounded-xl sm:flex-1">
+                                <TabsTrigger value="timeline" className="flex-1 sm:flex-none rounded-lg data-[state=active]:bg-card data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm">
+                                    <Clock className="mr-2 h-4 w-4" />
+                                    Kronologi
+                                </TabsTrigger>
+                                <TabsTrigger value="masuk" className="flex-1 sm:flex-none rounded-lg data-[state=active]:bg-card data-[state=active]:text-emerald-600 data-[state=active]:shadow-sm">
+                                    <MailPlus className="mr-2 h-4 w-4" />
+                                    Surat Masuk
+                                    <Badge variant="secondary" className="ml-2 bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 h-5 px-1.5">{dosir.suratMasuk?.length || 0}</Badge>
+                                </TabsTrigger>
+                                <TabsTrigger value="keluar" className="flex-1 sm:flex-none rounded-lg data-[state=active]:bg-card data-[state=active]:text-blue-600 data-[state=active]:shadow-sm">
+                                    <MailMinus className="mr-2 h-4 w-4" />
+                                    Surat Keluar
+                                    <Badge variant="secondary" className="ml-2 bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 h-5 px-1.5">{dosir.suratKeluar?.length || 0}</Badge>
+                                </TabsTrigger>
+                            </TabsList>
+                            {canAddSurat && (
+                                <Button className="shrink-0 bg-indigo-600 hover:bg-indigo-700" onClick={() => openAddSurat(activeTab === 'keluar' ? 'keluar' : 'masuk')}>
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    Tambah Surat
+                                </Button>
+                            )}
+                        </div>
 
                         <TabsContent value="timeline" className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-300">
                             {sortedTimeline.length > 0 ? (
@@ -389,12 +416,12 @@ export default function DosirDetail() {
                                     icon={Clock}
                                     title="Belum Ada Kronologi"
                                     description="Dosir ini belum memiliki surat masuk atau surat keluar yang terlampir."
-                                    action={
-                                        <Button variant="outline" className="mt-4" onClick={() => navigate('/surat/masuk')}>
+                                    action={canAddSurat && (
+                                        <Button variant="outline" className="mt-4" onClick={() => openAddSurat('masuk')}>
                                             <Plus className="mr-2 h-4 w-4" />
                                             Tambah Surat
                                         </Button>
-                                    }
+                                    )}
                                 />
                             )}
                         </TabsContent>
@@ -543,6 +570,17 @@ export default function DosirDetail() {
                     </Card>
                 </div>
             </div>
+
+            {canAddSurat && (
+                <TambahSuratDosirDialog
+                    open={addSurat.open}
+                    onOpenChange={open => setAddSurat(prev => ({ ...prev, open }))}
+                    dosir={dosir}
+                    jenisAwal={addSurat.jenis}
+                    onBerhasil={handleSuratAdded}
+                    onMuatUlang={() => fetchData({ silent: true })}
+                />
+            )}
         </div>
     )
 }

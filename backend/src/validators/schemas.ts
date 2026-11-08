@@ -447,20 +447,30 @@ export const queryArsipSchema = paginationSchema.extend({
 });
 
 // Arsip Vital schemas
+// Same keys as KATEGORI_CONFIG in frontend/src/pages/ArsipVital/constants.js.
+export const KATEGORI_ARSIP_VITAL = ['aset', 'hukum', 'personal', 'keuangan', 'kebijakan'] as const;
+
+// A blank form input means "not provided". null stores no value, which on
+// update clears the field.
+const optionalVitalField = <T extends z.ZodType>(schema: T) => z.preprocess(
+    value => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    schema.nullable().optional(),
+);
+
 export const createArsipVitalSchema = z.object({
     arsipId: uuidSchema,
     unitKerjaId: z.string().min(1, 'Unit kerja is required').max(50),
-    kategoriVital: z.enum(['hak_keperdataan', 'operasional', 'keuangan', 'keamanan']),
+    kategoriVital: z.enum(KATEGORI_ARSIP_VITAL),
     tingkatKekritisan: z.enum(['sangat_kritis', 'kritis', 'penting']),
-    alasanPenetapan: z.string().max(2000).optional(),
-    metodeProteksi: z.enum(['duplikasi', 'dispersal', 'vault', 'digital_backup']).optional(),
-    lokasiBackup: z.string().max(255).optional(),
-    mediaBackup: z.string().max(100).optional(),
-    jadwalBackup: z.enum(['harian', 'mingguan', 'bulanan', 'tahunan']).optional(),
-    tanggalPenetapan: dateSchema.optional(),
-    tanggalReviewSelanjutnya: dateSchema.optional(),
+    alasanPenetapan: optionalVitalField(z.string().max(2000)),
+    metodeProteksi: optionalVitalField(z.enum(['duplikasi', 'dispersal', 'vault', 'digital_backup'])),
+    lokasiBackup: optionalVitalField(z.string().max(255)),
+    mediaBackup: optionalVitalField(z.string().max(100)),
+    jadwalBackup: optionalVitalField(z.enum(['harian', 'mingguan', 'bulanan', 'tahunan'])),
+    tanggalPenetapan: optionalVitalField(dateSchema),
+    tanggalReviewSelanjutnya: optionalVitalField(dateSchema),
     statusProteksi: z.enum(['terlindungi', 'perlu_review', 'belum_diproteksi']).optional().default('belum_diproteksi'),
-    penanggungJawab: z.string().max(255).optional(),
+    penanggungJawab: optionalVitalField(z.string().max(255)),
 });
 
 export const updateArsipVitalSchema = createArsipVitalSchema.partial()

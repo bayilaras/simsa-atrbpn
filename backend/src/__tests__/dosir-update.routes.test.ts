@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ValidationError } from '../utils/errors.js';
 import { publicErrorResponse, publicErrorStatus } from '../utils/public-error.js';
 
-const mocks = vi.hoisted(() => ({ update: vi.fn() }));
+const mocks = vi.hoisted(() => ({ update: vi.fn(), addSuratMasuk: vi.fn(), addSuratKeluar: vi.fn() }));
 
 vi.mock('../middlewares/auth.middleware', () => ({
     authMiddleware: (req: any, _res: any, next: any) => {
@@ -15,7 +15,9 @@ vi.mock('../middlewares/auth.middleware', () => ({
 vi.mock('../middlewares/rate-limiter.middleware', () => ({
     sensitiveLimiter: (_req: any, _res: any, next: any) => next(),
 }));
-vi.mock('../services/dosir.service', () => ({ dosirService: { update: mocks.update } }));
+vi.mock('../services/dosir.service', () => ({
+    dosirService: { update: mocks.update, addSuratMasuk: mocks.addSuratMasuk, addSuratKeluar: mocks.addSuratKeluar },
+}));
 vi.mock('../services/record-access.service', () => ({ allowedSecurityClassifications: () => ['biasa'] }));
 vi.mock('../utils/logger', () => ({ createLogger: () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn() }) }));
 
@@ -31,7 +33,11 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 const dosirId = 'f3ab2f27-6759-4f0b-a995-bc874dad9828';
 const invalidRangeMessage = 'Tanggal selesai tidak boleh sebelum tanggal mulai.';
 
-beforeEach(() => { mocks.update.mockReset(); });
+beforeEach(() => {
+    mocks.update.mockReset();
+    mocks.addSuratMasuk.mockReset();
+    mocks.addSuratKeluar.mockReset();
+});
 
 describe('dosir update request and error boundaries', () => {
     it('rejects an inverted pair in the request before calling the service', async () => {
@@ -74,5 +80,44 @@ describe('dosir update request and error boundaries', () => {
         );
         expect(response.status).toBe(404);
         expect(response.body).toEqual({ success: false, error: 'Dosir not found' });
+    });
+});
+
+describe('dosir surat link responses', () => {
+    const suratId = '0b6f0c55-3f0e-4f43-9d39-6c1f0e7f2a10';
+
+    it('links a surat keluar within the caller unit scope', async () => {
+        mocks.addSuratKeluar.mockResolvedValue({ dosirId, suratKeluarId: suratId });
+        const response = await request(app).post(`/api/dosir/${dosirId}/surat`).send({ type: 'keluar', suratId, notes: 'Catatan sintetis' });
+        expect(mocks.addSuratKeluar).toHaveBeenCalledWith(
+            dosirId, suratId, 'Catatan sintetis', 'unit-a', ['biasa'], expect.objectContaining({ userId: 'synthetic-user' }),
+        );
+        expect(mocks.addSuratMasuk).not.toHaveBeenCalled();
+        expect(response.status).toBe(201);
+    });
+
+    it('returns an Indonesian message when the dosir or surat is outside the scope', async () => {
+        mocks.addSuratMasuk.mockResolvedValue(null);
+        const response = await request(app).post(`/api/dosir/${dosirId}/surat`).send({ type: 'masuk', suratId });
+        expect(response.status).toBe(404);
+        expect(response.body).toEqual({
+            success: false, error: 'Dosir atau surat tidak ditemukan, atau surat bukan milik unit kerja dosir ini.',
+        });
+    });
+
+    it('returns an Indonesian conflict message for a surat that is already linked', async () => {
+        mocks.addSuratMasuk.mockRejectedValue(Object.assign(new Error('wrapped'), { cause: { code: '23505' } }));
+        const response = await request(app).post(`/api/dosir/${dosirId}/surat`).send({ type: 'masuk', suratId });
+        expect(response.status).toBe(409);
+        expect(response.body).toEqual({ success: false, error: 'Surat ini sudah ada di dosir.' });
+    });
+
+    it('returns an Indonesian message without internal details on unexpected failures', async () => {
+        const privateMarker = 'SYNTHETIC_PRIVATE_LINK_FAILURE';
+        mocks.addSuratMasuk.mockRejectedValue(new Error(privateMarker));
+        const response = await request(app).post(`/api/dosir/${dosirId}/surat`).send({ type: 'masuk', suratId });
+        expect(response.status).toBe(500);
+        expect(response.body).toEqual({ success: false, error: 'Surat belum dapat ditambahkan ke dosir. Silakan coba lagi.' });
+        expect(response.text).not.toContain(privateMarker);
     });
 });

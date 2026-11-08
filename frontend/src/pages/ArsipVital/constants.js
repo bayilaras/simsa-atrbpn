@@ -1,4 +1,5 @@
 // Constants based on Permen ATRBPN 2 Tahun 2026
+// Keys must match KATEGORI_ARSIP_VITAL in backend/src/validators/schemas.ts.
 export const KATEGORI_CONFIG = {
     'aset': { label: 'Aset Negara (Sertipikat, BPKB, Gedung)', color: 'text-blue-600 border-blue-600 bg-blue-50' },
     'hukum': { label: 'Hukum (Perjanjian, Hak Paten, Perkara)', color: 'text-purple-600 border-purple-600 bg-purple-50' },
@@ -22,5 +23,6 @@ export const STATUS_PROTEKSI_CONFIG = {
 export const METODE_PROTEKSI = [
     { value: 'duplikasi', label: 'Duplikasi (Microfilm/Digital)' },
     { value: 'dispersal', label: 'Dispersal (Pemencaran/Off-site)' },
-    { value: 'vault', label: 'Vaulting (Brankas Tahan Api)' }
+    { value: 'vault', label: 'Vaulting (Brankas Tahan Api)' },
+    { value: 'digital_backup', label: 'Cadangan Digital (Backup Berkala)' }
 ]

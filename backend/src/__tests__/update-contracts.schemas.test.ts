@@ -25,7 +25,7 @@ describe('partial update contracts', () => {
         }).status).toBe('belum_dibalas');
         const parent = { arsipId: '550e8400-e29b-41d4-a716-446655440001', unitKerjaId: 'ditjen' };
         expect(createArsipVitalSchema.parse({
-            ...parent, kategoriVital: 'operasional', tingkatKekritisan: 'penting', alasanPenetapan: 'Dasar',
+            ...parent, kategoriVital: 'aset', tingkatKekritisan: 'penting', alasanPenetapan: 'Dasar',
         }).statusProteksi).toBe('belum_diproteksi');
         expect(createArsipTerjagaSchema.parse({
             ...parent, kategoriTerjaga: 'kepulauan', dasarHukum: 'Dasar', uraianIsi: 'Uraian',
