@@ -281,18 +281,18 @@ router.post('/:id/surat', canWriteMiddleware(), validateBody(linkSuratToDosirSch
         }
 
         if (!link) {
-            res.status(404).json({ success: false, error: 'Dosir or surat not found' });
+            res.status(404).json({ success: false, error: 'Dosir atau surat tidak ditemukan, atau surat bukan milik unit kerja dosir ini.' });
             return;
         }
 
         res.status(201).json({ success: true, data: link });
     } catch (error: any) {
         if (hasPostgresErrorCode(error, '23505')) { // Duplicate key
-            res.status(409).json({ success: false, error: 'Surat already linked to this dosir' });
+            res.status(409).json({ success: false, error: 'Surat ini sudah ada di dosir.' });
             return;
         }
         log.error({ err: error }, 'Error linking surat:');
-        res.status(500).json({ success: false, error: 'Failed to link surat' });
+        res.status(500).json({ success: false, error: 'Surat belum dapat ditambahkan ke dosir. Silakan coba lagi.' });
     }
 });
 

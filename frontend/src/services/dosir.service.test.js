@@ -13,3 +13,7 @@ it('sends null to explicitly clear date fields but preserves omitted partial fie
     await dosirService.update('d1',{judul:'Revisi'});
     expect(api.put).toHaveBeenLastCalledWith('/api/dosir/d1',{judul:'Revisi'});
 });
+it('posts the letter type, id and note to the dosir surat endpoint', async () => {
+    await dosirService.addSurat('d1','keluar','sk-1','Bahan rapat');
+    expect(api.post).toHaveBeenLastCalledWith('/api/dosir/d1/surat',{type:'keluar',suratId:'sk-1',notes:'Bahan rapat'});
+});
