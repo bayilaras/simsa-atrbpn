@@ -120,6 +120,8 @@ describe('surat date field state', () => {
             const disposisi = screen.getByRole('listbox', { name: 'Penerima disposisi' });
             disposisi.options[0].selected = true;
             fireEvent.change(disposisi);
+        } else {
+            fireEvent.change(screen.getByLabelText(/^Kepada/), { target: { value: 'Penerima lokal' } });
         }
 
         expect(screen.getByLabelText(/Tanggal Surat/)).toBe(date);

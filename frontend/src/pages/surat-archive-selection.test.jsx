@@ -77,6 +77,8 @@ describe.each([{ kind: 'masuk', Component: TambahSuratMasuk }, { kind: 'keluar',
             fireEvent.change(document.getElementById('pengirim-surat'), { target: { value: 'Pengirim' } })
             fireEvent.change(document.getElementById('penerima-surat'), { target: { value: 'Penerima' } })
             fireEvent.click(screen.getByRole('button', { name: 'Pilih penerima disposisi' }))
+        } else {
+            fireEvent.change(document.getElementById('penerima-surat-keluar'), { target: { value: 'Penerima' } })
         }
         fireEvent.click(screen.getByRole('button', { name: 'Pilih pasangan aturan' }))
         fireEvent.submit(view.container.querySelector('form'))
