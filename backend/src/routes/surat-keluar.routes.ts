@@ -31,6 +31,7 @@ import {
 import { PESAN_KELAS_MELEBIHI_KEWENANGAN } from '../constants/pesan-akses.js';
 import auditLogService from '../services/audit-log.service.js';
 import { suratAksiPayload } from '../services/rangkaian/aksi.js';
+import { berkasHanyaTayang } from '../services/access/berkas-akses.js';
 import { fileValidationMiddleware } from '../middlewares/file-validation.middleware.js';
 
 const log = createLogger('SuratKeluarRoutes');
@@ -199,7 +200,14 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
         const arsipId = await arsipIdTerbaca(req, id);
         res.json({
             success: true,
-            data: { ...sanitizeSuratRecord(result, 'surat_keluar'), balasanUntuk, arsipId, aksesMelalui: access.via, ...aksi },
+            data: {
+                ...sanitizeSuratRecord(result, 'surat_keluar'),
+                balasanUntuk,
+                arsipId,
+                aksesMelalui: access.via,
+                berkasHanyaTayang: berkasHanyaTayang(access),
+                ...aksi,
+            },
         });
     } catch (error) {
         next(error);

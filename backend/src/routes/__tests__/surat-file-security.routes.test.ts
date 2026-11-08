@@ -700,4 +700,19 @@ describe('surat and attachment route security policy', () => {
         expect(response.body.data.arsipId).toBeNull();
         expect(mocks.recordAccess.check).not.toHaveBeenCalledWith(expect.anything(), 'arsip', expect.anything());
     });
+
+    it.each(DETAIL_ROUTES.flatMap(([jenis, url, service]) => [
+        [jenis, 'tanpa izin', null, null, false, url, service],
+        [jenis, 'izin tayang', '550e8400-e29b-41d4-a716-446655440099', 'view', true, url, service],
+        [jenis, 'izin kelola', '550e8400-e29b-41d4-a716-446655440099', 'manage', true, url, service],
+        [jenis, 'izin unduh', '550e8400-e29b-41d4-a716-446655440099', 'download', false, url, service],
+    ] as const))('detail %s %s menandai berkasHanyaTayang sama dengan aturan unduh berkas', async (_jenis, _label, grantId, grantAccessMode, hanyaTayang, url, service) => {
+        service().findById.mockResolvedValue({ id: url.split('/').pop(), unitKerjaId: 'sesditjen', filePath: null });
+        mocks.recordAccess.checkRead.mockResolvedValue({
+            exists: true, allowed: true, mutable: false, unitKerjaId: 'sesditjen', classification: 'rahasia',
+            grantId, grantAccessMode, via: 'owner', rangkaianId: null, masked: false,
+        });
+        const response = await request(app).get(url).expect(200);
+        expect(response.body.data.berkasHanyaTayang).toBe(hanyaTayang);
+    });
 });

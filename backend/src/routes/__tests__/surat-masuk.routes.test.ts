@@ -125,6 +125,7 @@ describe('SuratMasukRoutes', () => {
                 filePath: null,
                 arsipId: null,
                 aksesMelalui: 'owner',
+                berkasHanyaTayang: false,
                 aksiDiizinkan: [],
                 statusAlur: 'terdaftar',
                 distribusiUnitSaya: null,

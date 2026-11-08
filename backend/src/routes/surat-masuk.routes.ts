@@ -30,6 +30,7 @@ import {
 } from '../services/record-access.service.js';
 import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_SIFAT_TIDAK_DIKENAL } from '../constants/pesan-akses.js';
 import { rankKelas } from '../services/access/visibility-spec.js';
+import { berkasHanyaTayang } from '../services/access/berkas-akses.js';
 import auditLogService from '../services/audit-log.service.js';
 import { suratAksiPayload } from '../services/rangkaian/aksi.js';
 import { fileValidationMiddleware } from '../middlewares/file-validation.middleware.js';
@@ -213,7 +214,13 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
         const arsipId = await arsipIdTerbaca(req, id);
         res.json({
             success: true,
-            data: { ...sanitizeSuratRecord(result, 'surat_masuk'), arsipId, aksesMelalui: access.via, ...aksi },
+            data: {
+                ...sanitizeSuratRecord(result, 'surat_masuk'),
+                arsipId,
+                aksesMelalui: access.via,
+                berkasHanyaTayang: berkasHanyaTayang(access),
+                ...aksi,
+            },
         });
     } catch (error) {
         next(error);
