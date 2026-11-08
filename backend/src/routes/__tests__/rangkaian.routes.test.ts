@@ -23,7 +23,9 @@ vi.mock('../../services/record-access.service.js', () => ({
     recordAccessService: { checkRead: vi.fn(), markGrantUsed: vi.fn(async () => true) },
 }));
 
-vi.mock('../../services/rangkaian/aksi.js', () => ({ rangkaianAksiUntuk: vi.fn(async () => []), suratAksiPayload: vi.fn() }));
+vi.mock('../../services/rangkaian/aksi.js', () => ({
+    rangkaianAksiUntuk: vi.fn(async () => []), relasiDapatDibatalkan: vi.fn(async () => new Set()), suratAksiPayload: vi.fn(),
+}));
 
 vi.mock('../../services/audit-log.service.js', () => ({
     default: { logActionOrThrow: vi.fn() },

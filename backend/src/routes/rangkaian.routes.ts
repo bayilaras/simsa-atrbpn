@@ -16,7 +16,7 @@ import { isAjukanAksesEnabled } from '../services/rangkaian/deps.js';
 import { lacakService } from '../services/rangkaian/lacak.service.js';
 import { berkasService } from '../services/rangkaian/berkas.service.js';
 import { rangkaianLinkService } from '../services/rangkaian/rangkaian-link.service.js';
-import { disposisiDapatDitutup, rangkaianAksiUntuk } from '../services/rangkaian/aksi.js';
+import { disposisiDapatDitutup, rangkaianAksiUntuk, relasiDapatDibatalkan } from '../services/rangkaian/aksi.js';
 import type { LacakParams } from '../services/rangkaian/lacak.types.js';
 import type { JenisRekamanRangkaian } from '../services/access/visibility-spec.js';
 
@@ -66,6 +66,9 @@ async function kirimDetail(req: AuthRequest, res: Response, hasil: RangkaianDeta
         ? await disposisiDapatDitutup(req.user!, detail.disposisi.map((row) => row.id))
         : new Set<string>();
     detail.disposisi = detail.disposisi.map((row) => ({ ...row, dapatDitutup: dapatDitutup.has(row.id) }));
+    // Batalkan Relasi per relasi mengikuti predikat endpoint batal (pembuat relasi atau pengawas).
+    const dapatDibatalkan = await relasiDapatDibatalkan(req.user!, detail.relasi.map((row) => row.id));
+    detail.relasi = detail.relasi.map((row) => ({ ...row, bolehBatal: dapatDibatalkan.has(row.id) }));
     await auditLintasUnit(req, detail, grantIds, extraChanges);
     for (const grantId of grantIds) await recordAccessService.markGrantUsed(grantId);
     res.json({ success: true, data: detail });

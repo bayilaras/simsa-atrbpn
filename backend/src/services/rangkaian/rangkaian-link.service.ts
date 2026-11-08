@@ -211,10 +211,24 @@ async function bacaRelasi(ex: Executor, relasiId: string): Promise<RelasiBaris |
          WHERE r.id = ${relasiId}`))[0];
 }
 
+/**
+ * [T15-2] Wewenang batal relasi: null = rangkaian tak terbaca, false = bukan
+ * pembuat relasi/pengawas. Satu predikat untuk endpoint batal dan penanda
+ * `bolehBatal` pada GET rangkaian, agar tombol dan endpoint tidak berbeda.
+ */
+export async function wewenangBatalRelasi(
+    ex: Executor,
+    user: RecordUser,
+    rel: { rangkaian_id: string; unit_pencatat_id: string; created_by: string | null },
+): Promise<boolean | null> {
+    if (!(await tingkatAksesRangkaian(user, rel.rangkaian_id, ex as never))) return null;
+    return isFullAdmin(user) && (rel.created_by === user.id || await pengawasUntukUnit(user, rel.unit_pencatat_id, ex));
+}
+
 /** [T15-2] Wewenang batal SEBELUM pesan status apa pun: tak terbaca 404, bukan pembuat/pengawas 403. */
 async function assertBolehBatal(tx: Tx, user: RecordUser, rel: RelasiBaris): Promise<void> {
-    if (!(await tingkatAksesRangkaian(user, rel.rangkaian_id, tx as never))) throw new NotFoundError('Relasi');
-    const boleh = isFullAdmin(user) && (rel.created_by === user.id || await pengawasUntukUnit(user, rel.unit_pencatat_id, tx));
+    const boleh = await wewenangBatalRelasi(tx, user, rel);
+    if (boleh === null) throw new NotFoundError('Relasi');
     if (!boleh) throw new ForbiddenError('Hanya pembuat relasi atau pengawas yang dapat membatalkan relasi.');
 }
 
