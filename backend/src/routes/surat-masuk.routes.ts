@@ -68,6 +68,15 @@ function sendValidationFailure(res: Response, issues: Array<{ path: PropertyKey[
     });
 }
 
+// Id arsip hanya untuk pengguna yang boleh membuka detail arsip itu
+// (pemeriksaan yang sama dengan GET /api/arsip/:id).
+async function arsipIdTerbaca(req: AuthRequest, suratId: string) {
+    const arsipId = await suratMasukService.findArsipId(suratId);
+    if (!arsipId) return null;
+    const access = await recordAccessService.check(req.user, 'arsip', arsipId);
+    return access.exists && access.allowed ? arsipId : null;
+}
+
 // All routes require authentication
 router.use(authMiddleware);
 
@@ -201,9 +210,10 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
 
         // P3 (§7): aksiDiizinkan/statusAlur dari server; hanya membaca.
         const aksi = await suratAksiPayload(req.user!, 'surat_masuk', id, access);
+        const arsipId = await arsipIdTerbaca(req, id);
         res.json({
             success: true,
-            data: { ...sanitizeSuratRecord(result, 'surat_masuk'), aksesMelalui: access.via, ...aksi },
+            data: { ...sanitizeSuratRecord(result, 'surat_masuk'), arsipId, aksesMelalui: access.via, ...aksi },
         });
     } catch (error) {
         next(error);

@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
         getStats: vi.fn(),
         getSourceSuratMasuk: vi.fn(),
         findByIdWithLinks: vi.fn(),
+        findArsipId: vi.fn(),
     },
     suratMasuk: {
         findAll: vi.fn(),
@@ -35,6 +36,7 @@ const mocks = vi.hoisted(() => ({
         getPendingForReply: vi.fn(),
         getBalasan: vi.fn(),
         findByIdWithLinks: vi.fn(),
+        findArsipId: vi.fn(),
     },
     attachment: {
         create: vi.fn(),
@@ -180,6 +182,8 @@ describe('surat and attachment route security policy', () => {
         mocks.audit.mockResolvedValue(undefined);
         mocks.blobDelete.mockResolvedValue(true);
         mocks.blobDeleteGeneration.mockResolvedValue(true);
+        mocks.suratMasuk.findArsipId.mockResolvedValue(null);
+        mocks.suratKeluar.findArsipId.mockResolvedValue(null);
         mocks.recordAccess.check.mockResolvedValue({
             exists: true,
             allowed: true,
@@ -665,5 +669,35 @@ describe('surat and attachment route security policy', () => {
             entityType: 'surat_masuk',
             changes: expect.objectContaining({ via: 'peserta', rangkaianId: '550e8400-e29b-41d4-a716-446655440077' }),
         }));
+    });
+
+    const ARSIP_ID = '550e8400-e29b-41d4-a716-446655440088';
+    const DETAIL_ROUTES = [
+        ['surat_masuk', '/api/surat-masuk/550e8400-e29b-41d4-a716-446655440030', () => mocks.suratMasuk],
+        ['surat_keluar', '/api/surat-keluar/550e8400-e29b-41d4-a716-446655440031', () => mocks.suratKeluar],
+    ] as const;
+
+    it.each(DETAIL_ROUTES)('detail %s menyertakan arsipId bila arsipnya boleh dibaca', async (_jenis, url, service) => {
+        service().findById.mockResolvedValue({ id: url.split('/').pop(), unitKerjaId: 'sesditjen', isArchived: true, filePath: null });
+        service().findArsipId.mockResolvedValue(ARSIP_ID);
+        const response = await request(app).get(url).expect(200);
+        expect(response.body.data.arsipId).toBe(ARSIP_ID);
+        expect(service().findArsipId).toHaveBeenCalledWith(url.split('/').pop());
+        expect(mocks.recordAccess.check).toHaveBeenCalledWith(expect.objectContaining({ role: mocks.role }), 'arsip', ARSIP_ID);
+    });
+
+    it.each(DETAIL_ROUTES)('detail %s tidak menyertakan arsipId yang tidak boleh dibaca', async (_jenis, url, service) => {
+        service().findById.mockResolvedValue({ id: url.split('/').pop(), unitKerjaId: 'sesditjen', isArchived: true, filePath: null });
+        service().findArsipId.mockResolvedValue(ARSIP_ID);
+        mocks.recordAccess.check.mockResolvedValue({ exists: true, allowed: false, mutable: false, unitKerjaId: 'sesditjen' });
+        const response = await request(app).get(url).expect(200);
+        expect(response.body.data.arsipId).toBeNull();
+    });
+
+    it.each(DETAIL_ROUTES)('detail %s tanpa arsip memberi arsipId null', async (_jenis, url, service) => {
+        service().findById.mockResolvedValue({ id: url.split('/').pop(), unitKerjaId: 'sesditjen', isArchived: false, filePath: null });
+        const response = await request(app).get(url).expect(200);
+        expect(response.body.data.arsipId).toBeNull();
+        expect(mocks.recordAccess.check).not.toHaveBeenCalledWith(expect.anything(), 'arsip', expect.anything());
     });
 });

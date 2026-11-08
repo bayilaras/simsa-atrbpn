@@ -34,6 +34,7 @@ vi.mock('../../services/surat-masuk.service', () => ({
         create: vi.fn(),
         update: vi.fn(),
         delete: vi.fn(),
+        findArsipId: vi.fn(async () => null),
     },
 }));
 
@@ -122,6 +123,7 @@ describe('SuratMasukRoutes', () => {
                 ...mockSurat,
                 hasFile: false,
                 filePath: null,
+                arsipId: null,
                 aksesMelalui: 'owner',
                 aksiDiizinkan: [],
                 statusAlur: 'terdaftar',

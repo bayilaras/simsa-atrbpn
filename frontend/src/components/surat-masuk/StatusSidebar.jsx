@@ -93,7 +93,7 @@ export function StatusSidebar({ surat, onEdit, onDistribute, onArchive, onTerima
 
                     {surat.isArchived && surat.arsipId && (
                         <Button variant="outline" className="w-full" size="sm" asChild>
-                            <Link to={`/arsip?id=${surat.arsipId}`}>
+                            <Link to={`/arsip/detail/${encodeURIComponent(surat.arsipId)}`}>
                                 <Eye className="mr-2 h-4 w-4" />
                                 Lihat di Arsip
                             </Link>

@@ -74,6 +74,15 @@ async function balasanUntukTerbaca(req: AuthRequest, suratMasukId: string | null
     return access.exists && access.allowed ? suratMasukId : null;
 }
 
+// Id arsip hanya untuk pengguna yang boleh membuka detail arsip itu
+// (pemeriksaan yang sama dengan GET /api/arsip/:id).
+async function arsipIdTerbaca(req: AuthRequest, suratId: string) {
+    const arsipId = await suratKeluarService.findArsipId(suratId);
+    if (!arsipId) return null;
+    const access = await recordAccessService.check(req.user, 'arsip', arsipId);
+    return access.exists && access.allowed ? arsipId : null;
+}
+
 router.use(authMiddleware);
 
 // GET /api/surat-keluar - List with pagination
@@ -187,9 +196,10 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
         // P3 (§7): aksiDiizinkan/statusAlur dari server; hanya membaca.
         const aksi = await suratAksiPayload(req.user!, 'surat_keluar', id, access);
         const balasanUntuk = await balasanUntukTerbaca(req, result.balasanUntuk);
+        const arsipId = await arsipIdTerbaca(req, id);
         res.json({
             success: true,
-            data: { ...sanitizeSuratRecord(result, 'surat_keluar'), balasanUntuk, aksesMelalui: access.via, ...aksi },
+            data: { ...sanitizeSuratRecord(result, 'surat_keluar'), balasanUntuk, arsipId, aksesMelalui: access.via, ...aksi },
         });
     } catch (error) {
         next(error);

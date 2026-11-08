@@ -621,7 +621,7 @@ export default function SuratKeluarDetail() {
 
                             {surat.isArchived && surat.arsipId && aksesMelalui === 'owner' && (
                                 <Button variant="outline" className="w-full" size="sm" asChild>
-                                    <Link to={`/arsip?id=${surat.arsipId}`}>
+                                    <Link to={`/arsip/detail/${encodeURIComponent(surat.arsipId)}`}>
                                         <Eye className="mr-2 h-4 w-4" />
                                         Lihat di Arsip
                                     </Link>
