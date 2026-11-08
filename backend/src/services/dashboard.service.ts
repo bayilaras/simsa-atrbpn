@@ -57,6 +57,36 @@ function outgoingClassificationCondition(classes: string[] | null | undefined) {
     );
 }
 
+type UnitHierarki = { id: string; name: string | null; parentId: string | null };
+
+/**
+ * Urutan unit untuk perbandingan semua unit: setiap induk diikuti anak-anaknya
+ * (depth-first), saudara diurut nama lalu id, sehingga urutan tidak bergantung
+ * pada jumlah surat. Unit dengan induk yang tidak ada diperlakukan sebagai akar.
+ */
+function urutkanHierarkiUnit(units: UnitHierarki[]): string[] {
+    const ids = new Set(units.map((unit) => unit.id));
+    const urutNama = (a: UnitHierarki, b: UnitHierarki) =>
+        (a.name ?? '').localeCompare(b.name ?? '', 'id') || a.id.localeCompare(b.id);
+    const anak = new Map<string | null, UnitHierarki[]>();
+    for (const unit of units) {
+        const induk = unit.parentId && unit.parentId !== unit.id && ids.has(unit.parentId) ? unit.parentId : null;
+        anak.set(induk, [...(anak.get(induk) ?? []), unit]);
+    }
+    const urutan: string[] = [];
+    const dikunjungi = new Set<string>();
+    const kunjungi = (unit: UnitHierarki) => {
+        if (dikunjungi.has(unit.id)) return;
+        dikunjungi.add(unit.id);
+        urutan.push(unit.id);
+        for (const turunan of [...(anak.get(unit.id) ?? [])].sort(urutNama)) kunjungi(turunan);
+    };
+    for (const akar of [...(anak.get(null) ?? [])].sort(urutNama)) kunjungi(akar);
+    // Siklus induk tanpa akar tetap ditampilkan, tidak dibuang diam-diam.
+    for (const unit of [...units].sort(urutNama)) kunjungi(unit);
+    return urutan;
+}
+
 interface MonthlyStats {
     month: string;
     masuk: number;
@@ -293,6 +323,7 @@ export const dashboardService = {
 
             // 1. Determine which units to compare
             let targetUnitIds: string[] = [];
+            let urutanHierarki = false;
 
             if (!allowRelatedUnits) {
                 // A scoped user may only see their own unit, never sibling or
@@ -300,11 +331,13 @@ export const dashboardService = {
                 if (!unitKerjaId) return [];
                 targetUnitIds = [unitKerjaId];
             } else if (!unitKerjaId) {
-                const allTopUnits = await db
-                    .select({ id: unitKerja.id, name: unitKerja.name })
-                    .from(unitKerja)
-                    .where(sql`${unitKerja.parentId} IS NULL`);
-                targetUnitIds = allTopUnits.map((u: any) => u.id);
+                // Semua unit: induk dan anak masing-masing dengan hitungan
+                // rekamannya sendiri, tanpa roll-up anak ke induk.
+                const allUnits = await db
+                    .select({ id: unitKerja.id, name: unitKerja.name, parentId: unitKerja.parentId })
+                    .from(unitKerja);
+                targetUnitIds = urutkanHierarkiUnit(allUnits);
+                urutanHierarki = true;
             } else {
                 const children = await db
                     .select({ id: unitKerja.id, name: unitKerja.name })
@@ -388,7 +421,7 @@ export const dashboardService = {
                 arsip: arsipMap.get(unitId) || 0,
             }));
 
-            return comparisonData.sort((a, b) => b.masuk - a.masuk);
+            return urutanHierarki ? comparisonData : comparisonData.sort((a, b) => b.masuk - a.masuk);
         } catch (error) {
             log.error({ err: error }, '[DashboardService] Error in getUnitKerjaComparison:');
             throw error;
