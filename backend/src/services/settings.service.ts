@@ -276,10 +276,10 @@ class SettingsService {
         auditContext?: CriticalAuditContext,
     ): Promise<SuratTemplate> {
         if (templates.masukFormat !== undefined) {
-            assertTemplateFormat(templates.masukFormat, 'masukFormat');
+            assertTemplateFormat(templates.masukFormat, 'Format Nomor Surat Masuk');
         }
         if (templates.keluarFormat !== undefined) {
-            assertTemplateFormat(templates.keluarFormat, 'keluarFormat');
+            assertTemplateFormat(templates.keluarFormat, 'Format Nomor Surat Keluar');
         }
         const defaults = DEFAULT_SURAT_TEMPLATE(unitKerjaId);
         const now = new Date();
