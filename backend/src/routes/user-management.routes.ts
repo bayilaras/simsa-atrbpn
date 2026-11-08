@@ -12,8 +12,11 @@ import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
 
 const router = Router();
 
-// Apply rate limiting to user management operations
-router.use(sensitiveLimiter);
+// Only changes use the sensitive quota, which other routes share. Reads stay
+// under the general /api limiter, so browsing and filtering the user list does
+// not lock an administrator out of changes.
+router.use((req, res, next) =>
+    req.method === 'GET' || req.method === 'HEAD' ? next() : sensitiveLimiter(req, res, next));
 
 // Authentication is deliberately centralized. Besides validating the Better Auth
 // session, authMiddleware rejects deactivated and not-yet-provisioned `user`
