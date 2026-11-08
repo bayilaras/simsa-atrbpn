@@ -4,6 +4,7 @@ import { suratMasukService, SuratMasukFilters } from './surat-masuk.service';
 import { suratKeluarService, SuratKeluarFilters } from './surat-keluar.service';
 import { arsipService, ArsipFilters } from './arsip.service';
 import { ASAL_NASKAH_LABEL, resolveBalasanLabels } from './export-balasan';
+import { namaUnitPengolah } from './export-unit-pengolah.js';
 import { sifatSuratLabel } from './sifat-surat.js';
 import { jenisFormulirArsip, lengkapiJenisPenyusutanLama, saringFormulirArsip } from './arsip-fase.js';
 import { AppError } from '../utils/errors.js';
@@ -62,6 +63,7 @@ export class ExportService {
             limit: EXPORT_ROW_LIMIT,
         });
         const data = requireCompleteExport(result);
+        const unitPengolah = await namaUnitPengolah(filters.unitKerjaId);
 
         const { Workbook } = await loadExcelJS();
         const workbook = new Workbook();
@@ -79,7 +81,7 @@ export class ExportService {
 
         worksheet.mergeCells('A2:M2');
         const subtitleCell = worksheet.getCell('A2');
-        subtitleCell.value = `Direktorat Jenderal Pengadaan Tanah dan Pengembangan Pertanahan — Tahun ${filters.tahun || 'Semua'}`;
+        subtitleCell.value = `${unitPengolah} — Tahun ${filters.tahun || 'Semua'}`;
         subtitleCell.font = { ...SUBTITLE_FONT, bold: false };
         subtitleCell.alignment = CENTER_ALIGN;
 
@@ -154,6 +156,7 @@ export class ExportService {
         });
         const data = requireCompleteExport(result);
         const balasanLabels = await resolveBalasanLabels(data, filters.securityClassifications);
+        const unitPengolah = await namaUnitPengolah(filters.unitKerjaId);
 
         const { Workbook } = await loadExcelJS();
         const workbook = new Workbook();
@@ -171,7 +174,7 @@ export class ExportService {
 
         worksheet.mergeCells('A2:O2');
         const subtitleCell = worksheet.getCell('A2');
-        subtitleCell.value = `Direktorat Jenderal Pengadaan Tanah dan Pengembangan Pertanahan — Tahun ${filters.tahun || 'Semua'}`;
+        subtitleCell.value = `${unitPengolah} — Tahun ${filters.tahun || 'Semua'}`;
         subtitleCell.font = { ...SUBTITLE_FONT, bold: false };
         subtitleCell.alignment = CENTER_ALIGN;
 
@@ -245,6 +248,7 @@ export class ExportService {
      */
     async generateExcelArsip(filters: ArsipFilters, formulirType?: string): Promise<Buffer> {
         const data = await this.dataFormulirArsip(filters, formulirType);
+        const unitPengolah = await namaUnitPengolah(filters.unitKerjaId);
 
         const { Workbook } = await loadExcelJS();
         const workbook = new Workbook();
@@ -252,11 +256,11 @@ export class ExportService {
         workbook.created = new Date();
 
         if (formulirType === 'formulir6') {
-            return this.generateExcelArsipFormulir6(workbook, data, filters);
+            return this.generateExcelArsipFormulir6(workbook, data, filters, unitPengolah);
         }
 
         // Default: Formulir 4 - Daftar Arsip Aktif
-        return this.generateExcelArsipFormulir4(workbook, data, filters);
+        return this.generateExcelArsipFormulir4(workbook, data, filters, unitPengolah);
     }
 
     /**
@@ -293,7 +297,7 @@ export class ExportService {
      * Formulir 4 — DAFTAR ARSIP AKTIF
      * Permen ATRBPN 2 Tahun 2026 Kearsipan
      */
-    private async generateExcelArsipFormulir4(workbook: ExcelJS.Workbook, data: any[], filters: ArsipFilters): Promise<Buffer> {
+    private async generateExcelArsipFormulir4(workbook: ExcelJS.Workbook, data: any[], filters: ArsipFilters, unitPengolah: string): Promise<Buffer> {
         const worksheet = workbook.addWorksheet('Formulir 4 - Arsip Aktif', {
             pageSetup: { orientation: 'landscape', paperSize: 9 /* A4 */ },
         });
@@ -310,7 +314,7 @@ export class ExportService {
         worksheet.getCell('A3').value = 'Unit Pengolah';
         worksheet.getCell('A3').font = SUBTITLE_FONT;
         worksheet.mergeCells('C3:F3');
-        worksheet.getCell('C3').value = ': Direktorat Jenderal Pengadaan Tanah dan Pengembangan Pertanahan';
+        worksheet.getCell('C3').value = `: ${unitPengolah}`;
         worksheet.getCell('C3').font = { ...DATA_FONT, size: 10 };
 
         // Multi-level header — Row 5-6 (merged)
@@ -465,7 +469,7 @@ export class ExportService {
      *          Tingkat Perkembangan, Jumlah, Lokasi Simpan, Keamanan & Akses,
      *          Jangka Simpan & Nasib Akhir, Kategori Arsip, Ket.
      */
-    private async generateExcelArsipFormulir6(workbook: ExcelJS.Workbook, data: any[], filters: ArsipFilters): Promise<Buffer> {
+    private async generateExcelArsipFormulir6(workbook: ExcelJS.Workbook, data: any[], filters: ArsipFilters, unitPengolah: string): Promise<Buffer> {
         const worksheet = workbook.addWorksheet('Formulir 6 - Arsip Inaktif', {
             pageSetup: { orientation: 'landscape', paperSize: 9 },
         });
@@ -490,7 +494,7 @@ export class ExportService {
         worksheet.getCell('A4').value = 'Unit Pengolah';
         worksheet.getCell('A4').font = SUBTITLE_FONT;
         worksheet.mergeCells('C4:F4');
-        worksheet.getCell('C4').value = ': Direktorat Jenderal Pengadaan Tanah dan Pengembangan Pertanahan';
+        worksheet.getCell('C4').value = `: ${unitPengolah}`;
         worksheet.getCell('C4').font = { ...DATA_FONT, size: 10 };
 
         // Header row at row 6
@@ -615,6 +619,7 @@ export class ExportService {
             limit: EXPORT_ROW_LIMIT,
         });
         const data = requireCompleteExport(result);
+        const unitPengolah = await namaUnitPengolah(filters.unitKerjaId);
 
         const PDFDocument = await loadPdfKit();
         return new Promise((resolve, reject) => {
@@ -627,7 +632,7 @@ export class ExportService {
 
             // Header
             doc.fontSize(16).font('Helvetica-Bold').text('DAFTAR SURAT MASUK', { align: 'center' });
-            doc.fontSize(10).font('Helvetica').text('Direktorat Jenderal Pengadaan Tanah dan Pengembangan Pertanahan', { align: 'center' });
+            doc.fontSize(10).font('Helvetica').text(unitPengolah, { align: 'center' });
             doc.fontSize(9).text(`Tahun: ${filters.tahun || 'Semua'} | Dicetak: ${new Date().toLocaleDateString('id-ID')}`, { align: 'center' });
             doc.moveDown(1.5);
 
@@ -688,6 +693,7 @@ export class ExportService {
             limit: EXPORT_ROW_LIMIT,
         });
         const data = requireCompleteExport(result);
+        const unitPengolah = await namaUnitPengolah(filters.unitKerjaId);
 
         const PDFDocument = await loadPdfKit();
         return new Promise((resolve, reject) => {
@@ -699,7 +705,7 @@ export class ExportService {
             doc.on('error', reject);
 
             doc.fontSize(16).font('Helvetica-Bold').text('DAFTAR SURAT KELUAR', { align: 'center' });
-            doc.fontSize(10).font('Helvetica').text('Direktorat Jenderal Pengadaan Tanah dan Pengembangan Pertanahan', { align: 'center' });
+            doc.fontSize(10).font('Helvetica').text(unitPengolah, { align: 'center' });
             doc.fontSize(9).text(`Tahun: ${filters.tahun || 'Semua'} | Dicetak: ${new Date().toLocaleDateString('id-ID')}`, { align: 'center' });
             doc.moveDown(1.5);
 
@@ -757,6 +763,7 @@ export class ExportService {
      */
     async generatePdfArsip(filters: ArsipFilters, formulirType?: string): Promise<Buffer> {
         const data = await this.dataFormulirArsip(filters, formulirType);
+        const unitPengolah = await namaUnitPengolah(filters.unitKerjaId);
 
         const PDFDocument = await loadPdfKit();
         return new Promise((resolve, reject) => {
@@ -772,12 +779,12 @@ export class ExportService {
                 doc.fontSize(16).font('Helvetica-Bold').text('DAFTAR ARSIP INAKTIF (KERTAS)', { align: 'center' });
                 doc.moveDown(0.5);
                 doc.fontSize(10).font('Helvetica').text(`Pencipta Arsip      : Kementerian ATR/BPN`, 30);
-                doc.text(`Unit Pengolah        : Direktorat Jenderal Pengadaan Tanah dan Pengembangan Pertanahan`, 30);
+                doc.text(`Unit Pengolah        : ${unitPengolah}`, 30);
             } else {
                 // Formulir 4 – Daftar Arsip Aktif
                 doc.fontSize(16).font('Helvetica-Bold').text('DAFTAR ARSIP AKTIF', { align: 'center' });
                 doc.moveDown(0.5);
-                doc.fontSize(10).font('Helvetica').text(`Unit Pengolah : Direktorat Jenderal Pengadaan Tanah dan Pengembangan Pertanahan`, 30);
+                doc.fontSize(10).font('Helvetica').text(`Unit Pengolah : ${unitPengolah}`, 30);
             }
 
             doc.fontSize(9).text(`Dicetak: ${new Date().toLocaleDateString('id-ID')}`, { align: 'right' });
