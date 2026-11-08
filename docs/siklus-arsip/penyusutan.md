@@ -32,7 +32,7 @@ Masa Retensi            Penyusutan           (Musnah/Serah)         Selesai
 1. Di sidebar, klik **Penyusutan** di bawah grup **Siklus Hidup Arsip**.
 
 :::info Modul opsional
-Menu **Penyusutan** hanya muncul bila modulnya diaktifkan operator. Selama modul belum diaktifkan, pemindahan dan pemusnahan arsip dilakukan di luar SIMSA mengikuti prosedur unit. Gunakan [Manajemen Retensi](manajemen-retensi.md) untuk melihat arsip yang masa retensinya sudah atau hampir habis dan untuk mencetak draf berita acara pemusnahan melalui **Generate Berita Acara**.
+Menu **Penyusutan** hanya muncul bila modulnya diaktifkan operator. Selama modul belum diaktifkan, pemindahan dan pemusnahan arsip dilakukan di luar SIMSA mengikuti prosedur unit. Gunakan [Manajemen Retensi](manajemen-retensi.md) untuk melihat arsip yang masa retensinya sudah atau hampir habis dan untuk mencetak draf berita acara pemusnahan tanpa nomor (nomor diisi manual) melalui **Generate Berita Acara**.
 :::
 
 ### Langkah 2: Lihat Daftar Arsip
