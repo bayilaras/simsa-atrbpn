@@ -166,7 +166,29 @@ describe('StorageLocationService', () => {
                 level: 'ruang',
                 name: 'Ruang A',
                 code: 'G1-R1',
-            } as any, 'u1')).rejects.toThrow('selected unit');
+            } as any, 'u1')).rejects.toThrow('Lokasi induk tidak ditemukan di unit kerja yang dipilih.');
+        });
+
+        it('explains in Indonesian which level a child location must use', async () => {
+            enqueue([{ id: 'g1', code: 'G1', level: 'gedung', unitKerjaId: 'u1' }]);
+
+            await expect(service.create({
+                parentId: 'g1', level: 'rak', name: 'Rak A', code: 'G1-RAK1',
+            } as any, 'u1')).rejects.toThrow('Sub-lokasi dari gedung harus bertingkat ruang.');
+        });
+
+        it('explains in Indonesian that a box cannot hold child locations', async () => {
+            enqueue([{ id: 'b1', code: 'B1', level: 'box', unitKerjaId: 'u1' }]);
+
+            await expect(service.create({
+                parentId: 'b1', level: 'box', name: 'Box B', code: 'B1-B1',
+            } as any, 'u1')).rejects.toThrow('Lokasi bertingkat box tidak dapat memiliki sub-lokasi.');
+        });
+
+        it('explains in Indonesian that only a gedung may be created without a parent', async () => {
+            await expect(service.create({
+                level: 'ruang', name: 'Ruang tanpa induk', code: 'R1',
+            } as any, 'u1')).rejects.toThrow('Hanya gedung yang boleh dibuat tanpa lokasi induk.');
         });
     });
 

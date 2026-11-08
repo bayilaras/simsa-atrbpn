@@ -28,7 +28,7 @@ function resolveConcreteDistributionUnit(req: AuthRequest, res: Response): strin
         } else {
             // An unprovisioned scoped account must not learn whether a
             // distribution exists in the caller-supplied unit.
-            res.status(404).json({ error: 'Distribution not found' });
+            res.status(404).json({ error: 'Distribusi tidak ditemukan.' });
         }
         return null;
     }
@@ -183,7 +183,7 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
         const id = req.params.id as string;
         const result = await distributionService.findById(id, resolveRecordUnitScope(req));
         if (!result) {
-            return res.status(404).json({ error: 'Distribution not found' });
+            return res.status(404).json({ error: 'Distribusi tidak ditemukan.' });
         }
         const baca = await recordAccessService.checkRead(req.user, 'surat_masuk', result.surat.id);
         if (!baca.exists || !baca.allowed) {
@@ -237,7 +237,7 @@ router.post('/', canWriteMiddleware(), validateBody(createDistributionSchema), a
 
         const sourceAccess = await recordAccessService.check(req.user, 'surat_masuk', suratMasukId);
         if (!sourceAccess.exists || !sourceAccess.mutable || sourceAccess.unitKerjaId !== sourceUnitId) {
-            return res.status(404).json({ error: 'Data not found' });
+            return res.status(404).json({ error: 'Data tidak ditemukan.' });
         }
 
         const rows = await distributionService.distributeMany({
@@ -270,7 +270,7 @@ router.put('/:id/receive', canWriteMiddleware(), async (req: AuthRequest, res, n
         if (!unitKerjaId) return;
         const record = await distributionService.findById(id, unitKerjaId);
         if (!record) {
-            return res.status(404).json({ error: 'Distribution not found' });
+            return res.status(404).json({ error: 'Distribusi tidak ditemukan.' });
         }
         const baca = await recordAccessService.checkRead(req.user, 'surat_masuk', record.surat.id);
         if (!baca.exists || !baca.allowed) {
@@ -300,7 +300,7 @@ router.put('/:id/process', canWriteMiddleware(), validateBody(processDistributio
         const unitKerjaId = resolveConcreteDistributionUnit(req, res);
         if (!unitKerjaId) return;
         if (!(await distributionService.findById(id, unitKerjaId))) {
-            return res.status(404).json({ error: 'Distribution not found' });
+            return res.status(404).json({ error: 'Distribusi tidak ditemukan.' });
         }
         const result = await distributionService.process(
             id,
@@ -334,7 +334,7 @@ router.put('/:id/reject', canWriteMiddleware(), validateBody(rejectDistributionS
         if (!unitKerjaId) return;
         const record = await distributionService.findById(id, unitKerjaId);
         if (!record) {
-            return res.status(404).json({ error: 'Distribution not found' });
+            return res.status(404).json({ error: 'Distribusi tidak ditemukan.' });
         }
 
         const result = await distributionService.reject(

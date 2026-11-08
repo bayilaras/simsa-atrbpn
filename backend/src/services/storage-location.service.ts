@@ -164,15 +164,17 @@ export class StorageLocationService {
                     .for('update');
 
                 if (!parent) {
-                    throw new AppError('Parent storage location not found in the selected unit', 404);
+                    throw new AppError('Lokasi induk tidak ditemukan di unit kerja yang dipilih.', 404);
                 }
 
                 const expectedLevel = this.expectedChildLevel(parent.level);
                 if (!expectedLevel || data.level !== expectedLevel) {
-                    throw new ValidationError(`Child of ${parent.level} must use level ${expectedLevel || 'none'}`);
+                    throw new ValidationError(expectedLevel
+                        ? `Sub-lokasi dari ${parent.level} harus bertingkat ${expectedLevel}.`
+                        : `Lokasi bertingkat ${parent.level} tidak dapat memiliki sub-lokasi.`);
                 }
             } else if (data.level !== 'gedung') {
-                throw new ValidationError('Only gedung may be created without a parent location');
+                throw new ValidationError('Hanya gedung yang boleh dibuat tanpa lokasi induk.');
             }
 
             const code = data.code !== undefined ? this.normalizeCode(data.code) : await this.generateCode(
@@ -223,13 +225,13 @@ export class StorageLocationService {
 
             if (!existing) return null;
             if (data.level && data.level !== existing.level) {
-                throw new ConflictError('Storage location level cannot be changed after creation');
+                throw new ConflictError('Tingkat lokasi tidak dapat diubah setelah dibuat.');
             }
 
             const parentId = data.parentId === undefined ? existing.parentId : data.parentId;
             if (parentId) {
                 if (parentId === id) {
-                    throw new ValidationError('Storage location cannot be its own parent');
+                    throw new ValidationError('Lokasi tidak dapat menjadi induk bagi dirinya sendiri.');
                 }
 
                 const [parent] = await tx
@@ -243,15 +245,17 @@ export class StorageLocationService {
                     .for('update');
 
                 if (!parent) {
-                    throw new AppError('Parent storage location not found in the selected unit', 404);
+                    throw new AppError('Lokasi induk tidak ditemukan di unit kerja yang dipilih.', 404);
                 }
 
                 const expectedLevel = this.expectedChildLevel(parent.level);
                 if (!expectedLevel || existing.level !== expectedLevel) {
-                    throw new ValidationError(`Child of ${parent.level} must use level ${expectedLevel || 'none'}`);
+                    throw new ValidationError(expectedLevel
+                        ? `Sub-lokasi dari ${parent.level} harus bertingkat ${expectedLevel}.`
+                        : `Lokasi bertingkat ${parent.level} tidak dapat memiliki sub-lokasi.`);
                 }
             } else if (existing.level !== 'gedung') {
-                throw new ValidationError('Only gedung may exist without a parent location');
+                throw new ValidationError('Hanya gedung yang boleh berdiri tanpa lokasi induk.');
             }
 
             const { unitKerjaId: _ignoredUnit, ...safeData } = data;
@@ -342,7 +346,7 @@ export class StorageLocationService {
     async generateQRCode(locationId: string, baseUrl: string, unitKerjaId: RecordUnitScope) {
         const location = await this.findById(locationId, unitKerjaId);
         if (!location) {
-            throw new AppError('Storage location not found', 404);
+            throw new AppError('Lokasi simpan tidak ditemukan.', 404);
         }
 
         const qrUrl = `${baseUrl}/storage-locations/${locationId}`;
@@ -380,7 +384,7 @@ export class StorageLocationService {
             .limit(1);
 
         if (!arsipItem) {
-            throw new AppError('Arsip not found', 404);
+            throw new AppError('Arsip tidak ditemukan.', 404);
         }
 
         const qrUrl = `${baseUrl}/arsip/detail/${arsipId}`;
