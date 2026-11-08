@@ -63,7 +63,7 @@ describe('Arsip Vital and Arsip Terjaga transactional audit', () => {
             id: 'vital-1',
             arsipId: 'arsip-1',
             unitKerjaId: 'unit-1',
-            kategoriVital: 'operasional',
+            kategoriVital: 'aset',
         };
         resultQueue.push([created]);
         auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
@@ -71,7 +71,7 @@ describe('Arsip Vital and Arsip Terjaga transactional audit', () => {
         await expect(arsipVitalService.create({
             arsipId: 'arsip-1',
             unitKerjaId: 'unit-1',
-            kategoriVital: 'operasional',
+            kategoriVital: 'aset',
             tingkatKekritisan: 'kritis',
         } as any, auditContext)).rejects.toThrow('audit unavailable');
 
