@@ -286,7 +286,7 @@ export default function SuratKeluarDetail() {
         <div className="space-y-6">
             {/* Breadcrumb */}
             <nav className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Link to="/surat" className="hover:text-foreground transition-colors">Surat</Link>
+                <Link to="/surat/keluar" className="hover:text-foreground transition-colors">Surat</Link>
                 <span>/</span>
                 <Link to="/surat/keluar" className="hover:text-foreground transition-colors">Keluar</Link>
                 <span>/</span>
