@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { auditLog, users } from '../db/schema';
-import { eq, and, desc, sql, gte, lte, ilike, or } from 'drizzle-orm';
+import { eq, and, desc, sql, gte, lt, lte, ilike, or } from 'drizzle-orm';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('AuditLogService');
@@ -27,7 +27,10 @@ export interface AuditLogFilters {
     userId?: string;
     search?: string;
     startDate?: Date;
+    /** Batas akhir inklusif (timestamp lengkap). */
     endDate?: Date;
+    /** Batas akhir eksklusif, mis. 00.00 WIB hari setelah tanggal akhir. */
+    endBefore?: Date;
     page?: number;
     limit?: number;
 }
@@ -78,7 +81,7 @@ export const auditLogService = {
      * List audit logs with filters and pagination
      */
     async listLogs(filters: AuditLogFilters = {}) {
-        const { entityType, entityId, action, userId, search, startDate, endDate, page = 1, limit = 50 } = filters;
+        const { entityType, entityId, action, userId, search, startDate, endDate, endBefore, page = 1, limit = 50 } = filters;
         const offset = (page - 1) * limit;
 
         // Build where conditions
@@ -116,6 +119,10 @@ export const auditLogService = {
 
         if (endDate) {
             conditions.push(lte(auditLog.createdAt, endDate));
+        }
+
+        if (endBefore) {
+            conditions.push(lt(auditLog.createdAt, endBefore));
         }
 
         const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
