@@ -1,6 +1,7 @@
 import { db } from '../config/database';
 import { auditLog, users } from '../db/schema';
-import { eq, and, desc, sql, gte, lt, lte, ilike, or } from 'drizzle-orm';
+import { eq, and, desc, sql, gte, lt, lte, ilike, or, exists } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('AuditLogService');
@@ -104,11 +105,19 @@ export const auditLogService = {
         }
 
         if (search) {
+            // Nama pengguna dicari lewat subquery agar kueri hitungan tidak
+            // perlu ikut join ke users.
+            const searchUser = alias(users, 'audit_search_user');
             conditions.push(
                 or(
                     ilike(auditLog.userEmail, `%${search}%`),
                     ilike(auditLog.action, `%${search}%`),
-                    ilike(auditLog.entityType, `%${search}%`)
+                    ilike(auditLog.entityType, `%${search}%`),
+                    exists(db
+                        .select({ id: searchUser.id })
+                        .from(searchUser)
+                        .where(and(eq(searchUser.id, auditLog.userId), ilike(searchUser.name, `%${search}%`)))),
+                    ilike(sql`${auditLog.entityId}::text`, `${search}%`),
                 )
             );
         }
