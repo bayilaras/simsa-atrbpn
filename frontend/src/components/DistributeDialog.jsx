@@ -10,6 +10,7 @@ import { useToast } from '@/hooks/use-toast'
 import { useDisposisiOpsi } from '@/hooks/use-disposisi-opsi'
 import distributionService from '@/services/distribution.service'
 import { appendInstruksi, hariIniJakarta, isSifatTerkendali, PESAN_TERKENDALI } from '@/lib/tindak-lanjut'
+import { pesanGalat } from '@/lib/pesan-galat'
 
 export { PESAN_TERKENDALI }
 
@@ -65,7 +66,7 @@ export function DistributeDialog({ open, onOpenChange, suratData, sourceUnitId, 
             onSuccess?.()
         } catch (error) {
             console.error('Error distributing:', error)
-            toast({ title: 'Error', description: error.response?.data?.error || error.message || 'Gagal mendisposisikan surat', variant: 'destructive' })
+            toast({ title: 'Error', description: pesanGalat(error, 'Gagal mendisposisikan surat'), variant: 'destructive' })
         } finally {
             setLoading(false)
         }

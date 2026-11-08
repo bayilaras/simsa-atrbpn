@@ -33,6 +33,7 @@ import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 import { PenyelesaianDialog } from '@/components/distribusi/PenyelesaianDialog'
 import { buildTindakLanjutState } from '@/lib/tindak-lanjut'
+import { pesanGalat } from '@/lib/pesan-galat'
 import { usePaginatedResource } from '@/hooks/use-paginated-resource'
 import { ResourcePagination } from '@/components/ResourcePagination'
 
@@ -152,7 +153,7 @@ export default function DistributionInbox() {
         } catch (error) {
             toast({
                 title: 'Error',
-                description: error.response?.data?.error || 'Gagal menerima surat',
+                description: pesanGalat(error, 'Gagal menerima surat'),
                 variant: 'destructive',
             })
         } finally {
@@ -181,7 +182,7 @@ export default function DistributionInbox() {
         } catch (error) {
             toast({
                 title: 'Error',
-                description: error.response?.data?.error || 'Gagal menolak surat',
+                description: pesanGalat(error, 'Gagal menolak surat'),
                 variant: 'destructive',
             })
         } finally {

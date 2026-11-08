@@ -172,6 +172,25 @@ describe('useOCRUpload sequential processing', () => {
         expect(result.current.error).toMatch(/dipulihkan/);
     });
 
+    it('shows the server reason instead of the error name when an upload is rejected', async () => {
+        const body = { error: 'Too Many Uploads', message: 'Terlalu banyak upload. Coba lagi setelah 1 menit.' };
+        service.uploadFiles.mockRejectedValue(Object.assign(new Error(body.message), {
+            status: 429,
+            data: body,
+            response: { status: 429, data: body },
+        }));
+        const { result } = renderHook(() => useOCRUpload('unit-a'));
+        await act(async () => { await Promise.resolve(); });
+        act(() => result.current.addFiles([
+            new File(['%PDF-'], 'archive.pdf', { type: 'application/pdf' }),
+        ]));
+
+        await act(() => result.current.upload());
+
+        expect(result.current.error).toBe('Terlalu banyak upload. Coba lagi setelah 1 menit.');
+        expect(result.current.batchId).toBeNull();
+    });
+
     it('tombstones an upload that finishes after the user clears local state', async () => {
         const pendingUpload = deferred();
         service.uploadFiles.mockReturnValueOnce(pendingUpload.promise);

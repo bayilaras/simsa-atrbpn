@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/hooks/use-toast'
 import distributionService from '@/services/distribution.service'
+import { pesanGalat } from '@/lib/pesan-galat'
 
 /** Penyelesaian disposisi (§5): surat keluar approved milik unit di rangkaian yang sama, atau catatan ≥10. */
 export function PenyelesaianDialog({ open, onOpenChange, distribusi, unitKerjaId, onSelesai }) {
@@ -40,7 +41,7 @@ export function PenyelesaianDialog({ open, onOpenChange, distribusi, unitKerjaId
             onOpenChange(false)
             onSelesai?.()
         } catch (error) {
-            toast({ title: 'Error', description: error.response?.data?.error || error.message || 'Gagal menyelesaikan disposisi', variant: 'destructive' })
+            toast({ title: 'Error', description: pesanGalat(error, 'Gagal menyelesaikan disposisi'), variant: 'destructive' })
         } finally {
             setLoading(false)
         }
