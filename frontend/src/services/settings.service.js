@@ -39,6 +39,18 @@ async function changeUnitKerja(request) {
     }
 }
 
+// The API rejects any key it does not accept, while the GET response also
+// carries read-only fields such as updatedAt.
+const EDITABLE_PREFERENCE_KEYS = ['theme', 'language', 'notificationsEnabled', 'emailNotifications'];
+
+function pickEditablePreferences(data) {
+    return Object.fromEntries(
+        EDITABLE_PREFERENCE_KEYS
+            .filter((key) => data?.[key] !== undefined)
+            .map((key) => [key, data[key]]),
+    );
+}
+
 export const settingsService = {
     // Profile
     getProfile: () => api.get(`${API_BASE}/profile`),
@@ -60,7 +72,7 @@ export const settingsService = {
     // Preferences
     getPreferences: () => api.get(`${API_BASE}/preferences`),
     updatePreferences: async (data) => {
-        const preferences = await api.put(`${API_BASE}/preferences`, data);
+        const preferences = await api.put(`${API_BASE}/preferences`, pickEditablePreferences(data));
         window.dispatchEvent(new CustomEvent(PREFERENCES_CHANGED_EVENT, { detail: preferences }));
         return preferences;
     },
