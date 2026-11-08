@@ -296,7 +296,7 @@ export class StorageLocationService {
                 ));
 
             if (hasChildren.count > 0) {
-                throw new ConflictError('Cannot delete location with children. Delete children first.');
+                throw new ConflictError('Lokasi tidak dapat dihapus karena masih memiliki sub-lokasi. Hapus sub-lokasinya terlebih dahulu.');
             }
 
             const [hasArsip] = await tx
@@ -308,7 +308,7 @@ export class StorageLocationService {
                 ));
 
             if (hasArsip.count > 0) {
-                throw new ConflictError('Cannot delete location with archived items. Move items first.');
+                throw new ConflictError('Lokasi tidak dapat dihapus karena masih menyimpan arsip. Pindahkan arsipnya terlebih dahulu.');
             }
 
             const [hasLendingHistory] = await tx
@@ -317,7 +317,7 @@ export class StorageLocationService {
                 .where(eq(archiveLending.storageLocationId, id));
 
             if (hasLendingHistory.count > 0) {
-                throw new ConflictError('Cannot delete location with lending history. Preserve the audit trail.');
+                throw new ConflictError('Lokasi tidak dapat dihapus karena memiliki riwayat peminjaman arsip yang harus tetap tersimpan.');
             }
 
             const [result] = await tx

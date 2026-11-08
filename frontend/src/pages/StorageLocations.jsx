@@ -311,11 +311,15 @@ export default function StorageLocations() {
 
         try {
             await storageLocationService.delete(node.id, unitKerjaId)
-            // alert('Lokasi berhasil dihapus')
+            toast({ title: 'Lokasi berhasil dihapus' })
             fetchData()
         } catch (error) {
-            // alert(error.response?.data?.error || 'Gagal menghapus data')
             console.error(error)
+            toast({
+                variant: 'destructive',
+                title: 'Gagal menghapus lokasi',
+                description: pesanGalat(error, 'Terjadi kesalahan'),
+            })
         }
     }
 
