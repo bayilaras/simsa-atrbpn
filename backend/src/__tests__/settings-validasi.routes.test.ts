@@ -54,6 +54,40 @@ describe('PUT /api/settings/surat-templates — galat validasi', () => {
     });
 });
 
+describe('PUT /api/settings/profile — nama profil', () => {
+    it.each([
+        ['kosong', '', 'Nama wajib diisi.'],
+        ['hanya spasi', '   ', 'Nama wajib diisi.'],
+        ['lebih dari 255 karakter', 'N'.repeat(256), 'Nama maksimal 255 karakter.'],
+        ['bukan teks', 42, 'Nama harus berupa teks.'],
+    ])('menolak nama %s (400) tanpa memanggil layanan', async (_label, name, pesan) => {
+        const update = vi.spyOn(settingsService, 'updateProfile');
+        const res = await request(app).put('/api/settings/profile').send({ name, image: '' }).expect(400);
+        expect(res.body.error).toBe(pesan);
+        expect(update).not.toHaveBeenCalled();
+    });
+
+    it('menolak isian tanpa nama maupun foto (400)', async () => {
+        const update = vi.spyOn(settingsService, 'updateProfile');
+        const res = await request(app).put('/api/settings/profile').send({}).expect(400);
+        expect(res.body.error).toBe('Isi nama atau URL foto profil.');
+        expect(update).not.toHaveBeenCalled();
+    });
+
+    it('menyimpan nama yang sudah dipangkas beserta foto apa adanya', async () => {
+        const update = vi.spyOn(settingsService, 'updateProfile').mockResolvedValue({ id: mocks.user.id } as any);
+        await request(app).put('/api/settings/profile')
+            .send({ name: '  Budi Santoso  ', image: 'https://example.test/foto.jpg' }).expect(200);
+        expect(update.mock.calls[0][1]).toEqual({ name: 'Budi Santoso', image: 'https://example.test/foto.jpg' });
+    });
+
+    it('foto saja tetap boleh diperbarui tanpa nama', async () => {
+        const update = vi.spyOn(settingsService, 'updateProfile').mockResolvedValue({ id: mocks.user.id } as any);
+        await request(app).put('/api/settings/profile').send({ image: 'https://example.test/baru.jpg' }).expect(200);
+        expect(update.mock.calls[0][1]).toEqual({ name: undefined, image: 'https://example.test/baru.jpg' });
+    });
+});
+
 describe('PUT /api/settings/unit-kerja/:id — nama unit', () => {
     beforeEach(() => {
         mocks.user.role = 'super_admin';

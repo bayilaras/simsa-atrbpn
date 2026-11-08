@@ -9,7 +9,7 @@ import auditLogService, { type CriticalAuditContext } from './audit-log.service.
 // Types
 export interface ProfileUpdateData {
     name?: string;
-    image?: string;
+    image?: string | null;
 }
 
 export interface UnitKerjaUpdateData {

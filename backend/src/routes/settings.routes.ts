@@ -12,6 +12,14 @@ const log = createLogger('SettingsRoutes');
 const router = Router();
 
 const ADMIN_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'];
+const profileUpdateSchema = z.object({
+    name: z.string({ error: 'Nama harus berupa teks.' })
+        .trim()
+        .min(1, 'Nama wajib diisi.')
+        .max(255, 'Nama maksimal 255 karakter.')
+        .optional(),
+    image: z.string({ error: 'URL foto profil harus berupa teks.' }).nullable().optional(),
+}, { error: 'Data profil tidak valid.' });
 const unitKerjaNameSchema = z.string({ error: 'Nama unit kerja harus berupa teks.' })
     .trim()
     .min(1, 'Nama unit kerja wajib diisi.')
@@ -114,11 +122,16 @@ router.put('/profile', async (req: Request, res: Response, next: NextFunction) =
             return;
         }
 
-        const { name, image } = req.body;
+        const parsed = profileUpdateSchema.safeParse(req.body ?? {});
+        if (!parsed.success) {
+            res.status(400).json({ error: parsed.error.issues[0].message });
+            return;
+        }
+        const { name, image } = parsed.data;
 
         // Validate that at least one field is provided
-        if (!name && !image && name !== '') {
-            res.status(400).json({ error: 'At least name or image must be provided' });
+        if (name === undefined && !image) {
+            res.status(400).json({ error: 'Isi nama atau URL foto profil.' });
             return;
         }
 
