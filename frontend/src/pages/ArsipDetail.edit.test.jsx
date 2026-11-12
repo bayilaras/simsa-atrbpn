@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/components/tunjuk-silang/KartuTunjukSilang', () => ({ KartuTunjukSilang: ({ tipe, id }) => <div data-testid="kartu-tunjuk-silang">{`${tipe}:${id}`}</div> }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: mocks.user, canWrite: mocks.canWrite }) }))
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }))
+// Formulir Ubah Metadata memuat daftar lokasi simpan unit arsip.
+vi.mock('@/services/storage-location.service', () => ({ default: { getTree: vi.fn().mockResolvedValue({ success: true, data: [] }) } }))
 vi.mock('@/services/arsip.service', () => ({
     arsipService: {
         getById: mocks.getById,

@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 import StorageLocations from './StorageLocations'
 
 const mocks = vi.hoisted(() => ({ getTree: vi.fn(), generateQR: vi.fn(), toast: vi.fn() }))
@@ -14,7 +15,7 @@ beforeEach(() => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
-async function openQR() { render(<StorageLocations />); await screen.findByText(location.name); fireEvent.click(screen.getByTitle('QR Code')) }
+async function openQR() { render(<MemoryRouter><StorageLocations /></MemoryRouter>); await screen.findByText(location.name); fireEvent.click(screen.getByTitle('QR Code')) }
 
 describe('storage QR generation', () => {
     it('finishes loading and displays/downloads the actual qrDataUrl returned by the API', async () => {
@@ -60,7 +61,7 @@ describe('storage QR generation', () => {
         mocks.getTree.mockResolvedValue({ success: true, data: [location, second] })
         mocks.generateQR.mockReturnValueOnce(new Promise(resolve => { finishFirst = resolve }))
             .mockResolvedValue({ success: true, data: { qrDataUrl: secondQr, location: second } })
-        render(<StorageLocations />)
+        render(<MemoryRouter><StorageLocations /></MemoryRouter>)
         await screen.findByText(location.name)
         fireEvent.click(screen.getAllByTitle('QR Code')[0])
         fireEvent.click(screen.getByRole('button', { name: 'Tutup' }))

@@ -13,6 +13,8 @@ vi.mock('@/components/KlasifikasiPicker', () => ({ KlasifikasiPicker: ({ onChang
 </div> }))
 
 const source = { id: 'surat-1', nomorSurat: '001/2026', perihal: 'Arsip surat', tanggalSurat: '2026-09-12', klasifikasiItemId: 82, klasifikasiSubstantifKode: 'HT.01.01', klasifikasiSubstantif: 'Penetapan hak', jraItemId: 97, jraKode: 'S.III.01', jraUraian: 'Berkas penetapan hak', jraRetensiAktif: '2 tahun', jraRetensiInaktif: '3 tahun', jraKeterangan: 'Permanen', klasifikasiKeamanan: 'rahasia' }
+const PERNYATAAN_PERMANEN = 'Saya memahami bahwa pengarsipan ini permanen dan tidak dapat dibatalkan.'
+const setujuiPermanen = () => fireEvent.click(screen.getByRole('checkbox', { name: PERNYATAAN_PERMANEN }))
 beforeEach(() => { mocks.user = { id: 'u-sa', role: 'super_admin' } })
 afterEach(cleanup)
 
@@ -23,6 +25,7 @@ describe('surat to archive rule transfer', () => {
         expect(screen.getByLabelText('Pasangan aturan surat')).toHaveTextContent('Penetapan hak')
         expect(screen.getByLabelText('Pasangan aturan surat')).toHaveTextContent('S.III.01')
         expect(screen.getByDisplayValue('2 tahun')).toBeInTheDocument()
+        setujuiPermanen()
         fireEvent.submit(document.getElementById('archive-form'))
         await waitFor(() => expect(onArchive).toHaveBeenCalled())
         expect(onArchive.mock.calls[0][0]).toMatchObject({ klasifikasiItemId: 82, jraItemId: 97, kodeKlasifikasi: 'HT.01.01', klasifikasiKeamanan: 'rahasia' })
@@ -35,6 +38,7 @@ describe('surat to archive rule transfer', () => {
         expect(screen.getByLabelText('Pasangan aturan surat')).toHaveTextContent('Pembinaan Kearsipan')
         expect(screen.getByDisplayValue('0')).toBeInTheDocument()
         fireEvent.change(screen.getByPlaceholderText('Contoh: AT.02.02/2172-32/VIII/2025'), { target: { value: 'BERKAS-002' } })
+        setujuiPermanen()
         fireEvent.submit(document.getElementById('archive-form'))
         await waitFor(() => expect(onArchive).toHaveBeenCalled())
         expect(onArchive.mock.calls[0][0]).toMatchObject({ nomorBerkas: 'BERKAS-002', klasifikasiItemId: 82, jraItemId: 97, kodeKlasifikasi: 'TU.02.03', klasifikasiArsip: 'Pembinaan Kearsipan' })
@@ -62,6 +66,7 @@ const kirim = async (suratData, suratType) => {
     const onArchive = vi.fn().mockResolvedValue(undefined)
     render(<MemoryRouter><ArchiveDialog open onOpenChange={vi.fn()} suratType={suratType} suratData={suratData} onArchive={onArchive} /></MemoryRouter>)
     const opsi = opsiKelas()
+    setujuiPermanen()
     fireEvent.submit(document.getElementById('archive-form'))
     await waitFor(() => expect(onArchive).toHaveBeenCalled())
     return { payload: onArchive.mock.calls[0][0], opsi }
@@ -154,5 +159,43 @@ describe('kelas keamanan arsip mengikuti plafon peran', () => {
         expect(bantuanKelas()).toHaveTextContent(
             'Kelas Terbatas dipertahankan sesuai surat sumber. Kelas yang lebih tinggi hanya dapat dipilih oleh Super Admin.',
         )
+    })
+})
+
+describe('peringatan permanen sebelum Simpan Arsip', () => {
+    const buka = () => {
+        const onArchive = vi.fn().mockResolvedValue(undefined)
+        const onOpenChange = vi.fn()
+        const view = render(<MemoryRouter><ArchiveDialog open onOpenChange={onOpenChange} suratData={source} onArchive={onArchive} /></MemoryRouter>)
+        return { onArchive, onOpenChange, view }
+    }
+
+    it('menjelaskan apa yang terkunci sebelum arsip disimpan', () => {
+        buka()
+        const peringatan = screen.getByRole('note')
+        expect(peringatan).toHaveTextContent('Pengarsipan bersifat permanen.')
+        expect(peringatan).toHaveTextContent('Setelah disimpan, surat ini terkunci: tidak dapat diubah atau dihapus, dan berkas PDF tidak dapat lagi ditambahkan dari halaman surat. Pengarsipan tidak dapat dibatalkan, dan arsip tidak dapat dihapus dari aplikasi.')
+        expect(screen.getByRole('checkbox', { name: PERNYATAAN_PERMANEN })).not.toBeChecked()
+    })
+
+    it('tanpa centang, arsip tidak disimpan dan pengguna diberi tahu', async () => {
+        const { onArchive, onOpenChange } = buka()
+        fireEvent.submit(document.getElementById('archive-form'))
+        expect(await screen.findByText('Centang pernyataan di atas sebelum menyimpan arsip.')).toHaveAttribute('role', 'alert')
+        expect(screen.getByRole('checkbox', { name: PERNYATAAN_PERMANEN })).toHaveFocus()
+        expect(onArchive).not.toHaveBeenCalled()
+        expect(onOpenChange).not.toHaveBeenCalled()
+
+        setujuiPermanen()
+        expect(screen.queryByText('Centang pernyataan di atas sebelum menyimpan arsip.')).not.toBeInTheDocument()
+        fireEvent.submit(document.getElementById('archive-form'))
+        await waitFor(() => expect(onArchive).toHaveBeenCalledTimes(1))
+    })
+
+    it('centang tidak terbawa ke surat berikutnya', async () => {
+        const { onArchive, onOpenChange, view } = buka()
+        setujuiPermanen()
+        view.rerender(<MemoryRouter><ArchiveDialog open onOpenChange={onOpenChange} suratData={{ ...source, id: 'surat-2', nomorSurat: '002/2026' }} onArchive={onArchive} /></MemoryRouter>)
+        await waitFor(() => expect(screen.getByRole('checkbox', { name: PERNYATAAN_PERMANEN })).not.toBeChecked())
     })
 })

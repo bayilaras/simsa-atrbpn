@@ -22,7 +22,8 @@ import {
     isAllowedForClassification,
     recordAccessService,
 } from '../services/record-access.service.js';
-import { PESAN_KELAS_MELEBIHI_KEWENANGAN } from '../constants/pesan-akses.js';
+import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_LOKASI_SIMPAN_TIDAK_SESUAI } from '../constants/pesan-akses.js';
+import { bolehMemakaiLokasiUnit } from '../utils/record-unit-scope.js';
 import { normalizeSecurityClassification } from '../services/access/visibility-spec.js';
 import { badanPerluPersetujuan, rekamanPerluPersetujuan } from '../services/access/perlu-persetujuan.js';
 import { aksiArsipPayload } from '../services/access/arsip-aksi.js';
@@ -37,7 +38,7 @@ router.use(authMiddleware);
 router.get('/', validateQuery(queryArsipSchema), async (req: AuthRequest, res, next) => {
     try {
         const validatedQuery = res.locals.validatedQuery || {};
-        const { jenisSurat, tahun, search, page, limit } = validatedQuery;
+        const { jenisSurat, tahun, search, storageLocationId, page, limit } = validatedQuery;
 
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit,
         // only super_admin/auditor may list another unit (or all units). This prevents a
@@ -50,6 +51,7 @@ router.get('/', validateQuery(queryArsipSchema), async (req: AuthRequest, res, n
             jenisArsip: jenisSurat,
             tahun,
             search,
+            storageLocationId,
             page,
             limit,
         });
@@ -282,6 +284,15 @@ router.put('/:id', validateIdParam(),
                     !== normalizeSecurityClassification(existing.klasifikasiKeamanan)
             ) {
                 return res.status(403).json({ error: PESAN_KELAS_MELEBIHI_KEWENANGAN });
+            }
+            // Juga untuk null: hanya unit pemilik arsip atau super_admin yang
+            // memindahkan maupun melepas lokasi simpan arsip.
+            if (
+                req.body.storageLocationId !== undefined
+                && (req.body.storageLocationId ?? null) !== (existing.storageLocationId ?? null)
+                && !bolehMemakaiLokasiUnit(req, existing.unitKerjaId)
+            ) {
+                return res.status(400).json({ error: PESAN_LOKASI_SIMPAN_TIDAK_SESUAI });
             }
             const result = await arsipService.update(id as string, req.body, {
                 userId: req.user?.id,

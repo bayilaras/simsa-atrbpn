@@ -27,6 +27,7 @@ import {
     PESAN_ITEM_BELUM_TERMUAT,
     statusAksiArsip,
 } from '@/components/arsip/edit-arsip-form'
+import { namaJalurLokasi } from '@/components/arsip/lokasi-simpan'
 import { arsipService } from '@/services/arsip.service'
 import { useAuth } from '@/context/AuthContext'
 import { PerluPersetujuanAkses } from '@/components/PerluPersetujuanAkses'
@@ -406,6 +407,8 @@ export default function ArsipDetail() {
                 field,
                 hasil && Object.hasOwn(hasil, field) ? hasil[field] : perubahan[field],
             ])),
+            // Nama lokasi baru datang dari muat ulang; nama lama tidak ditampilkan.
+            ...(Object.hasOwn(perubahan, 'storageLocationId') ? { lokasiSimpan: null } : {}),
         }))
         try {
             const refreshed = await arsipService.getById(id)
@@ -774,7 +777,14 @@ export default function ArsipDetail() {
                                         Lokasi Penyimpanan
                                     </CardTitle>
                                 </CardHeader>
-                                <CardContent>
+                                <CardContent className="space-y-3">
+                                    {arsip.lokasiSimpan && (
+                                        <EnhancedInfoField
+                                            icon={MapPin}
+                                            label="Lokasi Simpan"
+                                            value={namaJalurLokasi(arsip.lokasiSimpan.jalur, arsip.lokasiSimpan.code)}
+                                        />
+                                    )}
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                         <EnhancedInfoField icon={FolderOpen} label="Filing Cabinet (FC)" value={arsip.lokasiFc} />
                                         <EnhancedInfoField icon={FolderOpen} label="Laci" value={arsip.lokasiLaci} />

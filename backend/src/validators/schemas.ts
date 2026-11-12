@@ -378,6 +378,8 @@ export const archiveRegistrationSchema = z.object({
     lokasiFc: z.string().trim().max(50).optional(),
     lokasiLaci: z.string().trim().max(50).optional(),
     lokasiFolder: z.string().trim().max(50).optional(),
+    // Opsional; server memeriksa lokasi berada di unit kerja arsip.
+    storageLocationId: uuidSchema.optional(),
     items: z.array(archiveItemRegistrationSchema).min(1).max(100),
     // Deprecated client display/cache fields. Never trusted by the server.
     jraUraian: z.string().max(2000).optional(),
@@ -446,6 +448,8 @@ export const updateArsipSchema = z.object({
     lokasiFc: z.string().trim().max(50).optional(),
     lokasiLaci: z.string().trim().max(50).optional(),
     lokasiFolder: z.string().trim().max(50).optional(),
+    // null melepas arsip dari lokasi simpan.
+    storageLocationId: uuidSchema.nullable().optional(),
     personInCharge: z.string().trim().max(255).optional(),
     unitPengolah: z.string().trim().min(1).max(255).optional(),
     keterangan: z.string().trim().max(4000).optional(),
@@ -463,6 +467,7 @@ export const queryArsipSchema = paginationSchema.extend({
     tahun: z.coerce.number().int().min(2000).max(2100).optional(),
     jenisSurat: z.enum(['masuk', 'keluar']).optional(),
     klasifikasiId: uuidSchema.optional(),
+    storageLocationId: uuidSchema.optional(),
     expiring: z.coerce.boolean().optional(),
     search: z.string().max(255).optional(),
 });

@@ -23,6 +23,7 @@ import {
     CardContent,
 } from '@/components/ui/card'
 import {
+    AlertTriangle,
     Archive,
     Plus,
     Search,
@@ -48,6 +49,8 @@ import { selectedSuratArchiveRules } from '@/lib/surat-archive-selection'
 import { normalisasiSifat } from '@/lib/tindak-lanjut'
 import { useAuth } from '@/context/AuthContext'
 import { PESAN_KELAS_TERBATAS_PERAN, adaKelasTersembunyi, bolehMemilihKelas, saringOpsiKelas } from '@/lib/kelas-keamanan'
+import { LokasiSimpanPicker } from '@/components/arsip/LokasiSimpanPicker'
+import { LABEL_LOKASI_SIMPAN, PETUNJUK_LOKASI_SIMPAN, bolehMemilihLokasiUnit } from '@/components/arsip/lokasi-simpan'
 
 const TINGKAT_PERKEMBANGAN_OPTIONS = [
     { value: 'Asli', label: 'Asli' },
@@ -72,6 +75,15 @@ const kelasSumberSurat = (record = {}, suratType) => {
     const jenis = suratType || (record.klasifikasiKeamanan !== undefined ? 'keluar' : 'masuk')
     return normalisasiSifat(jenis === 'keluar' ? record.klasifikasiKeamanan ?? 'terbatas' : record.sifatSurat)
 }
+
+// Surat yang sudah diarsipkan tidak lagi dapat diubah, dihapus, atau diberi
+// berkas dari halaman surat (record-access mutable = false di backend), tidak
+// ada jalur pembatalan, dan DELETE /api/arsip/:id dinonaktifkan.
+const JUDUL_ARSIP_PERMANEN = 'Pengarsipan bersifat permanen.'
+const PESAN_ARSIP_PERMANEN =
+    'Setelah disimpan, surat ini terkunci: tidak dapat diubah atau dihapus, dan berkas PDF tidak dapat lagi ditambahkan dari halaman surat. Pengarsipan tidak dapat dibatalkan, dan arsip tidak dapat dihapus dari aplikasi.'
+const PERNYATAAN_ARSIP_PERMANEN = 'Saya memahami bahwa pengarsipan ini permanen dan tidak dapat dibatalkan.'
+const GALAT_PERNYATAAN_ARSIP = 'Centang pernyataan di atas sebelum menyimpan arsip.'
 
 const UNIT_PENGOLAH_OPTIONS = [
     { value: 'Ditjen', label: 'Ditjen' },
@@ -104,6 +116,8 @@ const buildFormData = (record = {}, kelasSumber) => ({
     klasifikasiKeamanan: rankKelas(kelasSumber) === undefined ? '' : kelasSumber,
     personInCharge: '',
     keterangan: '',
+    // Opsional; hanya dikirim bila dipilih.
+    storageLocationId: '',
 })
 
 const buildItems = ({ perihal, tanggalSurat }) => ([
@@ -160,6 +174,9 @@ export function ArchiveDialog({
 }) {
     const [loading, setLoading] = useState(false)
     const [formError, setFormError] = useState('')
+    // Pernyataan wajib: pengarsipan mengunci surat dan tidak dapat dibatalkan.
+    const [paham, setPaham] = useState(false)
+    const [galatPaham, setGalatPaham] = useState(false)
 
     const { perihal, tanggalSurat } = suratData || {}
     const sourceData = JSON.stringify(suratData || {})
@@ -184,6 +201,8 @@ export function ArchiveDialog({
         ].filter(Boolean).join(' ')
         : ''
     const bantuanKelas = kelasDibatasi
+    const unitArsip = suratData?.unitKerjaId || ''
+    const bolehPilihLokasi = bolehMemilihLokasiUnit(user, unitArsip)
 
     // Form state for Identifikasi Berkas
     const [formData, setFormData] = useState(() => buildFormData(suratData || {}, kelasSumber))
@@ -198,6 +217,8 @@ export function ArchiveDialog({
         setFormData(buildFormData(source, kelasSumberSurat(source, suratType)))
         setItems(buildItems(source))
         setFormError('')
+        setPaham(false)
+        setGalatPaham(false)
     }, [open, sourceData, suratType])
 
     const handleChange = (field, value) => {
@@ -237,6 +258,11 @@ export function ArchiveDialog({
     const handleSubmit = async (e) => {
         e.preventDefault()
         setFormError('')
+        if (!paham) {
+            setGalatPaham(true)
+            document.getElementById('arsip-pernyataan-permanen')?.focus()
+            return
+        }
         const validationError = validateArchiveRegistration(formData, items)
         if (validationError) {
             setFormError(validationError)
@@ -256,7 +282,7 @@ export function ArchiveDialog({
                     'hasilAkhirPreview',
                     'jraVersionPreview',
                     'jraReferencePreview',
-                ].includes(field) && !(field === 'klasifikasiKeamanan' && !value)),
+                ].includes(field) && !(['klasifikasiKeamanan', 'storageLocationId'].includes(field) && !value)),
             )
             const payload = {
                 ...registrationData,
@@ -742,6 +768,27 @@ export function ArchiveDialog({
                                         </CardContent>
                                     </Card>
                                 ))}
+
+                                {bolehPilihLokasi && (
+                                    <div className="space-y-1.5 border-t border-dashed border-border pt-5">
+                                        <Label htmlFor="arsip-lokasi-simpan" className="flex items-center gap-2 font-medium text-foreground">
+                                            <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                                            {LABEL_LOKASI_SIMPAN}
+                                        </Label>
+                                        <LokasiSimpanPicker
+                                            id="arsip-lokasi-simpan"
+                                            unitKerjaId={unitArsip}
+                                            value={formData.storageLocationId}
+                                            onChange={(value) => handleChange('storageLocationId', value)}
+                                            disabled={loading}
+                                            aria-describedby="arsip-lokasi-simpan-petunjuk"
+                                            className="md:w-1/2"
+                                        />
+                                        <p id="arsip-lokasi-simpan-petunjuk" className="text-[11px] italic text-muted-foreground">
+                                            {PETUNJUK_LOKASI_SIMPAN} Isian No. Filing Cabinet, Laci, dan Folder tetap diisi per item.
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         </section>
 
@@ -831,30 +878,59 @@ export function ArchiveDialog({
                 </div>
 
                 {/* Footer */}
-                <div className="z-10 flex shrink-0 flex-col-reverse gap-3 border-t border-border bg-card p-4 shadow-[0_-4px_10px_rgba(0,0,0,0.03)] sm:flex-row sm:justify-end sm:p-5">
-                    <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => onOpenChange(false)}
-                        disabled={loading}
-                        className="w-full border border-border bg-card text-foreground shadow-sm hover:bg-muted/50 sm:w-auto sm:min-w-[100px]"
-                    >
-                        <X className="h-4 w-4 mr-2" />
-                        Batal
-                    </Button>
-                    <Button
-                        form="archive-form"
-                        type="submit"
-                        disabled={loading}
-                        className="w-full bg-teal-600 text-white shadow-md shadow-teal-600/20 hover:bg-teal-700 sm:w-auto sm:min-w-[180px]"
-                    >
-                        {loading ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                            <Archive className="mr-2 h-4 w-4" />
+                <div className="z-10 shrink-0 space-y-3 border-t border-border bg-card p-4 shadow-[0_-4px_10px_rgba(0,0,0,0.03)] sm:p-5">
+                    <div role="note" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+                        <p className="flex items-start gap-2">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                            <span>
+                                <strong>{JUDUL_ARSIP_PERMANEN}</strong> {PESAN_ARSIP_PERMANEN}
+                            </span>
+                        </p>
+                        <label htmlFor="arsip-pernyataan-permanen" className="mt-2 flex items-start gap-2 font-medium">
+                            <input
+                                id="arsip-pernyataan-permanen"
+                                type="checkbox"
+                                className="mt-0.5 h-4 w-4 shrink-0 accent-teal-600"
+                                checked={paham}
+                                disabled={loading}
+                                aria-required="true"
+                                aria-invalid={galatPaham && !paham ? true : undefined}
+                                aria-describedby={galatPaham && !paham ? 'arsip-pernyataan-permanen-galat' : undefined}
+                                onChange={(event) => { setPaham(event.target.checked); setGalatPaham(false) }}
+                            />
+                            <span>{PERNYATAAN_ARSIP_PERMANEN}</span>
+                        </label>
+                        {galatPaham && !paham && (
+                            <p id="arsip-pernyataan-permanen-galat" role="alert" className="mt-1 font-medium text-red-700 dark:text-red-300">
+                                {GALAT_PERNYATAAN_ARSIP}
+                            </p>
                         )}
-                        {loading ? 'Menyimpan arsip…' : 'Simpan Arsip'}
-                    </Button>
+                    </div>
+                    <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => onOpenChange(false)}
+                            disabled={loading}
+                            className="w-full border border-border bg-card text-foreground shadow-sm hover:bg-muted/50 sm:w-auto sm:min-w-[100px]"
+                        >
+                            <X className="h-4 w-4 mr-2" />
+                            Batal
+                        </Button>
+                        <Button
+                            form="archive-form"
+                            type="submit"
+                            disabled={loading}
+                            className="w-full bg-teal-600 text-white shadow-md shadow-teal-600/20 hover:bg-teal-700 sm:w-auto sm:min-w-[180px]"
+                        >
+                            {loading ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <Archive className="mr-2 h-4 w-4" />
+                            )}
+                            {loading ? 'Menyimpan arsip…' : 'Simpan Arsip'}
+                        </Button>
+                    </div>
                 </div>
             </DialogContent>
         </Dialog>

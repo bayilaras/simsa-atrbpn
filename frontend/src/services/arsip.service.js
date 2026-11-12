@@ -2,12 +2,13 @@ import api from './api';
 
 export const arsipService = {
     // List arsip with pagination and filters
-    async getAll({ unitKerjaId, jenisArsip, tahun, search, page = 1, limit = 20 } = {}) {
+    async getAll({ unitKerjaId, jenisArsip, tahun, search, storageLocationId, page = 1, limit = 20 } = {}) {
         const response = await api.get('/api/arsip', {
             unitKerjaId,
             jenisSurat: jenisArsip,
             tahun,
             search,
+            storageLocationId,
             page,
             limit,
         });
