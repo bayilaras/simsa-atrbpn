@@ -415,6 +415,29 @@ export class ArsipService {
         return hasil;
     }
 
+    /**
+     * Item arsip untuk sekumpulan arsip, diambil dalam satu query dan
+     * dikelompokkan per arsip. Tidak menyaring unit atau kelas keamanan:
+     * pemanggil wajib meneruskan id dari baris yang sudah tersaring unit dan
+     * kelasnya.
+     */
+    async itemPerArsip(arsipIds: string[]): Promise<Map<string, ArsipItem[]>> {
+        const hasil = new Map<string, ArsipItem[]>();
+        const ids = [...new Set(arsipIds)];
+        if (ids.length === 0) return hasil;
+        const rows: ArsipItem[] = await db
+            .select()
+            .from(arsipItems)
+            .where(sql`${arsipItems.arsipId} = any(${uuidArraySql(ids)})`)
+            .orderBy(arsipItems.arsipId, arsipItems.nomorItem, arsipItems.id);
+        for (const row of rows) {
+            const daftar = hasil.get(row.arsipId);
+            if (daftar) daftar.push(row);
+            else hasil.set(row.arsipId, [row]);
+        }
+        return hasil;
+    }
+
     async findById(id: string) {
         const [result] = await db
             .select(ARCHIVE_WITH_RULE_SNAPSHOT)

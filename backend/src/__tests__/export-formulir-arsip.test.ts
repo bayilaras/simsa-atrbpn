@@ -3,12 +3,12 @@ import request from 'supertest';
 import ExcelJS from 'exceljs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ findAll: vi.fn(), jenisLama: vi.fn(), audit: vi.fn() }));
+const state = vi.hoisted(() => ({ findAll: vi.fn(), jenisLama: vi.fn(), items: vi.fn(), audit: vi.fn() }));
 vi.mock('../services/surat-masuk.service', () => ({ suratMasukService: { findAll: vi.fn() } }));
 vi.mock('../services/surat-keluar.service', () => ({ suratKeluarService: { findAll: vi.fn() } }));
 vi.mock('../services/export-unit-pengolah', () => ({ namaUnitPengolah: async () => 'Unit Uji' }));
 vi.mock('../services/arsip.service', () => ({
-    arsipService: { findAll: state.findAll, jenisPenyusutanLamaPerArsip: state.jenisLama },
+    arsipService: { findAll: state.findAll, jenisPenyusutanLamaPerArsip: state.jenisLama, itemPerArsip: state.items },
 }));
 vi.mock('../services/audit-log.service', () => ({ auditLogService: { logActionOrThrow: state.audit } }));
 vi.mock('../middlewares/auth.middleware', () => ({ authMiddleware: (req: any, _res: any, next: any) => {
@@ -20,6 +20,7 @@ vi.mock('../services/record-access.service.js', () => ({ allowedSecurityClassifi
 vi.mock('../utils/logger', () => ({ createLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }) }));
 const { exportService, PESAN_FORMULIR6_KOSONG } = await import('../services/export.service');
 const { exportRoutes } = await import('../routes/export.routes');
+const { loadPdfKit } = await import('../utils/lazy-libraries');
 const app = express().use('/api/export', exportRoutes);
 
 const evaluasi = (status: string, extra: Record<string, unknown> = {}) => ({
@@ -57,6 +58,7 @@ describe('Formulir 4 dan Formulir 6 memisahkan arsip aktif dan inaktif', () => {
         vi.clearAllMocks();
         state.audit.mockResolvedValue(undefined);
         state.jenisLama.mockResolvedValue(new Map());
+        state.items.mockResolvedValue(new Map());
     });
 
     it('Formulir 6 Excel hanya memuat arsip inaktif', async () => {
@@ -170,6 +172,7 @@ describe('arsip executed dari pemindahan dan alih media lama', () => {
         vi.clearAllMocks();
         state.audit.mockResolvedValue(undefined);
         state.jenisLama.mockResolvedValue(jenisLama());
+        state.items.mockResolvedValue(new Map());
     });
 
     it('Formulir 6 Excel memuat pemindahan lama tanpa arsip yang dimusnahkan atau diserahkan', async () => {
@@ -230,5 +233,152 @@ describe('arsip executed dari pemindahan dan alih media lama', () => {
         } else {
             expect(buffer.subarray(0, 4).toString()).toBe('%PDF');
         }
+    });
+});
+
+describe('Formulir 4 dan Formulir 6 mencetak satu baris per item arsip', () => {
+    const item = (nomorItem: string, over: Record<string, unknown> = {}) => ({
+        nomorItem,
+        uraianItem: `Item ${nomorItem}`,
+        tingkatPerkembangan: 'Asli',
+        tanggalItem: `2026-03-${nomorItem.padStart(2, '0')}`,
+        jumlah: Number(nomorItem),
+        lokasiFc: '', lokasiLaci: '', lokasiFolder: '',
+        ...over,
+    });
+    // BANYAK punya tiga item (tersimpan tidak berurutan), SATU tanpa rincian item.
+    const berkasAktif = () => [
+        arsipBaris('BANYAK', { nomorBerkas: 'B-01', jumlah: 99, lokasiFc: 'FC1', lokasiLaci: 'L2', lokasiFolder: 'F3', keterangan: 'Ket berkas' }),
+        arsipBaris('SATU', { nomorItem: '7', uraianItem: 'Ringkasan satu', tanggalArsip: '2026-01-05', jumlah: 4, tingkatPerkembangan: 'Salinan' }),
+        arsipBaris('TIGA', {}),
+    ];
+    const itemAktif = () => new Map([
+        ['BANYAK', [item('10'), item('2', { lokasiFc: 'FC9', lokasiLaci: 'L9', lokasiFolder: 'F9' }), item('1', { tingkatPerkembangan: '' })]],
+        ['TIGA', [item('1', { uraianItem: 'Satu-satunya item', jumlah: null })]],
+    ]);
+
+    async function lembar(buffer: Buffer) {
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(buffer as any);
+        return workbook.worksheets[0];
+    }
+    const nilaiBaris = (sheet: ExcelJS.Worksheet, row: number, kolom: number) =>
+        Array.from({ length: kolom }, (_, i) => sheet.getCell(row, i + 1).value);
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        state.audit.mockResolvedValue(undefined);
+        state.jenisLama.mockResolvedValue(new Map());
+        state.items.mockResolvedValue(itemAktif());
+    });
+
+    it('Formulir 4 Excel: item diurutkan, kolom berkas digabung, jumlah mengikuti item', async () => {
+        state.findAll.mockResolvedValue(hasil(berkasAktif()));
+        const sheet = await lembar(await exportService.generateExcelArsip({ unitKerjaId: 'unit-a' }, 'formulir4'));
+        // Baris data mulai di baris 8 (judul, kepala dua tingkat, nomor kolom).
+        expect(nilaiBaris(sheet, 8, 13)).toEqual([
+            'B-01', 'PT.01', 'Berkas BANYAK', '2026', 13, '1', 'Item 1', '2026-03-01', 1, '', 'FC1/L2/F3', '', 'Ket berkas',
+        ]);
+        expect(nilaiBaris(sheet, 9, 13).slice(5, 11)).toEqual(['2', 'Item 2', '2026-03-02', 2, 'Asli', 'FC9/L9/F9']);
+        expect(nilaiBaris(sheet, 10, 13).slice(5, 11)).toEqual(['10', 'Item 10', '2026-03-10', 10, 'Asli', 'FC1/L2/F3']);
+        // Sel berkas tiga baris itu satu sel gabungan, bukan nilai yang diulang.
+        for (const kolom of [1, 2, 3, 4, 5, 12, 13]) {
+            expect(sheet.getCell(9, kolom).master.address).toBe(sheet.getCell(8, kolom).address);
+            expect(sheet.getCell(10, kolom).master.address).toBe(sheet.getCell(8, kolom).address);
+        }
+        expect(sheet.getCell(9, 6).isMerged).toBe(false);
+        // Arsip tanpa rincian item tetap satu baris dari data berkas, bernomor urut berkas.
+        expect(nilaiBaris(sheet, 11, 13).slice(0, 10)).toEqual([
+            '2', 'PT.01', 'Berkas SATU', '2026', 4, '7', 'Ringkasan satu', '2026-01-05', 4, 'Salinan',
+        ]);
+        expect(sheet.getCell(11, 1).isMerged).toBe(false);
+        // Arsip dengan satu item memakai nilai itemnya; jumlah kosong dihitung 1.
+        expect(nilaiBaris(sheet, 12, 13).slice(0, 9)).toEqual([
+            '3', 'PT.01', 'Berkas TIGA', '2026', 1, '1', 'Satu-satunya item', '2026-03-01', 1,
+        ]);
+        expect(sheet.getCell(13, 1).value).toBeNull();
+        expect(sheet.getCell(15, 9).value).toContain('....');
+    });
+
+    it('Formulir 6 Excel: satu baris per item dengan nomor urut bersambung', async () => {
+        const inaktif = { canonicalRetention: evaluasi('inaktif') };
+        state.findAll.mockResolvedValue(hasil([
+            arsipBaris('AKTIF-1'),
+            arsipBaris('BANYAK', { ...inaktif, lokasiFc: 'FC1', lokasiLaci: 'L2', lokasiFolder: 'F3', jumlah: 99 }),
+            arsipBaris('SATU', { ...inaktif, jumlah: 4, tingkatPerkembangan: 'Salinan' }),
+        ]));
+        const sheet = await lembar(await exportService.generateExcelArsip({ unitKerjaId: 'unit-a' }, 'formulir6'));
+        const baris = [8, 9, 10, 11].map(row => nilaiBaris(sheet, row, 7));
+        expect(baris).toEqual([
+            [1, 'PT.01', 'Item 1\n(Berkas: Berkas BANYAK)', '2026', '', 1, 'FC1/L2/F3'],
+            [2, 'PT.01', 'Item 2\n(Berkas: Berkas BANYAK)', '2026', 'Asli', 2, 'FC9/L9/F9'],
+            [3, 'PT.01', 'Item 10\n(Berkas: Berkas BANYAK)', '2026', 'Asli', 10, 'FC1/L2/F3'],
+            [4, 'PT.01', 'Berkas SATU', '2026', 'Salinan', 4, ''],
+        ]);
+        expect(sheet.getCell(12, 1).value).toBeNull();
+    });
+
+    it.each(['formulir4', 'formulir6'])('rincian item diambil sekali, hanya untuk arsip yang masuk %s', async formulirType => {
+        state.findAll.mockResolvedValue(hasil(campuran()));
+        await exportService.generateExcelArsip({ unitKerjaId: 'unit-a' }, formulirType);
+        expect(state.items).toHaveBeenCalledExactlyOnceWith(
+            formulirType === 'formulir6' ? ['DIPINDAHKAN', 'INAKTIF-JRA'] : ['AKTIF-1', 'BELUM-VERIFIKASI'],
+        );
+    });
+
+    it('pemindahan lama yang masuk Formulir 6 juga dicetak per item', async () => {
+        state.jenisLama.mockResolvedValue(new Map([['PINDAH-LAMA', 'pemindahan']]));
+        state.items.mockResolvedValue(new Map([['PINDAH-LAMA', [item('1'), item('2')]]]));
+        state.findAll.mockResolvedValue(hasil([
+            arsipBaris('PINDAH-LAMA', { disposalStatus: 'executed' }),
+            arsipBaris('DIMUSNAHKAN', { disposalStatus: 'executed', canonicalRetention: evaluasi('kadaluarsa') }),
+        ]));
+        const sheet = await lembar(await exportService.generateExcelArsip({ unitKerjaId: 'unit-a' }, 'formulir6'));
+        expect([8, 9].map(row => nilaiBaris(sheet, row, 3))).toEqual([
+            [1, 'PT.01', 'Item 1\n(Berkas: Berkas PINDAH-LAMA)'],
+            [2, 'PT.01', 'Item 2\n(Berkas: Berkas PINDAH-LAMA)'],
+        ]);
+        expect(state.items).toHaveBeenCalledExactlyOnceWith(['PINDAH-LAMA']);
+    });
+
+    it.each(['formulir4', 'formulir6'])('PDF %s memuat tiap item dan jumlah arsip serta itemnya', async formulirType => {
+        const fase = formulirType === 'formulir6' ? { canonicalRetention: evaluasi('inaktif') } : {};
+        state.findAll.mockResolvedValue(hasil(berkasAktif().map(row => ({ ...row, ...fase }))));
+        const PDFDocument = await loadPdfKit();
+        const tulis = vi.spyOn(PDFDocument.prototype as any, 'text');
+        const buffer = await exportService.generatePdfArsip({ unitKerjaId: 'unit-a' }, formulirType);
+        const teks = tulis.mock.calls.map(call => String(call[0]));
+        tulis.mockRestore();
+        expect(buffer.subarray(0, 4).toString()).toBe('%PDF');
+        expect(teks).toContain('Total: 3 arsip, 5 item');
+        if (formulirType === 'formulir4') {
+            for (const uraian of ['Item 1', 'Item 2', 'Item 10', 'Ringkasan satu', 'Satu-satunya item']) expect(teks).toContain(uraian);
+            // Kolom berkas dicetak sekali untuk berkas yang punya tiga item.
+            expect(teks.filter(nilai => nilai === 'Berkas BANYAK')).toHaveLength(1);
+            expect(teks.filter(nilai => nilai === '13')).toHaveLength(1);
+        } else {
+            for (const uraian of ['Item 1 (Berkas: Berkas BANYAK)', 'Item 10 (Berkas: Berkas BANYAK)', 'Berkas SATU']) expect(teks).toContain(uraian);
+            // Nomor urut bersambung 1 sampai 5.
+            for (const nomor of ['1', '2', '3', '4', '5']) expect(teks).toContain(nomor);
+        }
+    });
+
+    it('PDF tanpa rincian item tetap menulis jumlah arsip seperti sebelumnya', async () => {
+        state.items.mockResolvedValue(new Map());
+        state.findAll.mockResolvedValue(hasil(berkasAktif()));
+        const PDFDocument = await loadPdfKit();
+        const tulis = vi.spyOn(PDFDocument.prototype as any, 'text');
+        await exportService.generatePdfArsip({ unitKerjaId: 'unit-a' }, 'formulir4');
+        const teks = tulis.mock.calls.map(call => String(call[0]));
+        tulis.mockRestore();
+        expect(teks).toContain('Total: 3 arsip');
+    });
+
+    it('ekspor Laporan (tanpa formulirType) juga mencetak per item', async () => {
+        state.findAll.mockResolvedValue(hasil(berkasAktif()));
+        const sheet = await lembar(await exportService.generateExcelArsip({ unitKerjaId: 'unit-a' }));
+        expect([8, 9, 10, 11, 12].map(row => sheet.getCell(row, 7).value)).toEqual([
+            'Item 1', 'Item 2', 'Item 10', 'Ringkasan satu', 'Satu-satunya item',
+        ]);
     });
 });

@@ -7,7 +7,7 @@ vi.mock('../services/surat-masuk.service', () => ({ suratMasukService: { findAll
 vi.mock('../services/surat-keluar.service', () => ({ suratKeluarService: { findAll: state.findAll } }));
 vi.mock('../services/export-unit-pengolah', () => ({ namaUnitPengolah: async () => 'Unit Uji' }));
 vi.mock('../services/arsip.service', () => ({
-    arsipService: { findAll: state.findAll, jenisPenyusutanLamaPerArsip: vi.fn().mockResolvedValue(new Map()) },
+    arsipService: { findAll: state.findAll, jenisPenyusutanLamaPerArsip: vi.fn().mockResolvedValue(new Map()), itemPerArsip: vi.fn().mockResolvedValue(new Map()) },
 }));
 vi.mock('../middlewares/auth.middleware', () => ({ authMiddleware: (req: any, _res: any, next: any) => {
     req.user = { id: 'staff-a', role: 'staff', unitKerjaId: 'unit-a' }; next();

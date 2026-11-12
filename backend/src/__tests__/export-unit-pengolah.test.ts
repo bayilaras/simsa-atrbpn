@@ -13,7 +13,7 @@ vi.mock('../config/database.js', () => ({
 vi.mock('../services/surat-masuk.service', () => ({ suratMasukService: { findAll: holder.masuk } }));
 vi.mock('../services/surat-keluar.service', () => ({ suratKeluarService: { findAll: holder.keluar } }));
 vi.mock('../services/arsip.service', () => ({
-    arsipService: { findAll: holder.arsip, jenisPenyusutanLamaPerArsip: holder.jenisLama },
+    arsipService: { findAll: holder.arsip, jenisPenyusutanLamaPerArsip: holder.jenisLama, itemPerArsip: async () => new Map() },
 }));
 
 const DITJEN = 'Direktorat Jenderal Pengadaan Tanah dan Pengembangan Pertanahan';
