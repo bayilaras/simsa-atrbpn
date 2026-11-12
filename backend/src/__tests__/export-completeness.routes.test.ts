@@ -1,13 +1,13 @@
 import express from 'express';
 import request from 'supertest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ findAll: vi.fn() }));
 vi.mock('../services/surat-masuk.service', () => ({ suratMasukService: { findAll: state.findAll } }));
 vi.mock('../services/surat-keluar.service', () => ({ suratKeluarService: { findAll: state.findAll } }));
 vi.mock('../services/export-unit-pengolah', () => ({ namaUnitPengolah: async () => 'Unit Uji' }));
 vi.mock('../services/arsip.service', () => ({
-    arsipService: { findAll: state.findAll, jenisPenyusutanLamaPerArsip: vi.fn().mockResolvedValue(new Map()) },
+    arsipService: { findAll: state.findAll, jenisPenyusutanLamaPerArsip: vi.fn().mockResolvedValue(new Map()), itemPerArsip: vi.fn().mockResolvedValue(new Map()) },
 }));
 vi.mock('../middlewares/auth.middleware', () => ({ authMiddleware: (req: any, _res: any, next: any) => {
     req.user = { id: 'staff-a', role: 'staff', unitKerjaId: 'unit-a' }; next();
@@ -18,7 +18,12 @@ vi.mock('../services/record-access.service.js', () => ({ allowedSecurityClassifi
 vi.mock('../utils/logger', () => ({ createLogger: () => ({ error: vi.fn() }) }));
 vi.mock('../services/audit-log.service', () => ({ auditLogService: { logActionOrThrow: vi.fn().mockResolvedValue(undefined) } }));
 const { exportRoutes } = await import('../routes/export.routes');
+const { loadExcelJS, loadPdfKit } = await import('../utils/lazy-libraries');
 const app = express().use('/api/export', exportRoutes);
+
+// Pustaka Excel dan PDF dimuat lebih dulu supaya kasus pertama tidak menanggung
+// waktu muatnya ketika mesin uji sedang sibuk.
+beforeAll(async () => { await Promise.all([loadExcelJS(), loadPdfKit()]); }, 60_000);
 
 describe('export count and data share authorized filters', () => {
     beforeEach(() => vi.clearAllMocks());

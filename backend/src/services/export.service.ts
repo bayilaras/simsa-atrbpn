@@ -7,6 +7,7 @@ import { ASAL_NASKAH_LABEL, resolveBalasanLabels } from './export-balasan';
 import { namaUnitPengolah } from './export-unit-pengolah.js';
 import { sifatSuratLabel } from './sifat-surat.js';
 import { jenisFormulirArsip, lengkapiJenisPenyusutanLama, saringFormulirArsip } from './arsip-fase.js';
+import { barisFormulirArsip, rincianItemDicetak, totalFormulirArsip, uraianFormulir6, type BarisFormulirArsip } from './export-formulir-baris.js';
 import { AppError } from '../utils/errors.js';
 import { loadExcelJS, loadPdfKit } from '../utils/lazy-libraries.js';
 
@@ -20,6 +21,15 @@ export class ExportFormulirKosongError extends AppError {
         super(PESAN_FORMULIR6_KOSONG, 422);
     }
 }
+
+/** Keterangan tambahan yang hanya diisi oleh ekspor dari halaman Laporan. */
+export interface OpsiEksporSurat {
+    /** Menggantikan tulisan "Tahun ..." pada judul bila laporan memakai rentang tanggal. */
+    keteranganPeriode?: string;
+}
+
+const keteranganTahun = (tahun: number | undefined, opsi: OpsiEksporSurat) =>
+    opsi.keteranganPeriode || `Tahun ${tahun || 'Semua'}`;
 
 export interface ExportOptions {
     format: 'excel' | 'pdf';
@@ -56,7 +66,7 @@ export class ExportService {
      * Columns: ID, No, Jenis Surat, Sifat Surat, Nomor Surat, Tanggal Surat,
      *          Perihal, Dari, Kepada, Status, Disposisi, Timestamp, Status Arsip
      */
-    async generateExcelSuratMasuk(filters: SuratMasukFilters): Promise<Buffer> {
+    async generateExcelSuratMasuk(filters: SuratMasukFilters, opsi: OpsiEksporSurat = {}): Promise<Buffer> {
         const result = await suratMasukService.findAll({
             ...filters,
             page: 1,
@@ -81,7 +91,7 @@ export class ExportService {
 
         worksheet.mergeCells('A2:M2');
         const subtitleCell = worksheet.getCell('A2');
-        subtitleCell.value = `${unitPengolah} — Tahun ${filters.tahun || 'Semua'}`;
+        subtitleCell.value = `${unitPengolah} — ${keteranganTahun(filters.tahun, opsi)}`;
         subtitleCell.font = { ...SUBTITLE_FONT, bold: false };
         subtitleCell.alignment = CENTER_ALIGN;
 
@@ -148,7 +158,7 @@ export class ExportService {
      *          Perihal, Tujuan, Link Dokumen, Tanggal Input, Balasan Untuk (nomor), Asal Naskah,
      *          Klasifikasi Arsip, Klasifikasi Kode, Klasifikasi Jenis
      */
-    async generateExcelSuratKeluar(filters: SuratKeluarFilters): Promise<Buffer> {
+    async generateExcelSuratKeluar(filters: SuratKeluarFilters, opsi: OpsiEksporSurat = {}): Promise<Buffer> {
         const result = await suratKeluarService.findAll({
             ...filters,
             page: 1,
@@ -174,7 +184,7 @@ export class ExportService {
 
         worksheet.mergeCells('A2:O2');
         const subtitleCell = worksheet.getCell('A2');
-        subtitleCell.value = `${unitPengolah} — Tahun ${filters.tahun || 'Semua'}`;
+        subtitleCell.value = `${unitPengolah} — ${keteranganTahun(filters.tahun, opsi)}`;
         subtitleCell.font = { ...SUBTITLE_FONT, bold: false };
         subtitleCell.alignment = CENTER_ALIGN;
 
@@ -273,7 +283,18 @@ export class ExportService {
      * keanggotaan batchnya; id yang diperiksa berasal dari hasil findAll yang
      * sudah tersaring unit dan kelas keamanan.
      */
-    private async dataFormulirArsip(filters: ArsipFilters, formulirType?: string) {
+    private async dataFormulirArsip(filters: ArsipFilters, formulirType?: string): Promise<BarisFormulirArsip[]> {
+        const data = await this.arsipFormulir(filters, formulirType);
+        // Rincian item hanya diambil untuk arsip yang sudah lolos saringan di
+        // atas dan berkelas Biasa, sekaligus dalam satu query.
+        const idBerinci = data.filter(rincianItemDicetak).map((row: any) => row.id);
+        const itemPerArsip = idBerinci.length > 0
+            ? await arsipService.itemPerArsip(idBerinci)
+            : new Map();
+        return barisFormulirArsip(data, itemPerArsip);
+    }
+
+    private async arsipFormulir(filters: ArsipFilters, formulirType?: string) {
         const result = await arsipService.findAll({
             ...filters,
             page: 1,
@@ -297,7 +318,7 @@ export class ExportService {
      * Formulir 4 — DAFTAR ARSIP AKTIF
      * Permen ATRBPN 2 Tahun 2026 Kearsipan
      */
-    private async generateExcelArsipFormulir4(workbook: ExcelJS.Workbook, data: any[], filters: ArsipFilters, unitPengolah: string): Promise<Buffer> {
+    private async generateExcelArsipFormulir4(workbook: ExcelJS.Workbook, data: BarisFormulirArsip[], filters: ArsipFilters, unitPengolah: string): Promise<Buffer> {
         const worksheet = workbook.addWorksheet('Formulir 4 - Arsip Aktif', {
             pageSetup: { orientation: 'landscape', paperSize: 9 /* A4 */ },
         });
@@ -403,32 +424,40 @@ export class ExportService {
 
         // Data rows
         const startRow = numRow + 1;
-        data.forEach((item, index) => {
+        // Kolom berkas (1-5, 12, 13) digabung menurun untuk berkas yang punya
+        // lebih dari satu item; kolom 6-11 diisi per item.
+        const kolomBerkas = [1, 2, 3, 4, 5, 12, 13];
+        data.forEach((baris, index) => {
             const rowNum = startRow + index;
-            const lokasi = [item.lokasiFc, item.lokasiLaci, item.lokasiFolder].filter(Boolean).join('/');
+            const item = baris.berkas;
             const rowData = [
-                item.nomorBerkas || String(index + 1),
+                item.nomorBerkas || String(baris.urutBerkas),
                 item.kodeKlasifikasi || '',
                 item.uraianBerkas || '',
                 item.kurunWaktu || String(item.tahun),
-                item.jumlah || 1,
-                item.nomorItem || '',
-                item.uraianItem || '',
-                item.tanggalArsip || '',
-                item.jumlah || 1,
-                item.tingkatPerkembangan || '',
-                lokasi || '',
+                baris.jumlahBerkas,
+                baris.nomorItem,
+                baris.uraianItem,
+                baris.tanggal,
+                baris.jumlah,
+                baris.tingkatPerkembangan,
+                baris.lokasi,
                 item.klasifikasiKeamanan || '',
                 item.keterangan || '',
             ];
 
             rowData.forEach((val, i) => {
                 const cell = worksheet.getCell(rowNum, i + 1);
-                cell.value = val;
+                cell.value = baris.itemKe > 0 && kolomBerkas.includes(i + 1) ? null : val;
                 cell.font = DATA_FONT;
                 cell.border = THIN_BORDER;
                 cell.alignment = i === 2 || i === 6 ? LEFT_ALIGN : CENTER_ALIGN;
             });
+
+            if (baris.jumlahBaris > 1 && baris.itemKe === baris.jumlahBaris - 1) {
+                const barisPertama = rowNum - baris.itemKe;
+                kolomBerkas.forEach((col) => worksheet.mergeCells(barisPertama, col, rowNum, col));
+            }
         });
 
         // Signature block
@@ -469,7 +498,7 @@ export class ExportService {
      *          Tingkat Perkembangan, Jumlah, Lokasi Simpan, Keamanan & Akses,
      *          Jangka Simpan & Nasib Akhir, Kategori Arsip, Ket.
      */
-    private async generateExcelArsipFormulir6(workbook: ExcelJS.Workbook, data: any[], filters: ArsipFilters, unitPengolah: string): Promise<Buffer> {
+    private async generateExcelArsipFormulir6(workbook: ExcelJS.Workbook, data: BarisFormulirArsip[], filters: ArsipFilters, unitPengolah: string): Promise<Buffer> {
         const worksheet = workbook.addWorksheet('Formulir 6 - Arsip Inaktif', {
             pageSetup: { orientation: 'landscape', paperSize: 9 },
         });
@@ -532,9 +561,9 @@ export class ExportService {
 
         // Data rows
         const startRow = numRow + 1;
-        data.forEach((item, index) => {
+        data.forEach((baris, index) => {
             const rowNum = startRow + index;
-            const lokasi = [item.lokasiFc, item.lokasiLaci, item.lokasiFolder].filter(Boolean).join('/');
+            const item = baris.berkas;
             const jangkaSimpan = [
                 item.masaSimpanAktif ? `Aktif: ${item.masaSimpanAktif}` : '',
                 item.masaSimpanInaktif ? `Inaktif: ${item.masaSimpanInaktif}` : '',
@@ -546,11 +575,11 @@ export class ExportService {
             const rowData = [
                 index + 1,
                 item.kodeKlasifikasi || '',
-                item.uraianBerkas || item.uraianItem || '',
+                uraianFormulir6(baris, '\n'),
                 item.kurunWaktu || String(item.tahun),
-                item.tingkatPerkembangan || '',
-                item.jumlah || 1,
-                lokasi || '',
+                baris.tingkatPerkembangan,
+                baris.jumlah,
+                baris.lokasi,
                 item.klasifikasiKeamanan || '',
                 jangkaSimpan,
                 kategoriArsip,
@@ -612,7 +641,7 @@ export class ExportService {
 
     // ============== PDF EXPORTS ==============
 
-    async generatePdfSuratMasuk(filters: SuratMasukFilters): Promise<Buffer> {
+    async generatePdfSuratMasuk(filters: SuratMasukFilters, opsi: OpsiEksporSurat = {}): Promise<Buffer> {
         const result = await suratMasukService.findAll({
             ...filters,
             page: 1,
@@ -633,7 +662,7 @@ export class ExportService {
             // Header
             doc.fontSize(16).font('Helvetica-Bold').text('DAFTAR SURAT MASUK', { align: 'center' });
             doc.fontSize(10).font('Helvetica').text(unitPengolah, { align: 'center' });
-            doc.fontSize(9).text(`Tahun: ${filters.tahun || 'Semua'} | Dicetak: ${new Date().toLocaleDateString('id-ID')}`, { align: 'center' });
+            doc.fontSize(9).text(`${opsi.keteranganPeriode || `Tahun: ${filters.tahun || 'Semua'}`} | Dicetak: ${new Date().toLocaleDateString('id-ID')}`, { align: 'center' });
             doc.moveDown(1.5);
 
             // Table
@@ -686,7 +715,7 @@ export class ExportService {
         });
     }
 
-    async generatePdfSuratKeluar(filters: SuratKeluarFilters): Promise<Buffer> {
+    async generatePdfSuratKeluar(filters: SuratKeluarFilters, opsi: OpsiEksporSurat = {}): Promise<Buffer> {
         const result = await suratKeluarService.findAll({
             ...filters,
             page: 1,
@@ -706,7 +735,7 @@ export class ExportService {
 
             doc.fontSize(16).font('Helvetica-Bold').text('DAFTAR SURAT KELUAR', { align: 'center' });
             doc.fontSize(10).font('Helvetica').text(unitPengolah, { align: 'center' });
-            doc.fontSize(9).text(`Tahun: ${filters.tahun || 'Semua'} | Dicetak: ${new Date().toLocaleDateString('id-ID')}`, { align: 'center' });
+            doc.fontSize(9).text(`${opsi.keteranganPeriode || `Tahun: ${filters.tahun || 'Semua'}`} | Dicetak: ${new Date().toLocaleDateString('id-ID')}`, { align: 'center' });
             doc.moveDown(1.5);
 
             const tableTop = doc.y;
@@ -763,6 +792,7 @@ export class ExportService {
      */
     async generatePdfArsip(filters: ArsipFilters, formulirType?: string): Promise<Buffer> {
         const data = await this.dataFormulirArsip(filters, formulirType);
+        const jumlahArsip = new Set(data.map((baris) => baris.urutBerkas)).size;
         const unitPengolah = await namaUnitPengolah(filters.unitKerjaId);
 
         const PDFDocument = await loadPdfKit();
@@ -808,7 +838,8 @@ export class ExportService {
                 let yPos = tableTop + 28;
                 doc.font('Helvetica').fontSize(6).fillColor('black');
 
-                data.forEach((item, index) => {
+                data.forEach((baris, index) => {
+                    const item = baris.berkas;
                     if (yPos > 520) {
                         doc.addPage();
                         yPos = 30;
@@ -817,7 +848,7 @@ export class ExportService {
                         doc.rect(30, yPos - 3, 782, 15).fill('#F5F5F5');
                     }
 
-                    const lokasi = [item.lokasiFc, item.lokasiLaci, item.lokasiFolder].filter(Boolean).join('/');
+                    const lokasi = baris.lokasi;
                     const jangkaSimpan = [
                         item.masaSimpanAktif ? `A:${item.masaSimpanAktif}` : '',
                         item.hasilAkhir || '',
@@ -827,10 +858,10 @@ export class ExportService {
                     const rowData = [
                         String(index + 1),
                         (item.kodeKlasifikasi || '').substring(0, 10),
-                        (item.uraianBerkas || item.uraianItem || '').substring(0, 45),
+                        uraianFormulir6(baris, ' ').substring(0, 45),
                         item.kurunWaktu || String(item.tahun),
-                        (item.tingkatPerkembangan || '').substring(0, 12),
-                        String(item.jumlah || 1),
+                        baris.tingkatPerkembangan.substring(0, 12),
+                        String(baris.jumlah),
                         lokasi.substring(0, 15),
                         (item.klasifikasiKeamanan || '').substring(0, 12),
                         jangkaSimpan.substring(0, 20),
@@ -846,7 +877,7 @@ export class ExportService {
                     yPos += 15;
                 });
 
-                doc.fontSize(8).text(`Total: ${data.length} arsip`, 30, yPos + 20);
+                doc.fontSize(8).text(totalFormulirArsip(jumlahArsip, data.length), 30, yPos + 20);
                 doc.fontSize(7).text('Formulir 6. Daftar Arsip Inaktif (Kertas)', 600, yPos + 35, { align: 'right' });
             } else {
                 // Formulir 4 columns
@@ -864,43 +895,51 @@ export class ExportService {
                 let yPos = tableTop + 28;
                 doc.font('Helvetica').fontSize(6).fillColor('black');
 
-                data.forEach((item, index) => {
+                // Kolom berkas dicetak pada baris pertama tiap berkas, dan
+                // diulang bila berkas itu bersambung ke halaman berikutnya.
+                const kolomBerkas = [0, 1, 2, 3, 4, 11, 12];
+                let awalHalaman = true;
+                data.forEach((baris) => {
+                    const item = baris.berkas;
                     if (yPos > 520) {
                         doc.addPage();
                         yPos = 30;
+                        awalHalaman = true;
                     }
-                    if (index % 2 === 0) {
+                    if (baris.urutBerkas % 2 === 1) {
                         doc.rect(30, yPos - 3, 782, 15).fill('#F5F5F5');
                     }
-
-                    const lokasi = [item.lokasiFc, item.lokasiLaci, item.lokasiFolder].filter(Boolean).join('/');
+                    const cetakBerkas = baris.itemKe === 0 || awalHalaman;
+                    awalHalaman = false;
 
                     xPos = 30;
                     const rowData = [
-                        item.nomorBerkas || String(index + 1),
+                        item.nomorBerkas || String(baris.urutBerkas),
                         (item.kodeKlasifikasi || '').substring(0, 10),
                         (item.uraianBerkas || '').substring(0, 35),
                         item.kurunWaktu || String(item.tahun),
-                        String(item.jumlah || 1),
-                        (item.nomorItem || '').substring(0, 5),
-                        (item.uraianItem || '').substring(0, 35),
-                        item.tanggalArsip || '',
-                        String(item.jumlah || 1),
-                        (item.tingkatPerkembangan || '').substring(0, 10),
-                        lokasi.substring(0, 12),
+                        String(baris.jumlahBerkas),
+                        baris.nomorItem.substring(0, 5),
+                        baris.uraianItem.substring(0, 35),
+                        baris.tanggal,
+                        String(baris.jumlah),
+                        baris.tingkatPerkembangan.substring(0, 10),
+                        baris.lokasi.substring(0, 12),
                         (item.klasifikasiKeamanan || '').substring(0, 12),
                         (item.keterangan || '').substring(0, 12),
                     ];
 
                     doc.fillColor('black');
                     rowData.forEach((text, i) => {
-                        doc.text(text, xPos + 1, yPos, { width: colWidths[i] - 2, align: 'left' });
+                        if (cetakBerkas || !kolomBerkas.includes(i)) {
+                            doc.text(text, xPos + 1, yPos, { width: colWidths[i] - 2, align: 'left' });
+                        }
                         xPos += colWidths[i];
                     });
                     yPos += 15;
                 });
 
-                doc.fontSize(8).text(`Total: ${data.length} arsip`, 30, yPos + 20);
+                doc.fontSize(8).text(totalFormulirArsip(jumlahArsip, data.length), 30, yPos + 20);
                 doc.fontSize(7).text('Formulir 4. Daftar Arsip Aktif', 600, yPos + 35, { align: 'right' });
             }
 
