@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useAppConfig } from '@/context/app-config-context';
 import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Send, Plus, Search, Eye, Edit, Archive, Filter, ChevronDown, ChevronUp, X, MailOpen, FolderArchive, RefreshCw, Trash2, FileText, AlertCircle, Inbox, MoreHorizontal, CheckCircle2, Building2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,9 @@ import { sifatSuratKeluarLabel } from '@/lib/sifat-surat-keluar';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
 import ImportFileDialog from '@/components/ImportFileDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import PersetujuanMassal from '@/components/surat/PersetujuanMassal';
+import { PILIHAN_SARING_PERSETUJUAN, saringPersetujuanDari, umumkanPersetujuanMenunggu } from '@/lib/persetujuan-menunggu';
 import {
     Select,
     SelectContent,
@@ -71,6 +74,7 @@ import { id as localeId } from 'date-fns/locale';
 // Generate year options
 const currentYear = new Date().getFullYear();
 const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - i);
+const PILIHAN_BARIS_PER_HALAMAN = [10, 25, 50, 100];
 const NASKAH_INISIATIF = ['Nota Dinas', 'Surat Edaran', 'Surat Undangan', 'Keputusan', 'Surat Tugas'];
 const approvalStatusDisplay = {
     draft: { label: 'Draft', className: 'text-muted-foreground' },
@@ -95,6 +99,12 @@ export default function SuratKeluar() {
     const [statsSnapshot, setStatsSnapshot] = useState({ scope: null, status: 'loading', data: null });
     const statsSeqRef = useRef(0);
     const [pendingApprovals, setPendingApprovals] = useState([]);
+    const [selectedIds, setSelectedIds] = useState(() => new Set());
+
+    // Penyaring kerja persetujuan tersimpan di alamat halaman agar tautan dari
+    // Dashboard dan sidebar langsung membuka daftar yang sudah tersaring.
+    const [searchParams, setSearchParams] = useSearchParams();
+    const saringPersetujuan = saringPersetujuanDari(searchParams.get('persetujuan'));
 
     // Unit kerja filter for super admin
     const [unitKerjaList, setUnitKerjaList] = useState([]);
@@ -103,7 +113,7 @@ export default function SuratKeluar() {
     // Filter states
     const [searchTerm, setSearchTerm] = useState('');
     const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-    const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+    const [isAdvancedOpen, setIsAdvancedOpen] = useState(saringPersetujuan !== 'all');
     const [tahun, setTahun] = useState('all');
     const [naskahDinas, setNaskahDinas] = useState('all');
     const [tanggalDari, setTanggalDari] = useState(null);
@@ -148,6 +158,7 @@ export default function SuratKeluar() {
                 unitKerjaId: resolvedUnitKerjaId,
                 tahun: tahun !== 'all' ? tahun : undefined,
                 naskahDinas: naskahDinas !== 'all' ? naskahDinas : undefined,
+                persetujuan: saringPersetujuan !== 'all' ? saringPersetujuan : undefined,
                 tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
                 tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
             };
@@ -163,6 +174,8 @@ export default function SuratKeluar() {
                     return; // The page effect fetches the last remaining page.
                 }
                 setData(response.data || []);
+                // Pilihan hanya berlaku untuk baris yang sedang tampil.
+                setSelectedIds(new Set());
                 setPagination(prev => ({
                     ...prev,
                     total: response.pagination?.total || 0,
@@ -181,7 +194,7 @@ export default function SuratKeluar() {
         } finally {
             if (seq === fetchSeqRef.current && !changingPage) setLoading(false);
         }
-    }, [pagination.page, pagination.limit, debouncedSearchTerm, resolvedUnitKerjaId, tahun, naskahDinas, tanggalDari, tanggalSampai, toast]);
+    }, [pagination.page, pagination.limit, debouncedSearchTerm, resolvedUnitKerjaId, tahun, naskahDinas, saringPersetujuan, tanggalDari, tanggalSampai, toast]);
 
     // Fetch stats from API
     const fetchStats = useCallback(async () => {
@@ -208,7 +221,9 @@ export default function SuratKeluar() {
             return;
         }
         try {
-            setPendingApprovals(await approvalService.getPending());
+            const menunggu = await approvalService.getPending();
+            setPendingApprovals(menunggu);
+            umumkanPersetujuanMenunggu(Array.isArray(menunggu) ? menunggu.length : 0);
         } catch (error) {
             console.error('Error fetching pending approvals:', error);
             setPendingApprovals([]);
@@ -240,8 +255,36 @@ export default function SuratKeluar() {
         return () => clearTimeout(timer);
     }, [searchTerm]);
 
-    const hasActiveFilters = tahun !== 'all' || naskahDinas !== 'all' ||
+    const hasActiveFilters = tahun !== 'all' || naskahDinas !== 'all' || saringPersetujuan !== 'all' ||
         tanggalDari || tanggalSampai || searchTerm;
+
+    const setSaringPersetujuan = (nilai) => {
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            if (nilai === 'all') next.delete('persetujuan');
+            else next.set('persetujuan', nilai);
+            return next;
+        }, { replace: true });
+        setPagination(prev => ({ ...prev, page: 1 }));
+    };
+
+    const idMenungguSaya = useMemo(() => new Set(pendingApprovals.map(item => item.suratId)), [pendingApprovals]);
+    const bisaDiajukan = (row) => isAdmin && !row.isArchived
+        && ['draft', 'rejected'].includes(row.approvalStatus || 'draft')
+        && Boolean(user?.id) && row.createdBy === user.id;
+    const bisaDisetujui = (row) => isAdmin && !row.isArchived && row.approvalStatus === 'pending'
+        && (row.currentApproverId === user?.id || idMenungguSaya.has(row.id));
+    const bisaDipilih = (row) => bisaDiajukan(row) || bisaDisetujui(row);
+    const barisBisaDipilih = data.filter(bisaDipilih);
+    const barisTerpilih = data.filter(row => selectedIds.has(row.id));
+    const semuaTerpilih = barisBisaDipilih.length > 0 && barisBisaDipilih.every(row => selectedIds.has(row.id));
+    const togglePilih = (id, pilih) => setSelectedIds(prev => {
+        const next = new Set(prev);
+        if (pilih) next.add(id); else next.delete(id);
+        return next;
+    });
+    const togglePilihSemua = (pilih) => setSelectedIds(pilih ? new Set(barisBisaDipilih.map(row => row.id)) : new Set());
+    const jumlahKolom = isAdmin ? 7 : 6;
 
     // Applying a filter must restart from the first page
     const applyFilter = (setter) => (value) => {
@@ -255,7 +298,7 @@ export default function SuratKeluar() {
         setNaskahDinas('all');
         setTanggalDari(null);
         setTanggalSampai(null);
-        setPagination(prev => ({ ...prev, page: 1 }));
+        setSaringPersetujuan('all');
     };
 
     // Action handlers
@@ -427,6 +470,11 @@ export default function SuratKeluar() {
                                 </Link>
                             </Button>
                         ))}
+                        {saringPersetujuan !== 'menunggu_saya' && (
+                            <Button size="sm" onClick={() => setSaringPersetujuan('menunggu_saya')}>
+                                Tampilkan semua di daftar
+                            </Button>
+                        )}
                     </CardContent>
                 </Card>
             )}
@@ -559,6 +607,23 @@ export default function SuratKeluar() {
                                         />
                                     </div>
 
+                                    {/* Persetujuan */}
+                                    {isAdmin && (
+                                        <div className="space-y-1.5">
+                                            <label htmlFor="surat-keluar-persetujuan" className="text-xs font-semibold text-muted-foreground uppercase">Persetujuan</label>
+                                            <Select value={saringPersetujuan} onValueChange={setSaringPersetujuan}>
+                                                <SelectTrigger id="surat-keluar-persetujuan" className="h-9 bg-background">
+                                                    <SelectValue placeholder="Semua surat" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {PILIHAN_SARING_PERSETUJUAN.map(pilihan => (
+                                                        <SelectItem key={pilihan.value} value={pilihan.value}>{pilihan.label}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    )}
+
                                     {/* Filter Tanggal */}
                                     <fieldset className="min-w-0 space-y-1.5 sm:col-span-2">
                                         <legend className="text-xs font-semibold text-muted-foreground uppercase">Rentang Tanggal</legend>
@@ -591,6 +656,15 @@ export default function SuratKeluar() {
 
                 <CardContent className="p-0">
                     <div className="border-t border-border/60">
+                        {isAdmin && (
+                            <PersetujuanMassal
+                                jumlahDipilih={loading || loadError ? 0 : barisTerpilih.length}
+                                dapatDiajukan={barisTerpilih.filter(bisaDiajukan)}
+                                dapatDisetujui={barisTerpilih.filter(bisaDisetujui)}
+                                onBatalPilih={() => setSelectedIds(new Set())}
+                                onSelesai={() => { refreshAll(); fetchPendingApprovals(); }}
+                            />
+                        )}
                         {loading ? (
                             <div className="p-4">
                                 <TableSkeleton columns={7} rows={5} />
@@ -608,6 +682,16 @@ export default function SuratKeluar() {
                             <Table responsive>
                                 <TableHeader className="bg-muted/30">
                                     <TableRow className="hover:bg-transparent">
+                                        {isAdmin && (
+                                            <TableHead className="w-[40px]">
+                                                <Checkbox
+                                                    aria-label="Pilih semua di halaman ini"
+                                                    checked={semuaTerpilih}
+                                                    disabled={barisBisaDipilih.length === 0}
+                                                    onCheckedChange={(nilai) => togglePilihSemua(nilai === true)}
+                                                />
+                                            </TableHead>
+                                        )}
                                         <TableHead className="w-[50px] text-center">No.</TableHead>
                                         <TableHead className="w-[120px]">Tanggal</TableHead>
                                         <TableHead className="w-[160px]">Nomor Surat</TableHead>
@@ -619,7 +703,7 @@ export default function SuratKeluar() {
                                 <TableBody>
                                     {data.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={6} className="text-center py-16 text-muted-foreground">
+                                            <TableCell colSpan={jumlahKolom} className="text-center py-16 text-muted-foreground">
                                                 <div className="flex flex-col items-center justify-center gap-2">
                                                     <div className="p-3 bg-muted rounded-full">
                                                         <Inbox className="h-8 w-8 opacity-50" />
@@ -634,6 +718,17 @@ export default function SuratKeluar() {
                                     ) : (
                                         data.map((row, index) => (
                                             <TableRow key={row.id} className="group hover:bg-muted/30 transition-colors">
+                                                {isAdmin && (
+                                                    <TableCell data-label="Pilih">
+                                                        {bisaDipilih(row) && (
+                                                            <Checkbox
+                                                                aria-label={`Pilih surat ${row.nomorSurat || row.perihal || ''}`.trim()}
+                                                                checked={selectedIds.has(row.id)}
+                                                                onCheckedChange={(nilai) => togglePilih(row.id, nilai === true)}
+                                                            />
+                                                        )}
+                                                    </TableCell>
+                                                )}
                                                 <TableCell data-label="No." className="text-center font-medium text-muted-foreground text-xs">
                                                     {(pagination.page - 1) * pagination.limit + index + 1}
                                                 </TableCell>
@@ -744,12 +839,30 @@ export default function SuratKeluar() {
                     </div>
 
                     {/* Footer Pagination */}
-                    {!loading && !loadError && pagination.totalPages > 1 && (
+                    {!loading && !loadError && (pagination.total > PILIHAN_BARIS_PER_HALAMAN[0] || pagination.totalPages > 1) && (
                         <div className="border-t border-border/60 p-4 flex flex-col items-center gap-3 sm:flex-row sm:justify-between">
-                            <p className="text-sm text-muted-foreground order-2 sm:order-1">
-                                Menampilkan <span className="font-medium text-foreground">{data.length}</span> dari <span className="font-medium text-foreground">{pagination.total}</span> surat
-                            </p>
-                            <div className="order-1 sm:order-2">
+                            <div className="order-2 flex flex-wrap items-center gap-3 sm:order-1">
+                                <p className="text-sm text-muted-foreground">
+                                    Menampilkan <span className="font-medium text-foreground">{data.length}</span> dari <span className="font-medium text-foreground">{pagination.total}</span> surat
+                                </p>
+                                <div className="flex items-center gap-2">
+                                    <label htmlFor="surat-keluar-baris" className="text-sm text-muted-foreground">Baris per halaman</label>
+                                    <Select
+                                        value={String(pagination.limit)}
+                                        onValueChange={(nilai) => setPagination(prev => ({ ...prev, limit: Number(nilai), page: 1 }))}
+                                    >
+                                        <SelectTrigger id="surat-keluar-baris" className="h-8 w-[76px]">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {PILIHAN_BARIS_PER_HALAMAN.map(jumlah => (
+                                                <SelectItem key={jumlah} value={String(jumlah)}>{jumlah}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+                            {pagination.totalPages > 1 && <div className="order-1 sm:order-2">
                                 <Pagination>
                                     <PaginationContent>
                                         <PaginationItem>
@@ -783,7 +896,7 @@ export default function SuratKeluar() {
                                         </PaginationItem>
                                     </PaginationContent>
                                 </Pagination>
-                            </div>
+                            </div>}
                         </div>
                     )}
                 </CardContent>
