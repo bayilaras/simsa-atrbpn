@@ -42,6 +42,8 @@ export interface SuratKeluarFilters {
     klasifikasiFasilitatif?: string;
     klasifikasiSubstantif?: string;
     search?: string;
+    /** menunggu_saya: menunggu keputusan pembaca; draft_saya: buatan pembaca yang belum diajukan. */
+    persetujuan?: 'menunggu_saya' | 'draft_saya';
     page?: number;
     limit?: number;
     /** Legacy outgoing rows are treated as Terbatas until reclassified. */
@@ -72,7 +74,7 @@ type CreateSuratKeluarInput = Omit<NewSuratKeluar, 'noUrut' | 'tahun'> & {
 
 export class SuratKeluarService {
     async findAll(filters: SuratKeluarFilters) {
-        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif, search, page = 1, limit = 20, securityClassifications, pembaca } = filters;
+        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif, search, persetujuan, page = 1, limit = 20, securityClassifications, pembaca } = filters;
         const offset = (page - 1) * limit;
 
         const conditions = [
@@ -120,6 +122,25 @@ export class SuratKeluarService {
                     ilike(suratKeluar.kepada, pattern)
                 )!
             );
+        }
+        if (persetujuan) {
+            // Tanpa identitas pembaca penyaring ini tidak menghasilkan baris.
+            const pembacaId = pembaca?.id;
+            if (!pembacaId) {
+                conditions.push(sql`false`);
+            } else if (persetujuan === 'menunggu_saya') {
+                conditions.push(
+                    eq(suratKeluar.approvalStatus, 'pending'),
+                    eq(suratKeluar.currentApproverId, pembacaId),
+                    sql`${suratKeluar.isArchived} IS NOT TRUE`,
+                );
+            } else {
+                conditions.push(
+                    sql`coalesce(${suratKeluar.approvalStatus}, 'draft') in ('draft', 'rejected')`,
+                    eq(suratKeluar.createdBy, pembacaId),
+                    sql`${suratKeluar.isArchived} IS NOT TRUE`,
+                );
+            }
         }
 
         // Get total count - safely handle empty result

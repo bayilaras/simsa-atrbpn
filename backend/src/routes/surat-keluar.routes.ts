@@ -32,6 +32,7 @@ import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_LOKASI_SIMPAN_TIDAK_SESUAI } fro
 import auditLogService from '../services/audit-log.service.js';
 import { suratAksiPayload } from '../services/rangkaian/aksi.js';
 import { badanPerluPersetujuan, rekamanPerluPersetujuan } from '../services/access/perlu-persetujuan.js';
+import { approvalService } from '../services/approval.service.js';
 import { berkasHanyaTayang } from '../services/access/berkas-akses.js';
 import { fileValidationMiddleware } from '../middlewares/file-validation.middleware.js';
 
@@ -92,7 +93,7 @@ router.get('/', validateQuery(querySuratKeluarSchema), async (req: AuthRequest, 
     try {
         // Use validated query from res.locals (set by validateQuery middleware)
         const validatedQuery = res.locals.validatedQuery || {};
-        const { tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif, search, page, limit } = validatedQuery;
+        const { tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif, search, persetujuan, page, limit } = validatedQuery;
 
         // Resolve unitKerjaId based on user's role (enforces unit kerja isolation)
         const unitKerjaId = resolveListUnitKerjaId(req, validatedQuery.unitKerjaId);
@@ -106,6 +107,7 @@ router.get('/', validateQuery(querySuratKeluarSchema), async (req: AuthRequest, 
             klasifikasiFasilitatif,
             klasifikasiSubstantif,
             search,
+            persetujuan,
             page,
             limit,
             securityClassifications: allowedSecurityClassifications(req.user),
@@ -201,12 +203,22 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
         const aksi = await suratAksiPayload(req.user!, 'surat_keluar', id, access);
         const balasanUntuk = await balasanUntukTerbaca(req, result.balasanUntuk);
         const arsipId = await arsipIdTerbaca(req, id);
+        // Hanya petunjuk tampilan: pembuat sudah tidak bertugas dan pengguna
+        // ini boleh mengajukan atas namanya. Rute pengajuan memeriksa ulang.
+        const pengajuanAtasNama = access.via === 'owner'
+            ? await approvalService.pengajuanAtasNamaUntuk(result as any, {
+                id: req.user!.id,
+                role: req.user!.role,
+                unitKerjaId: req.user!.unitKerjaId,
+            })
+            : null;
         res.json({
             success: true,
             data: {
                 ...sanitizeSuratRecord(result, 'surat_keluar'),
                 balasanUntuk,
                 arsipId,
+                pengajuanAtasNama,
                 aksesMelalui: access.via,
                 berkasHanyaTayang: berkasHanyaTayang(access),
                 ...aksi,

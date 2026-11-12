@@ -37,8 +37,10 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
     },
     'approval.routes.ts': {
         'GET /pending': proyeksi('approvalService.getPending'),
-        'GET /approvers/:suratId': checkRead('approvalService.listEligibleApprovers'),
+        'GET /approvers/:suratId': checkRead('approvalService.getSubmissionContext'),
         'POST /submit': check('approvalService.submit'),
+        'POST /submit-bulk': check('approvalService.submitMany'),
+        'POST /approve-bulk': check('approvalService.approveMany'),
         'POST /approve': check('approvalService.approve'),
         'POST /reject': check('approvalService.reject'),
         'GET /history/:suratId': checkRead('approvalService.getHistory'),

@@ -122,7 +122,7 @@ export default function SuratKeluarDetail() {
             const historyPromise = approvalService.getHistory(surat.id)
             const approverPromise = (
                 ['draft', 'rejected'].includes(surat.approvalStatus)
-                && surat.createdBy === user?.id
+                && (surat.createdBy === user?.id || Boolean(surat.pengajuanAtasNama))
             )
                 ? approvalService.getEligibleApprovers(surat.id)
                 : Promise.resolve([])
@@ -137,7 +137,7 @@ export default function SuratKeluarDetail() {
 
         loadApproval()
         return () => { cancelled = true }
-    }, [isAdmin, surat?.id, surat?.approvalStatus, surat?.createdBy, user?.id])
+    }, [isAdmin, surat?.id, surat?.approvalStatus, surat?.createdBy, surat?.pengajuanAtasNama, user?.id])
 
     const formatDate = (dateString) => {
         if (!dateString) return '-'
@@ -295,7 +295,12 @@ export default function SuratKeluarDetail() {
     const bolehArsip = Array.isArray(aksi) ? aksi.includes('arsipkan') : isAdmin
     const canEdit = bolehEdit && !surat.isArchived && ['draft', 'rejected'].includes(approvalStatus)
     const canArchive = bolehArsip && !surat.isArchived && approvalStatus === 'approved'
-    const canSubmitApproval = canEdit && surat.createdBy === user?.id
+    // Pembuat sudah tidak bertugas: server menandai siapa yang boleh mengajukan
+    // atas namanya (pengajuanAtasNama) dan memeriksa ulang saat pengajuan.
+    const namaPembuatDigantikan = isAdmin && !surat.isArchived && ['draft', 'rejected'].includes(approvalStatus)
+        ? surat.pengajuanAtasNama?.namaPembuat || null
+        : null
+    const canSubmitApproval = (canEdit && surat.createdBy === user?.id) || Boolean(namaPembuatDigantikan)
     const isCurrentApprover = isAdmin
         && approvalStatus === 'pending'
         && surat.currentApproverId === user?.id
@@ -701,6 +706,11 @@ export default function SuratKeluarDetail() {
                                         <Send className="mr-2 h-4 w-4" />
                                         Ajukan Persetujuan
                                     </Button>
+                                )}
+                                {namaPembuatDigantikan && (
+                                    <p className="text-xs text-muted-foreground">
+                                        Pembuat surat ({namaPembuatDigantikan}) sudah tidak aktif atau tidak lagi bertugas di unit ini. Anda mengajukan atas nama pembuat.
+                                    </p>
                                 )}
                                 {canSubmitApproval && approvers.length === 0 && (
                                     <p className="text-xs text-amber-700 dark:text-amber-300">
