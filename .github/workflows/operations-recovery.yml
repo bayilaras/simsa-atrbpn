@@ -70,3 +70,28 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
           include-hidden-files: false
+
+  # Repository watchers get an email from the issue. The repository is public:
+  # the issue holds a fixed sentence and the run link only. A timed-out job
+  # ends as "cancelled", so that result is reported as well.
+  notify-failure:
+    name: Report failure
+    needs: recovery
+    if: ${{ always() && (needs.recovery.result == 'failure' || needs.recovery.result == 'cancelled') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+      - name: Open or update the failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ops/report-workflow-failure.mjs

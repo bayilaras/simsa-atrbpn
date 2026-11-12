@@ -16,7 +16,7 @@
     "test:cloud-access": "node --test scripts/verify-cloud-access.test.mjs",
     "test:vercel-deployment": "node --test --test-concurrency=1 scripts/vercel-deployment.test.mjs scripts/cloud-metadata-config.test.mjs scripts/vercel-build.test.mjs backend/lib/runtime-diagnostics.test.mjs",
     "test:neon-backup": "node --test --test-concurrency=1 scripts/neon-backup.test.mjs scripts/neon-backup-policy.test.mjs",
-    "test:ops": "node --test --test-concurrency=1 scripts/ops/neon-credential.test.mjs scripts/ops/rilis-neon.test.mjs scripts/ops/neon-role-rotation.postgres.test.mjs scripts/ops/release-source.test.mjs scripts/ops/vercel-release.test.mjs scripts/ops/release-smoke.test.mjs scripts/ops/release-workflow.test.mjs",
+    "test:ops": "node --test --test-concurrency=1 scripts/ops/neon-credential.test.mjs scripts/ops/rilis-neon.test.mjs scripts/ops/neon-role-rotation.postgres.test.mjs scripts/ops/release-source.test.mjs scripts/ops/vercel-release.test.mjs scripts/ops/release-smoke.test.mjs scripts/ops/release-workflow.test.mjs scripts/ops/report-workflow-failure.test.mjs scripts/ops/operations-alert-workflow.test.mjs",
     "build:full": "npm run build:frontend && npm run build:backend",
     "build:frontend": "npm --prefix frontend ci && npm --prefix frontend run build",
     "build:backend": "npm --prefix backend ci --include=dev && npm --prefix backend run build",

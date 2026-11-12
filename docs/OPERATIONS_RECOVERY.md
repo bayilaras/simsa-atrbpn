@@ -56,6 +56,12 @@ Cara menaikkan batas: buka **Settings → Environments → production-recovery �
 
 Kunci arsip database dan dokumen dibungkus menggunakan scrypt (N=32768, r=8, p=1) dan AES-GCM dengan salt baru. Artefak delivery hanya berisi ciphertext, manifest, parameter KDF, dan laporan. **Jangan mengunggah workspace privat atau direktori kunci mentah.** Database terenkripsi dan kunci terbungkus disimpan sebelum fase berikutnya supaya kegagalan pengambilan dokumen/pemulihan tidak menghilangkan cadangan database yang sudah valid.
 
+## Pemberitahuan kegagalan
+
+Bila job utama workflow ini gagal atau terhenti karena batas waktu, job `notify-failure` membuka isu GitHub berjudul **Pemeriksaan operasional gagal**, atau menambah komentar pada isu terbuka berjudul sama. GitHub mengirim email ke setiap orang yang memantau repositori (*Watch → All Activity*, atau *Custom → Issues*), jadi pengelola perlu mengaktifkan pantauan itu. Karena repositori bersifat publik, isi isu hanya satu kalimat tetap dan tautan ke run; nama pemeriksaan, angka, nama host, dan nama berkas tidak ditulis. Rinciannya tetap di halaman run dan di Monitoring Operasional.
+
+Hanya job `notify-failure` yang memiliki izin `issues: write`; job itu tidak memakai environment produksi dan tidak menerima secret. Workflow pemulihan berjalan sekali sehari, sehingga setiap kegagalan menambah satu komentar. Tutup isu setelah penyebabnya ditangani; kegagalan berikutnya membuka isu baru. Run yang dilewati (bukan cabang default, atau workflow dinonaktifkan) dan run yang berhasil tidak membuat isu. Pemberitahuan memerlukan fitur Issues aktif di repositori; bila job `notify-failure` sendiri gagal, kegagalan hanya terlihat di tab Actions.
+
 ## Masa simpan artefak
 
 Artefak `simsa-recovery-<run_id>-<attempt>` disimpan GitHub selama **14 hari** (sebelumnya 90 hari). Repositori bersifat publik, sehingga artefak terenkripsi dapat diunduh pengguna GitHub mana pun selama masa simpan; masa simpan pendek membatasi paparan itu dan menjaga penyimpanan artefak tetap kecil bila repositori kelak dijadikan privat (kuota penyimpanan paket gratis 500 MB, satu artefak ±79 MB). Artefak yang sudah ada tetap mengikuti tanggal kedaluwarsa lamanya.

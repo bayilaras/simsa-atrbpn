@@ -6,7 +6,13 @@ Pembaruan tiap menit tidak menambah operasi Blob. Probe penyimpanan privat memak
 
 `GET /api/operations/status` memakai sesi Super Admin. Dengan sesi yang sama, `GET /api/operations/scan-failures` menampilkan paling banyak 50 berkas yang gagal dipindai, dan `POST /api/operations/scan-failures/requeue` atau `POST /api/operations/scan-failures/<id>/requeue` mengantrekannya ulang. `GET /api/operations/probe` khusus CI memakai `Authorization: Bearer OPERATIONS_MONITOR_TOKEN`, kredensial acak minimal 32 karakter yang tidak memberi akses dokumen atau akun. Respons probe hanya memuat waktu dan status pemeriksaan. Respons 503 membuat pekerjaan CI gagal bila terdapat kegagalan, keterlambatan, atau bukti yang belum tersedia.
 
-Workflow `.github/workflows/operations-monitor.yml` berjalan setiap jam setelah tersedia pada cabang default. Environment GitHub `production-monitor` menyimpan secret `OPERATIONS_MONITOR_TOKEN` yang sama dengan environment production backend Vercel. Batasi environment pada cabang default. Jalankan workflow manual satu kali dan periksa hasil sebelum menyatakan jadwal aktif. Status CI adalah kanal notifikasi awal; tidak ada pengiriman email atau webhook tambahan.
+Workflow `.github/workflows/operations-monitor.yml` berjalan setiap jam setelah tersedia pada cabang default. Environment GitHub `production-monitor` menyimpan secret `OPERATIONS_MONITOR_TOKEN` yang sama dengan environment production backend Vercel. Batasi environment pada cabang default. Jalankan workflow manual satu kali dan periksa hasil sebelum menyatakan jadwal aktif. Status CI adalah kanal notifikasi awal; kegagalan juga dilaporkan sebagai isu GitHub (lihat di bawah). Tidak ada webhook tambahan.
+
+## Pemberitahuan kegagalan
+
+Bila job utama workflow ini gagal atau terhenti karena batas waktu, job `notify-failure` membuka isu GitHub berjudul **Pemeriksaan operasional gagal**, atau menambah komentar pada isu terbuka berjudul sama. GitHub mengirim email ke setiap orang yang memantau repositori (*Watch → All Activity*, atau *Custom → Issues*), jadi pengelola perlu mengaktifkan pantauan itu. Karena repositori bersifat publik, isi isu hanya satu kalimat tetap dan tautan ke run; nama pemeriksaan, angka, nama host, dan nama berkas tidak ditulis. Rinciannya tetap di halaman run dan di Monitoring Operasional.
+
+Hanya job `notify-failure` yang memiliki izin `issues: write`; job itu tidak memakai environment produksi dan tidak menerima secret. Workflow monitor berjalan tiap jam, sehingga komentar baru paling sering ditambahkan enam jam sekali selama isu masih terbuka. Tutup isu setelah penyebabnya ditangani; kegagalan berikutnya membuka isu baru. Run yang dilewati (bukan cabang default, atau workflow dinonaktifkan) dan run yang berhasil tidak membuat isu. Pemberitahuan memerlukan fitur Issues aktif di repositori; bila job `notify-failure` sendiri gagal, kegagalan hanya terlihat di tab Actions.
 
 ## Bukti backup dan pemulihan
 
@@ -46,6 +52,6 @@ Backup kedaluwarsa setelah 36 jam; bukti restore setelah 90 hari. Waktu di masa 
    - **Terdeteksi berbahaya:** tidak dapat diantre ulang dan tetap dikarantina. Kartu tetap berstatus perlu perhatian sampai berkas tersebut diganti atau ditangani.
 3. **Integritas:** jalankan worker `file-fixity` dengan peran database worker, lalu periksa mismatch/error. Peran API tetap hanya membaca antrean. Jangan mengganti hash baseline untuk menyembunyikan mismatch.
 4. **Backup/pemulihan:** jalankan pekerjaan terkait dengan target dan skema yang dipatok, terbitkan bukti baru hanya setelah pemeriksaan aktual selesai.
-5. **CI tidak tersedia:** periksa secret dan keberadaan workflow pada cabang default. Berkas workflow lokal bukan bukti jadwal telah berjalan.
+5. **CI tidak tersedia:** periksa secret dan keberadaan workflow pada cabang default. Isu **Pemeriksaan operasional gagal** hanya dibuat oleh run yang benar-benar berjalan dan gagal; jadwal yang tidak pernah dimulai tidak menghasilkan isu. Berkas workflow lokal bukan bukti jadwal telah berjalan.
 
 Pekerjaan backup lama pada cabang utama dapat memiliki kontrak skema yang lebih tua daripada produksi. Gunakan verifier yang cocok dengan migrasi produksi; kegagalan kontrak harus diperbaiki secara eksplisit sebelum backup dijalankan ulang.
