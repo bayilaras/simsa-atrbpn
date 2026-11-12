@@ -1,12 +1,14 @@
 # 💾 Arsip Elektronik
 
-Panduan mengelola arsip digital/elektronik di SIMSA.
+Panduan mencatat data arsip digital/elektronik di SIMSA.
 
 ---
 
 ## Apa Itu Arsip Elektronik?
 
-Arsip elektronik adalah arsip yang **disimpan dalam format digital**. SIMSA menyediakan fitur untuk mengunggah, menyimpan, dan mengelola file digital yang terkait dengan surat dan arsip.
+Halaman ini mencatat **data teknis berkas digital** yang menjadi bagian dari sebuah arsip, misalnya hasil pindai atau alih media: formatnya, ukurannya, media asalnya, dan sidik berkasnya. Setiap catatan terhubung ke satu arsip induk dan satu lampiran arsip tersebut.
+
+Menu ini tersedia bagi Super Admin dan Admin Unit Kerja, dan hanya muncul bila penyimpanan berkas sudah disiapkan operator.
 
 ---
 
@@ -16,40 +18,40 @@ Arsip elektronik adalah arsip yang **disimpan dalam format digital**. SIMSA meny
 Di sidebar, klik **Arsip Elektronik** di bawah **Media & Autentikasi**.
 
 ### Langkah 2: Lihat Daftar
-Tabel menampilkan daftar file digital yang sudah diunggah:
+Halaman memiliki tiga tab: **Daftar Arsip Elektronik**, **Verifikasi**, dan **Statistik**. Tabel daftar menampilkan:
 
 | Kolom | Keterangan |
 |-------|------------|
-| Nama File | Nama file yang diunggah |
-| Tipe | Format file (PDF, JPG, DOCX, dll) |
-| Ukuran | Besar file |
-| Arsip Terkait | Arsip yang terhubung dengan file ini |
-| Tanggal Upload | Kapan file diunggah |
+| Kode Registrasi | Kode catatan arsip elektronik |
+| Format | Format berkas |
+| Ukuran | Besar berkas |
+| Resolusi | Resolusi hasil pindai, bila dicatat |
+| Media Asal | Media sumber sebelum dialihmediakan |
+| Hash SHA-256 | Sidik berkas untuk memeriksa apakah isinya berubah |
+| Versi | Versi berkas |
+| Status | Menunggu, Terverifikasi, atau Ditolak |
+| Tanggal | Tanggal pencatatan |
+
+Daftar dapat disaring menurut format, status, dan media.
 
 ---
 
-## Mengunggah File Baru
+## Mencatat Arsip Elektronik Baru
 
-1. Klik **"+ Upload File"**.
-2. Pilih file dari komputer kamu.
-3. Hubungkan dengan arsip terkait (opsional).
-4. Klik **"Upload"**.
+1. Klik **"Tambah Metadata"**. Formulir **Registrasi Arsip Elektronik Terkendali** terbuka.
+2. Pilih **Arsip induk** dengan mencari nomor berkas atau uraiannya.
+3. Pilih **lampiran** arsip tersebut, atau unggah lampiran PDF baru.
+4. Pilih **Sumber rekod**: hasil alih media/pemindaian, tercipta secara digital, atau diterima secara digital.
+5. Lengkapi isian lain yang tersedia: jumlah halaman, kategori pindai, media asal, tanggal digitalisasi, alat dan perangkat lunak, serta catatan proses.
+6. Simpan.
 
-### Format yang Didukung:
-
-| Format | Keterangan |
-|--------|------------|
-| **PDF** | Dokumen surat, laporan |
-| **JPG / PNG** | Scan surat, foto |
-| **DOCX / DOC** | Dokumen Word |
-| **XLSX / XLS** | Spreadsheet |
+Arsip induk dan lampiran wajib dipilih. Berkas yang baru diunggah diperiksa keamanannya terlebih dahulu dan baru dapat dibuka setelah dinyatakan aman.
 
 ---
 
-## Mengunduh File
+## Verifikasi
 
-1. Klik **ikon download** pada file yang diinginkan.
-2. File akan otomatis diunduh ke komputer kamu.
+Tab **Verifikasi** memuat antrean catatan yang menunggu diperiksa. Catatan yang sudah diperiksa berstatus **Terverifikasi** atau **Ditolak**. Tab **Statistik** merangkum jumlah arsip elektronik menurut format, status verifikasi, dan media asal.
 
 ---
 

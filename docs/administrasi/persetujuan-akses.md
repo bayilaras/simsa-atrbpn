@@ -1,22 +1,27 @@
 # 🔑 Persetujuan Akses Rekod Terkendali
 
-Fitur ini digunakan untuk meminta akses ke bitstream dengan klasifikasi **Terbatas**, **Rahasia**, atau **Sangat Rahasia**. Role administrator tidak otomatis membuka isi rekod terkendali.
+Fitur ini digunakan untuk meminta akses ke surat atau arsip dengan klasifikasi **Terbatas**, **Rahasia**, atau **Sangat Rahasia**. Peran administrator tidak otomatis membuka isi rekod terkendali.
 
 > Persetujuan dalam SIMSA tidak menggantikan clearance personal, surat tugas, atau kewenangan pejabat yang ditetapkan Kementerian.
 
 ## Mengajukan permohonan
 
-1. Buka **Administrasi → Persetujuan Akses**.
-2. Klik **Minta akses**.
-3. Pilih jenis rekod dan masukkan UUID rekod.
-4. Pilih **Tayang saja**, **Tayang dan unduh**, atau **Tayang dan kelola (tanpa unduh)** sesuai kebutuhan minimum.
-5. Jelaskan tujuan kedinasan secara spesifik, lalu kirim.
+Cara termudah adalah mengajukan dari rekodnya langsung:
 
-Permohonan tidak langsung membuka rekod. Status awalnya **Menunggu** sampai diputuskan oleh super admin lain.
+1. Buka surat atau arsip dari daftarnya. Bila isinya belum boleh Anda buka, halaman menampilkan judul **Perlu persetujuan akses** dengan nomor dan perihal rekod. Keterangannya menyebut kelas rekod, misalnya *Surat ini berkelas keamanan Terbatas. Datanya tetap tersimpan dan tidak dihapus, tetapi isinya baru dapat dibuka setelah permohonan akses Anda disetujui Super Admin.*
+2. Klik **Minta Akses**. Halaman **Persetujuan Akses Rekod** terbuka dengan dialog **Minta akses rekod terkendali** yang sudah terisi untuk rekod itu; kotak **Rekod yang diminta** menampilkan nomor dan perihalnya.
+3. Pilih **Mode akses**: **Tayang saja**, **Tayang dan unduh**, atau **Tayang dan kelola (tanpa unduh)** sesuai kebutuhan minimum.
+4. Isi **Tujuan kedinasan** secara spesifik (minimal 20 karakter), lalu klik **Kirim permohonan**.
+
+Anda juga dapat membuka **Administrasi → Persetujuan Akses Arsip** dan mengklik **Minta akses**. Karena belum ada rekod yang terpilih, pilih **Jenis rekod** dan isi **ID rekod**, yaitu deret kode di akhir alamat halaman detail rekod tersebut.
+
+Permohonan tidak langsung membuka rekod. Status awalnya **Menunggu** sampai diputuskan oleh Super Admin lain. Pantau statusnya pada tab **Permohonan Saya**.
+
+Rekod milik unit lain, di atas kewenangan kelas peran Anda, atau yang memang tidak ada tetap menampilkan **Surat Tidak Ditemukan** atau **Arsip Tidak Ditemukan**, tanpa tombol **Minta Akses**.
 
 ## Memutuskan permohonan
 
-Khusus super admin:
+Khusus Super Admin:
 
 1. Buka tab **Perlu Keputusan**.
 2. Periksa identitas pemohon, unit, rekod, klasifikasi, tujuan, dan mode akses.
@@ -38,13 +43,13 @@ Akses aktif dapat dicabut sewaktu-waktu dengan alasan yang dicatat.
 
 ## Perilaku keamanan
 
-- Grant hanya berlaku untuk pengguna, rekod, klasifikasi, dan mode akses yang disetujui.
-- Perubahan unit pengguna atau klasifikasi rekod menyebabkan akses gagal-tertutup.
+- Persetujuan hanya berlaku untuk pengguna, rekod, klasifikasi, dan mode akses yang disetujui.
+- Bila unit pengguna atau klasifikasi rekod berubah, akses tertutup dan perlu diajukan ulang.
 - Izin **Tayang saja** tidak dapat digunakan untuk mengunduh.
 - Izin **Tayang saja** dan **Tayang dan unduh** tidak dapat digunakan untuk mengubah rekod; mutasi memerlukan izin **Tayang dan kelola**.
 - Izin **Tayang dan kelola** tidak otomatis mengizinkan pengunduhan.
 - Rekod yang dihapus, diarsipkan, terkena legal hold, atau selesai disusutkan tetap mengikuti pembatasan mutasi masing-masing.
-- Penayangan dan pengunduhan mencatat ID grant, tujuan yang disetujui, waktu kedaluwarsa, pengguna, dan rekod pada audit.
+- Penayangan dan pengunduhan mencatat persetujuan yang dipakai, tujuan yang disetujui, waktu kedaluwarsa, pengguna, dan rekod pada audit.
 - Keputusan tidak dihapus permanen.
 
 ## Tindakan operasional wajib
