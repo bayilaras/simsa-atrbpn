@@ -1,6 +1,6 @@
 import express from 'express';
 import request from 'supertest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ findAll: vi.fn(), audit: vi.fn() }));
 vi.mock('../services/surat-masuk.service', () => ({ suratMasukService: { findAll: state.findAll } }));
@@ -19,8 +19,13 @@ vi.mock('../middlewares/rate-limiter.middleware', () => ({ exportLimiter: (_req:
 vi.mock('../services/record-access.service.js', () => ({ allowedSecurityClassifications: () => ['biasa', 'terbatas'] }));
 vi.mock('../utils/logger', () => ({ createLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }) }));
 const { exportRoutes } = await import('../routes/export.routes');
+const { loadExcelJS, loadPdfKit } = await import('../utils/lazy-libraries');
 const { reportRoutes } = await import('../routes/report.routes');
 const app = express().use('/api/export', exportRoutes).use('/api/reports', reportRoutes);
+
+// Pustaka Excel dan PDF dimuat lebih dulu supaya kasus pertama tidak menanggung
+// waktu muatnya ketika mesin uji sedang sibuk.
+beforeAll(async () => { await Promise.all([loadExcelJS(), loadPdfKit()]); }, 60_000);
 
 describe('exports are audited before any file leaves the server', () => {
     beforeEach(() => {
