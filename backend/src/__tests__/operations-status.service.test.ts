@@ -35,7 +35,7 @@ describe('operational alert aggregation', () => {
     const readiness = { status: 'ready', dependencies: { database: { ready: true },
         blobStorage: { required: true, runtime: { ready: true } },
         malwareScanner: { state: 'on_demand' }, malwareWorker: { state: 'ready', required: true } } };
-    const queues = { scanWaiting: 0, scanOverdue: 0, scanErrors: 0, fixityOverdue: 0, fixityErrors: 0, fixityUnscheduled: 0, mismatched: 0 };
+    const queues = { scanWaiting: 0, scanOverdue: 0, scanErrors: 0, scanInfected: 0, fixityOverdue: 0, fixityErrors: 0, fixityUnscheduled: 0, mismatched: 0 };
     it('exposes stale scanner and stalled queues even when other checks succeed', () => {
         const result = buildOperationsStatus({ now, readiness: { ...readiness, dependencies: { ...readiness.dependencies,
             malwareWorker: { state: 'not_ready', required: true, reason: 'on_demand_verification_missing_or_expired' } } },
@@ -112,7 +112,7 @@ describe('operational collector uses the workers actual SQL membership', () => {
             ('clean-complete','clean','verified',repeat('a',64));
             INSERT INTO file_attachments(id,entity_type,file_url,sha256) VALUES ('blob-letter','surat_masuk','https://qa.private.blob.vercel-storage.com/qa.pdf',NULL);`);
         const result = await collectOperationsStatus();
-        expect(check(result, 'scan_queue').counts).toEqual({ waiting: 7, overdue: 7, errors: 0 });
+        expect(check(result, 'scan_queue').counts).toEqual({ waiting: 7, overdue: 7, errors: 0, infected: 0 });
         expect(check(result, 'scan_queue').status).toBe('attention');
         expect(io.query.mock.calls[0][0].query_timeout).toBe(5000);
     });
@@ -158,7 +158,21 @@ describe('operational collector uses the workers actual SQL membership', () => {
             INSERT INTO file_attachments(id,entity_type,file_url,malware_scan_status) VALUES ('blob-letter','surat_masuk','https://qa.private.blob.vercel-storage.com/qa.pdf','not_scanned'),
             ('legacy-letter','surat_keluar','https://qa.private.blob.vercel-storage.com/old.pdf','not_required');`);
         const result = await collectOperationsStatus();
-        expect(check(result, 'scan_queue').counts).toEqual({ waiting: 2, overdue: 2, errors: 2 });
+        expect(check(result, 'scan_queue').counts).toEqual({ waiting: 2, overdue: 2, errors: 1, infected: 1 });
+    });
+    it('separates a requeueable failed scan from an infected file and clears once the failure is rescanned clean', async () => {
+        await database.exec(`INSERT INTO file_attachments(id,malware_scan_status) VALUES ('failure','scan_error'),('infected','infected')`);
+        const both = check(await collectOperationsStatus(), 'scan_queue');
+        expect(both.counts).toEqual({ waiting: 0, overdue: 0, errors: 1, infected: 1 });
+        expect(both.message).toMatch(/gagal dipindai dan dapat diantre ulang/);
+        expect(both.message).toMatch(/terdeteksi berbahaya; berkas tetap dikunci, tidak dapat diantre ulang/);
+        await database.exec(`UPDATE file_attachments SET malware_scan_status='clean' WHERE id='failure'`);
+        const infectedOnly = check(await collectOperationsStatus(), 'scan_queue');
+        expect(infectedOnly).toMatchObject({ status: 'attention', counts: { waiting: 0, overdue: 0, errors: 0, infected: 1 } });
+        expect(infectedOnly.message).not.toMatch(/gagal dipindai/);
+        await database.exec(`DELETE FROM file_attachments WHERE id='infected'`);
+        expect(check(await collectOperationsStatus(), 'scan_queue')).toMatchObject({ status: 'healthy',
+            message: 'Tidak ada berkas yang terlambat dipindai, gagal dipindai, atau terdeteksi berbahaya.' });
     });
     it('keeps a rejected database query unknown without exposing its error', async () => {
         io.query.mockRejectedValueOnce(new Error('private database connection string'));
