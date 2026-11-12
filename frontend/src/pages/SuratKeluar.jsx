@@ -268,6 +268,22 @@ export default function SuratKeluar() {
         setPagination(prev => ({ ...prev, page: 1 }));
     };
 
+    // Jumlah menunggu dihitung dari antrean persetujuan, sedangkan daftar
+    // mengikuti kewenangan baca daftar. Bila daftar tersaring memuat lebih
+    // sedikit surat, sisanya tetap dapat dibuka dari kartu di atas tabel.
+    const tanpaPenyaringLain = !debouncedSearchTerm && tahun === 'all' && naskahDinas === 'all'
+        && !tanggalDari && !tanggalSampai && (!isSuperAdmin || selectedUnitKerja === 'all');
+    const menungguTakTampil = saringPersetujuan === 'menunggu_saya' && tanpaPenyaringLain && !loading && !loadError
+        ? Math.max(0, pendingApprovals.length - pagination.total)
+        : 0;
+    const menungguUntukKartu = useMemo(() => {
+        if (menungguTakTampil === 0 || pagination.totalPages > 1) return pendingApprovals;
+        const idTampil = new Set(data.map(row => row.id));
+        return [
+            ...pendingApprovals.filter(item => !idTampil.has(item.suratId)),
+            ...pendingApprovals.filter(item => idTampil.has(item.suratId)),
+        ];
+    }, [menungguTakTampil, pagination.totalPages, pendingApprovals, data]);
     const idMenungguSaya = useMemo(() => new Set(pendingApprovals.map(item => item.suratId)), [pendingApprovals]);
     const bisaDiajukan = (row) => isAdmin && !row.isArchived
         && ['draft', 'rejected'].includes(row.approvalStatus || 'draft')
@@ -463,7 +479,12 @@ export default function SuratKeluar() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="flex flex-wrap gap-2">
-                        {pendingApprovals.slice(0, 5).map(item => (
+                        {menungguTakTampil > 0 && (
+                            <p className="w-full text-sm text-muted-foreground">
+                                {`${menungguTakTampil} surat yang menunggu tidak tampil di daftar di bawah, biasanya karena tingkat keamanan suratnya. Buka surat itu lewat tombol di kartu ini.`}
+                            </p>
+                        )}
+                        {menungguUntukKartu.slice(0, 5).map(item => (
                             <Button key={item.requestId} asChild size="sm" variant="outline">
                                 <Link to={`/surat/keluar/${item.suratId}`}>
                                     {item.nomorSurat || 'Draft'} — {item.perihal || 'Tanpa perihal'}

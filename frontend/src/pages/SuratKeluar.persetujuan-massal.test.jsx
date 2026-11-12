@@ -152,6 +152,26 @@ describe('penyaring kerja persetujuan', () => {
         expect(screen.queryByRole('button', { name: 'Tampilkan semua di daftar' })).toBeNull()
     })
 
+    it('daftar tersaring yang lebih sedikit dari jumlah menunggu: kartu menjelaskan dan menaut ke surat yang tidak tampil', async () => {
+        mocks.keluar.getAll.mockResolvedValue({ success: true, data: baris.slice(0, 4), pagination: { page: 1, limit: 10, total: 4, totalPages: 1 } })
+        mocks.approval.getPending.mockResolvedValue([
+            ...baris.slice(0, 4).map(item => ({ requestId: `req-${item.id}`, suratId: item.id, nomorSurat: item.nomorSurat, perihal: item.perihal })),
+            { requestId: 'req-9', suratId: 'sk-9', nomorSurat: 'SK-9/2026', perihal: 'Kelas lebih tinggi' },
+            { requestId: 'req-10', suratId: 'sk-10', nomorSurat: 'SK-10/2026', perihal: 'Kelas lebih tinggi dua' },
+        ])
+        await tampil('/surat/keluar?persetujuan=menunggu_saya')
+        expect(await screen.findByText('2 surat yang menunggu tidak tampil di daftar di bawah, biasanya karena tingkat keamanan suratnya. Buka surat itu lewat tombol di kartu ini.')).toBeInTheDocument()
+        expect(screen.getByRole('link', { name: 'SK-9/2026 — Kelas lebih tinggi' })).toHaveAttribute('href', '/surat/keluar/sk-9')
+        expect(screen.getByRole('link', { name: 'SK-10/2026 — Kelas lebih tinggi dua' })).toHaveAttribute('href', '/surat/keluar/sk-10')
+    })
+
+    it('daftar tersaring yang lengkap tidak menampilkan keterangan itu', async () => {
+        mocks.keluar.getAll.mockResolvedValue({ success: true, data: baris, pagination: { page: 1, limit: 10, total: 1, totalPages: 1 } })
+        await tampil('/surat/keluar?persetujuan=menunggu_saya')
+        await screen.findByText('1 surat menunggu keputusan Anda')
+        expect(screen.queryByText(/tidak tampil di daftar di bawah/)).toBeNull()
+    })
+
     it('tanpa penyaring: kartu menunggu keputusan menawarkan daftar tersaring', async () => {
         await tampil()
         expect(mocks.keluar.getAll).toHaveBeenLastCalledWith(expect.objectContaining({ persetujuan: undefined }))

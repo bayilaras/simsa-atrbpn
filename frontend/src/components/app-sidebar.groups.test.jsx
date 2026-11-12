@@ -131,12 +131,12 @@ describe('sidebar task groups', () => {
         expect(perlu.opsi.at(-1)).toEqual({ enabled: false })
         expect(screen.getByRole('link', { name: 'Lacak Surat' })).toHaveAttribute('href', '/surat/lacak')
     })
-    it('menampilkan jumlah surat yang menunggu keputusan pada Surat Keluar dan menautkan ke daftar tersaring', () => {
+    it('menampilkan jumlah surat yang menunggu keputusan pada Surat Keluar; menu tetap membuka daftar lengkap', () => {
         state.role = 'admin_unit'
         persetujuan.total = 7
         const pertama = show({ route: '/surat/keluar' })
         const link = screen.getByRole('link', { name: 'Surat Keluar (7 menunggu keputusan Anda)' })
-        expect(link).toHaveAttribute('href', '/surat/keluar?persetujuan=menunggu_saya')
+        expect(link).toHaveAttribute('href', '/surat/keluar')
         expect(link).toHaveAttribute('aria-current', 'page')
         expect(within(link).getByText('7')).toHaveAttribute('aria-hidden', 'true')
         expect(persetujuan.opsi.at(-1)).toEqual({ enabled: true })

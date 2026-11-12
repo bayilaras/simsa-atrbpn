@@ -58,7 +58,6 @@ import { useAppConfig } from '@/context/app-config-context'
 import { usePerluDilengkapiCount } from '@/hooks/use-perlu-dilengkapi-count'
 import { formatJumlahBadge } from '@/lib/perlu-dilengkapi'
 import { usePersetujuanMenungguCount } from '@/hooks/use-persetujuan-menunggu-count'
-import { TAUTAN_PERSETUJUAN_MENUNGGU } from '@/lib/persetujuan-menunggu'
 
 // Role constants for menu access
 const ADMIN_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']
@@ -386,7 +385,7 @@ export function AppSidebar() {
                                                                         <SidebarMenuSubItem key={subItem.title}>
                                                                             <SidebarMenuSubButton asChild isActive={isActive(subItem.url)}>
                                                                                 <Link
-                                                                                    to={menungguPersetujuan && jumlah > 0 ? TAUTAN_PERSETUJUAN_MENUNGGU : subItem.url}
+                                                                                    to={subItem.url}
                                                                                     aria-current={isActive(subItem.url) ? 'page' : undefined}
                                                                                     aria-label={jumlah > 0 ? `${subItem.title} (${jumlah} ${menungguPersetujuan ? 'menunggu keputusan Anda' : 'perlu dilengkapi'})` : undefined}
                                                                                 >
