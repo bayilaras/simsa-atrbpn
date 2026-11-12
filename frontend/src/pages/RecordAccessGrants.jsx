@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { usePaginatedResource } from '@/hooks/use-paginated-resource';
 import { ResourcePagination } from '@/components/ResourcePagination';
 import { Clock3, Eye, FileKey2, LockKeyhole, RefreshCw } from 'lucide-react';
@@ -28,6 +29,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import recordAccessGrantService from '@/services/record-access-grant.service';
+import { LABEL_JENIS_REKAMAN, rekamanDariNavigasi } from '@/lib/akses-rekaman';
 
 const STATUS = {
     pending: { label: 'Menunggu', className: 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300' },
@@ -37,11 +39,8 @@ const STATUS = {
     expired: { label: 'Kedaluwarsa', className: 'bg-slate-100 text-slate-700 dark:bg-slate-500/15 dark:text-slate-300' },
 };
 
-const ENTITY_LABEL = {
-    surat_masuk: 'Surat Masuk',
-    surat_keluar: 'Surat Keluar',
-    arsip: 'Arsip',
-};
+const ENTITY_LABEL = LABEL_JENIS_REKAMAN;
+const FORM_KOSONG = { entityType: 'arsip', entityId: '', purpose: '', accessMode: 'view' };
 
 function formatDate(value) {
     if (!value) return '—';
@@ -133,20 +132,22 @@ const loadApproved = params => recordAccessGrantService.listForReview({ ...param
 export default function RecordAccessGrants() {
     const { user } = useAuth();
     const { toast } = useToast();
+    const location = useLocation();
+    const navigate = useNavigate();
+    // Rekaman yang dititipkan halaman detail (tombol Minta Akses): formulir
+    // langsung terbuka dan terisi, tanpa mengetik ID.
+    const [rekamanTerpilih, setRekamanTerpilih] = useState(() => rekamanDariNavigasi(location.state));
     const canReview = user?.role === 'super_admin';
     const mine = usePaginatedResource(loadMine, { queryKey: user?.id });
     const pending = usePaginatedResource(loadPending, { queryKey: user?.id, enabled: canReview });
     const approved = usePaginatedResource(loadApproved, { queryKey: user?.id, enabled: canReview });
     const loading = mine.loading || pending.loading || approved.loading;
-    const [requestOpen, setRequestOpen] = useState(false);
+    const [requestOpen, setRequestOpen] = useState(() => Boolean(rekamanTerpilih));
     const [decision, setDecision] = useState(null);
     const [submitting, setSubmitting] = useState(false);
-    const [requestForm, setRequestForm] = useState({
-        entityType: 'arsip',
-        entityId: '',
-        purpose: '',
-        accessMode: 'view',
-    });
+    const [requestForm, setRequestForm] = useState(() => (rekamanTerpilih
+        ? { ...FORM_KOSONG, entityType: rekamanTerpilih.entityType, entityId: rekamanTerpilih.entityId }
+        : FORM_KOSONG));
     const [decisionReason, setDecisionReason] = useState('');
     const [expiresAt, setExpiresAt] = useState('');
 
@@ -156,6 +157,19 @@ export default function RecordAccessGrants() {
         return local.toISOString().slice(0, 16);
     }, []);
 
+    // State navigasi dipakai sekali; memuat ulang halaman tidak membuka formulir lagi.
+    useEffect(() => {
+        if (location.state?.mintaAkses) navigate(location.pathname, { replace: true, state: null });
+    }, [location.pathname, location.state, navigate]);
+
+    const aturFormulirTerbuka = (open) => {
+        setRequestOpen(open);
+        if (!open && rekamanTerpilih) {
+            setRekamanTerpilih(null);
+            setRequestForm(FORM_KOSONG);
+        }
+    };
+
     const load = () => { mine.reload(); pending.reload(); approved.reload(); };
 
     const submitRequest = async () => {
@@ -163,7 +177,8 @@ export default function RecordAccessGrants() {
             setSubmitting(true);
             await recordAccessGrantService.request(requestForm);
             setRequestOpen(false);
-            setRequestForm({ entityType: 'arsip', entityId: '', purpose: '', accessMode: 'view' });
+            setRekamanTerpilih(null);
+            setRequestForm(FORM_KOSONG);
             toast({ title: 'Permohonan dikirim', description: 'Akses belum aktif sampai disetujui pejabat berwenang.' });
             await load();
         } catch (error) {
@@ -247,13 +262,25 @@ export default function RecordAccessGrants() {
                 </CardContent>
             </Card>
 
-            <Dialog open={requestOpen} onOpenChange={setRequestOpen}>
+            <Dialog open={requestOpen} onOpenChange={aturFormulirTerbuka}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Minta akses rekod terkendali</DialogTitle>
-                        <DialogDescription>Salin ID dari halaman detail rekod, lalu jelaskan tujuan kedinasan yang dapat diverifikasi.</DialogDescription>
+                        <DialogDescription>
+                            {rekamanTerpilih
+                                ? 'Rekod sudah dipilih dari halaman yang baru Anda buka. Jelaskan tujuan kedinasan yang dapat diverifikasi.'
+                                : 'Cara termudah: buka rekod dari daftarnya, lalu pilih Minta Akses agar formulir ini terisi sendiri. Bila mengisi sendiri, ID rekod adalah deret kode di akhir alamat halaman detailnya.'}
+                        </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">
+                        {rekamanTerpilih ? (
+                            <div className="space-y-1 rounded-md border bg-muted/40 p-3" role="group" aria-label="Rekod yang diminta">
+                                <div className="text-xs text-muted-foreground">Rekod yang diminta · {ENTITY_LABEL[rekamanTerpilih.entityType]}</div>
+                                <div className="break-words font-medium">{rekamanTerpilih.nomor || (rekamanTerpilih.perihal ? 'Tanpa nomor' : 'Rekod dari halaman yang baru Anda buka')}</div>
+                                {rekamanTerpilih.perihal && <div className="break-words text-sm text-muted-foreground">{rekamanTerpilih.perihal}</div>}
+                            </div>
+                        ) : (
+                        <>
                         <div className="space-y-2">
                             <Label htmlFor="request-entity-type">Jenis rekod</Label>
                             <Select value={requestForm.entityType} onValueChange={(value) => setRequestForm((form) => ({ ...form, entityType: value }))}>
@@ -269,6 +296,8 @@ export default function RecordAccessGrants() {
                             <Label htmlFor="request-entity-id">ID rekod</Label>
                             <Input id="request-entity-id" value={requestForm.entityId} onChange={(event) => setRequestForm((form) => ({ ...form, entityId: event.target.value.trim() }))} placeholder="Salin ID dari halaman detail" autoComplete="off" />
                         </div>
+                        </>
+                        )}
                         <div className="space-y-2">
                             <Label htmlFor="request-access-mode">Mode akses</Label>
                             <Select value={requestForm.accessMode} onValueChange={(value) => setRequestForm((form) => ({ ...form, accessMode: value }))}>
@@ -286,7 +315,7 @@ export default function RecordAccessGrants() {
                         </div>
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setRequestOpen(false)}>Batal</Button>
+                        <Button variant="outline" onClick={() => aturFormulirTerbuka(false)}>Batal</Button>
                         <Button disabled={submitting || requestForm.purpose.trim().length < 20 || !requestForm.entityId} onClick={submitRequest}>Kirim permohonan</Button>
                     </DialogFooter>
                 </DialogContent>

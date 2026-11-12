@@ -36,6 +36,8 @@ import { FilePreviewSection } from '@/components/surat-masuk/FilePreviewSection'
 import { format, formatDistanceToNow } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
 import { useAuth } from '@/context/AuthContext'
+import { PerluPersetujuanAkses } from '@/components/PerluPersetujuanAkses'
+import { rekamanPerluPersetujuan } from '@/lib/akses-rekaman'
 import { useAppConfig } from '@/context/app-config-context'
 import { AlurSuratPanel } from '@/components/surat/AlurSuratPanel'
 import { TindakLanjutMenu } from '@/components/surat/TindakLanjutMenu'
@@ -52,6 +54,7 @@ export default function SuratKeluarDetail() {
     const aksesMelalui = surat?.aksesMelalui ?? 'owner'
     const isAdmin = Boolean(surat && aksesMelalui === 'owner' && canWrite(surat.unitKerjaId))
     const [loading, setLoading] = useState(true)
+    const [perluAkses, setPerluAkses] = useState(null)
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
     const [tautkanOpen, setTautkanOpen] = useState(false)
     const [approvalHistory, setApprovalHistory] = useState([])
@@ -79,8 +82,16 @@ export default function SuratKeluarDetail() {
         try {
             const data = await suratKeluarService.getById(id)
             setSurat(data)
+            setPerluAkses(null)
             termuatRef.current = true
         } catch (error) {
+            const perlu = rekamanPerluPersetujuan(error, 'surat_keluar', id)
+            if (perlu) {
+                setSurat(null)
+                setPerluAkses(perlu)
+                termuatRef.current = false
+                return
+            }
             console.error('Error fetching surat:', error)
             toast({
                 title: 'Error',
@@ -236,6 +247,10 @@ export default function SuratKeluarDetail() {
                 </div>
             </div>
         )
+    }
+
+    if (perluAkses) {
+        return <PerluPersetujuanAkses rekaman={perluAkses} daftarPath="/surat/keluar" daftarLabel="Kembali ke Daftar Surat" />
     }
 
     if (!surat) {

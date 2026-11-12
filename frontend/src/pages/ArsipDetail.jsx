@@ -29,6 +29,8 @@ import {
 } from '@/components/arsip/edit-arsip-form'
 import { arsipService } from '@/services/arsip.service'
 import { useAuth } from '@/context/AuthContext'
+import { PerluPersetujuanAkses } from '@/components/PerluPersetujuanAkses'
+import { rekamanPerluPersetujuan } from '@/lib/akses-rekaman'
 import { useToast } from '@/hooks/use-toast'
 import { format, formatDistanceToNow, differenceInDays } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
@@ -286,6 +288,7 @@ export default function ArsipDetail() {
     const [arsip, setArsip] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
+    const [perluAkses, setPerluAkses] = useState(null)
     const [ruleHistory, setRuleHistory] = useState([])
     const [historyLoading, setHistoryLoading] = useState(true)
     const [historyError, setHistoryError] = useState(null)
@@ -306,6 +309,7 @@ export default function ArsipDetail() {
                 setLoading(true)
                 setHistoryLoading(true)
                 setError(null)
+                setPerluAkses(null)
                 setHistoryError(null)
                 const [archiveResult, historyResult] = await Promise.allSettled([
                     arsipService.getById(id),
@@ -322,6 +326,12 @@ export default function ArsipDetail() {
                     setHistoryError(historyResult.reason?.message || 'Gagal memuat riwayat aturan')
                 }
             } catch (err) {
+                const perlu = rekamanPerluPersetujuan(err, 'arsip', id)
+                if (perlu) {
+                    setArsip(null)
+                    setPerluAkses(perlu)
+                    return
+                }
                 setError(err.message || 'Gagal memuat data arsip')
             } finally {
                 setLoading(false)
@@ -429,6 +439,10 @@ export default function ArsipDetail() {
 
     // ─── Loading State ─────────────────
     if (loading) return <ArsipDetailSkeleton />
+
+    if (perluAkses) {
+        return <PerluPersetujuanAkses rekaman={perluAkses} daftarPath="/arsip" daftarLabel="Kembali ke Daftar Arsip" />
+    }
 
     // ─── Error State ────────────────────
     if (error || !arsip) {
