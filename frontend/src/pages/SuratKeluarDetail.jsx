@@ -92,6 +92,8 @@ export default function SuratKeluarDetail() {
                 termuatRef.current = false
                 return
             }
+            // Galat lain: jangan sisakan keadaan persetujuan milik surat sebelumnya.
+            setPerluAkses(null)
             console.error('Error fetching surat:', error)
             toast({
                 title: 'Error',

@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 
 // Detail rekaman berkelas terkendali tanpa persetujuan akses: halaman
 // menjelaskan keadaannya dan membawa rekaman itu ke formulir permohonan,
@@ -109,6 +109,34 @@ describe.each(KASUS)('detail $nama yang perlu persetujuan akses', (kasus) => {
         expect(screen.queryByText('Perlu persetujuan akses')).not.toBeInTheDocument()
         expect(screen.queryByRole('button', { name: 'Minta Akses' })).not.toBeInTheDocument()
     })
+})
+
+const ID_LAIN = '30000000-0000-4000-8000-000000000009'
+
+it.each([
+    ['surat masuk', () => mocks.suratMasuk, SuratMasukDetail, '/surat/masuk'],
+    ['surat keluar', () => mocks.suratKeluar, SuratKeluarDetail, '/surat/keluar'],
+])('%s: pindah ke surat lain yang gagal dimuat tidak membawa keadaan persetujuan surat sebelumnya', async (_nama, mock, Halaman, dasar) => {
+    mock().mockImplementation(async (id) => {
+        if (id === ID) throw galatPerluAkses({ jenis: 'surat', id: ID, nomor: 'SM-2/RHS/2026', perihal: 'Perihal terbatas', klasifikasi: 'terbatas' })
+        throw galatTidakAda()
+    })
+    render(
+        <MemoryRouter initialEntries={[`${dasar}/${ID}`]}>
+            <Link to={`${dasar}/${ID_LAIN}`}>Surat lain</Link>
+            <Routes>
+                <Route path={`${dasar}/:id`} element={<Halaman />} />
+            </Routes>
+        </MemoryRouter>,
+    )
+    expect(await screen.findByRole('heading', { name: 'Perlu persetujuan akses' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('link', { name: 'Surat lain' }))
+
+    expect(await screen.findByText('Surat Tidak Ditemukan')).toBeInTheDocument()
+    expect(screen.queryByText('Perlu persetujuan akses')).not.toBeInTheDocument()
+    expect(screen.queryByText('SM-2/RHS/2026')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Minta Akses' })).not.toBeInTheDocument()
 })
 
 it('403 lain tanpa kode persetujuan tidak dianggap perlu persetujuan akses', async () => {
