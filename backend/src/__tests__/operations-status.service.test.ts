@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, it, expect, vi } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
-import { evaluateRecoveryCheck, buildOperationsStatus, collectOperationsStatus, getOperationsStatus } from '../services/operations-status.service.js';
+import { evaluateRecoveryCheck, buildOperationsStatus, collectOperationsStatus, getOperationsStatus, invalidateOperationsStatus } from '../services/operations-status.service.js';
 
 const io = vi.hoisted(() => ({ query: vi.fn(), readiness: vi.fn(), blob: vi.fn() }));
 vi.mock('../config/database.js', () => ({ pool: { query: io.query } }));
@@ -233,5 +233,43 @@ describe('served operations status reuses private recovery evidence', () => {
         vi.setSystemTime(now + 10 * 60_000 + 31_000);
         await getOperationsStatus();
         expect(io.blob).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('served operations status after a change to the scan queue', () => {
+    const row = (scanErrors: number) => ({ rows: [{ scanWaiting: '0', scanOverdue: '0', scanErrors: String(scanErrors), scanInfected: '0',
+        fixityOverdue: '0', fixityErrors: '0', fixityUnscheduled: '0', mismatched: '0' }] });
+    const errors = (result: Awaited<ReturnType<typeof getOperationsStatus>>) => result.checks.find(item => item.id === 'scan_queue')!.counts!.errors;
+    beforeEach(() => {
+        invalidateOperationsStatus();
+        io.query.mockReset();
+        io.readiness.mockReset().mockResolvedValue({});
+    });
+    afterEach(() => { invalidateOperationsStatus(); });
+
+    it('re-reads the queues at once instead of serving the cached counts', async () => {
+        io.query.mockResolvedValueOnce(row(3)).mockResolvedValueOnce(row(0));
+        expect(errors(await getOperationsStatus())).toBe(3);
+        expect(errors(await getOperationsStatus())).toBe(3);
+        expect(io.query).toHaveBeenCalledOnce();
+        invalidateOperationsStatus();
+        expect(errors(await getOperationsStatus())).toBe(0);
+        expect(io.query).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not reuse or keep a collection that started before the change', async () => {
+        let finishStale!: (value: unknown) => void;
+        io.query.mockImplementationOnce(() => new Promise(resolve => { finishStale = resolve; })).mockResolvedValue(row(0));
+        const stale = getOperationsStatus();
+        await vi.waitFor(() => expect(finishStale).toBeTypeOf('function'));
+        invalidateOperationsStatus();
+        const fresh = getOperationsStatus();
+        expect(fresh).not.toBe(stale);
+        expect(errors(await fresh)).toBe(0);
+        finishStale(row(3));
+        expect(errors(await stale)).toBe(3);
+        // The late result of the older collection must not replace the fresh one.
+        expect(errors(await getOperationsStatus())).toBe(0);
+        expect(io.query).toHaveBeenCalledTimes(2);
     });
 });

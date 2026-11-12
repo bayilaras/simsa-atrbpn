@@ -151,13 +151,29 @@ export async function collectOperationsStatus(readEvidence: () => Promise<unknow
 let cached: Awaited<ReturnType<typeof collectOperationsStatus>> | null = null;
 let pending: Promise<Awaited<ReturnType<typeof collectOperationsStatus>>> | null = null;
 let until = 0;
+let generation = 0;
 export function getOperationsStatus() {
     if (cached && Date.now() < until) return Promise.resolve(cached);
     if (pending) return pending;
-    pending = collectOperationsStatus(readReusableRecoveryEvidence).then(result => { cached = result; until = Date.now() + 30000; return result; }).finally(() => { pending = null; });
-    return pending;
+    const started = generation;
+    const current = collectOperationsStatus(readReusableRecoveryEvidence).then(result => {
+        // A collection that began before an invalidation still answers its
+        // own callers, but is not kept for later requests.
+        if (started === generation) { cached = result; until = Date.now() + 30000; }
+        return result;
+    }).finally(() => { if (pending === current) pending = null; });
+    pending = current;
+    return current;
 }
-/** Makes the next status request re-read the queues, e.g. right after a requeue. */
+/**
+ * Makes the next status request re-read the queues, e.g. right after a requeue.
+ * A collection already in flight is not reused either. This only covers the
+ * instance that handled the change; another instance serves its own copy for
+ * at most 30 seconds.
+ */
 export function invalidateOperationsStatus() {
+    generation += 1;
+    cached = null;
+    pending = null;
     until = 0;
 }
