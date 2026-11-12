@@ -15,10 +15,16 @@ import {
     unitKerja,
     storageLocations,
     type StorageLocation,
+    archiveLending,
 } from '../db/schema';
 import { eq, and, desc, sql, ilike, or, isNotNull, isNull, ne, inArray, getTableColumns, type SQL } from 'drizzle-orm';
 import { AppError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors';
-import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_LOKASI_SIMPAN_TIDAK_SESUAI } from '../constants/pesan-akses.js';
+import {
+    PESAN_BOKS_TUJUAN_SEDANG_DIPINJAM,
+    PESAN_KELAS_MELEBIHI_KEWENANGAN,
+    PESAN_LOKASI_ARSIP_SEDANG_DIPINJAM,
+    PESAN_LOKASI_SIMPAN_TIDAK_SESUAI,
+} from '../constants/pesan-akses.js';
 import { hasPermission, type Role } from '../config/permissions';
 import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-lock';
 import { isAllowedForClassification, recordAccessService } from './record-access.service';
@@ -288,8 +294,10 @@ export class ArsipService {
     }
 
     /**
-     * Lokasi simpan harus berada di unit kerja arsipnya. Baris lokasi dikunci
-     * sampai transaksi selesai agar tidak terhapus sebelum arsip menautkannya.
+     * Lokasi simpan harus berada di unit kerja arsipnya dan tidak sedang
+     * dipinjam sebagai boks. Baris lokasi dikunci sampai transaksi selesai agar
+     * tidak terhapus, dan agar peminjaman boks (yang mengunci baris yang sama)
+     * tidak berjalan bersamaan dengan penautan arsip ke boks itu.
      */
     private async kunciLokasiSimpan(tx: any, storageLocationId: string, unitKerjaId: string): Promise<void> {
         const [lokasi] = await tx
@@ -302,6 +310,22 @@ export class ArsipService {
             .limit(1)
             .for('key share');
         if (!lokasi) throw new ValidationError(PESAN_LOKASI_SIMPAN_TIDAK_SESUAI);
+        if (await this.boksSedangDipinjam(tx, storageLocationId)) {
+            throw new ConflictError(PESAN_BOKS_TUJUAN_SEDANG_DIPINJAM);
+        }
+    }
+
+    /** Peminjaman per boks menandai arsip lewat tautan lokasinya. */
+    private async boksSedangDipinjam(tx: any, storageLocationId: string): Promise<boolean> {
+        const [pinjaman] = await tx
+            .select({ id: archiveLending.id })
+            .from(archiveLending)
+            .where(and(
+                eq(archiveLending.storageLocationId, storageLocationId),
+                inArray(archiveLending.status, ['borrowed', 'overdue']),
+            ))
+            .limit(1);
+        return Boolean(pinjaman);
     }
 
     /** Jalur lokasi simpan dari gedung sampai lokasi yang dipilih. */
@@ -743,8 +767,17 @@ export class ArsipService {
                     data.klasifikasiKeamanan ?? 'biasa',
                 );
             }
-            if (data.storageLocationId) {
-                await this.kunciLokasiSimpan(tx, data.storageLocationId, existing.unitKerjaId);
+            // Status pinjam arsip mengikuti boksnya; selama arsip atau boksnya
+            // dipinjam, tautan lokasi tidak berpindah.
+            const lokasiBaru = data.storageLocationId ?? null;
+            if (Object.hasOwn(data, 'storageLocationId') && lokasiBaru !== (existing.storageLocationId ?? null)) {
+                if (
+                    existing.lendingStatus === 'borrowed'
+                    || (existing.storageLocationId && await this.boksSedangDipinjam(tx, existing.storageLocationId))
+                ) {
+                    throw new ConflictError(PESAN_LOKASI_ARSIP_SEDANG_DIPINJAM);
+                }
+                if (lokasiBaru) await this.kunciLokasiSimpan(tx, lokasiBaru, existing.unitKerjaId);
             }
 
             const [result] = await tx

@@ -282,7 +282,13 @@ router.put('/:id', validateIdParam(),
             ) {
                 return res.status(403).json({ error: PESAN_KELAS_MELEBIHI_KEWENANGAN });
             }
-            if (req.body.storageLocationId && !bolehMemakaiLokasiUnit(req, existing.unitKerjaId)) {
+            // Juga untuk null: hanya unit pemilik arsip atau super_admin yang
+            // memindahkan maupun melepas lokasi simpan arsip.
+            if (
+                req.body.storageLocationId !== undefined
+                && (req.body.storageLocationId ?? null) !== (existing.storageLocationId ?? null)
+                && !bolehMemakaiLokasiUnit(req, existing.unitKerjaId)
+            ) {
                 return res.status(400).json({ error: PESAN_LOKASI_SIMPAN_TIDAK_SESUAI });
             }
             const result = await arsipService.update(id as string, req.body, {

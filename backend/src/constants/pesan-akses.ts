@@ -6,6 +6,12 @@ export const PESAN_KELAS_MELEBIHI_KEWENANGAN =
 export const PESAN_LOKASI_SIMPAN_TIDAK_SESUAI =
     'Lokasi simpan tidak ditemukan atau bukan milik unit kerja arsip ini. Pilih lokasi simpan lain.';
 
+export const PESAN_LOKASI_ARSIP_SEDANG_DIPINJAM =
+    'Lokasi simpan tidak dapat diubah karena arsip atau boksnya sedang dipinjam. Catat pengembaliannya terlebih dahulu.';
+
+export const PESAN_BOKS_TUJUAN_SEDANG_DIPINJAM =
+    'Boks yang dipilih sedang dipinjam. Pilih lokasi simpan lain atau catat pengembalian boks terlebih dahulu.';
+
 // Sifat surat masuk sekaligus kelas keamanannya. Kata urgensi yang disebut di
 // sini dibaca Biasa (BIASA_SIFAT_ALIASES di services/access/visibility-spec.ts).
 export const PESAN_SIFAT_TIDAK_DIKENAL =

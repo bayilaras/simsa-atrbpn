@@ -5,9 +5,18 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as schema from '../db/schema';
-import { PESAN_LOKASI_SIMPAN_TIDAK_SESUAI } from '../constants/pesan-akses';
+import {
+    PESAN_BOKS_TUJUAN_SEDANG_DIPINJAM,
+    PESAN_LOKASI_ARSIP_SEDANG_DIPINJAM,
+    PESAN_LOKASI_SIMPAN_TIDAK_SESUAI,
+} from '../constants/pesan-akses';
+import {
+    PESAN_LOKASI_ARSIP_DI_LUAR_KEWENANGAN,
+    PESAN_LOKASI_ARSIP_SUDAH_DISUSUTKAN,
+    PESAN_LOKASI_MASIH_MENYIMPAN_ARSIP,
+} from '../services/storage-location.service';
 import { bolehMemakaiLokasiUnit } from '../utils/record-unit-scope';
-import { ARSIP_TERBATAS, PENGGUNA, SURAT, bootRangkaianDatabase, seedRangkaianFixture } from './helpers/rangkaian-pglite';
+import { ARSIP_TERBATAS, PENGGUNA, SURAT, USER_ID, bootRangkaianDatabase, seedRangkaianFixture } from './helpers/rangkaian-pglite';
 
 const holder = vi.hoisted(() => ({ db: null as any }));
 vi.mock('../config/database', () => ({
@@ -68,6 +77,40 @@ function registrasi(extra: Record<string, unknown> = {}) {
     };
 }
 
+async function statusPinjam(id: string): Promise<string | null> {
+    return (await database.query<any>('SELECT lending_status FROM arsip WHERE id = $1', [id])).rows[0]?.lending_status ?? null;
+}
+
+// Izin kelola per rekod bagi pengguna unit lain (pola baris grant fixture).
+async function beriIzinKelola(grantId: string, userId: string, entityType: string, entityId: string, unitKerjaId: string) {
+    await database.exec(`
+        INSERT INTO record_access_grants (id, requester_id, target_user_id, entity_type, entity_id, unit_kerja_id, required_classification, purpose, access_mode, status, decided_by, decided_at, decision_reason, expires_at)
+        VALUES ('${grantId}','${userId}','${userId}','${entityType}','${entityId}','${unitKerjaId}','terbatas','Uji izin kelola lintas unit','manage','approved','${USER_ID.approver}','2026-09-01T00:00:00Z','Kebutuhan kerja terverifikasi','2099-01-01T00:00:00Z');
+    `);
+}
+
+async function pinjamBoks(storageLocationId: string) {
+    const { archiveLendingService } = await import('../services/archive-lending.service');
+    return archiveLendingService.borrow({
+        lendingType: 'box', storageLocationId, borrowerId: USER_ID.tu, borrowerName: 'Peminjam Uji', dueDate: '2099-01-01',
+    }, 'sesditjen');
+}
+
+function tiruAturanArsip() {
+    beforeEach(async () => {
+        const { archiveRuleAssignmentService } = await import('../services/archive-rule-assignment.service');
+        vi.spyOn(archiveRuleAssignmentService, 'resolveActive').mockResolvedValue({
+            snapshot: { classification: { title: 'Keuangan', type: 'fasilitatif' } },
+            snapshotSha256: 'a'.repeat(64),
+            cache: { kodeKlasifikasi: 'KU.01', klasifikasiArsipId: null, jraItemId: null, jraKode: 'F.UJI' },
+        } as any);
+        vi.spyOn(archiveRuleAssignmentService, 'attachInitialSnapshot').mockImplementation(async (tx: any, arsipId: string) => {
+            const [row] = await tx.select().from(schema.arsip).where(eq(schema.arsip.id, arsipId));
+            return row;
+        });
+    });
+}
+
 async function lokasiArsip(id: string): Promise<string | null> {
     return (await database.query<any>('SELECT storage_location_id FROM arsip WHERE id = $1', [id])).rows[0]?.storage_location_id ?? null;
 }
@@ -85,11 +128,13 @@ beforeAll(async () => {
     database = await bootRangkaianDatabase();
     holder.db = drizzle(database, { schema });
     const { default: suratMasukRouter } = await import('../routes/surat-masuk.routes');
+    const { default: suratKeluarRouter } = await import('../routes/surat-keluar.routes');
     const { default: arsipRouter } = await import('../routes/arsip.routes');
     const { default: lokasiRouter } = await import('../routes/storage-location.routes');
     app = express();
     app.use(express.json());
     app.use('/api/surat-masuk', suratMasukRouter);
+    app.use('/api/surat-keluar', suratKeluarRouter);
     app.use('/api/arsip', arsipRouter);
     app.use('/api/storage-locations', lokasiRouter);
     app.use((error: any, _req: any, res: any, _next: any) => res.status(error?.statusCode || 500).json({ error: error?.message }));
@@ -187,18 +232,7 @@ describe('bolehMemakaiLokasiUnit', () => {
 });
 
 describe('POST /api/surat-masuk/:id/archive-full dengan lokasi simpan', () => {
-    beforeEach(async () => {
-        const { archiveRuleAssignmentService } = await import('../services/archive-rule-assignment.service');
-        vi.spyOn(archiveRuleAssignmentService, 'resolveActive').mockResolvedValue({
-            snapshot: { classification: { title: 'Keuangan', type: 'fasilitatif' } },
-            snapshotSha256: 'a'.repeat(64),
-            cache: { kodeKlasifikasi: 'KU.01', klasifikasiArsipId: null, jraItemId: null, jraKode: 'F.UJI' },
-        } as any);
-        vi.spyOn(archiveRuleAssignmentService, 'attachInitialSnapshot').mockImplementation(async (tx: any, arsipId: string) => {
-            const [row] = await tx.select().from(schema.arsip).where(eq(schema.arsip.id, arsipId));
-            return row;
-        });
-    });
+    tiruAturanArsip();
 
     it('menyimpan lokasi pada arsip baru dan mencatatnya di log audit', async () => {
         await request(app).post(`/api/surat-masuk/${SURAT.smTunggal}/archive-full`).set(sebagai(PENGGUNA.tu))
@@ -229,6 +263,131 @@ describe('POST /api/surat-masuk/:id/archive-full dengan lokasi simpan', () => {
         expect((await database.query('SELECT id FROM arsip WHERE source_surat_id = $1', [SURAT.smTunggal])).rows).toHaveLength(0);
         const [surat] = (await database.query<any>('SELECT is_archived FROM surat_masuk WHERE id = $1', [SURAT.smTunggal])).rows;
         expect(surat.is_archived).toBe(false);
+    });
+});
+
+describe('POST /api/surat-keluar/:id/archive-full dengan lokasi simpan', () => {
+    tiruAturanArsip();
+    beforeEach(async () => {
+        await database.exec(`UPDATE surat_keluar SET approval_status = 'approved' WHERE id = '${SURAT.skBpptTunggal}'`);
+    });
+
+    it('menyimpan lokasi pada arsip baru dan mencatatnya di log audit', async () => {
+        await request(app).post(`/api/surat-keluar/${SURAT.skBpptTunggal}/archive-full`).set(sebagai(PENGGUNA.bppt))
+            .send(registrasi({ storageLocationId: LOKASI.gedungBppt })).expect(200);
+        const [row] = (await database.query<any>(
+            'SELECT id, jenis_arsip, storage_location_id FROM arsip WHERE source_surat_id = $1', [SURAT.skBpptTunggal],
+        )).rows;
+        expect(row).toMatchObject({ jenis_arsip: 'keluar', storage_location_id: LOKASI.gedungBppt });
+        const [audit] = (await database.query<any>(
+            `SELECT changes FROM audit_log WHERE entity_type='arsip' AND entity_id=$1 AND action='create'`, [row.id],
+        )).rows;
+        expect(audit.changes.after.storageLocationId).toBe(LOKASI.gedungBppt);
+    });
+
+    it('menolak lokasi unit lain: tidak ada arsip dan surat tetap belum diarsipkan', async () => {
+        const response = await request(app).post(`/api/surat-keluar/${SURAT.skBpptTunggal}/archive-full`).set(sebagai(PENGGUNA.bppt))
+            .send(registrasi({ storageLocationId: LOKASI.boks1 })).expect(400);
+        expect(response.body.error).toBe(PESAN_LOKASI_SIMPAN_TIDAK_SESUAI);
+        expect((await database.query('SELECT id FROM arsip WHERE source_surat_id = $1', [SURAT.skBpptTunggal])).rows).toHaveLength(0);
+        const [surat] = (await database.query<any>('SELECT is_archived FROM surat_keluar WHERE id = $1', [SURAT.skBpptTunggal])).rows;
+        expect(surat.is_archived).toBe(false);
+    });
+});
+
+// Izin kelola per rekod tidak membuka jalur tulis bagi pengguna unit lain:
+// permintaan berhenti di pemeriksaan akses, sebelum lokasi simpan diperiksa.
+describe('pemegang izin kelola dari unit lain tidak mengubah lokasi simpan', () => {
+    tiruAturanArsip();
+    const GRANT_UJI = '72000000-0000-4000-8000-000000000001';
+
+    it('PUT arsip: lokasi tidak dapat diganti maupun dilepas', async () => {
+        await beriIzinKelola(GRANT_UJI, USER_ID.bppt, 'arsip', ARSIP.biasaMasuk, 'sesditjen');
+        for (const storageLocationId of [LOKASI.boks2, LOKASI.gedungBppt, null]) {
+            await request(app).put(`/api/arsip/${ARSIP.biasaMasuk}`).set(sebagai(PENGGUNA.bppt))
+                .send({ storageLocationId }).expect(404);
+        }
+        expect(await lokasiArsip(ARSIP.biasaMasuk)).toBe(LOKASI.boks1);
+        expect((await database.query(`SELECT id FROM audit_log WHERE entity_id='${ARSIP.biasaMasuk}'`)).rows).toHaveLength(0);
+    });
+
+    it('archive-full surat masuk dengan lokasi tidak mengarsipkan surat', async () => {
+        await beriIzinKelola(GRANT_UJI, USER_ID.bppt, 'surat_masuk', SURAT.smTunggal, 'sesditjen');
+        await request(app).post(`/api/surat-masuk/${SURAT.smTunggal}/archive-full`).set(sebagai(PENGGUNA.bppt))
+            .send(registrasi({ storageLocationId: LOKASI.boks2 })).expect(404);
+        expect((await database.query('SELECT id FROM arsip WHERE source_surat_id = $1', [SURAT.smTunggal])).rows).toHaveLength(0);
+    });
+
+    it('archive-full surat keluar dengan lokasi tidak mengarsipkan surat', async () => {
+        // Fixture: PENGGUNA.tu memegang izin kelola atas skBpptNull milik dir_bppt.
+        await database.exec(`UPDATE surat_keluar SET approval_status = 'approved' WHERE id = '${SURAT.skBpptNull}'`);
+        await request(app).post(`/api/surat-keluar/${SURAT.skBpptNull}/archive-full`).set(sebagai(PENGGUNA.tu))
+            .send(registrasi({ storageLocationId: LOKASI.gedungBppt })).expect(404);
+        expect((await database.query('SELECT id FROM arsip WHERE source_surat_id = $1', [SURAT.skBpptNull])).rows).toHaveLength(0);
+    });
+
+    it('admin dengan unit dari peran tetap dapat melepas lokasi arsip unitnya', async () => {
+        await request(app).put(`/api/arsip/${ARSIP.biasaMasuk}`).set(sebagai(PENGGUNA.adminSesNull))
+            .send({ storageLocationId: null }).expect(200);
+        expect(await lokasiArsip(ARSIP.biasaMasuk)).toBeNull();
+    });
+});
+
+// Peminjaman per boks menandai dan mengembalikan arsip lewat tautan lokasinya,
+// jadi tautan itu tidak boleh berubah selama arsip atau boksnya dipinjam.
+describe('lokasi simpan dan peminjaman', () => {
+    tiruAturanArsip();
+
+    it('arsip di boks yang dipinjam tidak dapat dipindah atau dilepas sampai boks dikembalikan', async () => {
+        const pinjaman = await pinjamBoks(LOKASI.boks1);
+        expect(await statusPinjam(ARSIP.biasaMasuk)).toBe('borrowed');
+        for (const storageLocationId of [LOKASI.boks2, null]) {
+            const response = await request(app).put(`/api/arsip/${ARSIP.biasaMasuk}`).set(sebagai(PENGGUNA.tu))
+                .send({ storageLocationId }).expect(409);
+            expect(response.body.error).toBe(PESAN_LOKASI_ARSIP_SEDANG_DIPINJAM);
+        }
+        expect(await lokasiArsip(ARSIP.biasaMasuk)).toBe(LOKASI.boks1);
+        // Metadata lain tetap dapat dikoreksi selama dipinjam.
+        await request(app).put(`/api/arsip/${ARSIP.biasaMasuk}`).set(sebagai(PENGGUNA.tu))
+            .send({ keterangan: 'Koreksi saat dipinjam' }).expect(200);
+
+        const { archiveLendingService } = await import('../services/archive-lending.service');
+        await archiveLendingService.return(pinjaman.id, 'sesditjen');
+        expect(await statusPinjam(ARSIP.biasaMasuk)).toBe('available');
+        await request(app).put(`/api/arsip/${ARSIP.biasaMasuk}`).set(sebagai(PENGGUNA.tu))
+            .send({ storageLocationId: LOKASI.boks2 }).expect(200);
+        expect(await lokasiArsip(ARSIP.biasaMasuk)).toBe(LOKASI.boks2);
+        expect(await statusPinjam(ARSIP.biasaMasuk)).toBe('available');
+    });
+
+    it('arsip tidak dapat dimasukkan ke boks yang sedang dipinjam', async () => {
+        await pinjamBoks(LOKASI.boks1);
+        const response = await request(app).put(`/api/arsip/${ARSIP.tanpaLokasi}`).set(sebagai(PENGGUNA.tu))
+            .send({ storageLocationId: LOKASI.boks1 }).expect(409);
+        expect(response.body.error).toBe(PESAN_BOKS_TUJUAN_SEDANG_DIPINJAM);
+        expect(await lokasiArsip(ARSIP.tanpaLokasi)).toBeNull();
+        expect(await statusPinjam(ARSIP.tanpaLokasi)).toBe('available');
+    });
+
+    it('surat tidak dapat diarsipkan ke boks yang sedang dipinjam', async () => {
+        await pinjamBoks(LOKASI.boks1);
+        const response = await request(app).post(`/api/surat-masuk/${SURAT.smTunggal}/archive-full`).set(sebagai(PENGGUNA.tu))
+            .send(registrasi({ storageLocationId: LOKASI.boks1 })).expect(409);
+        expect(response.body.error).toBe(PESAN_BOKS_TUJUAN_SEDANG_DIPINJAM);
+        expect((await database.query('SELECT id FROM arsip WHERE source_surat_id = $1', [SURAT.smTunggal])).rows).toHaveLength(0);
+        const [surat] = (await database.query<any>('SELECT is_archived FROM surat_masuk WHERE id = $1', [SURAT.smTunggal])).rows;
+        expect(surat.is_archived).toBe(false);
+    });
+
+    it('arsip yang dipinjam sendiri tidak dapat dipindah lokasinya', async () => {
+        const { archiveLendingService } = await import('../services/archive-lending.service');
+        await archiveLendingService.borrow({
+            lendingType: 'arsip', arsipId: ARSIP.biasaDiRak, borrowerId: USER_ID.tu, borrowerName: 'Peminjam Uji', dueDate: '2099-01-01',
+        }, 'sesditjen');
+        const response = await request(app).put(`/api/arsip/${ARSIP.biasaDiRak}`).set(sebagai(PENGGUNA.tu))
+            .send({ storageLocationId: LOKASI.boks2 }).expect(409);
+        expect(response.body.error).toBe(PESAN_LOKASI_ARSIP_SEDANG_DIPINJAM);
+        expect(await lokasiArsip(ARSIP.biasaDiRak)).toBe(LOKASI.rak);
     });
 });
 
@@ -295,11 +454,34 @@ describe('GET /api/arsip?storageLocationId menyaring dengan aturan daftar biasa'
 });
 
 describe('DELETE /api/storage-locations/:id', () => {
-    it('menolak lokasi yang masih menyimpan arsip, juga bila arsipnya di luar plafon kelas penghapus', async () => {
+    const masihAda = async (id: string) =>
+        (await database.query(`SELECT id FROM storage_locations WHERE id='${id}'`)).rows.length === 1;
+
+    it('menolak lokasi yang masih menyimpan arsip', async () => {
+        const response = await request(app).delete(`/api/storage-locations/${LOKASI.boks1}`).set(sebagai(PENGGUNA.tu)).expect(409);
+        expect(response.body.error).toBe(PESAN_LOKASI_MASIH_MENYIMPAN_ARSIP);
+        expect(await masihAda(LOKASI.boks1)).toBe(true);
+    });
+
+    it('arsip di luar plafon kelas penghapus tetap menahan lokasi, tanpa menyuruh memindahkannya', async () => {
         await database.exec(`UPDATE arsip SET storage_location_id = NULL WHERE id <> '${ARSIP.rahasia}'`);
         const response = await request(app).delete(`/api/storage-locations/${LOKASI.boks1}`).set(sebagai(PENGGUNA.tu)).expect(409);
-        expect(response.body.error).toBe('Lokasi tidak dapat dihapus karena masih menyimpan arsip. Pindahkan arsipnya terlebih dahulu.');
-        expect((await database.query(`SELECT id FROM storage_locations WHERE id='${LOKASI.boks1}'`)).rows).toHaveLength(1);
+        expect(response.body.error).toBe(PESAN_LOKASI_ARSIP_DI_LUAR_KEWENANGAN);
+        expect(await masihAda(LOKASI.boks1)).toBe(true);
+
+        const superAdmin = await request(app).delete(`/api/storage-locations/${LOKASI.boks1}?unitKerjaId=sesditjen`)
+            .set(sebagai(PENGGUNA.superAdmin)).expect(409);
+        expect(superAdmin.body.error).toBe(PESAN_LOKASI_MASIH_MENYIMPAN_ARSIP);
+    });
+
+    it('arsip yang penyusutannya sudah dilaksanakan menahan lokasi dengan keterangan yang sesuai', async () => {
+        await database.exec(`
+            UPDATE arsip SET storage_location_id = NULL WHERE id <> '${ARSIP.biasaMasuk}';
+            UPDATE arsip SET disposal_status = 'executed' WHERE id = '${ARSIP.biasaMasuk}';
+        `);
+        const response = await request(app).delete(`/api/storage-locations/${LOKASI.boks1}`).set(sebagai(PENGGUNA.tu)).expect(409);
+        expect(response.body.error).toBe(PESAN_LOKASI_ARSIP_SUDAH_DISUSUTKAN);
+        expect(await masihAda(LOKASI.boks1)).toBe(true);
     });
 
     it('menghapus lokasi kosong', async () => {
