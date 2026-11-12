@@ -48,6 +48,8 @@ import { selectedSuratArchiveRules } from '@/lib/surat-archive-selection'
 import { normalisasiSifat } from '@/lib/tindak-lanjut'
 import { useAuth } from '@/context/AuthContext'
 import { PESAN_KELAS_TERBATAS_PERAN, adaKelasTersembunyi, bolehMemilihKelas, saringOpsiKelas } from '@/lib/kelas-keamanan'
+import { LokasiSimpanPicker } from '@/components/arsip/LokasiSimpanPicker'
+import { LABEL_LOKASI_SIMPAN, PETUNJUK_LOKASI_SIMPAN, bolehMemilihLokasiUnit } from '@/components/arsip/lokasi-simpan'
 
 const TINGKAT_PERKEMBANGAN_OPTIONS = [
     { value: 'Asli', label: 'Asli' },
@@ -104,6 +106,8 @@ const buildFormData = (record = {}, kelasSumber) => ({
     klasifikasiKeamanan: rankKelas(kelasSumber) === undefined ? '' : kelasSumber,
     personInCharge: '',
     keterangan: '',
+    // Opsional; hanya dikirim bila dipilih.
+    storageLocationId: '',
 })
 
 const buildItems = ({ perihal, tanggalSurat }) => ([
@@ -184,6 +188,8 @@ export function ArchiveDialog({
         ].filter(Boolean).join(' ')
         : ''
     const bantuanKelas = kelasDibatasi
+    const unitArsip = suratData?.unitKerjaId || ''
+    const bolehPilihLokasi = bolehMemilihLokasiUnit(user, unitArsip)
 
     // Form state for Identifikasi Berkas
     const [formData, setFormData] = useState(() => buildFormData(suratData || {}, kelasSumber))
@@ -256,7 +262,7 @@ export function ArchiveDialog({
                     'hasilAkhirPreview',
                     'jraVersionPreview',
                     'jraReferencePreview',
-                ].includes(field) && !(field === 'klasifikasiKeamanan' && !value)),
+                ].includes(field) && !(['klasifikasiKeamanan', 'storageLocationId'].includes(field) && !value)),
             )
             const payload = {
                 ...registrationData,
@@ -742,6 +748,27 @@ export function ArchiveDialog({
                                         </CardContent>
                                     </Card>
                                 ))}
+
+                                {bolehPilihLokasi && (
+                                    <div className="space-y-1.5 border-t border-dashed border-border pt-5">
+                                        <Label htmlFor="arsip-lokasi-simpan" className="flex items-center gap-2 font-medium text-foreground">
+                                            <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                                            {LABEL_LOKASI_SIMPAN}
+                                        </Label>
+                                        <LokasiSimpanPicker
+                                            id="arsip-lokasi-simpan"
+                                            unitKerjaId={unitArsip}
+                                            value={formData.storageLocationId}
+                                            onChange={(value) => handleChange('storageLocationId', value)}
+                                            disabled={loading}
+                                            aria-describedby="arsip-lokasi-simpan-petunjuk"
+                                            className="md:w-1/2"
+                                        />
+                                        <p id="arsip-lokasi-simpan-petunjuk" className="text-[11px] italic text-muted-foreground">
+                                            {PETUNJUK_LOKASI_SIMPAN} Isian No. Filing Cabinet, Laci, dan Folder tetap diisi per item.
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         </section>
 

@@ -15,6 +15,8 @@ import { useToast } from '@/hooks/use-toast'
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 import { pesanGalat } from '@/lib/pesan-galat'
+import { Link } from 'react-router-dom'
+import { tautanArsipLokasi } from '@/components/arsip/lokasi-simpan'
 
 // Level configuration
 const LEVEL_CONFIG = {
@@ -25,7 +27,7 @@ const LEVEL_CONFIG = {
 }
 
 // Tree Node Component
-function TreeNode({ node, level = 0, onEdit, onDelete, onGenerateQR, onAddChild }) {
+function TreeNode({ node, level = 0, unitKerjaId, onEdit, onDelete, onGenerateQR, onAddChild }) {
     const [isOpen, setIsOpen] = useState(level < 2)
     const hasChildren = node.children && node.children.length > 0
     const config = LEVEL_CONFIG[node.level] || LEVEL_CONFIG.box
@@ -61,16 +63,26 @@ function TreeNode({ node, level = 0, onEdit, onDelete, onGenerateQR, onAddChild 
 
                 <span className="flex-1 text-sm font-medium text-foreground/90 truncate">{node.name}</span>
 
-                {node.level === 'box' && (
+                {node.level === 'box' ? (
                     <Badge variant="secondary" className="text-[10px] h-6">
                         <span className="text-muted-foreground mr-1">Isi:</span>
                         <span className="font-bold">{node.currentCount || 0}</span>
                         <span className="text-muted-foreground mx-1">/</span>
                         <span>{node.capacity || '∞'}</span>
                     </Badge>
+                ) : (
+                    <Badge variant="secondary" className="text-[10px] h-6" title="Termasuk arsip di sub-lokasi">
+                        <span className="text-muted-foreground mr-1">Arsip:</span>
+                        <span className="font-bold">{node.arsipCount || 0}</span>
+                    </Badge>
                 )}
 
                 <div className="flex gap-1 ml-2">
+                    <Button asChild variant="ghost" size="icon" className="h-7 w-7 hover:bg-muted" title="Lihat arsip di lokasi ini">
+                        <Link to={tautanArsipLokasi(node, unitKerjaId)} aria-label={`Lihat arsip di lokasi ${node.code}`}>
+                            <Archive className="h-3.5 w-3.5" />
+                        </Link>
+                    </Button>
                     {node.level !== 'box' && (
                         <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-indigo-50 dark:hover:bg-indigo-500/15 hover:text-indigo-600 dark:hover:text-indigo-400" onClick={() => onAddChild(node)} title="Tambah Sub-lokasi">
                             <Plus className="h-3.5 w-3.5" />
@@ -95,6 +107,7 @@ function TreeNode({ node, level = 0, onEdit, onDelete, onGenerateQR, onAddChild 
                             key={child.id}
                             node={child}
                             level={level + 1}
+                            unitKerjaId={unitKerjaId}
                             onEdit={onEdit}
                             onDelete={onDelete}
                             onGenerateQR={onGenerateQR}
@@ -474,6 +487,7 @@ export default function StorageLocations() {
                                 <TreeNode
                                     key={node.id}
                                     node={node}
+                                    unitKerjaId={unitKerjaId}
                                     onEdit={handleEdit}
                                     onDelete={handleDelete}
                                     onGenerateQR={handleGenerateQR}

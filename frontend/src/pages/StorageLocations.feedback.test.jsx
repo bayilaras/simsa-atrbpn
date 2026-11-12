@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 import StorageLocations from './StorageLocations'
 
 const mocks = vi.hoisted(() => ({ getTree: vi.fn(), update: vi.fn(), delete: vi.fn(), toast: vi.fn() }))
@@ -21,7 +22,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks() })
 describe('tanggapan simpan lokasi', () => {
     it('simpan yang ditolak server menampilkan pesannya, bukan nama kelas galat', async () => {
         mocks.update.mockRejectedValue(galatApi(409, { success: false, error: 'ConflictError', message: 'Kode lokasi sudah digunakan dalam unit kerja ini.', code: 'CONFLICT' }))
-        render(<StorageLocations />)
+        render(<MemoryRouter><StorageLocations /></MemoryRouter>)
         await screen.findByText(location.name)
         fireEvent.click(screen.getByTitle('Edit'))
         fireEvent.click(await screen.findByRole('button', { name: 'Simpan Perubahan' }))
@@ -37,7 +38,7 @@ describe('tanggapan hapus lokasi', () => {
     it('hapus yang ditolak server menampilkan alasannya', async () => {
         const message = 'Lokasi tidak dapat dihapus karena masih menyimpan arsip. Pindahkan arsipnya terlebih dahulu.'
         mocks.delete.mockRejectedValue(galatApi(409, { success: false, error: 'ConflictError', message, code: 'CONFLICT' }))
-        render(<StorageLocations />)
+        render(<MemoryRouter><StorageLocations /></MemoryRouter>)
         await screen.findByText(location.name)
         fireEvent.click(screen.getByTitle('Hapus'))
         await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith({
@@ -49,7 +50,7 @@ describe('tanggapan hapus lokasi', () => {
 
     it('hapus yang berhasil memberi tahu pengguna dan memuat ulang pohon lokasi', async () => {
         mocks.delete.mockResolvedValue({ success: true })
-        render(<StorageLocations />)
+        render(<MemoryRouter><StorageLocations /></MemoryRouter>)
         await screen.findByText(location.name)
         mocks.getTree.mockResolvedValue({ success: true, data: [] })
         fireEvent.click(screen.getByTitle('Hapus'))
@@ -60,7 +61,7 @@ describe('tanggapan hapus lokasi', () => {
 
     it('hapus yang dibatalkan tidak memanggil server', async () => {
         window.confirm.mockReturnValue(false)
-        render(<StorageLocations />)
+        render(<MemoryRouter><StorageLocations /></MemoryRouter>)
         await screen.findByText(location.name)
         fireEvent.click(screen.getByTitle('Hapus'))
         expect(mocks.delete).not.toHaveBeenCalled()

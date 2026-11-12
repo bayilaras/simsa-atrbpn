@@ -58,6 +58,7 @@ import {
 } from "@/components/ui/pagination"
 import { arsipService } from '@/services/arsip.service'
 import settingsService from '@/services/settings.service'
+import storageLocationService from '@/services/storage-location.service'
 import { TableSkeleton } from '@/components/skeletons'
 
 const VALID_TABS = ['keluar', 'masuk', 'retensi']
@@ -71,7 +72,7 @@ export default function Arsip() {
     const isSuperAdmin = user?.role === 'super_admin'
     const [searchParams, setSearchParams] = useSearchParams()
     const query = readArchiveListQuery(searchParams)
-    const { search: searchTerm, tahun: tahunFilter, page: currentPage, pageSize } = query
+    const { search: searchTerm, tahun: tahunFilter, lokasi: lokasiFilter, page: currentPage, pageSize } = query
     const selectedUnitKerja = isSuperAdmin ? query.unitKerjaId : (resolveEffectiveUnitKerjaId(user) || 'all')
     const updateQuery = (changes, replace = true) => setSearchParams(
         writeArchiveListQuery({ ...query, ...changes }), { replace },
@@ -145,6 +146,20 @@ export default function Arsip() {
         return () => { active = false }
     }, [activeTab, resolvedUnitKerjaId, refreshVersion, statsScope])
 
+    // Nama lokasi simpan untuk chip filter; tanpa nama, chip memakai teks umum.
+    const [lokasiTerpilih, setLokasiTerpilih] = useState(null)
+    useEffect(() => {
+        if (!lokasiFilter || !resolvedUnitKerjaId) return
+        let active = true
+        storageLocationService.getById(lokasiFilter, resolvedUnitKerjaId)
+            .then(lokasi => { if (active && lokasi?.id === lokasiFilter) setLokasiTerpilih(lokasi) })
+            .catch(() => {})
+        return () => { active = false }
+    }, [lokasiFilter, resolvedUnitKerjaId])
+    const labelLokasi = lokasiTerpilih?.id === lokasiFilter
+        ? `${lokasiTerpilih.name} (${lokasiTerpilih.code})`
+        : 'lokasi terpilih'
+
     // Redirect if tab is invalid
     useEffect(() => {
         if (!VALID_TABS.includes(tab)) {
@@ -158,7 +173,7 @@ export default function Arsip() {
 
     const list = useArchiveList({
         scope: statsScope, tab: activeTab, search: searchTerm, tahun: tahunFilter,
-        unitKerjaId: resolvedUnitKerjaId, page: currentPage, pageSize,
+        unitKerjaId: resolvedUnitKerjaId, storageLocationId: lokasiFilter, page: currentPage, pageSize,
         revision: refreshVersion, onPageChange: setPage,
     })
     const { rows: currentData, totalPages, total: totalItems, loading: isLoading, error: loadError } = list
@@ -175,10 +190,10 @@ export default function Arsip() {
     // Action handlers
     const handleViewDetail = (row) => navigate(`/arsip/detail/${row.id}`)
 
-    const hasActiveFilters = tahunFilter !== 'all' || searchTerm || (isSuperAdmin && selectedUnitKerja !== 'all')
+    const hasActiveFilters = tahunFilter !== 'all' || searchTerm || lokasiFilter || (isSuperAdmin && selectedUnitKerja !== 'all')
 
     const clearAllFilters = () => {
-        updateQuery({ search: '', tahun: 'all', unitKerjaId: 'all', page: 1 })
+        updateQuery({ search: '', tahun: 'all', unitKerjaId: 'all', lokasi: '', page: 1 })
     }
 
     return (
@@ -409,6 +424,7 @@ export default function Arsip() {
                                     {hasActiveFilters && <div aria-label="Filter aktif" className="flex flex-wrap gap-2">
                                         {searchTerm && <Button variant="secondary" size="sm" className="h-auto min-h-9 max-w-full whitespace-normal break-all text-left" onClick={() => setSearchTerm('')} aria-label="Hapus filter pencarian">Pencarian: {searchTerm}<X className="ml-2 h-3.5 w-3.5 shrink-0" aria-hidden="true" /></Button>}
                                         {tahunFilter !== 'all' && <Button variant="secondary" size="sm" onClick={() => setTahunFilter('all')} aria-label="Hapus filter tahun">Tahun: {tahunFilter}<X className="ml-2 h-3.5 w-3.5" aria-hidden="true" /></Button>}
+                                        {lokasiFilter && <Button variant="secondary" size="sm" className="h-auto min-h-9 max-w-full whitespace-normal text-left" onClick={() => updateQuery({ lokasi: '', page: 1 })} aria-label="Hapus filter lokasi simpan">Lokasi simpan: {labelLokasi}<X className="ml-2 h-3.5 w-3.5 shrink-0" aria-hidden="true" /></Button>}
                                         {isSuperAdmin && selectedUnitKerja !== 'all' && <Button variant="secondary" size="sm" className="h-auto min-h-9 max-w-full whitespace-normal text-left" onClick={() => updateQuery({ unitKerjaId: 'all', page: 1 })} aria-label="Hapus filter unit">Unit: {unitKerjaList.find(unit => unit.id === selectedUnitKerja)?.name || selectedUnitKerja}<X className="ml-2 h-3.5 w-3.5 shrink-0" aria-hidden="true" /></Button>}
                                     </div>}
 

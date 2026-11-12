@@ -33,6 +33,8 @@ import {
     pesanGalatUbahArsip,
     validasiForm,
 } from './edit-arsip-form'
+import { LokasiSimpanPicker } from './LokasiSimpanPicker'
+import { PETUNJUK_LOKASI_SIMPAN, bolehMemilihLokasiUnit } from './lokasi-simpan'
 
 const ID = field => `ubah-arsip-${field}`
 const ID_KURUN_DARI = 'ubah-arsip-kurunDari'
@@ -300,6 +302,23 @@ function FormUbahArsip({ arsip, saving, setSaving, onClose, onSaved }) {
                     {teksInput('lokasiLaci', { wajib: true, placeholder: 'Contoh: L-02' })}
                     {teksInput('lokasiFolder', { wajib: true, placeholder: 'Contoh: F-003' })}
                 </div>
+                {bolehMemilihLokasiUnit(user, arsip?.unitKerjaId) && (
+                    <Bidang
+                        id={ID('storageLocationId')}
+                        label={LABEL_FIELD.storageLocationId}
+                        petunjuk={PETUNJUK_LOKASI_SIMPAN}
+                        galat={galatTampil.storageLocationId}
+                    >
+                        <LokasiSimpanPicker
+                            {...atributKendali(ID('storageLocationId'), { petunjuk: PETUNJUK_LOKASI_SIMPAN, galat: galatTampil.storageLocationId })}
+                            unitKerjaId={arsip.unitKerjaId}
+                            value={form.storageLocationId}
+                            onChange={ubah('storageLocationId')}
+                            disabled={saving}
+                            lokasiTersimpan={arsip.lokasiSimpan}
+                        />
+                    </Bidang>
+                )}
             </Bagian>
 
             <Bagian judul="Keamanan & Catatan">

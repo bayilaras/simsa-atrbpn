@@ -157,6 +157,7 @@ export const LABEL_FIELD = Object.freeze({
     lokasiFc: 'No. Filing Cabinet',
     lokasiLaci: 'No. Laci',
     lokasiFolder: 'No. Folder',
+    storageLocationId: 'Lokasi Simpan',
     klasifikasiKeamanan: 'Klasifikasi Keamanan',
     personInCharge: 'Person In Charge (PIC)',
     keterangan: 'Keterangan',
@@ -262,6 +263,7 @@ export function formAwal(arsip = {}) {
         lokasiFc: teks(arsip.lokasiFc),
         lokasiLaci: teks(arsip.lokasiLaci),
         lokasiFolder: teks(arsip.lokasiFolder),
+        storageLocationId: teks(arsip.storageLocationId),
         klasifikasiKeamanan: normalisasiKelas(arsip.klasifikasiKeamanan),
         personInCharge: teks(arsip.personInCharge),
         keterangan: teks(arsip.keterangan),
@@ -297,7 +299,10 @@ export function payloadPerubahan(form, awal) {
     const sekarang = nilaiMetadata(form)
     return Object.fromEntries(fieldBerubah(form, awal).map(field => [
         field,
-        field === 'jumlah' ? Number(sekarang.jumlah) : sekarang[field],
+        field === 'jumlah' ? Number(sekarang.jumlah)
+            // Pilihan kosong melepas arsip dari lokasi simpannya.
+            : field === 'storageLocationId' ? sekarang[field] || null
+                : sekarang[field],
     ]))
 }
 
