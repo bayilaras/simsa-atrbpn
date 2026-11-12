@@ -16,7 +16,7 @@ import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 import { pesanGalat } from '@/lib/pesan-galat'
 import { Link } from 'react-router-dom'
-import { tautanArsipLokasi } from '@/components/arsip/lokasi-simpan'
+import { rincianArsipLokasi, tautanArsipLokasi } from '@/components/arsip/lokasi-simpan'
 
 // Level configuration
 const LEVEL_CONFIG = {
@@ -31,6 +31,7 @@ function TreeNode({ node, level = 0, unitKerjaId, onEdit, onDelete, onGenerateQR
     const [isOpen, setIsOpen] = useState(level < 2)
     const hasChildren = node.children && node.children.length > 0
     const config = LEVEL_CONFIG[node.level] || LEVEL_CONFIG.box
+    const rincianArsip = rincianArsipLokasi(node)
     const Icon = config.icon
 
     return (
@@ -75,6 +76,10 @@ function TreeNode({ node, level = 0, unitKerjaId, onEdit, onDelete, onGenerateQR
                         <span className="text-muted-foreground mr-1">Arsip:</span>
                         <span className="font-bold">{node.arsipCount || 0}</span>
                     </Badge>
+                )}
+
+                {rincianArsip && (node.arsipCount || 0) > 0 && (
+                    <span className="hidden text-[11px] text-muted-foreground md:inline">{rincianArsip}</span>
                 )}
 
                 <div className="flex gap-1 ml-2">

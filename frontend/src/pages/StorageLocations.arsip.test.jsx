@@ -26,6 +26,7 @@ describe('jumlah arsip dan tautan daftar arsip per lokasi', () => {
         render(<MemoryRouter><StorageLocations /></MemoryRouter>)
         const barisGedung = (await screen.findByText('Gedung sintetis')).parentElement
         expect(within(barisGedung).getByTitle('Termasuk arsip di sub-lokasi')).toHaveTextContent('Arsip:4')
+        expect(barisGedung).toHaveTextContent('3 arsip surat masuk, 1 arsip surat keluar')
         expect(within(barisGedung).getByRole('link', { name: 'Lihat arsip di lokasi G1' }))
             .toHaveAttribute('href', `/arsip/keluar?lokasi=${GEDUNG}&unit=ditjen`)
 
@@ -41,8 +42,19 @@ describe('jumlah arsip dan tautan daftar arsip per lokasi', () => {
             <Route path="/storage-locations/:id" element={<StorageLocationDetail />} />
         </Routes></MemoryRouter>)
         const label = await screen.findByText('Jumlah arsip (termasuk sub-lokasi)')
-        expect(label.nextElementSibling).toHaveTextContent('4')
-        expect(screen.getByRole('link', { name: 'Lihat arsip di lokasi ini' }))
+        expect(label.nextElementSibling).toHaveTextContent('4: 3 arsip surat masuk, 1 arsip surat keluar')
+        expect(screen.getByRole('link', { name: 'Lihat arsip surat masuk (3)' }))
+            .toHaveAttribute('href', `/arsip/masuk?lokasi=${GEDUNG}&unit=ditjen`)
+        expect(screen.getByRole('link', { name: 'Lihat arsip surat keluar (1)' }))
             .toHaveAttribute('href', `/arsip/keluar?lokasi=${GEDUNG}&unit=ditjen`)
+    })
+
+    it('detail lokasi dengan satu jenis arsip memakai satu tautan ke tab yang berisi', async () => {
+        mocks.getById.mockResolvedValue({ ...boks, unitKerjaId: 'ditjen' })
+        render(<MemoryRouter initialEntries={[`/storage-locations/${BOKS}`]}><Routes>
+            <Route path="/storage-locations/:id" element={<StorageLocationDetail />} />
+        </Routes></MemoryRouter>)
+        expect(await screen.findByRole('link', { name: 'Lihat arsip di lokasi ini' }))
+            .toHaveAttribute('href', `/arsip/masuk?lokasi=${BOKS}&unit=ditjen`)
     })
 })

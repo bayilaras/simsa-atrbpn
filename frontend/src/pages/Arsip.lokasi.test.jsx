@@ -44,6 +44,22 @@ describe('daftar arsip tersaring per lokasi simpan', () => {
         expect(screen.queryByRole('button', { name: 'Hapus filter lokasi simpan' })).not.toBeInTheDocument()
     })
 
+    it('menyebut arsip jenis lain di lokasi yang sama dan menautkan tabnya', async () => {
+        mocks.getById.mockResolvedValue({ id: LOKASI, code: 'G1-B1', name: 'Boks Satu', arsipCount: 3, arsipMasukCount: 2, arsipKeluarCount: 1 })
+        tampilkan(`/arsip/masuk?lokasi=${LOKASI}`)
+        expect(await screen.findByText(/Lokasi ini juga menyimpan 1 arsip surat keluar\./)).toBeInTheDocument()
+        expect(screen.getByRole('link', { name: 'Lihat arsip surat keluar' }))
+            .toHaveAttribute('href', `/arsip/keluar?lokasi=${LOKASI}`)
+    })
+
+    it('tanpa arsip jenis lain tidak ada petunjuk tab', async () => {
+        mocks.getById.mockResolvedValue({ id: LOKASI, code: 'G1-B1', name: 'Boks Satu', arsipCount: 2, arsipMasukCount: 2, arsipKeluarCount: 0 })
+        tampilkan(`/arsip/masuk?lokasi=${LOKASI}`)
+        const chip = await screen.findByRole('button', { name: 'Hapus filter lokasi simpan' })
+        await waitFor(() => expect(chip).toHaveTextContent('Boks Satu (G1-B1)'))
+        expect(screen.queryByText(/Lokasi ini juga menyimpan/)).not.toBeInTheDocument()
+    })
+
     it('nilai lokasi yang bukan id diabaikan', async () => {
         tampilkan('/arsip/masuk?lokasi=G1-B1')
         await screen.findByText('Berkas di boks')

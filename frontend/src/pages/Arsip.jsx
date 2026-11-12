@@ -59,6 +59,7 @@ import {
 import { arsipService } from '@/services/arsip.service'
 import settingsService from '@/services/settings.service'
 import storageLocationService from '@/services/storage-location.service'
+import { tautanArsipLokasi } from '@/components/arsip/lokasi-simpan'
 import { TableSkeleton } from '@/components/skeletons'
 
 const VALID_TABS = ['keluar', 'masuk', 'retensi']
@@ -159,6 +160,11 @@ export default function Arsip() {
     const labelLokasi = lokasiTerpilih?.id === lokasiFilter
         ? `${lokasiTerpilih.name} (${lokasiTerpilih.code})`
         : 'lokasi terpilih'
+    // Daftar hanya menampilkan satu jenis arsip per tab; sebutkan sisanya.
+    const tabLain = activeTab === 'masuk' ? 'keluar' : activeTab === 'keluar' ? 'masuk' : null
+    const jumlahTabLain = lokasiTerpilih?.id === lokasiFilter && tabLain
+        ? (tabLain === 'masuk' ? lokasiTerpilih.arsipMasukCount : lokasiTerpilih.arsipKeluarCount) || 0
+        : 0
 
     // Redirect if tab is invalid
     useEffect(() => {
@@ -427,6 +433,12 @@ export default function Arsip() {
                                         {lokasiFilter && <Button variant="secondary" size="sm" className="h-auto min-h-9 max-w-full whitespace-normal text-left" onClick={() => updateQuery({ lokasi: '', page: 1 })} aria-label="Hapus filter lokasi simpan">Lokasi simpan: {labelLokasi}<X className="ml-2 h-3.5 w-3.5 shrink-0" aria-hidden="true" /></Button>}
                                         {isSuperAdmin && selectedUnitKerja !== 'all' && <Button variant="secondary" size="sm" className="h-auto min-h-9 max-w-full whitespace-normal text-left" onClick={() => updateQuery({ unitKerjaId: 'all', page: 1 })} aria-label="Hapus filter unit">Unit: {unitKerjaList.find(unit => unit.id === selectedUnitKerja)?.name || selectedUnitKerja}<X className="ml-2 h-3.5 w-3.5 shrink-0" aria-hidden="true" /></Button>}
                                     </div>}
+                                    {jumlahTabLain > 0 && <p className="text-sm text-muted-foreground">
+                                        Lokasi ini juga menyimpan {jumlahTabLain} arsip surat {tabLain}.{' '}
+                                        <Link className="font-medium text-foreground underline underline-offset-4" to={tautanArsipLokasi(lokasiTerpilih, isSuperAdmin && selectedUnitKerja !== 'all' ? selectedUnitKerja : undefined, tabLain)}>
+                                            Lihat arsip surat {tabLain}
+                                        </Link>
+                                    </p>}
 
                                     <Collapsible open={isAdvancedOpen}>
                                         <CollapsibleContent className="pt-2">

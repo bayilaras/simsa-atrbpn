@@ -32,11 +32,23 @@ export function bolehMemilihLokasiUnit(user, unitKerjaId) {
 }
 
 /**
- * Tautan ke daftar arsip yang disaring pada satu lokasi simpan (beserta
- * sub-lokasinya). Membuka tab yang berisi arsip; `unit` hanya dipakai Super Admin.
+ * Rincian jumlah arsip per jenis di satu lokasi (beserta sub-lokasinya). Daftar
+ * arsip selalu tampil per jenis, jadi totalnya saja tidak cukup. Kosong bila
+ * server tidak mengirim rinciannya.
  */
-export function tautanArsipLokasi(lokasi, unitKerjaId) {
-    const tab = (lokasi?.arsipKeluarCount ?? 0) === 0 && (lokasi?.arsipMasukCount ?? 0) > 0 ? 'masuk' : 'keluar'
+export function rincianArsipLokasi(lokasi) {
+    if (!Number.isFinite(lokasi?.arsipMasukCount) || !Number.isFinite(lokasi?.arsipKeluarCount)) return ''
+    return `${lokasi.arsipMasukCount} arsip surat masuk, ${lokasi.arsipKeluarCount} arsip surat keluar`
+}
+
+/**
+ * Tautan ke daftar arsip yang disaring pada satu lokasi simpan (beserta
+ * sub-lokasinya). Tanpa `tab`, membuka tab yang berisi arsip; `unit` hanya
+ * dipakai Super Admin.
+ */
+export function tautanArsipLokasi(lokasi, unitKerjaId, tabDiminta) {
+    const tab = tabDiminta
+        || ((lokasi?.arsipKeluarCount ?? 0) === 0 && (lokasi?.arsipMasukCount ?? 0) > 0 ? 'masuk' : 'keluar')
     const params = new URLSearchParams({ lokasi: lokasi.id })
     if (unitKerjaId) params.set('unit', unitKerjaId)
     return `/arsip/${tab}?${params}`
