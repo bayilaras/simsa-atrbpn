@@ -1,4 +1,4 @@
-import { buildSuratFormPayload } from '@/lib/surat-form-payload'
+import { CATATAN_LAMPIRAN_OPSIONAL, PETUNJUK_LAMPIRAN_MENYUSUL, buildSuratFormPayload, linkDokumenError } from '@/lib/surat-form-payload'
 import { buildSuratArchiveSelection, readSuratArchiveSelection, selectedSuratArchiveRules, validateSuratArchiveSelection } from '@/lib/surat-archive-selection'
 import { archiveUploadError } from '@/lib/archive-upload';
 import { createElement, useCallback, useState, useRef, useEffect } from 'react';
@@ -418,6 +418,9 @@ export default function TambahSuratMasuk() {
         if (!formData.perihal) return { message: 'Perihal wajib diisi' };
         if (!formData.dari) return { message: 'Pengirim (Dari) wajib diisi' };
         if (!formData.kepada) return { message: 'Penerima (Kepada) wajib diisi' };
+        // Lampiran opsional; link yang diketik tetap harus berupa alamat lengkap.
+        const galatLink = filesEnabled ? linkDokumenError(formData.linkDokumen) : null;
+        if (galatLink) return { field: 'linkDokumen', message: galatLink };
         if (perluAlasanKoreksi && alasanKoreksi.trim().length < 10) {
             return { field: 'alasanKoreksi', message: 'Alasan koreksi wajib diisi, minimal 10 karakter' };
         }
@@ -431,10 +434,6 @@ export default function TambahSuratMasuk() {
             if (!window.confirm('Surat belum didisposisikan. Simpan tanpa disposisi?')) {
                 return { field: 'disposisi', message: 'Disposisi wajib diisi' };
             }
-        }
-        // For edit mode, allow existing file or link
-        if (filesEnabled && !formData.linkDokumen && !selectedFile && !existingFile) {
-            return { field: 'linkDokumen', message: 'Link dokumen atau upload berkas wajib diisi (salah satu)' };
         }
         return null;
     };
@@ -985,7 +984,7 @@ export default function TambahSuratMasuk() {
                         <SectionHeader
                             icon={Upload}
                             title="Lampiran Dokumen"
-                            description="Unggah berkas atau masukkan link dokumen"
+                            description="Unggah berkas atau masukkan link dokumen (opsional)"
                             step={5}
                         />
 
@@ -1033,8 +1032,6 @@ export default function TambahSuratMasuk() {
                                     tabIndex={selectedFile || saveLocked ? undefined : 0}
                                     aria-label={selectedFile ? undefined : 'Pilih berkas untuk diunggah'}
                                     aria-disabled={saveLocked}
-                                    aria-invalid={Boolean(fieldErrors.linkDokumen)}
-                                    aria-describedby={fieldErrors.linkDokumen ? 'link-dokumen-error' : undefined}
                                     onKeyDown={selectedFile ? undefined : (e) => {
                                         if (e.key === 'Enter' || e.key === ' ') {
                                             e.preventDefault();
@@ -1133,8 +1130,8 @@ export default function TambahSuratMasuk() {
                             <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-500/15 border border-blue-100">
                                 <Info className="h-4 w-4 text-blue-500 flex-shrink-0 mt-0.5" />
                                 <p className="text-xs text-blue-700 dark:text-blue-300">
-                                    <strong>Catatan:</strong> Salah satu dari link dokumen atau upload berkas wajib diisi.
-                                    Anda dapat mengisi keduanya jika diperlukan.
+                                    <strong>Catatan:</strong> {CATATAN_LAMPIRAN_OPSIONAL}
+                                    {!formData.linkDokumen && !selectedFile && !existingFile && ` ${PETUNJUK_LAMPIRAN_MENYUSUL}`}
                                 </p>
                             </div>
                         </div>

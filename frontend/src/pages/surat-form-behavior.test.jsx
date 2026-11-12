@@ -190,12 +190,35 @@ it('names the outgoing reference display for keyboard and screen reader users', 
     expect(screen.getByText('Nomor Referensi')).toBeInTheDocument();
 });
 
-it.each(pages)('associates the $kind document requirement with both available document controls', async page => {
+it.each(pages)('saves $kind edits with neither a document link nor a file', async page => {
     fixtures.capabilities.fileUploads = true;
     const { form } = await renderForm(page, { linkDokumen: '' });
+    expect(screen.getByText(/Link dokumen dan berkas tidak wajib diisi\./)).toHaveTextContent(
+        'Catatan: Link dokumen dan berkas tidak wajib diisi. Surat dapat disimpan tanpa lampiran; hasil pindai dapat ditambahkan nanti lewat menu Edit Surat.',
+    );
+    expect(screen.queryByText(/wajib diisi \(salah satu\)/)).toBeNull();
     fireEvent.submit(form);
-    const message = 'Link dokumen atau upload berkas wajib diisi (salah satu)';
-    expect(screen.getByLabelText(/^Link Dokumen/)).toHaveAccessibleDescription(message);
-    expect(screen.getByRole('button', { name: 'Pilih berkas untuk diunggah' })).toHaveAccessibleDescription(message);
+    await screen.findByText(/telah disimpan ke sistem/);
+    expect(fixtures[page.kind].update).toHaveBeenCalledWith(record.id, expect.objectContaining({ linkDokumen: '' }), null);
+});
+
+it.each(pages)('drops the add-later hint once the $kind letter has a document link', async page => {
+    fixtures.capabilities.fileUploads = true;
+    await renderForm(page);
+    expect(screen.getByText(/Link dokumen dan berkas tidak wajib diisi\./)).toBeInTheDocument();
+    expect(screen.queryByText(/hasil pindai dapat ditambahkan nanti/)).toBeNull();
+});
+
+it.each(pages)('still rejects a malformed $kind document link next to its field', async page => {
+    fixtures.capabilities.fileUploads = true;
+    const { form } = await renderForm(page, { linkDokumen: '' });
+    const link = screen.getByLabelText(/^Link Dokumen/);
+    fireEvent.change(link, { target: { value: 'drive saya' } });
+    fireEvent.submit(form);
+    expect(link).toHaveAttribute('aria-invalid', 'true');
+    expect(link).toHaveAccessibleDescription('Link dokumen harus berupa alamat lengkap, misalnya https://contoh.go.id/berkas');
     expect(fixtures[page.kind].update).not.toHaveBeenCalled();
+    fireEvent.change(link, { target: { value: 'https://example.test/pindai.pdf' } });
+    fireEvent.submit(form);
+    await screen.findByText(/telah disimpan ke sistem/);
 });
