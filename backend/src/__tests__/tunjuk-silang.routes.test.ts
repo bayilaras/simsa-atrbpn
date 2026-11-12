@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
         findAll: vi.fn(),
         getStats: vi.fn(),
         findByEntity: vi.fn(),
+        describeEntities: vi.fn(),
         findById: vi.fn(),
         create: vi.fn(),
         cancel: vi.fn(),
@@ -91,6 +92,7 @@ describe('tunjuk silang route policy', () => {
         mocks.recordAccess.check.mockResolvedValue(access());
         mocks.dosir.getAccessMetadata.mockResolvedValue([]);
         mocks.service.findByEntity.mockResolvedValue([]);
+        mocks.service.describeEntities.mockResolvedValue(new Map());
         mocks.service.create.mockResolvedValue({ id: REF_ID });
         mocks.service.findById.mockResolvedValue({
             id: REF_ID,
@@ -137,6 +139,86 @@ describe('tunjuk silang route policy', () => {
             .expect(200);
 
         expect(response.body.data).toEqual([]);
+    });
+
+    it('labels readable related records and the looked-up record itself', async () => {
+        mocks.service.findByEntity.mockResolvedValue([{
+            id: REF_ID,
+            relatedType: 'surat_masuk',
+            relatedId: TARGET_ID,
+        }]);
+        mocks.service.describeEntities.mockResolvedValue(new Map([
+            [`arsip:${SOURCE_ID}`, { nomor: 'B-01', judul: 'Berkas pengadaan', jenis: 'masuk' }],
+            [`surat_masuk:${TARGET_ID}`, { nomor: '12/UND/2026', judul: 'Undangan rapat', jenis: 'Undangan' }],
+        ]));
+
+        const response = await request(app)
+            .get(`/tunjuk-silang/arsip/${SOURCE_ID}`)
+            .expect(200);
+
+        expect(response.body.subject).toEqual({
+            accessible: true, nomor: 'B-01', judul: 'Berkas pengadaan', jenis: 'masuk',
+        });
+        expect(response.body.data).toEqual([expect.objectContaining({
+            id: REF_ID,
+            relatedLabel: { accessible: true, nomor: '12/UND/2026', judul: 'Undangan rapat', jenis: 'Undangan' },
+        })]);
+    });
+
+    it('never asks for the label of a related record above the caller access', async () => {
+        const HIDDEN_ID = '33333333-3333-4333-8333-333333333333';
+        mocks.service.findByEntity.mockResolvedValue([
+            { id: 'ref-hidden', relatedType: 'surat_masuk', relatedId: HIDDEN_ID },
+            { id: 'ref-open', relatedType: 'arsip', relatedId: TARGET_ID },
+        ]);
+        mocks.recordAccess.check.mockImplementation(async (_user: unknown, _type: string, id: string) =>
+            id === HIDDEN_ID ? access('ditjen', true, false) : access());
+
+        const response = await request(app)
+            .get(`/tunjuk-silang/arsip/${SOURCE_ID}`)
+            .expect(200);
+
+        expect(response.body.data.map((reference: any) => reference.id)).toEqual(['ref-open']);
+        const described = mocks.service.describeEntities.mock.calls.flatMap(([subjects]) => subjects);
+        expect(described).toEqual([
+            { entityType: 'arsip', entityId: SOURCE_ID },
+            { entityType: 'arsip', entityId: TARGET_ID },
+        ]);
+        expect(JSON.stringify(response.body)).not.toContain(HIDDEN_ID);
+    });
+
+    it('gives registry rows a neutral label for endpoints the viewer may not read', async () => {
+        Object.assign(mocks.user, { role: 'super_admin', unitKerjaId: null });
+        mocks.service.findAll.mockResolvedValue({
+            data: [{
+                id: REF_ID,
+                sourceType: 'arsip', sourceId: SOURCE_ID,
+                targetType: 'surat_keluar', targetId: TARGET_ID,
+                jenisRelasi: 'referensi',
+            }],
+            total: 1, page: 1, limit: 20, totalPages: 1,
+        });
+        mocks.recordAccess.check.mockImplementation(async (_user: unknown, _type: string, id: string) =>
+            id === TARGET_ID ? access('ditjen', true, false) : access());
+        // Even if a label were returned for the hidden record, it must not reach the response.
+        mocks.service.describeEntities.mockResolvedValue(new Map([
+            [`arsip:${SOURCE_ID}`, { nomor: 'B-01', judul: 'Berkas pengadaan', jenis: 'masuk' }],
+            [`surat_keluar:${TARGET_ID}`, { nomor: 'R-1', judul: 'Isi tertutup', jenis: 'Nota Dinas' }],
+        ]));
+
+        const response = await request(app).get('/tunjuk-silang').expect(200);
+
+        expect(mocks.service.describeEntities).toHaveBeenCalledWith([
+            { entityType: 'arsip', entityId: SOURCE_ID },
+        ]);
+        expect(response.body.totalPages).toBe(1);
+        expect(response.body.data[0].sourceLabel).toEqual({
+            accessible: true, nomor: 'B-01', judul: 'Berkas pengadaan', jenis: 'masuk',
+        });
+        expect(response.body.data[0].targetLabel).toEqual({
+            accessible: false, nomor: null, judul: null, jenis: null,
+        });
+        expect(JSON.stringify(response.body)).not.toContain('Isi tertutup');
     });
 
     it('rejects a cross-unit relationship', async () => {

@@ -1,5 +1,8 @@
 import { Router, Response, NextFunction } from 'express';
-import { tunjukSilangService } from '../services/tunjuk-silang.service.js';
+import {
+    tunjukSilangService,
+    type CrossReferenceEntityLabel,
+} from '../services/tunjuk-silang.service.js';
 import { authMiddleware, type AuthRequest } from '../middlewares/auth.middleware.js';
 import { canWriteMiddleware, roleMiddleware } from '../middlewares/role.middleware.js';
 import { uuidParamValidator } from '../middlewares/validate.middleware.js';
@@ -114,6 +117,39 @@ async function checkEntityAccessMany(
     return results;
 }
 
+interface CrossReferenceEndpointLabel {
+    accessible: boolean;
+    nomor: string | null;
+    judul: string | null;
+    jenis: string | null;
+}
+
+function isReadable(access: RecordAccessResult | undefined) {
+    return access?.exists === true && access.allowed === true;
+}
+
+/**
+ * Labels are read only for records the caller may open; every other endpoint
+ * gets the same empty label so the client can show a neutral placeholder.
+ */
+async function describeReadableEntities(
+    subjects: Array<{ entityType: string; entityId: string }>,
+    accessByKey: Map<string, RecordAccessResult>,
+) {
+    const labels: Map<string, CrossReferenceEntityLabel> = await tunjukSilangService.describeEntities(
+        subjects.filter((subject) =>
+            isReadable(accessByKey.get(entityAccessKey(subject.entityType, subject.entityId)))),
+    );
+    return (entityType: string, entityId: string): CrossReferenceEndpointLabel => {
+        const key = entityAccessKey(entityType, entityId);
+        const label = labels.get(key);
+        if (!label || !isReadable(accessByKey.get(key))) {
+            return { accessible: false, nomor: null, judul: null, jenis: null };
+        }
+        return { accessible: true, nomor: label.nomor, judul: label.judul, jenis: label.jenis };
+    };
+}
+
 // GET /api/tunjuk-silang — List all cross-references
 router.get('/', roleMiddleware(['super_admin']), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -128,7 +164,22 @@ router.get('/', roleMiddleware(['super_admin']), async (req: AuthRequest, res: R
             return res.status(400).json({ error: 'Invalid cross-reference filters' });
         }
         const result = await tunjukSilangService.findAll(filters);
-        res.json(result);
+        const endpoints = result.data.flatMap((reference) => [
+            { entityType: reference.sourceType, entityId: reference.sourceId },
+            { entityType: reference.targetType, entityId: reference.targetId },
+        ]);
+        const labelOf = await describeReadableEntities(
+            endpoints,
+            await checkEntityAccessMany(req, endpoints),
+        );
+        res.json({
+            ...result,
+            data: result.data.map((reference) => ({
+                ...reference,
+                sourceLabel: labelOf(reference.sourceType, reference.sourceId),
+                targetLabel: labelOf(reference.targetType, reference.targetId),
+            })),
+        });
     } catch (error) {
         next(error);
     }
@@ -160,7 +211,7 @@ router.get('/:type/:id', async (req: AuthRequest, res: Response, next: NextFunct
         }
         const sourceAccess = await checkEntityAccess(req, entityType, entityId);
         if (!sourceAccess.exists || !sourceAccess.allowed) {
-            return res.status(404).json({ error: 'Cross-reference not found' });
+            return res.status(404).json({ error: 'Dokumen tidak ditemukan atau di luar jangkauan Anda' });
         }
         // Filter before paginating: pages and the total count only reflect
         // relations whose related record the caller may open.
@@ -169,13 +220,24 @@ router.get('/:type/:id', async (req: AuthRequest, res: Response, next: NextFunct
             entityType: reference.relatedType,
             entityId: reference.relatedId,
         })));
-        const filtered = references.filter((reference) => {
-            const access = relatedAccess.get(entityAccessKey(reference.relatedType, reference.relatedId));
-            return access?.exists === true && access.allowed === true;
-        });
+        const filtered = references.filter((reference) =>
+            isReadable(relatedAccess.get(entityAccessKey(reference.relatedType, reference.relatedId))));
         const offset = (page - 1) * limit;
+        const pageItems = filtered.slice(offset, offset + limit);
+        relatedAccess.set(entityAccessKey(entityType, entityId), sourceAccess);
+        const labelOf = await describeReadableEntities([
+            { entityType, entityId },
+            ...pageItems.map((reference) => ({
+                entityType: reference.relatedType,
+                entityId: reference.relatedId,
+            })),
+        ], relatedAccess);
         res.json({
-            data: filtered.slice(offset, offset + limit),
+            data: pageItems.map((reference) => ({
+                ...reference,
+                relatedLabel: labelOf(reference.relatedType, reference.relatedId),
+            })),
+            subject: labelOf(entityType, entityId),
             pagination: { page, limit, total: filtered.length },
         });
     } catch (error) {
@@ -190,7 +252,7 @@ router.post('/', canWriteMiddleware(), async (req: AuthRequest, res: Response, n
 
         if (!sourceType || !sourceId || !targetType || !targetId || !jenisRelasi) {
             return res.status(400).json({
-                error: 'sourceType, sourceId, targetType, targetId, and jenisRelasi are required',
+                error: 'Dokumen sumber, dokumen tujuan, dan jenis hubungan wajib diisi',
             });
         }
 
@@ -198,10 +260,10 @@ router.post('/', canWriteMiddleware(), async (req: AuthRequest, res: Response, n
             !UUID_PATTERN.test(sourceId) || !UUID_PATTERN.test(targetId) ||
             !RELATION_TYPES.has(jenisRelasi) ||
             (keterangan !== undefined && (typeof keterangan !== 'string' || keterangan.length > 2000))) {
-            return res.status(400).json({ error: 'Invalid cross-reference payload' });
+            return res.status(400).json({ error: 'Data tunjuk silang tidak valid' });
         }
         if (sourceType === targetType && sourceId === targetId) {
-            return res.status(400).json({ error: 'A record cannot reference itself' });
+            return res.status(400).json({ error: 'Dokumen tidak dapat ditautkan dengan dirinya sendiri' });
         }
 
         const entityAccess = await checkEntityAccessMany(req, [
@@ -212,7 +274,9 @@ router.post('/', canWriteMiddleware(), async (req: AuthRequest, res: Response, n
         const targetAccess = entityAccess.get(entityAccessKey(targetType, targetId)) || inaccessibleResult();
         if (!sourceAccess.exists || !sourceAccess.allowed || !sourceAccess.mutable ||
             !targetAccess.exists || !targetAccess.allowed || !targetAccess.mutable) {
-            return res.status(404).json({ error: 'Source or target record not found' });
+            return res.status(404).json({
+                error: 'Dokumen sumber atau tujuan tidak dapat ditautkan: dokumen tidak ditemukan, di luar jangkauan Anda, atau sudah tidak dapat diubah',
+            });
         }
         if (!sourceAccess.unitKerjaId || sourceAccess.unitKerjaId !== targetAccess.unitKerjaId) {
             return res.status(400).json({ error: 'Tunjuk silang hanya dapat dibuat dalam unit kerja yang sama' });
@@ -250,10 +314,10 @@ router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res: Respon
             return res.status(400).json({ error: 'Alasan pembatalan wajib diisi (10–1000 karakter)' });
         }
         const reference = await tunjukSilangService.findById(id);
-        if (!reference) return res.status(404).json({ error: 'Cross-reference not found' });
+        if (!reference) return res.status(404).json({ error: 'Tunjuk silang tidak ditemukan' });
         const ownerId = req.user!.role === 'super_admin' ? null : req.user!.id;
         if (ownerId !== null && reference.createdBy !== ownerId) {
-            return res.status(404).json({ error: 'Cross-reference not found' });
+            return res.status(404).json({ error: 'Tunjuk silang tidak ditemukan' });
         }
         const entityAccess = await checkEntityAccessMany(req, [
             { entityType: reference.sourceType, entityId: reference.sourceId },
@@ -266,7 +330,7 @@ router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res: Respon
             entityAccessKey(reference.targetType, reference.targetId),
         ) || inaccessibleResult();
         if (!sourceAccess.allowed || !targetAccess.allowed) {
-            return res.status(404).json({ error: 'Cross-reference not found' });
+            return res.status(404).json({ error: 'Tunjuk silang tidak ditemukan' });
         }
         if (!sourceAccess.mutable || !targetAccess.mutable) {
             return res.status(409).json({
@@ -285,7 +349,7 @@ router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res: Respon
                 ipAddress: (req.ip || req.get('x-forwarded-for') || '') as string,
             },
         );
-        if (!cancelled) return res.status(404).json({ error: 'Cross-reference not found' });
+        if (!cancelled) return res.status(404).json({ error: 'Tunjuk silang tidak ditemukan' });
         return res.json({ success: true, data: cancelled });
     } catch (error) {
         next(error);

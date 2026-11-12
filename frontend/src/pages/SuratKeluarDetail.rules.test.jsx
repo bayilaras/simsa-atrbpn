@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import SuratKeluarDetail from './SuratKeluarDetail'
 
 const mocks = vi.hoisted(() => ({ getById: vi.fn(), toast: vi.fn(), canWrite: false, getBySurat: vi.fn(), getHistory: vi.fn(), getEligibleApprovers: vi.fn() }))
+vi.mock('@/components/tunjuk-silang/KartuTunjukSilang', () => ({ KartuTunjukSilang: ({ tipe, id }) => <div data-testid="kartu-tunjuk-silang">{`${tipe}:${id}`}</div> }))
 vi.mock('@/components/surat/KoreksiBerkasSection', () => ({ default: () => null }))
 vi.mock('@/services/surat-keluar.service', () => ({ default: { getById: mocks.getById } }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ canWrite: () => mocks.canWrite, user: { id: 'user-a' } }) }))
@@ -138,4 +139,10 @@ it.each([['sangat_segera', 'Sangat Segera'], ['Kilat', 'Kilat'], [null, 'Belum t
     mocks.getById.mockResolvedValue({ id: 'surat-id', nomorSurat: '005/2026', perihal: 'Undangan rapat', unitKerjaId: 'unit-a', sifatSurat })
     render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
     expect((await screen.findByText('Sifat Surat')).parentElement).toHaveTextContent(shown)
+})
+
+it('menyertakan kartu Tunjuk Silang untuk surat keluar ini', async () => {
+    mocks.getById.mockResolvedValue({ id: 'surat-id', nomorSurat: '001/2026', perihal: 'Surat keluar', unitKerjaId: 'unit-a' })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    expect(await screen.findByTestId('kartu-tunjuk-silang')).toHaveTextContent('surat_keluar:surat-id')
 })

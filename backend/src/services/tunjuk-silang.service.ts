@@ -7,7 +7,7 @@ import {
     tunjukSilang,
     type NewTunjukSilang,
 } from '../db/schema/index.js';
-import { eq, or, and, desc, count, isNull } from 'drizzle-orm';
+import { eq, or, and, desc, count, inArray, isNull } from 'drizzle-orm';
 import { ConflictError, NotFoundError, ValidationError } from '../utils/errors.js';
 import { hasPostgresErrorCode } from '../utils/postgres-errors.js';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
@@ -25,6 +25,16 @@ function requireUuid(value: string | null | undefined, field: string) {
 }
 
 const MAX_REFERENCES_PER_ENTITY = 500;
+
+export interface CrossReferenceEntityLabel {
+    nomor: string | null;
+    judul: string | null;
+    jenis: string | null;
+}
+
+export function crossReferenceEntityKey(entityType: string, entityId: string) {
+    return `${entityType}:${entityId}`;
+}
 
 function requirePagination(page: number, limit: number) {
     if (!Number.isInteger(page) || page < 1 ||
@@ -231,6 +241,97 @@ class TunjukSilangService {
                 relatedId: isSource ? ref.targetId : ref.sourceId,
             };
         });
+    }
+
+    /**
+     * Display labels (nomor, perihal/uraian, jenis) for cross-reference
+     * endpoints. No access rule is applied here: callers pass only the
+     * records the viewer was already allowed to read.
+     */
+    async describeEntities(subjects: Array<{ entityType: string; entityId: string }>) {
+        const idsByType = new Map<string, Set<string>>();
+        for (const subject of subjects) {
+            if (!VALID_ENTITY_TYPES.includes(subject.entityType as CrossReferenceEntityType) ||
+                !UUID_PATTERN.test(subject.entityId)) continue;
+            const ids = idsByType.get(subject.entityType) || new Set<string>();
+            ids.add(subject.entityId);
+            idsByType.set(subject.entityType, ids);
+        }
+        const idsOf = (entityType: CrossReferenceEntityType) => [...(idsByType.get(entityType) || [])];
+        const labels = new Map<string, CrossReferenceEntityLabel>();
+
+        const suratMasukIds = idsOf('surat_masuk');
+        if (suratMasukIds.length > 0) {
+            const rows = await db
+                .select({
+                    id: suratMasuk.id,
+                    nomor: suratMasuk.nomorSurat,
+                    judul: suratMasuk.perihal,
+                    jenis: suratMasuk.jenisSurat,
+                })
+                .from(suratMasuk)
+                .where(inArray(suratMasuk.id, suratMasukIds));
+            for (const row of rows) {
+                labels.set(crossReferenceEntityKey('surat_masuk', row.id), {
+                    nomor: row.nomor, judul: row.judul, jenis: row.jenis,
+                });
+            }
+        }
+
+        const suratKeluarIds = idsOf('surat_keluar');
+        if (suratKeluarIds.length > 0) {
+            const rows = await db
+                .select({
+                    id: suratKeluar.id,
+                    nomor: suratKeluar.nomorSurat,
+                    judul: suratKeluar.perihal,
+                    jenis: suratKeluar.naskahDinas,
+                })
+                .from(suratKeluar)
+                .where(inArray(suratKeluar.id, suratKeluarIds));
+            for (const row of rows) {
+                labels.set(crossReferenceEntityKey('surat_keluar', row.id), {
+                    nomor: row.nomor, judul: row.judul, jenis: row.jenis,
+                });
+            }
+        }
+
+        const arsipIds = idsOf('arsip');
+        if (arsipIds.length > 0) {
+            const rows = await db
+                .select({
+                    id: arsip.id,
+                    nomorBerkas: arsip.nomorBerkas,
+                    nomorSuratOriginal: arsip.nomorSuratOriginal,
+                    uraianBerkas: arsip.uraianBerkas,
+                    perihalOriginal: arsip.perihalOriginal,
+                    jenisArsip: arsip.jenisArsip,
+                })
+                .from(arsip)
+                .where(inArray(arsip.id, arsipIds));
+            for (const row of rows) {
+                labels.set(crossReferenceEntityKey('arsip', row.id), {
+                    nomor: row.nomorBerkas || row.nomorSuratOriginal || null,
+                    judul: row.uraianBerkas || row.perihalOriginal || null,
+                    jenis: row.jenisArsip,
+                });
+            }
+        }
+
+        const dosirIds = idsOf('dosir');
+        if (dosirIds.length > 0) {
+            const rows = await db
+                .select({ id: dosir.id, nomor: dosir.kode, judul: dosir.judul, jenis: dosir.kategori })
+                .from(dosir)
+                .where(inArray(dosir.id, dosirIds));
+            for (const row of rows) {
+                labels.set(crossReferenceEntityKey('dosir', row.id), {
+                    nomor: row.nomor, judul: row.judul, jenis: row.jenis,
+                });
+            }
+        }
+
+        return labels;
     }
 
     /**

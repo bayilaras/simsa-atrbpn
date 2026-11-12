@@ -42,6 +42,7 @@ import { useAppConfig } from '@/context/app-config-context'
 import { AlurSuratPanel } from '@/components/surat/AlurSuratPanel'
 import { TindakLanjutMenu } from '@/components/surat/TindakLanjutMenu'
 import { TautkanDialog } from '@/components/surat/AlurSuratActions'
+import { KartuTunjukSilang } from '@/components/tunjuk-silang/KartuTunjukSilang'
 
 export default function SuratKeluarDetail() {
     const { id } = useParams()
@@ -573,6 +574,7 @@ export default function SuratKeluarDetail() {
                     </Card>
 
                     <FilePreviewSection surat={surat} entityType="surat_keluar" />
+                    <KartuTunjukSilang tipe="surat_keluar" id={surat.id} />
                 </div>
 
                 {/* Sidebar */}
