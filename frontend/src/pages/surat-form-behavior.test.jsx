@@ -194,7 +194,9 @@ it.each(pages)('saves $kind edits with neither a document link nor a file', asyn
     fixtures.capabilities.fileUploads = true;
     const { form } = await renderForm(page, { linkDokumen: '' });
     expect(screen.getByText(/Link dokumen dan berkas tidak wajib diisi\./)).toHaveTextContent(
-        'Catatan: Link dokumen dan berkas tidak wajib diisi. Surat dapat disimpan tanpa lampiran; hasil pindai dapat ditambahkan nanti lewat menu Edit Surat.',
+        page.kind === 'masuk'
+            ? 'Catatan: Link dokumen dan berkas tidak wajib diisi. Surat dapat disimpan tanpa lampiran; hasil pindai dapat ditambahkan nanti lewat menu Edit Surat.'
+            : 'Catatan: Link dokumen dan berkas tidak wajib diisi. Surat dapat disimpan tanpa lampiran; hasil pindai dapat ditambahkan lewat menu Edit Surat selama surat masih draf atau ditolak (sebelum diajukan untuk persetujuan).',
     );
     expect(screen.queryByText(/wajib diisi \(salah satu\)/)).toBeNull();
     fireEvent.submit(form);
@@ -206,7 +208,7 @@ it.each(pages)('drops the add-later hint once the $kind letter has a document li
     fixtures.capabilities.fileUploads = true;
     await renderForm(page);
     expect(screen.getByText(/Link dokumen dan berkas tidak wajib diisi\./)).toBeInTheDocument();
-    expect(screen.queryByText(/hasil pindai dapat ditambahkan nanti/)).toBeNull();
+    expect(screen.queryByText(/hasil pindai dapat ditambahkan/)).toBeNull();
 });
 
 it.each(pages)('still rejects a malformed $kind document link next to its field', async page => {

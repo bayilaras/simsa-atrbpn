@@ -1,4 +1,4 @@
-import { CATATAN_LAMPIRAN_OPSIONAL, PETUNJUK_LAMPIRAN_MENYUSUL, buildSuratFormPayload, linkDokumenError } from '@/lib/surat-form-payload'
+import { CATATAN_LAMPIRAN_OPSIONAL, PETUNJUK_LAMPIRAN_MENYUSUL_KELUAR, buildSuratFormPayload, linkDokumenError } from '@/lib/surat-form-payload'
 import { buildSuratArchiveSelection, readSuratArchiveSelection, selectedSuratArchiveRules, validateSuratArchiveSelection } from '@/lib/surat-archive-selection'
 import { archiveUploadError } from '@/lib/archive-upload';
 import { createElement, useCallback, useState, useRef, useEffect } from 'react';
@@ -981,7 +981,7 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
                                 <Info className="h-4 w-4 text-emerald-600 flex-shrink-0 mt-0.5" />
                                 <p className="text-xs text-emerald-700 dark:text-emerald-300">
                                     <strong>Catatan:</strong> {CATATAN_LAMPIRAN_OPSIONAL}
-                                    {!formData.linkDokumen && !selectedFile && !existingFile && ` ${PETUNJUK_LAMPIRAN_MENYUSUL}`}
+                                    {!formData.linkDokumen && !selectedFile && !existingFile && ` ${PETUNJUK_LAMPIRAN_MENYUSUL_KELUAR}`}
                                 </p>
                             </div>
                         </div>

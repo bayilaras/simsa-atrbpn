@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { PESAN_LINK_DOKUMEN_TIDAK_VALID, buildSuratFormPayload, linkDokumenError } from './surat-form-payload'
 
 describe('surat metadata updates without document services', () => {
@@ -30,6 +30,15 @@ describe('link dokumen opsional', () => {
     it('menolak teks yang bukan alamat lengkap', () => {
         for (const nilai of ['drive saya', 'example.test/berkas.pdf', '   ']) {
             expect(linkDokumenError(nilai)).toBe(PESAN_LINK_DOKUMEN_TIDAK_VALID)
+        }
+    })
+    it('tetap bekerja di peramban tanpa URL.canParse', () => {
+        vi.spyOn(URL, 'canParse').mockImplementation(() => { throw new TypeError('URL.canParse is not a function') })
+        try {
+            expect(linkDokumenError('https://example.test/berkas.pdf')).toBeNull()
+            expect(linkDokumenError('drive saya')).toBe(PESAN_LINK_DOKUMEN_TIDAK_VALID)
+        } finally {
+            vi.restoreAllMocks()
         }
     })
 })
