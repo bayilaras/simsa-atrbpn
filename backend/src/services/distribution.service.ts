@@ -195,7 +195,7 @@ export class DistributionService {
             .limit(1)
             .for('update');
         if (!sourceSurat) {
-            throw new AppError('Data not found', 404);
+            throw new AppError('Data tidak ditemukan.', 404);
         }
         if (data.targetUnitId === data.sourceUnitId) {
             throw new ValidationError('Unit tujuan disposisi tidak boleh sama dengan unit pencatat');
@@ -572,7 +572,7 @@ export class DistributionService {
         return denganRetryDeadlock(() => db.transaction(async (tx) => {
             const distribution = (await this.kunciDisposisi(tx, this.targetRecordWhere(distributionId, unitScope)))?.distribution;
             if (!distribution) {
-                throw new AppError('Distribution not found', 404);
+                throw new AppError('Distribusi tidak ditemukan.', 404);
             }
             if (distribution.status !== 'sent') {
                 throw new ValidationError('Distribution sudah diterima atau diproses');
@@ -635,7 +635,7 @@ export class DistributionService {
             // kunci awal ini jalur approve (SK → SM → rangkaian) dapat deadlock.
             if (skId) await lockSuratKeluarRows(tx, [skId]);
             const { distribution, rangkaianId: rangkaianTerkunci } = (await this.kunciDisposisi(tx, this.targetRecordWhere(distributionId, unitScope))) ?? { distribution: undefined, rangkaianId: null };
-            if (!distribution) throw new AppError('Distribution not found', 404);
+            if (!distribution) throw new AppError('Distribusi tidak ditemukan.', 404);
             if (distribution.status !== 'sent' && distribution.status !== 'received') {
                 throw new ValidationError('Disposisi sudah selesai atau ditolak');
             }
@@ -715,7 +715,7 @@ export class DistributionService {
             const { distribution, rangkaianId: rangkaianTerkunci } = (await this.kunciDisposisi(tx, this.targetRecordWhere(distributionId, unitScope))) ?? { distribution: undefined, rangkaianId: null };
 
             if (!distribution) {
-                throw new AppError('Distribution not found', 404);
+                throw new AppError('Distribusi tidak ditemukan.', 404);
             }
             if (distribution.status === 'processed' || distribution.status === 'rejected') {
                 throw new ValidationError('Distribution tidak bisa ditolak');
@@ -795,7 +795,7 @@ export class DistributionService {
             .where(eq(suratDistributions.id, distribusiId))
             .limit(1)
             .then((rows) => rows[0]);
-        if (!distribution) throw new AppError('Distribution not found', 404);
+        if (!distribution) throw new AppError('Distribusi tidak ditemukan.', 404);
 
         const [sm] = await tx
             .select({ unitKerjaId: suratMasuk.unitKerjaId })
@@ -810,7 +810,7 @@ export class DistributionService {
                 && (actor.unitKerjaId === distribution.sourceUnitId || actor.unitKerjaId === distribution.targetUnitId);
             if (!pihak) {
                 const baca = await recordAccessService.checkRead(actor, 'surat_masuk', distribution.suratMasukId, tx);
-                if (!baca.allowed) throw new AppError('Distribution not found', 404);
+                if (!baca.allowed) throw new AppError('Distribusi tidak ditemukan.', 404);
             }
             throw new ForbiddenError('Hanya admin unit pengawas yang dapat menutup disposisi.');
         }
@@ -840,7 +840,7 @@ export class DistributionService {
             await this.otorisasiTutupPengawas(tx, distribusiId, actor);
 
             const { distribution, rangkaianId: rangkaianTerkunci } = (await this.kunciDisposisi(tx, eq(suratDistributions.id, distribusiId))) ?? { distribution: undefined, rangkaianId: null };
-            if (!distribution) throw new AppError('Distribution not found', 404);
+            if (!distribution) throw new AppError('Distribusi tidak ditemukan.', 404);
 
             // Re-check otoritatif setelah kunci dipegang (baris bisa berubah
             // antara pra-otorisasi tanpa kunci dan pengambilan kunci).

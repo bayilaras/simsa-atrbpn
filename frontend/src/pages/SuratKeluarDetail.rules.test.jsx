@@ -63,6 +63,21 @@ it('hides dead-end links (Lihat di Arsip and the legacy balasan fallback) for cr
     expect(screen.queryByRole('link', { name: /lihat surat masuk/i })).toBeNull()
 })
 
+it('links the owner to the archive detail page when the response carries arsipId', async () => {
+    mocks.getById.mockResolvedValue({
+        id: 'surat-id', nomorSurat: '005/2026', perihal: 'Surat diarsipkan', unitKerjaId: 'unit-a',
+        aksesMelalui: 'owner', isArchived: true, arsipId: 'arsip-1',
+    })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    expect(await screen.findByRole('link', { name: /lihat di arsip/i })).toHaveAttribute('href', '/arsip/detail/arsip-1')
+})
+
+it('breadcrumb Surat points to an existing list route', async () => {
+    mocks.getById.mockResolvedValue({ id: 'surat-id', nomorSurat: '006/2026', perihal: 'Remah roti', unitKerjaId: 'unit-a', aksesMelalui: 'owner' })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    expect(await screen.findByRole('link', { name: 'Surat' })).toHaveAttribute('href', '/surat/keluar')
+})
+
 // F2: T19-3/T19-4 -- bolehEdit/bolehArsip digerbang oleh aksiDiizinkan dari
 // server (bila berupa array) DAN status persetujuan, bukan oleh isAdmin saja.
 it.each([

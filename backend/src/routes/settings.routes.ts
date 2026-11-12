@@ -1,16 +1,29 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { settingsService } from '../services/settings.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { createLogger } from '../utils/logger';
 import { canAccessUnit, type Role } from '../config/permissions.js';
 import { z } from 'zod';
 import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
+import { AppError } from '../utils/errors.js';
 
 const log = createLogger('SettingsRoutes');
 
 const router = Router();
 
 const ADMIN_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'];
+const profileUpdateSchema = z.object({
+    name: z.string({ error: 'Nama harus berupa teks.' })
+        .trim()
+        .min(1, 'Nama wajib diisi.')
+        .max(255, 'Nama maksimal 255 karakter.')
+        .optional(),
+    image: z.string({ error: 'URL foto profil harus berupa teks.' }).nullable().optional(),
+}, { error: 'Data profil tidak valid.' });
+const unitKerjaNameSchema = z.string({ error: 'Nama unit kerja harus berupa teks.' })
+    .trim()
+    .min(1, 'Nama unit kerja wajib diisi.')
+    .max(255, 'Nama unit kerja maksimal 255 karakter.');
 const preferenceUpdateSchema = z.object({
     theme: z.enum(['light', 'dark', 'system']).optional(),
     language: z.enum(['id', 'en']).optional(),
@@ -19,6 +32,24 @@ const preferenceUpdateSchema = z.object({
 }).strict().refine((value) => Object.keys(value).length > 0, {
     message: 'Sedikitnya satu preferensi harus diberikan',
 });
+
+// Galat terklasifikasi dari layanan (mis. ValidationError) diteruskan ke
+// penangan galat global beserta status dan pesannya; hanya galat tak terduga
+// yang dijawab 500.
+function handleRouteError(
+    error: unknown,
+    res: Response,
+    next: NextFunction,
+    logMessage: string,
+    publicMessage: string,
+): void {
+    if (error instanceof AppError) {
+        next(error);
+        return;
+    }
+    log.error({ err: error }, logMessage);
+    res.status(500).json({ error: publicMessage });
+}
 
 // Legacy Drive folder columns remain in the database only for migration history.
 // Private Vercel Blob is the sole canonical bitstream store, so these values are
@@ -60,7 +91,7 @@ router.use(authMiddleware as any);
 
 // ==================== PROFILE SETTINGS ====================
 
-router.get('/profile', async (req: Request, res: Response) => {
+router.get('/profile', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userId = (req as any).user?.id;
 
@@ -78,12 +109,11 @@ router.get('/profile', async (req: Request, res: Response) => {
 
         res.json(profile);
     } catch (error) {
-        log.error({ err: error }, 'Error getting profile:');
-        res.status(500).json({ error: 'Failed to get profile' });
+        handleRouteError(error, res, next, 'Error getting profile:', 'Failed to get profile');
     }
 });
 
-router.put('/profile', async (req: Request, res: Response) => {
+router.put('/profile', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userId = (req as any).user?.id;
 
@@ -92,11 +122,16 @@ router.put('/profile', async (req: Request, res: Response) => {
             return;
         }
 
-        const { name, image } = req.body;
+        const parsed = profileUpdateSchema.safeParse(req.body ?? {});
+        if (!parsed.success) {
+            res.status(400).json({ error: parsed.error.issues[0].message });
+            return;
+        }
+        const { name, image } = parsed.data;
 
         // Validate that at least one field is provided
-        if (!name && !image && name !== '') {
-            res.status(400).json({ error: 'At least name or image must be provided' });
+        if (name === undefined && !image) {
+            res.status(400).json({ error: 'Isi nama atau URL foto profil.' });
             return;
         }
 
@@ -112,14 +147,13 @@ router.put('/profile', async (req: Request, res: Response) => {
 
         res.json(updated);
     } catch (error) {
-        log.error({ err: error }, 'Error updating profile:');
-        res.status(500).json({ error: 'Failed to update profile' });
+        handleRouteError(error, res, next, 'Error updating profile:', 'Failed to update profile');
     }
 });
 
 // ==================== UNIT KERJA SETTINGS ====================
 
-router.get('/unit-kerja', async (req: Request, res: Response) => {
+router.get('/unit-kerja', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const units = await settingsService.getAllUnitKerja();
         const user = (req as AuthRequest).user;
@@ -133,12 +167,11 @@ router.get('/unit-kerja', async (req: Request, res: Response) => {
             : units;
         res.json(visibleUnits.map(stripDriveConfig));
     } catch (error) {
-        log.error({ err: error }, 'Error getting unit kerja:');
-        res.status(500).json({ error: 'Failed to get unit kerja' });
+        handleRouteError(error, res, next, 'Error getting unit kerja:', 'Failed to get unit kerja');
     }
 });
 
-router.get('/unit-kerja/:id', async (req: Request, res: Response) => {
+router.get('/unit-kerja/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { id } = req.params;
         const unit = await settingsService.getUnitKerjaSettings(id as string);
@@ -150,12 +183,11 @@ router.get('/unit-kerja/:id', async (req: Request, res: Response) => {
 
         res.json(stripDriveConfig(unit));
     } catch (error) {
-        log.error({ err: error }, 'Error getting unit kerja:');
-        res.status(500).json({ error: 'Failed to get unit kerja' });
+        handleRouteError(error, res, next, 'Error getting unit kerja:', 'Failed to get unit kerja');
     }
 });
 
-router.put('/unit-kerja/:id', async (req: Request, res: Response) => {
+router.put('/unit-kerja/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userRole = (req as any).user?.role;
 
@@ -180,9 +212,18 @@ router.put('/unit-kerja/:id', async (req: Request, res: Response) => {
             res.status(400).json({ error: 'isUnitPengawas harus bernilai boolean' });
             return;
         }
+        let unitName: string | undefined;
+        if (name !== undefined) {
+            const parsedName = unitKerjaNameSchema.safeParse(name);
+            if (!parsedName.success) {
+                res.status(400).json({ error: parsedName.error.issues[0].message });
+                return;
+            }
+            unitName = parsedName.data;
+        }
 
         const updated = await settingsService.updateUnitKerja(id as string, {
-            name,
+            name: unitName,
             description,
             canReceiveDistribution,
             isUnitPengawas,
@@ -197,12 +238,11 @@ router.put('/unit-kerja/:id', async (req: Request, res: Response) => {
 
         res.json(updated);
     } catch (error) {
-        log.error({ err: error }, 'Error updating unit kerja:');
-        res.status(500).json({ error: 'Failed to update unit kerja' });
+        handleRouteError(error, res, next, 'Error updating unit kerja:', 'Failed to update unit kerja');
     }
 });
 
-router.post('/unit-kerja', async (req: Request, res: Response) => {
+router.post('/unit-kerja', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userRole = (req as any).user?.role;
 
@@ -231,26 +271,24 @@ router.post('/unit-kerja', async (req: Request, res: Response) => {
 
         res.status(201).json(created);
     } catch (error) {
-        log.error({ err: error }, 'Error creating unit kerja:');
-        res.status(500).json({ error: 'Failed to create unit kerja' });
+        handleRouteError(error, res, next, 'Error creating unit kerja:', 'Failed to create unit kerja');
     }
 });
 
 // ==================== SURAT TEMPLATES ====================
 
-router.get('/surat-templates', async (req: Request, res: Response) => {
+router.get('/surat-templates', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const unitKerjaId = resolveTemplateUnit(req, res, req.query.unitKerjaId);
         if (!unitKerjaId) return;
         const templates = await settingsService.getSuratTemplates(unitKerjaId);
         res.json(templates);
     } catch (error) {
-        log.error({ err: error }, 'Error getting surat templates:');
-        res.status(500).json({ error: 'Failed to get templates' });
+        handleRouteError(error, res, next, 'Error getting surat templates:', 'Failed to get templates');
     }
 });
 
-router.put('/surat-templates', async (req: Request, res: Response) => {
+router.put('/surat-templates', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userRole = (req as any).user?.role;
 
@@ -274,14 +312,13 @@ router.put('/surat-templates', async (req: Request, res: Response) => {
 
         res.json(updated);
     } catch (error) {
-        log.error({ err: error }, 'Error updating surat templates:');
-        res.status(500).json({ error: 'Failed to update templates' });
+        handleRouteError(error, res, next, 'Error updating surat templates:', 'Failed to update templates');
     }
 });
 
 // ==================== USER PREFERENCES ====================
 
-router.get('/preferences', async (req: Request, res: Response) => {
+router.get('/preferences', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userId = (req as AuthRequest).user?.id;
         if (!userId) {
@@ -291,12 +328,11 @@ router.get('/preferences', async (req: Request, res: Response) => {
 
         res.json(await settingsService.getUserPreferences(userId));
     } catch (error) {
-        log.error({ err: error }, 'Error getting user preferences:');
-        res.status(500).json({ error: 'Failed to get preferences' });
+        handleRouteError(error, res, next, 'Error getting user preferences:', 'Failed to get preferences');
     }
 });
 
-router.put('/preferences', async (req: Request, res: Response) => {
+router.put('/preferences', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userId = (req as AuthRequest).user?.id;
         if (!userId) {
@@ -321,8 +357,7 @@ router.put('/preferences', async (req: Request, res: Response) => {
             userId: user?.id, userEmail: user?.email, ipAddress: req.ip,
         }));
     } catch (error) {
-        log.error({ err: error }, 'Error updating user preferences:');
-        res.status(500).json({ error: 'Failed to update preferences' });
+        handleRouteError(error, res, next, 'Error updating user preferences:', 'Failed to update preferences');
     }
 });
 

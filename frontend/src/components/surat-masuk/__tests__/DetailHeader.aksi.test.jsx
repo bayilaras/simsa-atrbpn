@@ -128,4 +128,14 @@ describe('StatusSidebar', () => {
         fireEvent.click(await screen.findByRole('menuitem', { name: 'Penyelesaian' }))
         expect(onPenyelesaian).toHaveBeenCalledTimes(1)
     })
+
+    it('Lihat di Arsip menuju halaman detail arsip dari arsipId respons detail', () => {
+        tampil({ ...dasar, isArchived: true, arsipId: 'arsip-1' })
+        expect(screen.getByRole('link', { name: /Lihat di Arsip/ })).toHaveAttribute('href', '/arsip/detail/arsip-1')
+    })
+
+    it('Lihat di Arsip tidak tampil tanpa arsipId', () => {
+        tampil({ ...dasar, isArchived: true, arsipId: null })
+        expect(screen.queryByRole('link', { name: /Lihat di Arsip/ })).toBeNull()
+    })
 })

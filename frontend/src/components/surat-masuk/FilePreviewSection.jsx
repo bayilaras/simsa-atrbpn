@@ -19,6 +19,9 @@ function PrivateFilePreview({ surat, entityType }) {
     const objectUrl = useRef(null);
     const downloadUrls = useRef(new Map());
     const fileName = surat.fileOriginalName || 'dokumen-lampiran';
+    // Izin akses mode tayang: server menolak unduhan, jadi penampil tidak menawarkan
+    // kontrol unduh, toolbar PDF, maupun tab baru.
+    const hanyaTayang = surat.berkasHanyaTayang === true;
     const endpoint = `/api/files/${entityType}/${encodeURIComponent(surat.id)}`;
 
     useEffect(() => () => {
@@ -124,34 +127,44 @@ function PrivateFilePreview({ surat, entityType }) {
                 <div className="border-t bg-muted/20">
                     {!file ? (
                         <div className="flex flex-col items-center gap-3 p-8">
-                            <p className="text-sm text-muted-foreground">Muat pratinjau atau unduh dokumen yang telah lolos pemeriksaan.</p>
+                            <p className="text-sm text-muted-foreground">
+                                {hanyaTayang
+                                    ? 'Muat pratinjau dokumen yang telah lolos pemeriksaan. Izin akses Anda hanya untuk penayangan.'
+                                    : 'Muat pratinjau atau unduh dokumen yang telah lolos pemeriksaan.'}
+                            </p>
                             <Button type="button" variant="outline" onClick={loadFile} disabled={Boolean(loading)}>
                                 {loading === 'preview' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                 {loading === 'preview' ? 'Memuat dokumen...' : 'Muat dokumen'}
                             </Button>
                         </div>
                     ) : file.type === 'application/pdf' ? (
-                        <iframe src={`${file.url}#toolbar=1&navpanes=0`} className="w-full h-[600px]" title="PDF Preview" />
+                        <iframe src={`${file.url}#toolbar=${hanyaTayang ? 0 : 1}&navpanes=0`} className="w-full h-[600px]" title="PDF Preview" />
                     ) : IMAGE_TYPES.has(file.type) ? (
                         <div className="flex justify-center p-6">
                             <img src={file.url} alt={fileName} className="max-w-full max-h-[600px] object-contain rounded-lg shadow-xl" />
                         </div>
                     ) : (
-                        <p className="p-8 text-center text-muted-foreground">Preview tidak tersedia untuk file ini. Download untuk melihat isi dokumen.</p>
+                        <p className="p-8 text-center text-muted-foreground">
+                            {hanyaTayang
+                                ? 'Pratinjau tidak tersedia untuk berkas ini. Izin akses Anda hanya untuk penayangan.'
+                                : 'Preview tidak tersedia untuk file ini. Download untuk melihat isi dokumen.'}
+                        </p>
                     )}
                 </div>
-                <div className="flex gap-2 p-4 border-t bg-muted/10">
-                    <Button type="button" variant="outline" className="flex-1" onClick={downloadFile} disabled={Boolean(loading)}>
-                        <Download className="mr-2 h-4 w-4" />{loading === 'download' ? 'Mengunduh...' : 'Download'}
-                    </Button>
-                    {canPreview && (
-                        <Button variant="outline" className="flex-1" asChild>
-                            <a href={file.url} target="_blank" rel="noopener noreferrer">
-                                <ExternalLink className="mr-2 h-4 w-4" />Buka di Tab Baru
-                            </a>
+                {!hanyaTayang && (
+                    <div className="flex gap-2 p-4 border-t bg-muted/10">
+                        <Button type="button" variant="outline" className="flex-1" onClick={downloadFile} disabled={Boolean(loading)}>
+                            <Download className="mr-2 h-4 w-4" />{loading === 'download' ? 'Mengunduh...' : 'Download'}
                         </Button>
-                    )}
-                </div>
+                        {canPreview && (
+                            <Button variant="outline" className="flex-1" asChild>
+                                <a href={file.url} target="_blank" rel="noopener noreferrer">
+                                    <ExternalLink className="mr-2 h-4 w-4" />Buka di Tab Baru
+                                </a>
+                            </Button>
+                        )}
+                    </div>
+                )}
             </CardContent>
         </Card>
     );

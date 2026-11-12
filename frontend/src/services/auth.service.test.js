@@ -44,6 +44,24 @@ describe('Better Auth Google sign-in', () => {
     })
 })
 
+describe('Better Auth email sign-in messages', () => {
+    const signInWith = (error) => {
+        const email = vi.fn().mockResolvedValue({ data: null, error })
+        return createAuthService({ legacyClient: { signIn: { email } } }).signInWithEmail('a@example.test', 'salah-sintetis')
+    }
+
+    it.each([
+        [{ code: 'INVALID_EMAIL_OR_PASSWORD', message: 'Invalid email or password', status: 401 }, 'Email atau kata sandi salah.'],
+        [{ code: 'FAILED_TO_CREATE_SESSION', message: 'Failed to create session', status: 401 },
+            'Akun tidak aktif atau sesi tidak dapat dibuat. Hubungi administrator.'],
+        [{ message: 'Too many requests. Please try again later.', status: 429 },
+            'Terlalu banyak percobaan masuk. Tunggu hingga 15 menit, lalu coba lagi.'],
+        [{ code: 'SOMETHING_NEW', message: 'Something went wrong', status: 400 }, 'Login gagal. Silakan coba lagi.'],
+    ])('shows an Indonesian message for %o and keeps its code', async (error, message) => {
+        await expect(signInWith(error)).rejects.toMatchObject({ message, code: error.code, status: error.status })
+    })
+})
+
 describe('session prefetch at boot', () => {
     const session = (name) => ({ data: { user: { id: name, name } } })
 

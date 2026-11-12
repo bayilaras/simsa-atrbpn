@@ -670,7 +670,7 @@ flowchart LR
 3. Pilih tindakan yang sesuai untuk setiap arsip.
 
 > [!NOTE]
-> Menu **Penyusutan** hanya muncul bila modulnya diaktifkan operator. Selama modul belum diaktifkan, pemindahan dan pemusnahan arsip dilakukan di luar SIMSA mengikuti prosedur unit. **Manajemen Retensi** tetap dapat dipakai untuk melihat arsip yang masa retensinya sudah atau hampir habis dan untuk mencetak draf berita acara pemusnahan melalui tombol **Generate Berita Acara**.
+> Menu **Penyusutan** hanya muncul bila modulnya diaktifkan operator. Selama modul belum diaktifkan, pemindahan dan pemusnahan arsip dilakukan di luar SIMSA mengikuti prosedur unit. **Manajemen Retensi** tetap dapat dipakai untuk melihat arsip yang masa retensinya sudah atau hampir habis dan untuk mencetak draf berita acara pemusnahan tanpa nomor (nomor diisi manual) melalui tombol **Generate Berita Acara**.
 
 ---
 

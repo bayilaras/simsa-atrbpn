@@ -57,6 +57,19 @@ describe('DistributeDialog', () => {
         expect(screen.getByRole('button', { name: /Disposisikan/ })).toBeDisabled()
     })
 
+    it('disposisi yang ditolak server menampilkan pesannya, bukan nama kelas galat', async () => {
+        const body = { success: false, error: 'ValidationError', message: 'Surat sudah didistribusikan ke unit ini', code: 'VALIDATION_ERROR' }
+        mocks.distributeMany.mockRejectedValue(Object.assign(new Error(body.message), { status: 400, data: body, response: { status: 400, data: body } }))
+        vi.spyOn(console, 'error').mockImplementation(() => {})
+        tampil()
+        fireEvent.click(await screen.findByRole('checkbox', { name: 'Dit. BPPT' }))
+        fireEvent.click(screen.getByRole('button', { name: /Disposisikan/ }))
+        await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+            description: 'Surat sudah didistribusikan ke unit ini', variant: 'destructive',
+        })))
+        console.error.mockRestore()
+    })
+
     it('jalur akses menyala: info permohonan grant disposisi', async () => {
         mocks.getOpsi.mockResolvedValue({ instruksi: [], jalurAksesTerkendali: true })
         tampil({ sifatSurat: 'rahasia' })

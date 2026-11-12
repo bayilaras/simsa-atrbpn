@@ -285,7 +285,7 @@ export default function SuratMasuk() {
                 title: 'Berhasil Diarsipkan',
                 description: `Surat ${selectedSurat.nomorSurat} telah diarsipkan`,
             });
-            fetchData();
+            refreshAll();
         } catch (error) {
             toast({
                 title: 'Error',
@@ -304,7 +304,7 @@ export default function SuratMasuk() {
                 description: `Surat ${selectedSurat.nomorSurat} telah dihapus`,
             });
             setDeleteDialogOpen(false);
-            fetchData();
+            refreshAll();
         } catch (error) {
             toast({
                 title: 'Error',

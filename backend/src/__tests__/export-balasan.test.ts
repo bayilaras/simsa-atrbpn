@@ -7,6 +7,7 @@ const holder = vi.hoisted(() => ({ db: null as any, keluar: vi.fn() }));
 vi.mock('../config/database.js', () => ({ db: { select: (fields: any) => holder.db.select(fields) } }));
 vi.mock('../services/surat-masuk.service', () => ({ suratMasukService: { findAll: vi.fn() } }));
 vi.mock('../services/surat-keluar.service', () => ({ suratKeluarService: { findAll: holder.keluar } }));
+vi.mock('../services/export-unit-pengolah', () => ({ namaUnitPengolah: async () => 'Unit Uji' }));
 vi.mock('../services/arsip.service', () => ({ arsipService: { findAll: vi.fn() } }));
 
 const SM = (n: number) => `00000000-0000-4000-8000-00000000c00${n}`;

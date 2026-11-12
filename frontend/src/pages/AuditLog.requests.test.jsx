@@ -28,3 +28,11 @@ it('ignores an older log response that arrives after a newer search', async () =
     expect(screen.queryByText('Pengguna lama')).toBeNull()
     expect(screen.getByText('Pengguna terbaru')).toBeInTheDocument()
 })
+
+it('describes in the search hint what the server actually searches', async () => {
+    mocks.listLogs.mockResolvedValue(page('Pengguna'))
+    render(<AuditLog />)
+    expect(screen.getByLabelText('Cari audit log'))
+        .toHaveAttribute('placeholder', 'Cari nama pengguna, email, atau ID entitas...')
+    await waitFor(() => expect(mocks.listLogs).toHaveBeenCalled())
+})

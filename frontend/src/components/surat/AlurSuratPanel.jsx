@@ -136,11 +136,16 @@ export function AlurSuratPanel({ jenis, suratId, rangkaianId = null, aksesMelalu
     const relasiDari = relasiPerNodeAsal(d.relasi)
     const aksiDiizinkan = d.aksiDiizinkan ?? []
     const bolehTutup = aksiDiizinkan.includes('tutup_disposisi')
-    // Relasi yang dimuat P2 hanya yang aktif (cancelled_at IS NULL); tombol hanya
-    // ditawarkan bila server mengizinkan batal_relasi (pengawas, T16-6).
+    // Relasi yang dimuat P2 hanya yang aktif (cancelled_at IS NULL). Server
+    // menandai tiap relasi dengan bolehBatal (pembuat relasi atau pengawas,
+    // predikat endpoint batal); payload tanpa penanda itu jatuh ke aksi
+    // rangkaian batal_relasi (pengawas, T16-6).
+    const bolehBatal = (relasi) => (typeof relasi.bolehBatal === 'boolean'
+        ? relasi.bolehBatal
+        : aksiDiizinkan.includes('batal_relasi'))
+    const adaAksi = aksiDiizinkan.length > 0 || d.relasi.some((relasi) => relasi.bolehBatal === true)
     const batalUntuk = (item) => {
-        if (!aksiDiizinkan.includes('batal_relasi')) return null
-        const relasiList = relasiDari.get(item.anggotaId) ?? []
+        const relasiList = (relasiDari.get(item.anggotaId) ?? []).filter(bolehBatal)
         if (relasiList.length === 0) return null
         return relasiList.map((relasi) => <BatalRelasiButton key={relasi.id} relasi={relasi} onChanged={muatUlang} />)
     }
@@ -162,10 +167,10 @@ export function AlurSuratPanel({ jenis, suratId, rangkaianId = null, aksesMelalu
                             // lewat jangkauan record-level atas satu anggota saja (lihat
                             // viaLintas di rangkaian-read.service.ts) -- jangan mengklaim
                             // "melalui rangkaian" di sini, karena itu tidak selalu benar.
-                            ? (aksiDiizinkan.length === 0
+                            ? (!adaAksi
                                 ? 'Anda melihat surat ini sebagai unit pengawas (hanya baca).'
                                 : 'Anda melihat surat ini sebagai unit pengawas.')
-                            : `Dilihat melalui rangkaian ${r.kode} sebagai ${AKSES_LABEL[aksesEfektif] ?? 'peserta rangkaian'}.${aksiDiizinkan.length === 0 ? ' Akses baca saja.' : ''}`}
+                            : `Dilihat melalui rangkaian ${r.kode} sebagai ${AKSES_LABEL[aksesEfektif] ?? 'peserta rangkaian'}.${!adaAksi ? ' Akses baca saja.' : ''}`}
                     </p>
                 )}
             </CardHeader>

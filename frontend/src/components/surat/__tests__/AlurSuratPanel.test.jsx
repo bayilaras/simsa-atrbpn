@@ -298,6 +298,29 @@ describe('aksi panel (Task 25)', () => {
         expect(screen.queryByRole('button', { name: /Batalkan Relasi/ })).toBeNull()
     })
 
+    it('pembuat relasi tanpa aksi batal_relasi melihat Batalkan Relasi hanya pada relasi dengan bolehBatal', async () => {
+        const relasi = [{ ...detail.relasi[0], bolehBatal: false }, { ...detail.relasi[1], bolehBatal: true }]
+        mocks.getBySurat.mockResolvedValue({ ...detail, relasi, aksiDiizinkan: [] })
+        mocks.batalRelasi.mockResolvedValue({})
+        renderPanel({ aksesMelalui: 'peserta' })
+        const linimasa = within(await screen.findByRole('region', { name: 'Linimasa rangkaian' }))
+        expect(linimasa.getAllByRole('button', { name: /Batalkan Relasi/ })).toHaveLength(1)
+        expect(screen.getByRole('note')).not.toHaveTextContent('Akses baca saja')
+        fireEvent.click(linimasa.getByRole('button', { name: 'Batalkan Relasi Menjelaskan' }))
+        const dialog = within(await screen.findByRole('dialog'))
+        fireEvent.change(dialog.getByLabelText('Alasan'), { target: { value: 'Relasi dibuat keliru' } })
+        fireEvent.click(dialog.getByRole('button', { name: 'Batalkan' }))
+        await waitFor(() => expect(mocks.batalRelasi).toHaveBeenCalledWith('x2', 'Relasi dibuat keliru'))
+    })
+
+    it('bolehBatal false menyembunyikan Batalkan Relasi walau rangkaian memberi batal_relasi', async () => {
+        const relasi = detail.relasi.map((row) => ({ ...row, bolehBatal: false }))
+        mocks.getBySurat.mockResolvedValue({ ...detail, relasi, aksiDiizinkan: ['batal_relasi'] })
+        renderPanel({ aksesMelalui: 'pengawas' })
+        await screen.findByText('Alur Surat')
+        expect(screen.queryByRole('button', { name: /Batalkan Relasi/ })).toBeNull()
+    })
+
     it('memasang Koreksi Berkas dengan id/status rangkaian dan muatUlang panel (P5-T9-2)', async () => {
         const onChanged = vi.fn()
         mocks.getBySurat.mockResolvedValue({ ...detail, rangkaian: { ...detail.rangkaian, status: 'diberkaskan' } })

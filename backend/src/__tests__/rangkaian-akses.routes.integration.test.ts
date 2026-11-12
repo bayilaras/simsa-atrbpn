@@ -309,6 +309,50 @@ describe('GET /api/rangkaian/:id — dapatDitutup per disposisi (F-I3)', () => {
     });
 });
 
+// Tombol Batalkan Relasi per relasi — `bolehBatal` memakai predikat endpoint
+// batal: pembuat relasi (FULL_ADMIN) atau pengawas unit pencatat.
+describe('GET /api/rangkaian/:id — bolehBatal per relasi', () => {
+    beforeEach(async () => {
+        await database.exec(`
+            UPDATE rangkaian_relasi SET created_by = '${USER_ID.bppt}' WHERE rangkaian_id = '${RANGKAIAN.rs1}' AND jenis_relasi = 'tindak_lanjut';
+            UPDATE rangkaian_relasi SET created_by = '${USER_ID.ptep}' WHERE rangkaian_id = '${RANGKAIAN.rs1}' AND jenis_relasi = 'menjelaskan';
+        `);
+    });
+
+    const petaBatal = (body: any) => Object.fromEntries(body.data.relasi.map((r: any) => [r.jenisRelasi, r.bolehBatal]));
+    const relasiId = async (jenis: string) => (await database.query<{ id: string }>(
+        `SELECT id::text AS id FROM rangkaian_relasi WHERE rangkaian_id = $1 AND jenis_relasi = $2`, [RANGKAIAN.rs1, jenis])).rows[0].id;
+
+    it('pembuat relasi bukan pengawas: true hanya pada relasinya, setara endpoint batal', async () => {
+        const res = await request(app).get(`/api/rangkaian/${RANGKAIAN.rs1}`).set(sebagai(PENGGUNA.bppt)).expect(200);
+        expect(res.body.data.aksiDiizinkan).not.toContain('batal_relasi');
+        // menjelaskan dibuat admin unit lain → false.
+        expect(petaBatal(res.body)).toEqual({ tindak_lanjut: true, menjelaskan: false });
+        await request(app).post(`/api/rangkaian/relasi/${await relasiId('menjelaskan')}/batal`).set(sebagai(PENGGUNA.bppt))
+            .send({ alasan: 'Relasi dibuat keliru oleh unit lain' }).expect(403);
+        await request(app).post(`/api/rangkaian/relasi/${await relasiId('tindak_lanjut')}/batal`).set(sebagai(PENGGUNA.bppt))
+            .send({ alasan: 'Relasi dibuat keliru oleh unit ini' }).expect(200);
+    });
+
+    it('pengawas dan super_admin: true pada semua relasi', async () => {
+        for (const pengguna of [PENGGUNA.tu, PENGGUNA.superAdmin]) {
+            const res = await request(app).get(`/api/rangkaian/${RANGKAIAN.rs1}`).set(sebagai(pengguna)).expect(200);
+            expect(res.body.data.aksiDiizinkan).toContain('batal_relasi');
+            expect(petaBatal(res.body)).toEqual({ tindak_lanjut: true, menjelaskan: true });
+        }
+    });
+
+    it('rangkaian diberkaskan: tidak ada relasi yang dapat dibatalkan', async () => {
+        // Seperti guard-surat-masuk.integration: PGlite ini tanpa baris
+        // klasifikasi_arsip, jadi CHECK berkas dilepas hanya di DB uji ini.
+        await database.query('ALTER TABLE rangkaian_surat DROP CONSTRAINT IF EXISTS rangkaian_berkas_check');
+        await database.query(`UPDATE rangkaian_surat SET status = 'diberkaskan', diberkaskan_at = now(), diberkaskan_by = $2
+            WHERE id = $1`, [RANGKAIAN.rs1, USER_ID.tu]);
+        const res = await request(app).get(`/api/rangkaian/${RANGKAIAN.rs1}`).set(sebagai(PENGGUNA.bppt)).expect(200);
+        expect(petaBatal(res.body)).toEqual({ tindak_lanjut: false, menjelaskan: false });
+    });
+});
+
 describe('PUT multipart surat masuk anggota rangkaian (N-2)', () => {
     // Uji ini sengaja tanpa sanitizeInput global (app.ts memasangnya sebelum
     // multer, sehingga isi multipart tidak pernah tersanitasi di sana). Route

@@ -9,6 +9,7 @@ import { auditLogService } from '../services/audit-log.service';
 import { blobStorageService } from '../services/blob-storage.service';
 import { recordAccessService, RecordEntityType } from '../services/record-access.service';
 import { isFileReleased, quarantinedFileScanState } from '../services/file-release-policy.js';
+import { berkasHanyaTayang } from '../services/access/berkas-akses.js';
 import { createLogger } from '../utils/logger';
 import {
     normalizeStoredObjectLocator,
@@ -50,7 +51,7 @@ async function streamAuthorizedFile(
     },
 ) {
     const download = req.query.download === '1';
-    if (download && details.grantId && details.grantAccessMode !== 'download') {
+    if (download && berkasHanyaTayang(details)) {
         return res.status(403).json({
             error: 'Download not approved',
             message: 'Persetujuan hanya mengizinkan penayangan, bukan pengunduhan.',

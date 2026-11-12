@@ -200,6 +200,36 @@ describe('POST /api/surat-keluar/:id/archive-full', () => {
     });
 });
 
+describe('GET detail surat menyertakan arsipId hanya bila arsipnya boleh dibaca', () => {
+    it('surat Biasa: null sebelum diarsipkan, lalu id arsip untuk pembaca unit yang sama', async () => {
+        const sebelum = await request(app).get(`/api/surat-masuk/${SURAT_FIXTURE.smTunggal}`).set(sebagai(PENGGUNA.staffSes)).expect(200);
+        expect(sebelum.body.data.arsipId).toBeNull();
+        await request(app).post(`/api/surat-masuk/${SURAT_FIXTURE.smTunggal}/archive-full`).set(sebagai(PENGGUNA.tu))
+            .send(registrasi({ uraianBerkas: 'Surat tunggal TU', uraianItem: 'Surat tunggal TU' })).expect(200);
+        const [{ id }] = await arsipDari(SURAT_FIXTURE.smTunggal);
+        const sesudah = await request(app).get(`/api/surat-masuk/${SURAT_FIXTURE.smTunggal}`).set(sebagai(PENGGUNA.staffSes)).expect(200);
+        expect(sesudah.body.data).toMatchObject({ isArchived: true, arsipId: id });
+    });
+
+    it('arsip Rahasia tanpa grant arsip: surat terbaca tetapi arsipId null sampai grant arsip ada', async () => {
+        await request(app).post(`/api/surat-masuk/${SURAT.smRahasia}/archive-full`).set(sebagai(PENGGUNA.tu)).send(registrasi()).expect(200);
+        const [{ id }] = await arsipDari(SURAT.smRahasia);
+        const tanpaGrant = await request(app).get(`/api/surat-masuk/${SURAT.smRahasia}`).set(sebagai(PENGGUNA.tu)).expect(200);
+        expect(tanpaGrant.body.data.arsipId).toBeNull();
+        await database.exec(`INSERT INTO record_access_grants (id, requester_id, target_user_id, entity_type, entity_id, unit_kerja_id, required_classification, purpose, access_mode, status, decided_by, decided_at, decision_reason, expires_at)
+            VALUES ${grantRow(GRANT.arsip, 'arsip', id, 'rahasia')};`);
+        const denganGrant = await request(app).get(`/api/surat-masuk/${SURAT.smRahasia}`).set(sebagai(PENGGUNA.tu)).expect(200);
+        expect(denganGrant.body.data.arsipId).toBe(id);
+    });
+
+    it('surat keluar: arsip Terbatas tanpa grant arsip tidak membocorkan id', async () => {
+        await request(app).post(`/api/surat-keluar/${SURAT.skNull}/archive-full`).set(sebagai(PENGGUNA.tu))
+            .send(registrasi({ uraianBerkas: 'Arsip SK lama' })).expect(200);
+        const detail = await request(app).get(`/api/surat-keluar/${SURAT.skNull}`).set(sebagai(PENGGUNA.tu)).expect(200);
+        expect(detail.body.data).toMatchObject({ isArchived: true, arsipId: null });
+    });
+});
+
 describe('PUT /api/arsip/:id pada arsip tertaut', () => {
     // Disisipkan langsung (bukan lewat archive-full) agar uji PUT berdiri
     // sendiri; trigger 0021 tetap memeriksa kecocokan metadata sumber.

@@ -72,7 +72,7 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
             id as string,
             resolveLayananAccess(req),
         );
-        if (!result) return res.status(404).json({ error: 'Data not found' });
+        if (!result) return res.status(404).json({ error: 'Data tidak ditemukan.' });
         res.json({ success: true, data: result });
     } catch (error) {
         next(error);
@@ -121,7 +121,7 @@ router.post(
             id as string,
             resolveLayananAccess(req),
         );
-        if (!existing) return res.status(404).json({ error: 'Data not found' });
+        if (!existing) return res.status(404).json({ error: 'Data tidak ditemukan.' });
 
         if (!LAYANAN_STATUS_TRANSITIONS[existing.status]?.includes(status)) {
             return res.status(400).json({

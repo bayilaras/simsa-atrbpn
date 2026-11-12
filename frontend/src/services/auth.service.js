@@ -9,6 +9,19 @@ function authClientError(error, fallback) {
     return failure;
 }
 
+// Better Auth replies in English; the login page shows these instead.
+const SIGN_IN_MESSAGES = {
+    INVALID_EMAIL_OR_PASSWORD: 'Email atau kata sandi salah.',
+    INVALID_EMAIL: 'Format email tidak valid.',
+    // An inactive account is refused when its session is created.
+    FAILED_TO_CREATE_SESSION: 'Akun tidak aktif atau sesi tidak dapat dibuat. Hubungi administrator.',
+};
+
+function signInMessage(error) {
+    if (error?.status === 429) return 'Terlalu banyak percobaan masuk. Tunggu hingga 15 menit, lalu coba lagi.';
+    return SIGN_IN_MESSAGES[error?.code] || 'Login gagal. Silakan coba lagi.';
+}
+
 export function createAuthService({
     legacyClient = authClient,
     clearStorage = clearOfflineStorage,
@@ -58,7 +71,7 @@ export function createAuthService({
             prefetchedSession = null;
             try {
                 const result = await legacyClient.signIn.email({ email, password });
-                if (result.error) throw new Error(result.error.message || 'Login failed');
+                if (result.error) throw authClientError({ ...result.error, message: signInMessage(result.error) });
                 return result;
             } catch (error) {
                 console.error('Email sign in failed:', error);

@@ -2,6 +2,7 @@ import { ASSIGNABLE_ROLE_OPTIONS, managedUserRoleError } from '@/lib/role-access
 import { hasProvisionedAccess, isPendingAccess } from '@/lib/provisioning-access';
 import { UserAccessApprovalDialog } from '@/components/UserAccessApprovalDialog';
 import { UserPasswordResetDialog } from '@/components/UserPasswordResetDialog';
+import { pesanGalat } from '@/lib/pesan-galat';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Search, Filter, Users, Edit2, UserX, MoreHorizontal, Loader2, AlertTriangle, Shield, Building2, UserPlus, Mail, CheckCircle2, Ban, Eye, EyeOff, Lock, KeyRound } from 'lucide-react';
 import { Label } from '@/components/ui/label';
@@ -211,7 +212,7 @@ export default function UserManagement() {
             loadUsers();
         } catch (err) {
             console.error('Failed to update user:', err);
-            alert(err.response?.data?.error || 'Gagal mengupdate user');
+            alert(pesanGalat(err, 'Gagal mengupdate user'));
         } finally {
             setSaving(false);
         }
@@ -272,7 +273,7 @@ export default function UserManagement() {
             loadUsers();
         } catch (err) {
             console.error('Failed to deactivate user:', err);
-            alert(err.response?.data?.error || 'Gagal menonaktifkan user');
+            alert(pesanGalat(err, 'Gagal menonaktifkan user'));
         }
     };
 
@@ -286,7 +287,7 @@ export default function UserManagement() {
             loadUsers();
         } catch (err) {
             console.error('Failed to activate user:', err);
-            alert(err.response?.data?.error || 'Gagal mengaktifkan user');
+            alert(pesanGalat(err, 'Gagal mengaktifkan user'));
         }
     };
 

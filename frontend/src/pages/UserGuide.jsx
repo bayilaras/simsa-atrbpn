@@ -212,7 +212,7 @@ const GUIDE_SECTIONS = [
                 'Penyerahan arsip permanen tetap dicatat di Tata Kelola Retensi, tab Penyerahan Permanen.',
                 'Gunakan Manajemen Retensi untuk melihat arsip yang masa retensinya sudah atau hampir habis sebagai bahan usulan.',
                 'Pastikan keputusan retensi sudah sah dan arsip tidak sedang terkena legal hold sebelum diproses.',
-                'Draf berita acara pemusnahan dapat dicetak dari Manajemen Retensi melalui tombol Generate Berita Acara.',
+                'Draf berita acara pemusnahan tanpa nomor (nomor diisi manual) dapat dicetak dari Manajemen Retensi melalui tombol Generate Berita Acara.',
             ],
             action: { label: 'Buka Manajemen Retensi', to: '/retention' },
         },

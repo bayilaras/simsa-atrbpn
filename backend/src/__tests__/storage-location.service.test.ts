@@ -166,7 +166,29 @@ describe('StorageLocationService', () => {
                 level: 'ruang',
                 name: 'Ruang A',
                 code: 'G1-R1',
-            } as any, 'u1')).rejects.toThrow('selected unit');
+            } as any, 'u1')).rejects.toThrow('Lokasi induk tidak ditemukan di unit kerja yang dipilih.');
+        });
+
+        it('explains in Indonesian which level a child location must use', async () => {
+            enqueue([{ id: 'g1', code: 'G1', level: 'gedung', unitKerjaId: 'u1' }]);
+
+            await expect(service.create({
+                parentId: 'g1', level: 'rak', name: 'Rak A', code: 'G1-RAK1',
+            } as any, 'u1')).rejects.toThrow('Sub-lokasi dari gedung harus bertingkat ruang.');
+        });
+
+        it('explains in Indonesian that a box cannot hold child locations', async () => {
+            enqueue([{ id: 'b1', code: 'B1', level: 'box', unitKerjaId: 'u1' }]);
+
+            await expect(service.create({
+                parentId: 'b1', level: 'box', name: 'Box B', code: 'B1-B1',
+            } as any, 'u1')).rejects.toThrow('Lokasi bertingkat box tidak dapat memiliki sub-lokasi.');
+        });
+
+        it('explains in Indonesian that only a gedung may be created without a parent', async () => {
+            await expect(service.create({
+                level: 'ruang', name: 'Ruang tanpa induk', code: 'R1',
+            } as any, 'u1')).rejects.toThrow('Hanya gedung yang boleh dibuat tanpa lokasi induk.');
         });
     });
 
@@ -189,14 +211,14 @@ describe('StorageLocationService', () => {
         it('should throw if location has children', async () => {
             enqueue([{ id: 'loc-1', unitKerjaId: 'u1' }]); // scoped target lock
             enqueue([{ count: 2 }]); // children count
-            await expect(service.delete('loc-1', 'u1')).rejects.toThrow('Cannot delete location with children');
+            await expect(service.delete('loc-1', 'u1')).rejects.toThrow('Lokasi tidak dapat dihapus karena masih memiliki sub-lokasi. Hapus sub-lokasinya terlebih dahulu.');
         });
 
         it('should throw if location has arsip items', async () => {
             enqueue([{ id: 'loc-1', unitKerjaId: 'u1' }]);
             enqueue([{ count: 0 }]); // no children
             enqueue([{ count: 5 }]); // has arsip
-            await expect(service.delete('loc-1', 'u1')).rejects.toThrow('Cannot delete location with archived items');
+            await expect(service.delete('loc-1', 'u1')).rejects.toThrow('Lokasi tidak dapat dihapus karena masih menyimpan arsip. Pindahkan arsipnya terlebih dahulu.');
         });
 
         it('should delete successfully when no dependencies', async () => {
@@ -216,7 +238,7 @@ describe('StorageLocationService', () => {
             enqueue([{ count: 1 }]);
 
             await expect(service.delete('loc-1', 'u1'))
-                .rejects.toThrow('Preserve the audit trail');
+                .rejects.toThrow('Lokasi tidak dapat dihapus karena memiliki riwayat peminjaman arsip yang harus tetap tersimpan.');
         });
     });
 

@@ -91,6 +91,18 @@ describe('sidebar task groups', () => {
             unmount()
         }
     })
+    it('menawarkan Formulir di grup Administrasi untuk setiap role terprovisi', () => {
+        for (const role of ['staff', 'auditor', 'admin_unit', 'super_admin']) {
+            state.role = role
+            const { unmount } = show({ route: '/formulir' })
+            expect(screen.getByRole('button', { name: 'Administrasi', exact: true })).toHaveAttribute('aria-expanded', 'true')
+            const link = screen.getByRole('link', { name: 'Formulir', exact: true })
+            expect(link).toHaveAttribute('href', '/formulir')
+            expect(link).toHaveAttribute('aria-current', 'page')
+            expect(screen.getByRole('link', { name: 'Laporan', exact: true })).not.toHaveAttribute('aria-current')
+            unmount()
+        }
+    })
     it('menampilkan badge Perlu Dilengkapi pada Lacak Surat hanya untuk admin, tanpa mengubah tujuan tautan', () => {
         state.role = 'admin_unit'
         perlu.total = 12

@@ -12,6 +12,7 @@ import {
     retentionTriggerVerifications,
     users,
     recordAccessGrants,
+    unitKerja,
 } from '../db/schema';
 import { eq, and, desc, sql, ilike, or, isNotNull, isNull, ne, inArray, getTableColumns, type SQL } from 'drizzle-orm';
 import { AppError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors';
@@ -1821,12 +1822,20 @@ export class ArsipService {
         }
 
         const now = new Date();
-        const reportNumber = `BA-${unitKerjaId}/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const [unit] = await db
+            .select({ name: unitKerja.name })
+            .from(unitKerja)
+            .where(eq(unitKerja.id, unitKerjaId))
+            .limit(1);
 
+        // Keluaran ini draf: tidak disimpan maupun diaudit, jadi tidak boleh
+        // membawa nomor berita acara. Nomor diisi manual pada naskah resmi.
         return {
-            reportNumber,
+            draf: true as const,
+            reportNumber: null,
             tanggal: now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
-            unitKerja: unitKerjaId,
+            unitKerjaId,
+            unitKerja: unit?.name || unitKerjaId,
             totalBerkas: archives.length,
             daftarArsip: archives.map((arch, index) => ({
                 no: index + 1,

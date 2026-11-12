@@ -31,6 +31,7 @@ import {
 import { PESAN_KELAS_MELEBIHI_KEWENANGAN } from '../constants/pesan-akses.js';
 import auditLogService from '../services/audit-log.service.js';
 import { suratAksiPayload } from '../services/rangkaian/aksi.js';
+import { berkasHanyaTayang } from '../services/access/berkas-akses.js';
 import { fileValidationMiddleware } from '../middlewares/file-validation.middleware.js';
 
 const log = createLogger('SuratKeluarRoutes');
@@ -72,6 +73,15 @@ async function balasanUntukTerbaca(req: AuthRequest, suratMasukId: string | null
     if (!suratMasukId) return null;
     const access = await recordAccessService.checkRead(req.user, 'surat_masuk', suratMasukId);
     return access.exists && access.allowed ? suratMasukId : null;
+}
+
+// Id arsip hanya untuk pengguna yang boleh membuka detail arsip itu
+// (pemeriksaan yang sama dengan GET /api/arsip/:id).
+async function arsipIdTerbaca(req: AuthRequest, suratId: string) {
+    const arsipId = await suratKeluarService.findArsipId(suratId);
+    if (!arsipId) return null;
+    const access = await recordAccessService.check(req.user, 'arsip', arsipId);
+    return access.exists && access.allowed ? arsipId : null;
 }
 
 router.use(authMiddleware);
@@ -187,9 +197,17 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
         // P3 (§7): aksiDiizinkan/statusAlur dari server; hanya membaca.
         const aksi = await suratAksiPayload(req.user!, 'surat_keluar', id, access);
         const balasanUntuk = await balasanUntukTerbaca(req, result.balasanUntuk);
+        const arsipId = await arsipIdTerbaca(req, id);
         res.json({
             success: true,
-            data: { ...sanitizeSuratRecord(result, 'surat_keluar'), balasanUntuk, aksesMelalui: access.via, ...aksi },
+            data: {
+                ...sanitizeSuratRecord(result, 'surat_keluar'),
+                balasanUntuk,
+                arsipId,
+                aksesMelalui: access.via,
+                berkasHanyaTayang: berkasHanyaTayang(access),
+                ...aksi,
+            },
         });
     } catch (error) {
         next(error);

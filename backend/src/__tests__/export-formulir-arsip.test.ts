@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ findAll: vi.fn(), jenisLama: vi.fn(), audit: vi.fn() }));
 vi.mock('../services/surat-masuk.service', () => ({ suratMasukService: { findAll: vi.fn() } }));
 vi.mock('../services/surat-keluar.service', () => ({ suratKeluarService: { findAll: vi.fn() } }));
+vi.mock('../services/export-unit-pengolah', () => ({ namaUnitPengolah: async () => 'Unit Uji' }));
 vi.mock('../services/arsip.service', () => ({
     arsipService: { findAll: state.findAll, jenisPenyusutanLamaPerArsip: state.jenisLama },
 }));
