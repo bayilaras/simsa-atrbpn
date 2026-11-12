@@ -5,10 +5,15 @@ import { TWO_DIGIT_YEAR_PIVOT, importDateProblem, parseImportDate, type ImportDa
 const UNREADABLE = 'tidak dapat dibaca';
 const MONTH_FIRST = 'bulan lebih dulu';
 const NOT_A_DATE = 'tidak ada di kalender';
+const YEAR_RANGE = 'di luar rentang 1920 sampai 2199';
 
 describe('parseImportDate', () => {
     const originalTz = process.env.TZ;
-    afterEach(() => { process.env.TZ = originalTz; });
+    afterEach(() => {
+        // Assigning undefined would store the text "undefined".
+        if (originalTz === undefined) delete process.env.TZ;
+        else process.env.TZ = originalTz;
+    });
 
     it.each<[ImportDateValue]>([[''], ['   '], ['-'], [' - '], [null], [undefined]])('reads an empty cell %j as no date', value => {
         expect(parseImportDate(value)).toBeNull();
@@ -84,6 +89,10 @@ describe('parseImportDate', () => {
         ['serial number as text with a decimal comma', '46329,75', '2026-11-03'],
         ['serial number of a leap day', 45351, '2024-02-29'],
         ['first accepted serial number', 7306, '1920-01-01'],
+        ['first accepted serial number as text', '7306', '1920-01-01'],
+        ['last accepted serial number as text', '109574', '2199-12-31'],
+        ['first accepted year', '01/01/1920', '1920-01-01'],
+        ['last accepted year', '31/12/2199', '2199-12-31'],
         ['Date at midnight UTC', new Date(Date.UTC(2026, 10, 3)), '2026-11-03'],
         ['Date late in the UTC day', new Date(Date.UTC(2026, 10, 3, 23, 59, 59)), '2026-11-03'],
     ])('reads %s', (_name, value, expected) => {
@@ -109,7 +118,18 @@ describe('parseImportDate', () => {
         ['day 32 in ISO', '2026-11-32', NOT_A_DATE],
         ['31 February by name', '31 Februari 2026', NOT_A_DATE],
         ['year zero', '0000-01-01', NOT_A_DATE],
+        // Years outside 1920-2199 are typing mistakes
+        ['mistyped year with a leading zero', '03/11/0206', YEAR_RANGE],
+        ['mistyped far year', '03/11/2206', YEAR_RANGE],
+        ['year before the range', '31/12/1919', YEAR_RANGE],
+        ['year after the range', '2200-01-01', YEAR_RANGE],
+        ['year outside the range by month name', '3 November 1819', YEAR_RANGE],
+        ['Date outside the range', new Date(Date.UTC(1900, 0, 1)), YEAR_RANGE],
         // Anything else
+        ['packed day, month, year with a leading zero', '031126', UNREADABLE],
+        ['leading-zero digits', '046329', UNREADABLE],
+        ['three digits', '311', UNREADABLE],
+        ['seven digits', '1046329', UNREADABLE],
         ['English month-first date', 'November 3, 2026', UNREADABLE],
         ['month and year only', 'November 2026', UNREADABLE],
         ['year only', '2026', UNREADABLE],
@@ -158,6 +178,7 @@ describe('parseImportDate', () => {
         expect(importDateProblem('11/25/2026')).toBe('Tanggal "11/25/2026" tampaknya ditulis dengan bulan lebih dulu, sehingga tidak dipakai. '
             + 'Tulis dengan urutan hari, bulan, tahun, misalnya 03/11/2026, 3-11-2026, 3.11.2026, atau 3 November 2026; penulisan 2026-11-03 juga diterima.');
         expect(importDateProblem('31/02/2026')).toBe('Tanggal "31/02/2026" tidak ada di kalender. Periksa hari, bulan, dan tahunnya.');
+        expect(importDateProblem('03/11/0206')).toBe('Tahun pada tanggal "03/11/0206" di luar rentang 1920 sampai 2199. Periksa penulisan tahunnya.');
     });
 
     it('shortens a long value in the message', () => {

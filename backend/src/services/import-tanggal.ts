@@ -13,8 +13,12 @@ import { ValidationError } from '../utils/errors.js';
  *  - the same with a two-digit year: 00-69 is 2000-2069, 70-99 is 1970-1999;
  *  - a month name or abbreviation: "3 November 2026", "3 Nov 2026",
  *    "03-Nov-26", optionally after the day of the week ("Selasa, 3 November 2026");
- *  - an Excel serial number (an unformatted date cell), for 1920 to 2199;
+ *  - an Excel serial number (an unformatted date cell); as text it has four to
+ *    six digits and no leading zero, so "031126" is not read as one;
  *  - a Date from the XLSX reader, whose calendar date is its UTC date.
+ *
+ * The year must be 1920 to 2199 in every form, so a mistyped year ("0206",
+ * "2206") is rejected instead of stored.
  *
  * A time is checked and dropped; it never moves the date, and no time zone
  * conversion happens anywhere.
@@ -44,22 +48,26 @@ const TIME = String.raw`(?:,?[ T]+(\d{1,2})[:.](\d{2})(?:[:.](\d{2})(?:[.,]\d+)?
 const YEAR_FIRST = new RegExp(String.raw`^(\d{4})([-/.])(\d{1,2})\2(\d{1,2})${TIME}$`, 'i');
 const DAY_FIRST = new RegExp(String.raw`^(\d{1,2})([-/.])(\d{1,2})\2(\d{4}|\d{2})${TIME}$`, 'i');
 const MONTH_NAME = new RegExp(String.raw`^(?:([a-z']+),?\s+)?(\d{1,2})[\s./-]+([a-z]+)\.?[\s./,-]+(\d{4}|\d{2})${TIME}$`, 'i');
-const SERIAL = /^\d{1,7}(?:[.,]\d+)?$/;
+// A serial for 1920-2199 has four to six digits and never a leading zero; "031126" is a packed date, not a serial.
+const SERIAL = /^[1-9]\d{3,5}(?:[.,]\d+)?$/;
 
 const DAY_MS = 86_400_000;
 // Excel counts days from 1899-12-30 for every date after its fictitious 29 February 1900.
 const SERIAL_EPOCH = Date.UTC(1899, 11, 30);
-const SERIAL_MIN = (Date.UTC(1920, 0, 1) - SERIAL_EPOCH) / DAY_MS;
-const SERIAL_MAX = (Date.UTC(2199, 11, 31) - SERIAL_EPOCH) / DAY_MS;
+export const IMPORT_YEAR_MIN = 1920;
+export const IMPORT_YEAR_MAX = 2199;
+const SERIAL_MIN = (Date.UTC(IMPORT_YEAR_MIN, 0, 1) - SERIAL_EPOCH) / DAY_MS;
+const SERIAL_MAX = (Date.UTC(IMPORT_YEAR_MAX, 11, 31) - SERIAL_EPOCH) / DAY_MS;
 
 const ACCEPTED = 'Tulis dengan urutan hari, bulan, tahun, misalnya 03/11/2026, 3-11-2026, 3.11.2026, atau 3 November 2026; penulisan 2026-11-03 juga diterima.';
 const SHOWN_LENGTH = 40;
 
-type Problem = 'unreadable' | 'monthFirst' | 'calendar';
+type Problem = 'unreadable' | 'monthFirst' | 'calendar' | 'year';
 
 function problemMessage(problem: Problem, value: string): string {
     const shown = value.length > SHOWN_LENGTH ? `${value.slice(0, SHOWN_LENGTH - 1)}…` : value;
     if (problem === 'monthFirst') return `Tanggal "${shown}" tampaknya ditulis dengan bulan lebih dulu, sehingga tidak dipakai. ${ACCEPTED}`;
+    if (problem === 'year') return `Tahun pada tanggal "${shown}" di luar rentang ${IMPORT_YEAR_MIN} sampai ${IMPORT_YEAR_MAX}. Periksa penulisan tahunnya.`;
     if (problem === 'calendar') return `Tanggal "${shown}" tidak ada di kalender. Periksa hari, bulan, dan tahunnya.`;
     return `Tanggal "${shown}" tidak dapat dibaca. ${ACCEPTED}`;
 }
@@ -73,6 +81,7 @@ function daysInMonth(year: number, month: number): number {
 
 function calendarDate(year: number, month: number, day: number): string | Problem {
     if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return 'calendar';
+    if (year < IMPORT_YEAR_MIN || year > IMPORT_YEAR_MAX) return 'year';
     return `${pad(year, 4)}-${pad(month)}-${pad(day)}`;
 }
 
