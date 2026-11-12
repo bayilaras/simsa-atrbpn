@@ -7,7 +7,7 @@ import { ASAL_NASKAH_LABEL, resolveBalasanLabels } from './export-balasan';
 import { namaUnitPengolah } from './export-unit-pengolah.js';
 import { sifatSuratLabel } from './sifat-surat.js';
 import { jenisFormulirArsip, lengkapiJenisPenyusutanLama, saringFormulirArsip } from './arsip-fase.js';
-import { barisFormulirArsip, totalFormulirArsip, uraianFormulir6, type BarisFormulirArsip } from './export-formulir-baris.js';
+import { barisFormulirArsip, rincianItemDicetak, totalFormulirArsip, uraianFormulir6, type BarisFormulirArsip } from './export-formulir-baris.js';
 import { AppError } from '../utils/errors.js';
 import { loadExcelJS, loadPdfKit } from '../utils/lazy-libraries.js';
 
@@ -286,9 +286,10 @@ export class ExportService {
     private async dataFormulirArsip(filters: ArsipFilters, formulirType?: string): Promise<BarisFormulirArsip[]> {
         const data = await this.arsipFormulir(filters, formulirType);
         // Rincian item hanya diambil untuk arsip yang sudah lolos saringan di
-        // atas, sekaligus dalam satu query.
-        const itemPerArsip = data.length > 0
-            ? await arsipService.itemPerArsip(data.map((row: any) => row.id))
+        // atas dan berkelas Biasa, sekaligus dalam satu query.
+        const idBerinci = data.filter(rincianItemDicetak).map((row: any) => row.id);
+        const itemPerArsip = idBerinci.length > 0
+            ? await arsipService.itemPerArsip(idBerinci)
             : new Map();
         return barisFormulirArsip(data, itemPerArsip);
     }

@@ -77,7 +77,8 @@ beforeAll(async () => {
             ('ditjen','keluar',2026,'rahasia','A-RAHASIA','Berkas rahasia'),
             ('sesditjen','keluar',2026,'biasa','A-UNITLAIN','Berkas unit lain');
         INSERT INTO arsip_items (arsip_id, nomor_item, uraian_item, jumlah)
-            SELECT id, n::text, 'Item ' || n, n FROM arsip, generate_series(1, 2) n WHERE nomor_berkas = 'A-2026-A';
+            SELECT id, n::text, 'Item ' || nomor_berkas || ' ' || n, n FROM arsip, generate_series(1, 2) n
+            WHERE nomor_berkas IN ('A-2026-A', 'A-2026-B');
     `);
 }, 120_000);
 afterAll(async () => { await database?.close(); });
@@ -96,6 +97,22 @@ async function lembarEkspor(jenis: string, filter: Filter) {
     return workbook.worksheets[0];
 }
 
+// Rute PDF harus meneruskan filter dan keterangan yang persis sama dengan rute
+// Excel. Pembuat berkasnya diganti supaya tiap kasus tidak membuat PDF
+// sungguhan; PDF sungguhan dibuat sekali per jenis di uji tersendiri.
+async function argumenEksporSama(jenis: string, filter: Filter, excel: string, pdf: string) {
+    const { exportService } = await import('../services/export.service');
+    const keExcel = vi.spyOn(exportService as any, excel).mockResolvedValue(Buffer.from('excel'));
+    const kePdf = vi.spyOn(exportService as any, pdf).mockResolvedValue(Buffer.from('pdf'));
+    await request(app).get(`/api/reports/export/${jenis}/excel`).query(filter).expect(200);
+    await request(app).get(`/api/reports/export/${jenis}/pdf`).query(filter).expect(200);
+    expect(keExcel).toHaveBeenCalledTimes(1);
+    expect(kePdf).toHaveBeenCalledTimes(1);
+    expect(kePdf.mock.calls[0]).toEqual(keExcel.mock.calls[0]);
+    keExcel.mockRestore();
+    kePdf.mockRestore();
+}
+
 function isiKolom(sheet: ExcelJS.Worksheet, barisAwal: number, kolom: number) {
     const nilai: string[] = [];
     for (let row = barisAwal; row <= sheet.rowCount; row++) {
@@ -108,20 +125,25 @@ function isiKolom(sheet: ExcelJS.Worksheet, barisAwal: number, kolom: number) {
 }
 
 describe.each([
-    ['surat-masuk', 'M', 5, '../services/surat-masuk.service', 'suratMasukService'],
-    ['surat-keluar', 'K', 4, '../services/surat-keluar.service', 'suratKeluarService'],
-] as const)('ekspor Laporan %s sama dengan tabelnya', (jenis, awalan, kolomNomor, modul, namaService) => {
+    ['surat-masuk', 'M', 5, '../services/surat-masuk.service', 'suratMasukService', 'SuratMasuk'],
+    ['surat-keluar', 'K', 4, '../services/surat-keluar.service', 'suratKeluarService', 'SuratKeluar'],
+] as const)('ekspor Laporan %s sama dengan tabelnya', (jenis, awalan, kolomNomor, modul, namaService, akhiran) => {
     it.each(KASUS)('%s', async (_nama, filter, wajib) => {
         const tabel = await nomorTabel(jenis, filter, 'nomorSurat');
         expect(tabel).toEqual(wajib.map(nomor => `${awalan}-${nomor}`).sort());
 
-        const service = ((await import(modul)) as any)[namaService];
-        const findAll = vi.spyOn(service, 'findAll');
         const sheet = await lembarEkspor(jenis, filter);
         expect(isiKolom(sheet, 5, kolomNomor)).toEqual(tabel);
+        await argumenEksporSama(jenis, filter, `generateExcel${akhiran}`, `generatePdf${akhiran}`);
+    });
 
-        // PDF memakai filter yang persis sama dengan Excel.
-        await request(app).get(`/api/reports/export/${jenis}/pdf`).query(filter).expect(200);
+    it('PDF sungguhan membaca data dengan filter yang sama dengan Excel', async () => {
+        const filter = { year: 2026, tanggalDari: '2025-12-01', tanggalSampai: '2026-03-01' };
+        const service = ((await import(modul)) as any)[namaService];
+        const findAll = vi.spyOn(service, 'findAll');
+        await lembarEkspor(jenis, filter);
+        const pdf = await request(app).get(`/api/reports/export/${jenis}/pdf`).query(filter).responseType('blob').expect(200);
+        expect((pdf.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
         expect(findAll).toHaveBeenCalledTimes(2);
         expect(findAll.mock.calls[1][0]).toEqual(findAll.mock.calls[0][0]);
     });
@@ -156,13 +178,28 @@ describe('ekspor Laporan arsip sama dengan tabelnya', () => {
         const tabel = await nomorTabel('arsip', filter, 'nomorBerkas');
         expect(tabel).toEqual(wajib);
 
-        const { arsipService } = await import('../services/arsip.service');
-        const findAll = vi.spyOn(arsipService, 'findAll');
         const sheet = await lembarEkspor('arsip', filter);
         expect(isiKolom(sheet, 8, 1)).toEqual(tabel);
+        await argumenEksporSama('arsip', filter, 'generateExcelArsip', 'generatePdfArsip');
+    });
 
-        await request(app).get('/api/reports/export/arsip/pdf').query(filter).expect(200);
+    it('PDF sungguhan membaca data dengan filter yang sama dengan Excel', async () => {
+        const { arsipService } = await import('../services/arsip.service');
+        const findAll = vi.spyOn(arsipService, 'findAll');
+        await lembarEkspor('arsip', { year: 2026 });
+        const pdf = await request(app).get('/api/reports/export/arsip/pdf').query({ year: 2026 }).responseType('blob').expect(200);
+        expect((pdf.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
         expect(findAll).toHaveBeenCalledTimes(2);
         expect(findAll.mock.calls[1][0]).toEqual(findAll.mock.calls[0][0]);
+    });
+
+    it('rincian item hanya dicetak untuk arsip berkelas Biasa', async () => {
+        const sheet = await lembarEkspor('arsip', { year: 2026 });
+        const isi = JSON.stringify(sheet.getSheetValues());
+        expect(isi).toContain('Item A-2026-A 1');
+        expect(isi).toContain('Item A-2026-A 2');
+        // Berkas Terbatas tetap tercantum sebagai satu baris ringkasan.
+        expect(isi).toContain('Berkas 2026 B');
+        expect(isi).not.toContain('Item A-2026-B');
     });
 });

@@ -374,6 +374,40 @@ describe('Formulir 4 dan Formulir 6 mencetak satu baris per item arsip', () => {
         expect(teks).toContain('Total: 3 arsip');
     });
 
+    it('item tunggal tanpa tanggal memakai tanggal berkas; beberapa item tidak', async () => {
+        state.items.mockResolvedValue(new Map([
+            ['BANYAK', [item('1', { tanggalItem: null }), item('2')]],
+            ['TIGA', [item('1', { tanggalItem: null })]],
+        ]));
+        state.findAll.mockResolvedValue(hasil([
+            arsipBaris('BANYAK', { tanggalArsip: '2026-01-09' }),
+            arsipBaris('TIGA', { tanggalArsip: '2026-01-05' }),
+        ]));
+        const sheet = await lembar(await exportService.generateExcelArsip({ unitKerjaId: 'unit-a' }, 'formulir4'));
+        expect([8, 9, 10].map(row => sheet.getCell(row, 8).value)).toEqual(['', '2026-03-02', '2026-01-05']);
+    });
+
+    it.each(['terbatas', 'Rahasia', 'sangat_rahasia'])('arsip berkelas %s dicetak satu baris ringkasan tanpa rincian item', async kelas => {
+        state.items.mockImplementation(async (ids: string[]) => new Map(ids.map(id => [id, [item('1'), item('2')]])));
+        state.findAll.mockResolvedValue(hasil([
+            arsipBaris('TERKENDALI', { klasifikasiKeamanan: kelas, nomorItem: '7', uraianItem: 'Ringkasan berkas', jumlah: 4 }),
+            arsipBaris('BIASA', { klasifikasiKeamanan: 'biasa' }),
+        ]));
+        const sheet = await lembar(await exportService.generateExcelArsip({ unitKerjaId: 'unit-a' }, 'formulir4'));
+        expect(state.items).toHaveBeenCalledExactlyOnceWith(['BIASA']);
+        expect(nilaiBaris(sheet, 8, 9).slice(2)).toEqual(['Berkas TERKENDALI', '2026', 4, '7', 'Ringkasan berkas', '', 4]);
+        expect([9, 10, 11].map(row => sheet.getCell(row, 7).value)).toEqual(['Item 1', 'Item 2', null]);
+    });
+
+    it('rincian item yang terlanjur diteruskan untuk arsip terkendali tetap tidak dicetak', async () => {
+        const { barisFormulirArsip } = await import('../services/export-formulir-baris');
+        const baris = barisFormulirArsip(
+            [arsipBaris('TERKENDALI', { klasifikasiKeamanan: 'terbatas' })],
+            new Map([['TERKENDALI', [item('1'), item('2')]]]),
+        );
+        expect(baris.map(row => [row.dariItem, row.uraianItem])).toEqual([[false, '']]);
+    });
+
     it('ekspor Laporan (tanpa formulirType) juga mencetak per item', async () => {
         state.findAll.mockResolvedValue(hasil(berkasAktif()));
         const sheet = await lembar(await exportService.generateExcelArsip({ unitKerjaId: 'unit-a' }));

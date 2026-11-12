@@ -429,7 +429,7 @@ export class ArsipService {
             .select()
             .from(arsipItems)
             .where(sql`${arsipItems.arsipId} = any(${uuidArraySql(ids)})`)
-            .orderBy(arsipItems.arsipId, arsipItems.nomorItem, arsipItems.id);
+            .orderBy(arsipItems.arsipId, arsipItems.nomorItem, arsipItems.createdAt, arsipItems.id);
         for (const row of rows) {
             const daftar = hasil.get(row.arsipId);
             if (daftar) daftar.push(row);

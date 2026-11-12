@@ -194,6 +194,24 @@ describe('ekspor Formulir 4 dan Formulir 6 per item arsip', () => {
         expect(select).not.toHaveBeenCalled();
     });
 
+    it('item bernomor sama diurutkan menurut waktu dibuat', async () => {
+        const { arsipService } = await import('../services/arsip.service');
+        // Urutan id sengaja berlawanan dengan urutan waktu dibuat.
+        await database.exec(`
+            INSERT INTO arsip_items (id, arsip_id, nomor_item, uraian_item, created_at) VALUES
+                ('ffffffff-0000-4000-8000-000000000001','${ARSIP.aktif}','','URUT-A','2026-01-01T00:00:01Z'),
+                ('88888888-0000-4000-8000-000000000002','${ARSIP.aktif}','','URUT-B','2026-01-01T00:00:02Z'),
+                ('11111111-0000-4000-8000-000000000003','${ARSIP.aktif}','','URUT-C','2026-01-01T00:00:03Z');
+        `);
+        try {
+            const items = await arsipService.itemPerArsip([ARSIP.aktif]);
+            expect(items.get(ARSIP.aktif)?.map((row) => row.uraianItem).filter((uraian) => uraian?.startsWith('URUT-')))
+                .toEqual(['URUT-A', 'URUT-B', 'URUT-C']);
+        } finally {
+            await database.exec(`DELETE FROM arsip_items WHERE uraian_item LIKE 'URUT-%'`);
+        }
+    });
+
     it('Formulir 6 mencetak tiap item pemindahan lama dan tidak memuat item arsip yang dimusnahkan', async () => {
         const { exportService } = await import('../services/export.service');
         const isi = await isiExcel(await exportService.generateExcelArsip(

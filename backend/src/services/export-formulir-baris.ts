@@ -4,7 +4,13 @@
  * Arsip yang punya rincian di arsip_items dicetak satu baris per item, dengan
  * kolom berkas dikelompokkan pada baris pertamanya. Arsip tanpa rincian item
  * tetap dicetak satu baris dari data berkasnya.
+ *
+ * Rincian item hanya dicetak untuk arsip berkelas Biasa. Arsip berkelas
+ * Terbatas ke atas tetap satu baris ringkasan berkas, karena rincian itemnya
+ * hanya dibuka lewat halaman detail arsip yang memeriksa izin akses per arsip.
  */
+import { normalizeSecurityClassification } from './access/visibility-spec.js';
+
 export interface ItemFormulirArsip {
     nomorItem?: string | null;
     uraianItem?: string | null;
@@ -39,6 +45,10 @@ export interface BarisFormulirArsip {
 const lokasiDari = (sumber: Pick<ItemFormulirArsip, 'lokasiFc' | 'lokasiLaci' | 'lokasiFolder'>) =>
     [sumber.lokasiFc, sumber.lokasiLaci, sumber.lokasiFolder].filter(Boolean).join('/');
 
+/** Apakah rincian item arsip ini boleh dicetak di Formulir 4 dan Formulir 6. */
+export const rincianItemDicetak = (berkas: { klasifikasiKeamanan?: string | null }) =>
+    normalizeSecurityClassification(berkas.klasifikasiKeamanan) === 'biasa';
+
 const urutNomorItem = (a: ItemFormulirArsip, b: ItemFormulirArsip) =>
     (a.nomorItem || '').localeCompare(b.nomorItem || '', 'id', { numeric: true });
 
@@ -49,7 +59,9 @@ export function barisFormulirArsip(
     return data.flatMap((berkas, index): BarisFormulirArsip[] => {
         const urutBerkas = index + 1;
         const lokasiBerkas = lokasiDari(berkas);
-        const items = [...(itemPerArsip.get(berkas.id) ?? [])].sort(urutNomorItem);
+        const items = rincianItemDicetak(berkas)
+            ? [...(itemPerArsip.get(berkas.id) ?? [])].sort(urutNomorItem)
+            : [];
         if (items.length === 0) {
             const jumlah = berkas.jumlah || 1;
             return [{
@@ -63,13 +75,16 @@ export function barisFormulirArsip(
                 lokasi: lokasiBerkas,
             }];
         }
+        // Item tunggal adalah cermin ringkasan berkas, jadi tanggal yang kosong
+        // diisi dari tanggal berkasnya.
+        const tanggalCadangan = items.length === 1 ? berkas.tanggalArsip || '' : '';
         const jumlahBerkas = items.reduce((total, item) => total + (item.jumlah || 1), 0);
         return items.map((item, itemKe) => ({
             berkas, urutBerkas, itemKe, jumlahBaris: items.length, dariItem: true,
             jumlahBerkas,
             nomorItem: item.nomorItem || '',
             uraianItem: item.uraianItem || '',
-            tanggal: item.tanggalItem || '',
+            tanggal: item.tanggalItem || tanggalCadangan,
             jumlah: item.jumlah || 1,
             tingkatPerkembangan: item.tingkatPerkembangan || berkas.tingkatPerkembangan || '',
             lokasi: lokasiDari(item) || lokasiBerkas,
