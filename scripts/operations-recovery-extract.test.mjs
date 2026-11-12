@@ -83,19 +83,22 @@ test('file names are sanitized and fall back to the stored object name', () => {
   assert.equal(documentFileName({ ...row, url: 'not a url', fileName: '' }), `${'e'.repeat(64)}.pdf`);
 });
 
-test('document budget counts unique stored objects and warns at 75 percent or below one bulk-upload batch of room', () => {
+test('document budget counts unique stored objects and warns at 80 percent or below one bulk-upload batch of room', () => {
   const mib = 1024 * 1024, ref = (sizeBytes, name) => ({ url: `https://teststore123.private.blob.vercel-storage.com/${name}.pdf`, sha256: sha256(String(name)), sizeBytes });
-  assert.equal(documentBudgetUsage([ref(1, 'a')]).warning, false);
-  const shared = documentBudgetUsage([ref(256 * mib, 'a'), ref(256 * mib, 'a'), ref(256 * mib, 'b'), ref(256 * mib, 'b')]);
+  const limits = { maxReferences: 2000, maxObjects: 1000, maxTotalBytes: 1024 * mib }, usage = references => documentBudgetUsage(references, limits);
+  assert.equal(usage([ref(1, 'a')]).warning, false);
+  const shared = usage([ref(256 * mib, 'a'), ref(256 * mib, 'a'), ref(256 * mib, 'b'), ref(256 * mib, 'b')]);
   assert.deepEqual([shared.references, shared.objects, shared.bytes, shared.bytesRatio, shared.ratioWarning, shared.warning], [4, 2, 512 * mib, 0.5, false, false]);
   // 80 MiB of room is less than one 100 MiB bulk-upload batch.
-  const nearFull = documentBudgetUsage([ref(944 * mib, 'a')]);
+  const nearFull = usage([ref(944 * mib, 'a')]);
   assert.deepEqual([nearFull.bytesHeadroom, nearFull.headroomWarning, nearFull.warning], [80 * mib, true, true]);
-  assert.equal(documentBudgetUsage([ref(767 * mib, 'a')]).ratioWarning, false);
-  assert.equal(documentBudgetUsage([ref(768 * mib, 'a')]).ratioWarning, true);
-  assert.equal(documentBudgetUsage(Array.from({ length: 750 }, (_, n) => ref(1, n))).ratioWarning, true);
-  const references = documentBudgetUsage(Array.from({ length: 1500 }, () => ref(1, 'a')));
+  assert.equal(usage([ref(819 * mib, 'a')]).ratioWarning, false);
+  assert.equal(usage([ref(820 * mib, 'a')]).ratioWarning, true);
+  assert.equal(usage(Array.from({ length: 800 }, (_, n) => ref(1, n))).ratioWarning, true);
+  const references = usage(Array.from({ length: 1600 }, () => ref(1, 'a')));
   assert.deepEqual([references.ratioWarning, references.headroomWarning, references.warning], [true, false, true]);
+  // The same usage is far below the default budget.
+  assert.equal(documentBudgetUsage(Array.from({ length: 1600 }, () => ref(1, 'a'))).warning, false);
   assert.equal(documentReferences([attachment], [])[0].fileName, attachment.file_name);
 });
 

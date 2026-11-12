@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdtemp,readFile,writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { seal,unseal,pinnedPrivateUrl,parseCopyTable,documentReferences,documentBudgetUsage,documentBudgetAnnotation,DOCUMENT_BUDGET,backupDocuments,restoreDocuments,sha256,privateBlobConfiguration } from './operations-recovery-documents.mjs';
+import { seal,unseal,pinnedPrivateUrl,parseCopyTable,documentReferences,documentBudgetUsage,documentBudgetAnnotation,documentBudgetFailureMessage,documentBudgetFromEnvironment,DOCUMENT_BUDGET,DOCUMENT_BUDGET_DEFAULTS,DOCUMENT_BUDGET_SETTINGS,DOCUMENT_BUDGET_CEILINGS,backupDocuments,restoreDocuments,sha256,privateBlobConfiguration } from './operations-recovery-documents.mjs';
 const token='vercel_blob_rw_teststore123_secret', url='https://teststore123.private.blob.vercel-storage.com/test.pdf';
 const bytes=Buffer.from('synthetic recovery test bytes'),hash=sha256(bytes),archive='a'.repeat(64),id='00000000-0000-4000-8000-000000000001';
 const reference={id,kind:'attachment',entityType:'arsip',entityId:id,url,sha256:hash,sizeBytes:bytes.length,storageAccess:'private'};
@@ -25,46 +25,97 @@ test('envelope bound admits the largest allowed document and nothing larger',()=
  assert.throws(()=>unseal(Buffer.concat([largest,Buffer.alloc(1)]),key,'context'),/INVALID_ENVELOPE/);
 });
 const mib=1024*1024,row=(n,size,name=n)=>({id:`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`,file_url:`https://teststore123.private.blob.vercel-storage.com/${name}.pdf`,sha256:sha256(String(name)),size_bytes:size,storage_access:'private'});
-test('document budget counts unique stored objects, keeps the reference sanity bound, and warns at 75 percent',()=>{
- const shared=documentBudgetUsage(documentReferences(Array.from({length:5},(_,n)=>row(n,50*mib,'shared')),[]));
- assert.deepEqual([shared.references,shared.objects,shared.bytes],[5,1,50*mib]);
+// A small explicit budget keeps the boundary cases cheap and proves every limit is a setting, not a constant.
+const small=Object.freeze({maxReferences:2000,maxObjects:1000,maxTotalBytes:1024*mib});
+const refs=(rows,limits=small)=>documentReferences(rows,[],{limits}),used=(rows,limits=small)=>documentBudgetUsage(refs(rows,limits),limits);
+test('document budget defaults are named settings sized for months of daily use and bounded by ceilings',()=>{
+ assert.deepEqual({...DOCUMENT_BUDGET_DEFAULTS},{maxReferences:10000,maxObjects:5000,maxTotalBytes:4*1024*mib});
+ assert.deepEqual({...DOCUMENT_BUDGET_SETTINGS},{maxReferences:'OPERATIONS_RECOVERY_MAX_DOCUMENT_REFERENCES',maxObjects:'OPERATIONS_RECOVERY_MAX_DOCUMENT_OBJECTS',maxTotalBytes:'OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES'});
+ assert.equal(DOCUMENT_BUDGET.warningRatio,0.8);
+ for(const key of Object.keys(DOCUMENT_BUDGET_DEFAULTS)){assert.equal(DOCUMENT_BUDGET[key],DOCUMENT_BUDGET_DEFAULTS[key]);assert.ok(DOCUMENT_BUDGET_CEILINGS[key]>=DOCUMENT_BUDGET_DEFAULTS[key]);}
+ // The 19 objects / 77,723,422 bytes of 31 October 2026 use under 2 percent of every default.
+ const today=documentBudgetUsage(documentReferences(Array.from({length:19},(_,n)=>row(n,n<18?4090706:77723422-18*4090706)),[]));
+ assert.ok(Math.max(today.referencesRatio,today.objectsRatio,today.bytesRatio)<0.02);assert.equal(today.exceeded,null);
+ // Without an explicit budget the defaults apply: 5,000 objects fit, 5,001 do not.
+ const many=Array.from({length:5001},(_,n)=>row(n,1));
+ assert.equal(documentReferences(many.slice(0,5000),[]).length,5000);assert.throws(()=>documentReferences(many,[]),/DOCUMENT_OBJECTS_OUTSIDE_BUDGET/);
+});
+test('workflow environment overrides each limit and a mistyped value stops the run',()=>{
+ assert.deepEqual(documentBudgetFromEnvironment({}),DOCUMENT_BUDGET_DEFAULTS);
+ // GitHub passes an unset repository variable as an empty string.
+ assert.deepEqual(documentBudgetFromEnvironment({OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES:'',OPERATIONS_RECOVERY_MAX_DOCUMENT_OBJECTS:'',OPERATIONS_RECOVERY_MAX_DOCUMENT_REFERENCES:''}),DOCUMENT_BUDGET_DEFAULTS);
+ assert.deepEqual({...documentBudgetFromEnvironment({OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES:String(8*1024*mib),OPERATIONS_RECOVERY_MAX_DOCUMENT_OBJECTS:'9000'})},
+  {maxReferences:10000,maxObjects:9000,maxTotalBytes:8*1024*mib});
+ assert.equal(documentBudgetFromEnvironment({OPERATIONS_RECOVERY_MAX_DOCUMENT_REFERENCES:'40000'}).maxReferences,40000);
+ for(const [setting,value] of [['OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES','4GiB'],['OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES','4294967296.0'],['OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES',' 4294967296'],
+  ['OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES','0'],['OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES',String(100*mib-1)],['OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES',String(16*1024*mib+1)],
+  ['OPERATIONS_RECOVERY_MAX_DOCUMENT_OBJECTS','-5'],['OPERATIONS_RECOVERY_MAX_DOCUMENT_OBJECTS','49'],['OPERATIONS_RECOVERY_MAX_DOCUMENT_OBJECTS','20001'],
+  ['OPERATIONS_RECOVERY_MAX_DOCUMENT_REFERENCES','1e4'],['OPERATIONS_RECOVERY_MAX_DOCUMENT_REFERENCES','40001']])
+  assert.throws(()=>documentBudgetFromEnvironment({[setting]:value}),error=>error.safeCode==='DOCUMENT_BUDGET_SETTING_INVALID'&&error.documentBudgetSetting===setting,`${setting}=${value}`);
+ // A raised limit admits what the default refuses.
+ const many=Array.from({length:5001},(_,n)=>row(n,1));
+ assert.equal(documentReferences(many,[],{limits:documentBudgetFromEnvironment({OPERATIONS_RECOVERY_MAX_DOCUMENT_OBJECTS:'6000'})}).length,5001);
+});
+test('document budget counts unique stored objects, keeps the reference sanity bound, and warns at 80 percent',()=>{
+ const shared=used(Array.from({length:5},(_,n)=>row(n,50*mib,'shared')));
+ assert.deepEqual([shared.references,shared.objects,shared.bytes,shared.exceeded],[5,1,50*mib,null]);
  const full=[...Array.from({length:20},(_,n)=>row(n,50*mib)),row(20,24*mib)];
- assert.equal(documentReferences(full,[]).length,21);assert.equal(documentBudgetUsage(documentReferences(full,[])).bytes,DOCUMENT_BUDGET.maxTotalBytes);
- assert.throws(()=>documentReferences([...full,row(21,1)],[]),/DOCUMENT_BYTES_OUTSIDE_BUDGET/);
- const many=Array.from({length:DOCUMENT_BUDGET.maxObjects},(_,n)=>row(n,1));
- assert.equal(documentReferences(many,[]).length,1000);assert.throws(()=>documentReferences([...many,row(1000,1)],[]),/DOCUMENT_OBJECTS_OUTSIDE_BUDGET/);
- assert.equal(documentBudgetUsage(documentReferences(many.slice(0,749),[])).ratioWarning,false);assert.equal(documentBudgetUsage(documentReferences(many.slice(0,750),[])).ratioWarning,true);
- assert.equal(documentReferences(Array.from({length:2000},(_,n)=>row(n,1,'shared')),[]).length,2000);
- assert.throws(()=>documentReferences(Array.from({length:2001},(_,n)=>row(n,1,'shared')),[]),/DOCUMENT_COUNT_OUTSIDE_BUDGET/);
- assert.throws(()=>documentReferences([row(0,1,'shared'),row(1,2,'shared')],[]),/CONFLICTING_DOCUMENT_REFERENCES/);
+ assert.equal(refs(full).length,21);assert.equal(used(full).bytes,small.maxTotalBytes);
+ assert.throws(()=>refs([...full,row(21,1)]),/DOCUMENT_BYTES_OUTSIDE_BUDGET/);
+ const many=Array.from({length:small.maxObjects},(_,n)=>row(n,1));
+ assert.equal(refs(many).length,1000);assert.throws(()=>refs([...many,row(1000,1)]),/DOCUMENT_OBJECTS_OUTSIDE_BUDGET/);
+ assert.equal(used(many.slice(0,799)).ratioWarning,false);assert.equal(used(many.slice(0,800)).ratioWarning,true);
+ // 80 percent of the byte and reference limits warns too, and still returns every reference.
+ assert.equal(used([...Array.from({length:16},(_,n)=>row(n,50*mib)),row(16,19*mib)]).ratioWarning,false);
+ assert.equal(used([...Array.from({length:16},(_,n)=>row(n,50*mib)),row(16,20*mib)]).ratioWarning,true);
+ assert.equal(used(Array.from({length:1599},(_,n)=>row(n,1,'shared'))).ratioWarning,false);assert.equal(used(Array.from({length:1600},(_,n)=>row(n,1,'shared'))).ratioWarning,true);
+ assert.equal(refs(Array.from({length:2000},(_,n)=>row(n,1,'shared'))).length,2000);
+ assert.throws(()=>refs(Array.from({length:2001},(_,n)=>row(n,1,'shared'))),error=>error.safeCode==='DOCUMENT_COUNT_OUTSIDE_BUDGET'
+  &&error.documentBudget.references===2001&&error.documentBudget.exceeded.setting==='OPERATIONS_RECOVERY_MAX_DOCUMENT_REFERENCES');
+ assert.throws(()=>refs([]),/DOCUMENT_COUNT_OUTSIDE_BUDGET/);
+ assert.throws(()=>refs([row(0,1,'shared'),row(1,2,'shared')]),/CONFLICTING_DOCUMENT_REFERENCES/);
 });
 test('budget warns once the room left is smaller than one bulk-upload batch',()=>{
  const batch=DOCUMENT_BUDGET.bulkUploadBatch,perFile=Math.floor(batch.bytes/batch.objects);
  // 19 unique objects, 77,723,422 bytes on 31 October 2026: far from every limit, and one more batch still fits.
  const today=Array.from({length:19},(_,n)=>row(n,n<18?4090706:77723422-18*4090706));
- const usage=documentBudgetUsage(documentReferences(today,[]));
+ const usage=used(today);
  assert.deepEqual([usage.objects,usage.bytes,usage.ratioWarning,usage.headroomWarning,usage.warning],[19,77723422,false,false,false]);
- assert.equal(usage.bytesHeadroom,DOCUMENT_BUDGET.maxTotalBytes-77723422);
- assert.equal(documentReferences([...today,...Array.from({length:batch.objects},(_,n)=>row(100+n,perFile))],[]).length,69);
- // A hard failure carries its usage record.
- assert.throws(()=>documentReferences([...Array.from({length:20},(_,n)=>row(n,50*mib)),row(20,24*mib),row(21,1)],[]),error=>error.safeCode==='DOCUMENT_BYTES_OUTSIDE_BUDGET'
-  &&error.documentBudget.objects===22&&error.documentBudget.bytesHeadroom===-1);
+ assert.equal(usage.bytesHeadroom,small.maxTotalBytes-77723422);
+ assert.equal(refs([...today,...Array.from({length:batch.objects},(_,n)=>row(100+n,perFile))]).length,69);
+ // A hard failure carries its usage record and names the limit and its setting.
+ assert.throws(()=>refs([...Array.from({length:20},(_,n)=>row(n,50*mib)),row(20,24*mib),row(21,1)]),error=>error.safeCode==='DOCUMENT_BYTES_OUTSIDE_BUDGET'
+  &&error.documentBudget.objects===22&&error.documentBudget.bytesHeadroom===-1
+  &&error.documentBudget.exceeded.limit==='maxTotalBytes'&&error.documentBudget.exceeded.setting==='OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES');
  // Bytes: exactly one batch of room is quiet, one byte less warns.
- const shortBy=extra=>documentBudgetUsage(documentReferences([...Array.from({length:18},(_,n)=>row(n,50*mib)),row(18,DOCUMENT_BUDGET.maxTotalBytes-batch.bytes-18*50*mib+extra)],[]));
+ const shortBy=extra=>used([...Array.from({length:18},(_,n)=>row(n,50*mib)),row(18,small.maxTotalBytes-batch.bytes-18*50*mib+extra)]);
  assert.equal(shortBy(0).bytesHeadroom,batch.bytes);assert.equal(shortBy(0).headroomWarning,false);assert.equal(shortBy(1).headroomWarning,true);
  // Objects: room for exactly one batch is quiet, one object more warns.
- const objects=n=>documentBudgetUsage(documentReferences(Array.from({length:n},(_,i)=>row(i,1)),[]));
+ const objects=n=>used(Array.from({length:n},(_,i)=>row(i,1)));
  assert.equal(objects(950).headroomWarning,false);assert.equal(objects(951).headroomWarning,true);
- assert.throws(()=>documentReferences(Array.from({length:1001},(_,i)=>row(i,1)),[]),error=>error.safeCode==='DOCUMENT_OBJECTS_OUTSIDE_BUDGET'&&error.documentBudget.objects===1001);
+ assert.throws(()=>refs(Array.from({length:1001},(_,i)=>row(i,1))),error=>error.safeCode==='DOCUMENT_OBJECTS_OUTSIDE_BUDGET'&&error.documentBudget.objects===1001
+  &&error.documentBudget.exceeded.setting==='OPERATIONS_RECOVERY_MAX_DOCUMENT_OBJECTS');
 });
 test('budget annotation states the numbers and the one-batch risk without workflow-command escapes',()=>{
- const today=documentBudgetUsage(documentReferences(Array.from({length:19},(_,n)=>row(n,n<18?4090706:77723422-18*4090706)),[]));
+ const today=used(Array.from({length:19},(_,n)=>row(n,n<18?4090706:77723422-18*4090706)));
  assert.equal(documentBudgetAnnotation(today),null);
- const nearFull=documentBudgetUsage(documentReferences([...Array.from({length:19},(_,n)=>row(n,50*mib)),row(19,10*mib)],[]));
+ const nearFull=used([...Array.from({length:19},(_,n)=>row(n,50*mib)),row(19,10*mib)]);
  const warning=documentBudgetAnnotation(nearFull);
  assert.match(warning,/^::warning title=SIMSA backup mendekati batas::20\/1000 objek unik, 960\.0\/1024\.0 MiB, 20\/2000 referensi\. Sisa ruang \(980 objek, 64\.0 MiB\) lebih kecil dari satu batch unggah massal \(50 berkas, 100\.0 MiB\)/);
- assert.match(documentBudgetAnnotation(documentBudgetUsage(documentReferences([row(0,mib)],[])),{failed:true}),/^::error title=SIMSA backup melewati batas dokumen::1\/1000 objek unik/);
+ assert.match(warning,/Backup run ini tetap lengkap\./);
  for(const line of [warning,documentBudgetAnnotation(today,{failed:true})])assert.doesNotMatch(line,/[%\r\n]/);
+});
+test('a crossed limit fails loudly: which limit, what was measured, what was lost and how to raise it',()=>{
+ const failure=rows=>{try{refs(rows);}catch(error){return error.documentBudget;}throw new Error('expected a budget failure');};
+ const bytes=documentBudgetFailureMessage(failure([...Array.from({length:20},(_,n)=>row(n,50*mib)),row(20,25*mib)]));
+ assert.equal(bytes,'Ukuran total objek unik 1025.0 MiB (1074790400 byte) melewati batas 1024.0 MiB (1073741824 byte). Run ini TIDAK mencadangkan dokumen apa pun; hanya database terenkripsi yang tersimpan. '
+  +'Pemakaian: 21/1000 objek unik, 1025.0/1024.0 MiB, 21/2000 referensi. Untuk menaikkan batas, isi variabel OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES pada environment production-recovery dengan angka yang lebih besar, lalu jalankan ulang. Lihat docs/OPERATIONS_RECOVERY.md.');
+ const objects=failure(Array.from({length:1001},(_,n)=>row(n,1)));
+ assert.match(documentBudgetFailureMessage(objects),/^Jumlah objek unik 1001 melewati batas 1000\. Run ini TIDAK mencadangkan dokumen apa pun.*isi variabel OPERATIONS_RECOVERY_MAX_DOCUMENT_OBJECTS /);
+ assert.match(documentBudgetFailureMessage(failure(Array.from({length:2001},(_,n)=>row(n,1,'shared')))),/^Jumlah referensi dokumen 2001 melewati batas 2000\..*isi variabel OPERATIONS_RECOVERY_MAX_DOCUMENT_REFERENCES /);
+ const annotation=documentBudgetAnnotation(objects,{failed:true});
+ assert.equal(annotation,`::error title=SIMSA backup melewati batas dokumen::${documentBudgetFailureMessage(objects)}`);
+ assert.doesNotMatch(annotation,/[%\r\n]|teststore|\.pdf/);
 });
 test('bulk-upload batch mirrors the backend and frontend upload limits',async()=>{
  const limits=async path=>{const source=await readFile(new URL(path,import.meta.url),'utf8');
@@ -91,6 +142,16 @@ test('regulatory-source-only database has a valid document backup and restore',a
  const root=await mkdtemp(join(tmpdir(),'simsa-regdoc-unit-')),key=randomBytes(32),directory=join(root,'backup');
  const references=documentReferences([],[{id,source_document_blob_url:url,source_document_sha256:hash,source_document_size_bytes:bytes.length}]);
  await backupDocuments({references,token,directory,key,archiveSha256:archive,fetchImpl:async()=>new Response(bytes,{status:200})});
+ const proof=await restoreDocuments({directory,key,targetDirectory:join(root,'restored'),targetKey:randomBytes(32),expectedArchiveSha256:archive});
+ assert.equal(proof.restoredObjects,1);assert.equal(proof.allHashesMatch,true);
+});
+test('a backup made with a raised limit restores without repeating the setting',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'simsa-raised-unit-')),key=randomBytes(32),directory=join(root,'backup');
+ const rows=Array.from({length:DOCUMENT_BUDGET_DEFAULTS.maxReferences+1},(_,n)=>({id:`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`,entity_type:'arsip',entity_id:id,file_url:url,sha256:hash,size_bytes:bytes.length,storage_access:'private'}));
+ assert.throws(()=>documentReferences(rows,[]),/DOCUMENT_COUNT_OUTSIDE_BUDGET/);
+ const references=documentReferences(rows,[],{limits:documentBudgetFromEnvironment({OPERATIONS_RECOVERY_MAX_DOCUMENT_REFERENCES:'12000'})});
+ const backup=await backupDocuments({references,token,directory,key,archiveSha256:archive,fetchImpl:async()=>new Response(bytes,{status:200})});
+ assert.deepEqual([backup.references,backup.objects,backup.sourceGetRequests],[10001,1,1]);
  const proof=await restoreDocuments({directory,key,targetDirectory:join(root,'restored'),targetKey:randomBytes(32),expectedArchiveSha256:archive});
  assert.equal(proof.restoredObjects,1);assert.equal(proof.allHashesMatch,true);
 });

@@ -118,6 +118,9 @@ gateway. Profil terintegrasi tetap memerlukan scanner sesuai validasi runtime.
 - `clean`: hanya ditulis setelah verdict ClamAV bersih dan fixity terverifikasi.
 - `infected`: malware terdeteksi; objek tetap dikarantina dan tidak dihapus otomatis.
 - `scan_error`: percobaan habis atau kegagalan non-retryable; perlu investigasi operator.
+  Super Admin dapat mengantrekannya ulang dari halaman Monitoring Operasional
+  (`scan_error` → `not_scanned`, percobaan dihitung dari satu lagi, tercatat di
+  log audit). Status `infected` tidak pernah diantre ulang.
 
 Jika proses mati setelah klaim, worker lain mengambil ulang status `scanning`
 setelah `MALWARE_SCAN_STALE_AFTER_MS`. Hasil dari worker lama ditolak dengan
