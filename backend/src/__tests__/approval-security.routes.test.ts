@@ -22,6 +22,9 @@ const mocks = vi.hoisted(() => ({
         getHistory: vi.fn(),
         getPending: vi.fn(),
         listEligibleApprovers: vi.fn(),
+        getSubmissionContext: vi.fn(),
+        submitMany: vi.fn(),
+        approveMany: vi.fn(),
     },
 }));
 
@@ -43,6 +46,7 @@ vi.mock('../middlewares/role.middleware.js', () => ({
 
 vi.mock('../services/approval.service.js', () => ({
     approvalService: mocks.approval,
+    BATAS_PERSETUJUAN_MASSAL: 100,
 }));
 
 const { default: approvalRouter } = await import('../routes/approval.routes.js');
@@ -67,6 +71,9 @@ describe('approval route security', () => {
         mocks.approval.getHistory.mockResolvedValue([]);
         mocks.approval.getPending.mockResolvedValue([]);
         mocks.approval.listEligibleApprovers.mockResolvedValue([]);
+        mocks.approval.getSubmissionContext.mockResolvedValue({ approvers: [], atasNamaPembuat: null });
+        mocks.approval.submitMany.mockResolvedValue([]);
+        mocks.approval.approveMany.mockResolvedValue([]);
     });
 
     it.each(['staff', 'auditor'])('applies canWrite to every endpoint for read-only %s', async (role) => {
@@ -84,10 +91,62 @@ describe('approval route security', () => {
             notes: 'Tidak sesuai',
         }).expect(403);
 
+        await request(app).post('/approval/submit-bulk').send({
+            suratIds: [ids.surat],
+            nextApproverId: ids.approver,
+        }).expect(403);
+        await request(app).post('/approval/approve-bulk').send({ suratIds: [ids.surat] }).expect(403);
+
         expect(mocks.approval.submit).not.toHaveBeenCalled();
         expect(mocks.approval.approve).not.toHaveBeenCalled();
         expect(mocks.approval.reject).not.toHaveBeenCalled();
         expect(mocks.approval.getHistory).not.toHaveBeenCalled();
+        expect(mocks.approval.submitMany).not.toHaveBeenCalled();
+        expect(mocks.approval.approveMany).not.toHaveBeenCalled();
+    });
+
+    it('bulk endpoints accept 1 to 100 letters and report a per-letter result', async () => {
+        Object.assign(mocks.user, { role: 'admin_dirjen', unitKerjaId: 'forged-unit' });
+        const idKe = (n: number) => `11111111-1111-4111-8111-${String(n).padStart(12, '0')}`;
+        const seratusSatu = Array.from({ length: 101 }, (_, n) => idKe(n));
+
+        await request(app).post('/approval/submit-bulk').send({ suratIds: [], nextApproverId: ids.approver }).expect(400);
+        await request(app).post('/approval/submit-bulk').send({ suratIds: seratusSatu, nextApproverId: ids.approver }).expect(400);
+        await request(app).post('/approval/approve-bulk').send({ suratIds: seratusSatu }).expect(400);
+        await request(app).post('/approval/approve-bulk').send({ suratIds: ['bukan-uuid'] }).expect(400);
+        expect(mocks.approval.submitMany).not.toHaveBeenCalled();
+        expect(mocks.approval.approveMany).not.toHaveBeenCalled();
+
+        mocks.approval.submitMany.mockResolvedValue([
+            { suratId: idKe(1), berhasil: true },
+            { suratId: idKe(2), berhasil: false, pesan: 'Hanya pembuat surat yang dapat mengajukan persetujuan.' },
+        ]);
+        const submit = await request(app).post('/approval/submit-bulk').send({
+            suratIds: [idKe(1), idKe(2)],
+            nextApproverId: ids.approver,
+        }).expect(200);
+        expect(submit.body.data).toMatchObject({ berhasil: 1, gagal: 1 });
+        expect(submit.body.data.hasil).toHaveLength(2);
+        expect(mocks.approval.submitMany).toHaveBeenCalledWith(
+            [idKe(1), idKe(2)],
+            expect.objectContaining({ id: mocks.user.id, role: 'admin_dirjen' }),
+            ids.approver,
+            'ditjen',
+            undefined,
+        );
+
+        mocks.approval.approveMany.mockResolvedValue([{ suratId: idKe(1), berhasil: true }]);
+        const approve = await request(app).post('/approval/approve-bulk').send({
+            suratIds: [idKe(1)],
+            notes: 'Setuju',
+        }).expect(200);
+        expect(approve.body.data).toMatchObject({ berhasil: 1, gagal: 0 });
+        expect(mocks.approval.approveMany).toHaveBeenCalledWith(
+            [idKe(1)],
+            expect.objectContaining({ id: mocks.user.id }),
+            'ditjen',
+            'Setuju',
+        );
     });
 
     it('passes the immutable role-derived admin unit and complete actor to submit', async () => {
@@ -145,7 +204,7 @@ describe('approval route security', () => {
 
         await request(app).get(`/approval/approvers/${ids.surat}`).expect(200);
 
-        expect(mocks.approval.listEligibleApprovers).toHaveBeenCalledWith(
+        expect(mocks.approval.getSubmissionContext).toHaveBeenCalledWith(
             ids.surat,
             expect.objectContaining({ id: mocks.user.id, role: 'admin_sesditjen' }),
             'sesditjen',

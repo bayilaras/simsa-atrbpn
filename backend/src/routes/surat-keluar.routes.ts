@@ -31,6 +31,7 @@ import {
 import { PESAN_KELAS_MELEBIHI_KEWENANGAN } from '../constants/pesan-akses.js';
 import auditLogService from '../services/audit-log.service.js';
 import { suratAksiPayload } from '../services/rangkaian/aksi.js';
+import { approvalService } from '../services/approval.service.js';
 import { berkasHanyaTayang } from '../services/access/berkas-akses.js';
 import { fileValidationMiddleware } from '../middlewares/file-validation.middleware.js';
 
@@ -198,12 +199,22 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
         const aksi = await suratAksiPayload(req.user!, 'surat_keluar', id, access);
         const balasanUntuk = await balasanUntukTerbaca(req, result.balasanUntuk);
         const arsipId = await arsipIdTerbaca(req, id);
+        // Hanya petunjuk tampilan: pembuat sudah tidak bertugas dan pengguna
+        // ini boleh mengajukan atas namanya. Rute pengajuan memeriksa ulang.
+        const pengajuanAtasNama = access.via === 'owner'
+            ? await approvalService.pengajuanAtasNamaUntuk(result as any, {
+                id: req.user!.id,
+                role: req.user!.role,
+                unitKerjaId: req.user!.unitKerjaId,
+            })
+            : null;
         res.json({
             success: true,
             data: {
                 ...sanitizeSuratRecord(result, 'surat_keluar'),
                 balasanUntuk,
                 arsipId,
+                pengajuanAtasNama,
                 aksesMelalui: access.via,
                 berkasHanyaTayang: berkasHanyaTayang(access),
                 ...aksi,
