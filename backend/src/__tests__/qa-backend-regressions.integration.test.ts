@@ -46,6 +46,26 @@ describe('QA database regressions with actual Drizzle/PGlite errors', () => {
         expect(replacement.id).not.toBe(first.id);
         expect((await database.query('SELECT id FROM tunjuk_silang')).rows).toHaveLength(2);
     });
+    it('describes cross-reference endpoints by number and subject, skipping unknown records', async () => {
+        const dosirId = '550e8400-e29b-41d4-a716-446655440301';
+        const missingId = '550e8400-e29b-41d4-a716-446655440399';
+        await database.exec(`DELETE FROM dosir;
+        UPDATE arsip SET nomor_berkas='B-07', uraian_berkas='Berkas pengadaan' WHERE id='${sourceId}';
+        UPDATE arsip SET nomor_surat_original='45/SM/2026', perihal_original='Undangan rapat' WHERE id='${targetId}';
+        INSERT INTO dosir(id,unit_kerja_id,kode,judul,kategori) VALUES('${dosirId}','ditjen','DJ-2026-001','Sengketa lahan','Sengketa');`);
+        const labels = await crossref.describeEntities([
+            { entityType: 'arsip', entityId: sourceId },
+            { entityType: 'arsip', entityId: targetId },
+            { entityType: 'dosir', entityId: dosirId },
+            { entityType: 'surat_masuk', entityId: missingId },
+            { entityType: 'bukan_jenis', entityId: sourceId },
+        ]);
+        expect(Object.fromEntries(labels)).toEqual({
+            [`arsip:${sourceId}`]: { nomor: 'B-07', judul: 'Berkas pengadaan', jenis: 'masuk' },
+            [`arsip:${targetId}`]: { nomor: '45/SM/2026', judul: 'Undangan rapat', jenis: 'masuk' },
+            [`dosir:${dosirId}`]: { nomor: 'DJ-2026-001', judul: 'Sengketa lahan', jenis: 'Sengketa' },
+        });
+    });
     it('trims display codes and rejects case-insensitive duplicates only inside the same unit', async () => {
         const first = await storage.create({ unitKerjaId: 'ditjen', name: 'First', level: 'gedung', code: '  G1  ' }, 'ditjen');
         expect(first.code).toBe('G1');
