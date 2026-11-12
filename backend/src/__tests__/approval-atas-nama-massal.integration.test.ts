@@ -39,6 +39,7 @@ const SK = {
     pembuatNonaktif: '72000000-0000-4000-8000-000000000004',
     pembuatPindah: '72000000-0000-4000-8000-000000000005',
     rahasiaNonaktif: '72000000-0000-4000-8000-000000000006',
+    terbatasNonaktif: '72000000-0000-4000-8000-000000000007',
 } as const;
 const ID_ACAK = '72000000-0000-4000-8000-0000000000ff';
 const BPPT2 = { id: ORANG.bppt2, role: 'admin_unit', unitKerjaId: 'dir_bppt' };
@@ -86,7 +87,8 @@ beforeEach(async () => {
             ('${SK.pembuatAktif}','dir_bppt',23,2026,'biasa','ND-23/BPPT/2026','Pembuat masih aktif','Kanwil','Nota Dinas','2026-09-23','draft','${ORANG.bppt2}'),
             ('${SK.pembuatNonaktif}','dir_bppt',24,2026,'biasa','ND-24/BPPT/2026','Pembuat nonaktif','Kanwil','Nota Dinas','2026-09-24','draft','${ORANG.nonaktif}'),
             ('${SK.pembuatPindah}','dir_bppt',25,2026,'biasa','ND-25/BPPT/2026','Pembuat pindah unit','Kanwil','Nota Dinas','2026-09-25','rejected','${USER_ID.ptep}'),
-            ('${SK.rahasiaNonaktif}','dir_bppt',26,2026,'rahasia','ND-26/BPPT/2026','Rahasia pembuat nonaktif','Kanwil','Nota Dinas','2026-09-26','draft','${ORANG.nonaktif}');
+            ('${SK.rahasiaNonaktif}','dir_bppt',26,2026,'rahasia','ND-26/BPPT/2026','Rahasia pembuat nonaktif','Kanwil','Nota Dinas','2026-09-26','draft','${ORANG.nonaktif}'),
+            ('${SK.terbatasNonaktif}','dir_bppt',27,2026,'terbatas','ND-27/BPPT/2026','Terbatas pembuat nonaktif','Kanwil','Nota Dinas','2026-09-27','draft','${ORANG.nonaktif}');
     `);
 });
 
@@ -156,6 +158,41 @@ describe('pengajuan atas nama pembuat yang tidak lagi bertugas', () => {
         expect(res.body.error).toBe('Hanya pembuat surat yang dapat mengajukan persetujuan.');
         expect((await statusSurat(SK.rahasiaNonaktif)).approval_status).toBe('draft');
         expect(await auditSurat(SK.rahasiaNonaktif)).toEqual([]);
+    });
+
+    it('surat berkelas terkendali: izin lihat saja tidak cukup, izin kelola cukup', async () => {
+        await database.exec(`INSERT INTO record_access_grants (id, requester_id, target_user_id, entity_type, entity_id, unit_kerja_id, required_classification, purpose, access_mode, status, decided_by, decided_at, decision_reason, expires_at)
+            VALUES ('73000000-0000-4000-8000-000000000001','${USER_ID.bppt}','${USER_ID.bppt}','surat_keluar','${SK.terbatasNonaktif}','dir_bppt','terbatas','Tindak lanjut surat terbatas','view','approved','${USER_ID.approver}','2026-09-01T00:00:00Z','Kebutuhan kerja terverifikasi','2099-01-01T00:00:00Z');`);
+        await request(app).get(`/api/surat-keluar/${SK.terbatasNonaktif}`).set(sebagai(PENGGUNA.bppt)).expect(200);
+        const res = await ajukan(PENGGUNA.bppt, SK.terbatasNonaktif, ORANG.bppt2).expect(403);
+        expect(res.body.error).toBe('Hanya pembuat surat yang dapat mengajukan persetujuan.');
+        await request(app).get(`/api/approval/approvers/${SK.terbatasNonaktif}`).set(sebagai(PENGGUNA.bppt)).expect(403);
+        expect((await statusSurat(SK.terbatasNonaktif)).approval_status).toBe('draft');
+
+        await database.exec(`UPDATE record_access_grants SET access_mode = 'manage' WHERE id = '73000000-0000-4000-8000-000000000001';`);
+        await ajukan(PENGGUNA.bppt, SK.terbatasNonaktif, ORANG.bppt2).expect(200);
+        expect(await statusSurat(SK.terbatasNonaktif)).toEqual({ approval_status: 'pending', current_approver_id: ORANG.bppt2 });
+    });
+
+    it('pembuat yang aktif kembali tidak dapat memutus surat yang diajukan atas namanya', async () => {
+        const PEMBUAT = { id: ORANG.nonaktif, role: 'admin_unit', unitKerjaId: 'dir_bppt' };
+        await ajukan(PENGGUNA.bppt, SK.pembuatNonaktif, ORANG.bppt2).expect(200);
+        await database.exec(`UPDATE users SET is_active = true WHERE id = '${ORANG.nonaktif}';`);
+
+        // Penyetuju tidak dapat meneruskan surat kepada pembuatnya.
+        const terus = await request(app).post('/api/approval/approve').set(sebagai(BPPT2))
+            .send({ suratId: SK.pembuatNonaktif, nextApproverId: ORANG.nonaktif }).expect(400);
+        expect(terus.body.error).toBe('Penyetuju berikutnya harus berbeda dari pembuat, pengaju, dan penyetuju saat ini.');
+        expect(await statusSurat(SK.pembuatNonaktif)).toEqual({ approval_status: 'pending', current_approver_id: ORANG.bppt2 });
+
+        // Sekalipun langkah aktif tercatat atas nama pembuat, ia tetap ditolak.
+        await database.exec(`
+            UPDATE surat_keluar SET current_approver_id = '${ORANG.nonaktif}' WHERE id = '${SK.pembuatNonaktif}';
+            UPDATE approval_steps SET approver_id = '${ORANG.nonaktif}' WHERE request_id IN (SELECT id FROM approval_requests WHERE entity_id = '${SK.pembuatNonaktif}');
+        `);
+        const setuju = await request(app).post('/api/approval/approve').set(sebagai(PEMBUAT)).send({ suratId: SK.pembuatNonaktif }).expect(403);
+        expect(setuju.body.error).toBe('Pembuat/pengaju surat tidak boleh menyetujui suratnya sendiri.');
+        expect((await statusSurat(SK.pembuatNonaktif)).approval_status).toBe('pending');
     });
 
     it('detail surat memberi petunjuk pengajuan atas nama hanya bila berlaku', async () => {

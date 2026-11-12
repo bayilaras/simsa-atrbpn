@@ -161,8 +161,8 @@ function recordScopeForFreshActor(actor: ApprovalActor): RecordUnitScope {
 /**
  * Pembuat surat mengajukan suratnya sendiri (hasil null). Orang lain hanya
  * boleh mengajukan atas nama pembuat bila pembuat sudah nonaktif atau tidak
- * lagi bertugas di unit kerja surat, dan pengaju sendiri berwenang penuh atas
- * surat itu. Mandat pengaju (administrator unit surat atau super admin)
+ * lagi bertugas di unit kerja surat, dan pengaju sendiri boleh mengubah surat
+ * itu (syarat yang sama dengan rute ubah surat keluar). Mandat pengaju (administrator unit surat atau super admin)
  * diperiksa pemanggil lewat assertSubmitterMandate.
  */
 async function resolvePengajuanAtasNama(
@@ -191,9 +191,10 @@ async function resolvePengajuanAtasNama(
         && (pembuat.role === 'super_admin' || effectiveActorUnit(pembuat) === surat.unitKerjaId);
     if (pembuatMasihBertugas) throw new ForbiddenError(pesanDitolak);
 
-    // Plafon kelas keamanan dan grant tetap berlaku bagi pengaju pengganti.
+    // Plafon kelas keamanan dan grant tetap berlaku bagi pengaju pengganti:
+    // hak baca saja tidak cukup untuk mengubah status surat.
     const akses = await recordAccessService.check(actor, 'surat_keluar', surat.id, executor);
-    if (!akses.allowed) throw new ForbiddenError(pesanDitolak);
+    if (!akses.allowed || !akses.mutable) throw new ForbiddenError(pesanDitolak);
 
     return { pembuatId: pembuat.id, namaPembuat: pembuat.name ?? null };
 }
@@ -548,7 +549,9 @@ export class ApprovalService {
                 .for('update');
 
             if (!request) throw new ConflictError('Alur persetujuan aktif tidak ditemukan.');
-            if (!request.requesterId || request.requesterId === freshActor.id) {
+            // Pengaju bisa berbeda dari pembuat (pengajuan atas nama); keduanya
+            // tidak boleh memutus surat itu.
+            if (!request.requesterId || request.requesterId === freshActor.id || surat.createdBy === freshActor.id) {
                 throw new ForbiddenError('Pembuat/pengaju surat tidak boleh menyetujui suratnya sendiri.');
             }
 
@@ -569,8 +572,8 @@ export class ApprovalService {
 
             if (nextApproverId) {
                 assertMandatedApprover(nextApprover, surat.unitKerjaId);
-                if (nextApproverId === request.requesterId) {
-                    throw new ValidationError('Penyetuju berikutnya harus berbeda dari pengaju dan penyetuju saat ini.');
+                if (nextApproverId === request.requesterId || nextApproverId === surat.createdBy) {
+                    throw new ValidationError('Penyetuju berikutnya harus berbeda dari pembuat, pengaju, dan penyetuju saat ini.');
                 }
             }
 
