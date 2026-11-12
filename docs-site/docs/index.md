@@ -35,8 +35,8 @@ SIMSA mengelola surat dan arsip secara mandiri; integrasi SRIKANDI tidak menjadi
     <p>Cara login pakai akun Google</p>
   </a>
   <a href="/akses-simsa/login-email-password" className="feature-card">
-    <h3>🔑 Login Email & Password</h3>
-    <p>Cara login menggunakan email dan password</p>
+    <h3>🔑 Login Email & Kata Sandi</h3>
+    <p>Cara login menggunakan email dan kata sandi</p>
   </a>
   <a href="/tutorial-dasar/mengenal-dashboard" className="feature-card">
     <h3>📋 Mengenal Dashboard</h3>
@@ -109,7 +109,7 @@ SIMSA mengelola surat dan arsip secara mandiri; integrasi SRIKANDI tidak menjadi
 <div className="feature-grid">
   <a href="/layanan-fisik/layanan-arsip" className="feature-card">
     <h3>📋 Layanan Arsip</h3>
-    <p>Cara mengajukan layanan arsip</p>
+    <p>Permohonan penggandaan dan legalisasi arsip</p>
   </a>
   <a href="/layanan-fisik/peminjaman" className="feature-card">
     <h3>🔄 Peminjaman Arsip</h3>
@@ -136,11 +136,11 @@ SIMSA mengelola surat dan arsip secara mandiri; integrasi SRIKANDI tidak menjadi
   </a>
   <a href="/media-autentikasi/autentikasi" className="feature-card">
     <h3>✅ Autentikasi Arsip</h3>
-    <p>Proses verifikasi keabsahan arsip</p>
+    <p>Berita acara autentikasi arsip hasil alih media</p>
   </a>
   <a href="/media-autentikasi/tunjuk-silang" className="feature-card">
     <h3>🔗 Tunjuk Silang</h3>
-    <p>Referensi silang antar arsip</p>
+    <p>Menghubungkan surat, arsip, dan dosir yang berkaitan</p>
   </a>
 </div>
 
@@ -151,14 +151,14 @@ SIMSA mengelola surat dan arsip secara mandiri; integrasi SRIKANDI tidak menjadi
 <div className="feature-grid">
   <a href="/administrasi/laporan" className="feature-card">
     <h3>📊 Laporan</h3>
-    <p>Cara membuat dan ekspor laporan</p>
+    <p>Cara melihat dan mengekspor laporan</p>
   </a>
   <a href="/administrasi/audit-log" className="feature-card">
     <h3>📝 Audit Log</h3>
     <p>Monitoring aktivitas pengguna</p>
   </a>
   <a href="/administrasi/user-management" className="feature-card">
-    <h3>👥 User Management</h3>
+    <h3>👥 Manajemen Pengguna</h3>
     <p>Kelola akun pengguna (Super Admin)</p>
   </a>
   <a href="/administrasi/master-data" className="feature-card">
@@ -166,7 +166,7 @@ SIMSA mengelola surat dan arsip secara mandiri; integrasi SRIKANDI tidak menjadi
     <p>Kelola klasifikasi arsip dan versi aturan</p>
   </a>
   <a href="/administrasi/settings" className="feature-card">
-    <h3>⚙️ Settings</h3>
+    <h3>⚙️ Pengaturan</h3>
     <p>Pengaturan profil, unit kerja, dan template</p>
   </a>
 </div>

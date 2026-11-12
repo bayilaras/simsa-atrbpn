@@ -1,63 +1,87 @@
 # 🔄 Distribusi Surat
 
-Panduan cara mendistribusikan surat ke unit kerja lain.
+Panduan cara mendistribusikan (mendisposisikan) surat ke unit kerja lain.
 
 ---
 
 ## Apa Itu Distribusi?
 
-Distribusi adalah proses **mengirim/meneruskan surat masuk** kepada unit kerja atau pejabat lain yang perlu menindaklanjuti surat tersebut.
+Distribusi adalah proses **meneruskan surat masuk** kepada unit kerja lain yang perlu menindaklanjuti surat tersebut. Di aplikasi, tindakan ini bernama **Disposisi ke Direktorat**.
 
 ---
 
 ## Alur Distribusi
 
 ```
-📨 Surat Masuk     →    📤 Distribusikan    →    📥 Muncul di Inbox
-   Diterima               ke Unit Tujuan          Distribusi Tujuan
+📨 Surat Masuk     →    📤 Disposisikan     →    📥 Muncul di Kotak Masuk
+   Diterima               ke Unit Tujuan          Distribusi unit tujuan
 ```
 
 ---
 
 ## Cara Mendistribusikan Surat
 
-### Langkah 1: Buka Detail Surat Masuk
+### Langkah 1: Buka Dialog Disposisi
 
-1. Buka menu **Surat** > **Surat Masuk**.
-2. Klik surat yang ingin didistribusikan.
+Pilih salah satu cara:
 
-### Langkah 2: Klik "Distribusikan"
+- Di daftar **Surat** > **Surat Masuk**, klik menu tiga titik (⋯) pada baris surat, lalu pilih **Distribusi**.
+- Di halaman detail surat masuk, klik **Tindak Lanjut**, lalu pilih **Disposisi ke Direktorat**.
 
-1. Di halaman detail, klik tombol **"Distribusikan"** (berwarna hijau).
-2. Akan muncul dialog distribusi.
+Dialog **Disposisi ke Direktorat** terbuka dan menampilkan nomor serta perihal surat.
 
-### Langkah 3: Pilih Tujuan
+### Langkah 2: Pilih Tujuan
 
-1. Pilih **unit kerja tujuan** dari dropdown.
-2. Tambahkan **catatan distribusi** jika diperlukan.
-3. Klik **"Distribusikan"** untuk mengonfirmasi.
+1. Centang satu atau beberapa **Unit tujuan**.
+2. Bila perlu, pilih satu unit sebagai **Penanggung jawab (Unit Pengolah)**.
+3. Isi **Batas waktu** bila ada tenggat.
+4. Tulis **Instruksi / Catatan**, atau klik pilihan instruksi yang tersedia.
+5. Klik **"Disposisikan"**.
 
-### Langkah 4: Selesai!
+Batas waktu (opsional) menentukan urgensi notifikasi: mendesak saat tersisa 2 hari atau kurang dan saat lewat batas waktu.
 
-Surat akan muncul di **Inbox Distribusi** dari unit kerja tujuan.
+Untuk surat bersifat Terbatas, Rahasia, atau Sangat Rahasia, disposisi sekaligus mengajukan permohonan akses bagi admin unit tujuan dan menunggu persetujuan Super Admin.
+
+### Langkah 3: Selesai!
+
+Surat akan muncul di **Kotak Masuk** halaman Distribusi unit kerja tujuan. Disposisi juga dapat diisi langsung saat mencatat surat masuk, lewat isian **Disposisi ke** pada form.
 
 ---
 
-## Melihat Inbox Distribusi
+## Melihat Kotak Masuk dan Kotak Keluar
 
 ### Langkah 1: Buka Menu Distribusi
 
-1. Di sidebar, klik menu **Distribusi**.
+1. Di sidebar, klik menu **Distribusi**. Halaman **Distribusi Surat** terbuka.
 
-### Langkah 2: Lihat Surat yang Didistribusikan
+### Langkah 2: Pilih Tab
 
-Kamu akan melihat daftar surat yang:
-- **Didistribusikan kepada unit kamu** — Surat yang perlu kamu tindaklanjuti
-- **Kamu distribusikan ke unit lain** — Surat yang sudah kamu kirim
+- **Kotak Masuk** — surat yang didistribusikan kepada unit kamu dan perlu ditindaklanjuti. Centang **Lewat batas waktu** untuk hanya menampilkan yang terlambat.
+- **Kotak Keluar** — surat yang kamu distribusikan ke unit lain.
+
+Kotak cari di halaman ini hanya menyaring halaman yang sedang ditampilkan.
 
 ### Langkah 3: Tindaklanjuti
 
-Klik surat untuk melihat detail dan mengambil tindakan.
+Gunakan tombol ikon di kolom **Aksi** pada Kotak Masuk:
+
+| Tombol | Fungsi |
+|--------|--------|
+| **Terima Surat** | Menandai surat sudah diterima |
+| **Buat Tindak Lanjut** | Membuka form surat keluar yang terhubung dengan surat ini |
+| **Penyelesaian** | Menutup disposisi dengan memilih surat keluar yang sudah disetujui, atau dengan catatan penyelesaian (minimal 10 karakter) |
+| **Tolak & Kembalikan** | Mengembalikan surat ke pengirim; alasan penolakan wajib diisi |
+
+### Status Disposisi
+
+| Status | Keterangan |
+|--------|------------|
+| **Menunggu** | Belum diterima unit tujuan |
+| **Diterima** | Sudah diterima, belum selesai |
+| **Selesai** | Sudah diselesaikan |
+| **Ditolak** | Dikembalikan ke pengirim |
+
+Surat yang isinya belum boleh kamu baca tampil sebagai **Dikecualikan**.
 
 ---
 

@@ -1,37 +1,41 @@
 # 📊 Manajemen Retensi
 
-Panduan monitoring arsip yang sedang dalam masa retensi.
+Panduan memantau arsip menurut masa retensinya.
 
 ---
 
 ## Apa Itu Manajemen Retensi?
 
-Halaman ini menampilkan **daftar arsip yang sedang dalam masa retensi aktif**, lengkap dengan sisa waktu sebelum arsip tersebut harus ditindaklanjuti (dimusnahkan, diserahkan, atau diperpanjang).
+Halaman ini menampilkan **arsip yang status retensinya perlu perhatian**: yang akan atau sudah inaktif, dan yang akan atau sudah melewati masa retensinya. Halaman ini adalah alat pemantauan; tidak ada arsip yang dimusnahkan atau dipindahkan dari sini.
 
 ---
 
 ## Melihat Daftar Retensi
 
 1. Di sidebar, klik **Manajemen Retensi**.
-2. Lihat daftar arsip beserta informasi retensi.
+2. Baca kartu **Notifikasi Penyusutan** di bagian atas.
+3. Lihat **Daftar Kandidat Penyusutan** di bawahnya. Daftar dapat disaring menurut status dan hasil akhir (Musnah, Permanen, atau Dinilai Kembali).
 
-### Kode Warna Urgency:
+### Kartu Ringkasan:
 
-| Warna | Keterangan | Sisa Waktu |
-|-------|------------|------------|
-| 🔴 Merah | **Kritis** — Harus segera ditindaklanjuti | ≤ 15 hari |
-| 🟡 Kuning | **Peringatan** — Mendekati batas waktu | 16-30 hari |
-| 🔵 Biru | **Informasi** — Masih ada waktu | 31-90 hari |
-| ⚪ Abu-abu | **Aman** — Masih jauh dari batas | > 90 hari |
+| Kartu | Keterangan |
+|-------|------------|
+| **Akan Inaktif** | Masa aktif berakhir dalam 30 hari ke depan |
+| **Sudah Inaktif** | Masa inaktif sedang berjalan |
+| **Akan Kadaluarsa** | Masa retensi berakhir dalam 30 hari ke depan |
+| **Sudah Kadaluarsa** | Masa retensi sudah berakhir dan perlu ditindaklanjuti |
+
+Arsip yang pemicu retensinya belum terverifikasi dan arsip yang terkena legal hold tidak masuk daftar kandidat.
 
 ---
 
-## Tindakan pada Arsip Retensi
+## Tindakan pada Halaman Ini
 
-Klik arsip untuk melihat detail, lalu pilih tindakan:
-- **Perpanjang** — Memperpanjang masa retensi
-- **Musnah** — Proses ke penyusutan/pemusnahan
-- **Serah** — Serahkan ke lembaga arsip
+- **Generate Berita Acara** — mencetak draf berita acara pemusnahan tanpa nomor untuk arsip di daftar; nomor diisi manual. Selama modul Penyusutan belum diaktifkan, pemindahan dan pemusnahan arsip dilakukan di luar SIMSA.
+- **Terapkan legal hold** — menangguhkan arsip dari penyusutan karena sengketa, audit, pemeriksaan, atau kewajiban hukum. Alasan minimal 10 karakter dan dicatat dalam audit.
+- **Lepas Hold** — melepas legal hold pada bagian **Legal Hold Aktif**, juga dengan alasan minimal 10 karakter.
+
+Pencatatan pemicu retensi dan penilaian arsip dilakukan di menu **Tata Kelola Retensi**.
 
 ---
 

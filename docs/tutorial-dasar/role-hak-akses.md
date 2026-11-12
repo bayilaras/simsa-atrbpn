@@ -11,13 +11,13 @@ Admin Unit Kerja wajib memiliki unit kerja. Filter, alamat halaman, maupun ID da
 
 ## Pengelolaan akun
 
-Hanya Super Admin yang dapat membuat akun dan mengubah peran atau penugasan unit melalui **User Management**. Pilih **Admin Unit Kerja**, kemudian tetapkan unitnya. Penugasan **Super Admin** berlaku untuk seluruh unit.
+Hanya Super Admin yang dapat membuat akun dan mengubah peran atau penugasan unit melalui **Manajemen Pengguna**. Pilih **Admin Unit Kerja**, kemudian tetapkan unitnya. Penugasan **Super Admin** berlaku untuk seluruh unit.
 
 Akun lama tetap mempertahankan hak aksesnya sampai Super Admin menetapkan peran baru. Admin Dirjen dan Admin Sesditjen lama hanya dapat mengubah data unit semula (Ditjen atau Sesditjen) dan, sebagai unit pengawas, dapat membaca surat lintas unit seperti di atas; akun Staff dan Auditor lama tidak otomatis mendapat kewenangan menulis.
 
 ## Klasifikasi dan jadwal retensi arsip
 
-Super Admin mengelola master melalui **Master → Klasifikasi & JRA**. Setelah butir katalog, PDF sumber, manifest kelengkapan, dan laporan dampak tervalidasi, Super Admin dapat langsung memilih **Aktifkan**. Tahap ini tidak memerlukan akun penelaah atau penyetuju terpisah.
+Super Admin mengelola master melalui **Master Data → Versi Aturan**. Setelah butir katalog, PDF sumber, manifest kelengkapan, dan laporan dampak tervalidasi, Super Admin dapat langsung memilih **Aktifkan**. Tahap ini tidak memerlukan akun penelaah atau penyetuju terpisah.
 
 Sistem tetap memeriksa integritas sumber dan isi katalog, menyimpan jejak audit aktivasi beserta akun pelaksananya, dan mempertahankan versi yang sudah digunakan. Aktivasi langsung tidak membuat catatan telaah atau persetujuan atas nama orang lain.
 
