@@ -24,7 +24,10 @@ vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }
 
 let routers = []
 
-beforeEach(() => { vi.clearAllMocks() })
+beforeEach(() => {
+    vi.clearAllMocks()
+    Element.prototype.scrollIntoView = vi.fn()
+})
 afterEach(() => {
     cleanup()
     routers.forEach(router => router.dispose())
@@ -54,6 +57,25 @@ it('tidak mengisi form dan mengalihkan ke detail ketika akses non-owner (pengawa
     expect(screen.queryByDisplayValue('Perihal rahasia lintas unit')).toBeNull()
     expect(screen.queryByDisplayValue('SM-99/2026')).toBeNull()
     expect(screen.getByLabelText(/perihal/i)).toHaveValue('')
+})
+
+it('mengalihkan ke halaman detail ketika surat perlu persetujuan akses', async () => {
+    mocks.getById.mockRejectedValue(Object.assign(new Error('Rekaman ini berkelas keamanan terkendali.'), {
+        status: 403,
+        data: { error: 'Rekaman ini berkelas keamanan terkendali.', code: 'ACCESS_APPROVAL_REQUIRED', rekaman: { nomor: 'X-1/2026', perihal: 'Perihal terbatas', klasifikasi: 'terbatas' } },
+    }))
+    renderEdit('surat-1')
+
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/surat/masuk/surat-1', { replace: true }))
+    expect(screen.queryByText('Gagal memuat data surat')).toBeNull()
+})
+
+it('galat muat lain tetap menampilkan pesan gagal memuat', async () => {
+    mocks.getById.mockRejectedValue(Object.assign(new Error('Surat not found'), { status: 404, data: { error: 'Surat not found' } }))
+    renderEdit('surat-1')
+
+    expect(await screen.findByText('Gagal memuat data surat')).toBeInTheDocument()
+    expect(mocks.navigate).not.toHaveBeenCalled()
 })
 
 it('mengisi form seperti biasa ketika akses owner', async () => {

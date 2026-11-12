@@ -9,6 +9,8 @@ import { DistributeDialog } from '@/components/DistributeDialog'
 import suratMasukService from '@/services/surat-masuk.service'
 import distributionService from '@/services/distribution.service'
 import { useAuth } from '@/context/AuthContext'
+import { PerluPersetujuanAkses } from '@/components/PerluPersetujuanAkses'
+import { rekamanPerluPersetujuan } from '@/lib/akses-rekaman'
 import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope'
 
 // Extracted Components
@@ -30,6 +32,7 @@ export default function SuratMasukDetail() {
     const aksesMelalui = surat?.aksesMelalui ?? 'owner'
     const isAdmin = Boolean(surat && aksesMelalui === 'owner' && canWrite(surat.unitKerjaId))
     const [loading, setLoading] = useState(true)
+    const [perluAkses, setPerluAkses] = useState(null)
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
     const [distributeDialogOpen, setDistributeDialogOpen] = useState(false)
     const [tautkanOpen, setTautkanOpen] = useState(false)
@@ -53,8 +56,18 @@ export default function SuratMasukDetail() {
         try {
             const data = await suratMasukService.getById(id)
             setSurat(data)
+            setPerluAkses(null)
             termuatRef.current = true
         } catch (error) {
+            const perlu = rekamanPerluPersetujuan(error, 'surat_masuk', id)
+            if (perlu) {
+                setSurat(null)
+                setPerluAkses(perlu)
+                termuatRef.current = false
+                return
+            }
+            // Galat lain: jangan sisakan keadaan persetujuan milik surat sebelumnya.
+            setPerluAkses(null)
             console.error('Error fetching surat:', error)
             toast({
                 title: 'Error',
@@ -141,6 +154,10 @@ export default function SuratMasukDetail() {
                 </div>
             </div>
         )
+    }
+
+    if (perluAkses) {
+        return <PerluPersetujuanAkses rekaman={perluAkses} daftarPath="/surat/masuk" daftarLabel="Kembali ke Daftar Surat" />
     }
 
     if (!surat) {

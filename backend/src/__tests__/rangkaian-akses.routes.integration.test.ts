@@ -101,9 +101,17 @@ describe('GET detail surat lintas unit', () => {
         ['admin_unit@dir_bppt bukan pengawas', PENGGUNA.bppt, 'surat-masuk', SURAT.smTunggal],
         ['staff lama tanpa jangkauan', PENGGUNA.staffSes, 'surat-keluar', SURAT.skBpptBiasa],
         ['auditor lama tanpa jangkauan', PENGGUNA.auditorSes, 'surat-keluar', SURAT.skBpptBiasa],
-        ['node terkendali tanpa grant', PENGGUNA.bppt, 'surat-keluar', SURAT.skBpptNull],
     ])('%s tetap 404 tanpa audit', async (_nama, user, path, id) => {
         await request(app).get(`/api/${path}/${id}`).set(sebagai(user)).expect(404);
+        expect(await auditRows()).toHaveLength(0);
+    });
+
+    // Surat unit sendiri yang tampil di daftar: ditolak dengan kode permohonan
+    // akses, tetap tanpa isi surat dan tanpa audit baca.
+    it('node terkendali tanpa grant milik unit sendiri dijawab 403 perlu persetujuan tanpa audit', async () => {
+        const response = await request(app).get(`/api/surat-keluar/${SURAT.skBpptNull}`).set(sebagai(PENGGUNA.bppt)).expect(403);
+        expect(response.body.code).toBe('ACCESS_APPROVAL_REQUIRED');
+        expect(response.body).not.toHaveProperty('data');
         expect(await auditRows()).toHaveLength(0);
     });
 

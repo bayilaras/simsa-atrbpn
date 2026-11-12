@@ -24,6 +24,7 @@ import {
 } from '../services/record-access.service.js';
 import { PESAN_KELAS_MELEBIHI_KEWENANGAN } from '../constants/pesan-akses.js';
 import { normalizeSecurityClassification } from '../services/access/visibility-spec.js';
+import { badanPerluPersetujuan, rekamanPerluPersetujuan } from '../services/access/perlu-persetujuan.js';
 import { aksiArsipPayload } from '../services/access/arsip-aksi.js';
 
 const router = Router();
@@ -229,6 +230,8 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
         }
         const access = await recordAccessService.check(req.user, 'arsip', id as string);
         if (!access.exists || !access.allowed) {
+            const perlu = await rekamanPerluPersetujuan(req.user, 'arsip', id as string, access);
+            if (perlu) return res.status(403).json(badanPerluPersetujuan(perlu));
             return res.status(404).json({ error: 'Arsip not found' });
         }
 

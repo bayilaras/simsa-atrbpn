@@ -8,6 +8,7 @@ import { useAppConfig } from '@/context/app-config-context';
 import { useToast } from '@/hooks/use-toast';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { suratMasukService } from '@/services/surat-masuk.service';
+import { rekamanPerluPersetujuan } from '@/lib/akses-rekaman';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
@@ -339,6 +340,12 @@ export default function TambahSuratMasuk() {
                 });
             }
         } catch (err) {
+            // Surat berkelas terkendali tanpa persetujuan akses: halaman detail
+            // menjelaskan keadaannya dan menyediakan tombol Minta Akses.
+            if (rekamanPerluPersetujuan(err, 'surat_masuk', id)) {
+                navigate(`/surat/masuk/${id}`, { replace: true });
+                return;
+            }
             console.error('Error fetching surat data:', err);
             setError('Gagal memuat data surat');
         } finally {
