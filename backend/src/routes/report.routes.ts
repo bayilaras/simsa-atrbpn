@@ -9,6 +9,7 @@ import { allowedSecurityClassifications } from '../services/record-access.servic
 import { exportLimiter } from '../middlewares/rate-limiter.middleware';
 import { ExportCompletenessError } from '../services/export-completeness.js';
 import { auditExport } from '../services/export-audit';
+import { keteranganPeriodeLaporan, periodeLaporanArsip, periodeLaporanSurat } from '../services/laporan-periode';
 
 const log = createLogger('ReportRoutes');
 
@@ -207,31 +208,38 @@ router.get('/export/:type/:format', exportLimiter, permissionMiddleware('reports
         let buffer: Buffer;
         const filename = `laporan-${type}-${new Date().toISOString().split('T')[0]}`;
 
-        const filters: any = {
-            unitKerjaId: unitKerjaId as string,
-            tahun: year ? parseInt(year as string) : undefined,
+        // Periode dihitung dengan fungsi yang sama dengan tabel laporan, supaya
+        // isi berkas sama dengan yang tampil di layar.
+        const pilihan = {
+            year: year ? parseInt(year as string) : undefined,
             tanggalDari: tanggalDari as string | undefined,
             tanggalSampai: tanggalSampai as string | undefined,
+        };
+        const periode = type === 'arsip' ? periodeLaporanArsip(pilihan) : periodeLaporanSurat(pilihan);
+        const filters: any = {
+            unitKerjaId: unitKerjaId as string,
+            ...periode,
             securityClassifications: allowedSecurityClassifications(req.user),
         };
+        const opsi = { keteranganPeriode: keteranganPeriodeLaporan(periode) };
 
         if (type === 'surat-masuk') {
             if (format === 'excel') {
-                buffer = await exportService.generateExcelSuratMasuk(filters);
+                buffer = await exportService.generateExcelSuratMasuk(filters, opsi);
                 res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
                 res.setHeader('Content-Disposition', `attachment; filename="${filename}.xlsx"`);
             } else {
-                buffer = await exportService.generatePdfSuratMasuk(filters);
+                buffer = await exportService.generatePdfSuratMasuk(filters, opsi);
                 res.setHeader('Content-Type', 'application/pdf');
                 res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
             }
         } else if (type === 'surat-keluar') {
             if (format === 'excel') {
-                buffer = await exportService.generateExcelSuratKeluar(filters);
+                buffer = await exportService.generateExcelSuratKeluar(filters, opsi);
                 res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
                 res.setHeader('Content-Disposition', `attachment; filename="${filename}.xlsx"`);
             } else {
-                buffer = await exportService.generatePdfSuratKeluar(filters);
+                buffer = await exportService.generatePdfSuratKeluar(filters, opsi);
                 res.setHeader('Content-Type', 'application/pdf');
                 res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
             }

@@ -22,6 +22,15 @@ export class ExportFormulirKosongError extends AppError {
     }
 }
 
+/** Keterangan tambahan yang hanya diisi oleh ekspor dari halaman Laporan. */
+export interface OpsiEksporSurat {
+    /** Menggantikan tulisan "Tahun ..." pada judul bila laporan memakai rentang tanggal. */
+    keteranganPeriode?: string;
+}
+
+const keteranganTahun = (tahun: number | undefined, opsi: OpsiEksporSurat) =>
+    opsi.keteranganPeriode || `Tahun ${tahun || 'Semua'}`;
+
 export interface ExportOptions {
     format: 'excel' | 'pdf';
     type: 'surat-masuk' | 'surat-keluar' | 'arsip';
@@ -57,7 +66,7 @@ export class ExportService {
      * Columns: ID, No, Jenis Surat, Sifat Surat, Nomor Surat, Tanggal Surat,
      *          Perihal, Dari, Kepada, Status, Disposisi, Timestamp, Status Arsip
      */
-    async generateExcelSuratMasuk(filters: SuratMasukFilters): Promise<Buffer> {
+    async generateExcelSuratMasuk(filters: SuratMasukFilters, opsi: OpsiEksporSurat = {}): Promise<Buffer> {
         const result = await suratMasukService.findAll({
             ...filters,
             page: 1,
@@ -82,7 +91,7 @@ export class ExportService {
 
         worksheet.mergeCells('A2:M2');
         const subtitleCell = worksheet.getCell('A2');
-        subtitleCell.value = `${unitPengolah} — Tahun ${filters.tahun || 'Semua'}`;
+        subtitleCell.value = `${unitPengolah} — ${keteranganTahun(filters.tahun, opsi)}`;
         subtitleCell.font = { ...SUBTITLE_FONT, bold: false };
         subtitleCell.alignment = CENTER_ALIGN;
 
@@ -149,7 +158,7 @@ export class ExportService {
      *          Perihal, Tujuan, Link Dokumen, Tanggal Input, Balasan Untuk (nomor), Asal Naskah,
      *          Klasifikasi Arsip, Klasifikasi Kode, Klasifikasi Jenis
      */
-    async generateExcelSuratKeluar(filters: SuratKeluarFilters): Promise<Buffer> {
+    async generateExcelSuratKeluar(filters: SuratKeluarFilters, opsi: OpsiEksporSurat = {}): Promise<Buffer> {
         const result = await suratKeluarService.findAll({
             ...filters,
             page: 1,
@@ -175,7 +184,7 @@ export class ExportService {
 
         worksheet.mergeCells('A2:O2');
         const subtitleCell = worksheet.getCell('A2');
-        subtitleCell.value = `${unitPengolah} — Tahun ${filters.tahun || 'Semua'}`;
+        subtitleCell.value = `${unitPengolah} — ${keteranganTahun(filters.tahun, opsi)}`;
         subtitleCell.font = { ...SUBTITLE_FONT, bold: false };
         subtitleCell.alignment = CENTER_ALIGN;
 
@@ -631,7 +640,7 @@ export class ExportService {
 
     // ============== PDF EXPORTS ==============
 
-    async generatePdfSuratMasuk(filters: SuratMasukFilters): Promise<Buffer> {
+    async generatePdfSuratMasuk(filters: SuratMasukFilters, opsi: OpsiEksporSurat = {}): Promise<Buffer> {
         const result = await suratMasukService.findAll({
             ...filters,
             page: 1,
@@ -652,7 +661,7 @@ export class ExportService {
             // Header
             doc.fontSize(16).font('Helvetica-Bold').text('DAFTAR SURAT MASUK', { align: 'center' });
             doc.fontSize(10).font('Helvetica').text(unitPengolah, { align: 'center' });
-            doc.fontSize(9).text(`Tahun: ${filters.tahun || 'Semua'} | Dicetak: ${new Date().toLocaleDateString('id-ID')}`, { align: 'center' });
+            doc.fontSize(9).text(`${opsi.keteranganPeriode || `Tahun: ${filters.tahun || 'Semua'}`} | Dicetak: ${new Date().toLocaleDateString('id-ID')}`, { align: 'center' });
             doc.moveDown(1.5);
 
             // Table
@@ -705,7 +714,7 @@ export class ExportService {
         });
     }
 
-    async generatePdfSuratKeluar(filters: SuratKeluarFilters): Promise<Buffer> {
+    async generatePdfSuratKeluar(filters: SuratKeluarFilters, opsi: OpsiEksporSurat = {}): Promise<Buffer> {
         const result = await suratKeluarService.findAll({
             ...filters,
             page: 1,
@@ -725,7 +734,7 @@ export class ExportService {
 
             doc.fontSize(16).font('Helvetica-Bold').text('DAFTAR SURAT KELUAR', { align: 'center' });
             doc.fontSize(10).font('Helvetica').text(unitPengolah, { align: 'center' });
-            doc.fontSize(9).text(`Tahun: ${filters.tahun || 'Semua'} | Dicetak: ${new Date().toLocaleDateString('id-ID')}`, { align: 'center' });
+            doc.fontSize(9).text(`${opsi.keteranganPeriode || `Tahun: ${filters.tahun || 'Semua'}`} | Dicetak: ${new Date().toLocaleDateString('id-ID')}`, { align: 'center' });
             doc.moveDown(1.5);
 
             const tableTop = doc.y;
