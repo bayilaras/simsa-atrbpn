@@ -115,4 +115,42 @@ describe('CSV preview before import', () => {
         expect(await screen.findByText('31/02/2026')).toBeInTheDocument()
         expect(screen.getByRole('button', { name: 'Impor data valid' })).toBeDisabled()
     })
+
+    it('arsip: impor baru dapat dimulai setelah pernyataan permanen dicentang', async () => {
+        mocks.post.mockResolvedValueOnce({ data: preview }).mockResolvedValueOnce({ data: { ...preview, dryRun: false, imported: 1, rows: [{ ...preview.rows[0], status: 'imported' }] } })
+        render(<ImportCsvDialog type="arsip" unitKerjaId="unit-a" />)
+        await openWithFile()
+        expect(screen.getByRole('note')).toHaveTextContent('Impor arsip bersifat permanen. Arsip yang diimpor tidak dapat dihapus dari aplikasi, dan impor tidak dapat dibatalkan. Periksa hasil pratinjau sebelum mengimpor.')
+        const pernyataan = screen.getByRole('checkbox', { name: 'Saya sudah memeriksa pratinjau dan memahami bahwa impor ini permanen.' })
+        fireEvent.click(screen.getByRole('button', { name: 'Pratinjau' }))
+        await screen.findByText('29/02/2024')
+        expect(pernyataan).not.toBeChecked()
+        expect(screen.getByRole('button', { name: 'Impor data valid' })).toBeDisabled()
+        expect(mocks.post).toHaveBeenCalledTimes(1)
+
+        fireEvent.click(pernyataan)
+        expect(screen.getByRole('button', { name: 'Impor data valid' })).toBeEnabled()
+        fireEvent.click(screen.getByRole('button', { name: 'Impor data valid' }))
+        await waitFor(() => expect(mocks.post).toHaveBeenCalledTimes(2))
+        expect(mocks.post.mock.calls[1][0]).toBe('/api/migration/arsip')
+        expect(mocks.post.mock.calls[1][1].get('dryRun')).toBe('false')
+    })
+
+    it('arsip: mengganti berkas membatalkan centang', async () => {
+        mocks.post.mockResolvedValue({ data: preview })
+        render(<ImportCsvDialog type="arsip" unitKerjaId="unit-a" />)
+        await openWithFile()
+        const pernyataan = screen.getByRole('checkbox', { name: 'Saya sudah memeriksa pratinjau dan memahami bahwa impor ini permanen.' })
+        fireEvent.click(pernyataan)
+        expect(pernyataan).toBeChecked()
+        fireEvent.change(screen.getByLabelText('Berkas CSV'), { target: { files: [source()] } })
+        expect(pernyataan).not.toBeChecked()
+    })
+
+    it('impor surat tidak menampilkan pernyataan permanen arsip', async () => {
+        render(<ImportCsvDialog type="surat-masuk" unitKerjaId="unit-a" />)
+        await openWithFile()
+        expect(screen.queryByRole('note')).not.toBeInTheDocument()
+        expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    })
 })
