@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 // dan handlePenyelesaian (kini dialog di halaman detail, F-I2; semula navigasi, kontrak
 // Produces Task 19) sebelumnya tidak punya test yang bisa gagal.
 const mocks = vi.hoisted(() => ({ getById: vi.fn(), receive: vi.fn(), toast: vi.fn(), getDistribusi: vi.fn(), kandidat: vi.fn(), process: vi.fn() }))
+vi.mock('@/components/tunjuk-silang/KartuTunjukSilang', () => ({ KartuTunjukSilang: ({ tipe, id }) => <div data-testid="kartu-tunjuk-silang">{`${tipe}:${id}`}</div> }))
 vi.mock('@/services/surat-masuk.service', () => ({ default: { getById: mocks.getById, archive: vi.fn() } }))
 vi.mock('@/services/distribution.service', () => ({ default: { receive: mocks.receive, getById: mocks.getDistribusi, getKandidatPenyelesaian: mocks.kandidat, process: mocks.process } }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ canWrite: () => true, user: { id: 'user-a', role: 'admin_unit', unitKerjaId: 'dir_bppt' } }) }))
@@ -105,4 +106,10 @@ it('Tautkan ke Rangkaian membuka dialog tautan untuk surat masuk', async () => {
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByRole('heading', { name: 'Tautkan ke Rangkaian' })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Tautkan' })).toBeDisabled()
+})
+
+it('menyertakan kartu Tunjuk Silang untuk surat masuk ini', async () => {
+    mocks.getById.mockResolvedValue(surat)
+    renderDetail()
+    expect(await screen.findByTestId('kartu-tunjuk-silang')).toHaveTextContent('surat_masuk:sm-1')
 })

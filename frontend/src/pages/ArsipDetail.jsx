@@ -32,6 +32,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/hooks/use-toast'
 import { format, formatDistanceToNow, differenceInDays } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
+import { KartuTunjukSilang } from '@/components/tunjuk-silang/KartuTunjukSilang'
 
 // ─── Helpers ────────────────────────────────────────────────
 function formatDate(dateStr) {
@@ -1107,6 +1108,8 @@ export default function ArsipDetail() {
                             </div>
                         </CardContent>
                     </Card>
+
+                    <KartuTunjukSilang tipe="arsip" id={arsip.id} />
 
                     {/* Metadata */}
                     <Card className="shadow-sm">

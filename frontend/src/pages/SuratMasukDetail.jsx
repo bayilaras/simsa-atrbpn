@@ -19,6 +19,7 @@ import { StatusSidebar } from '@/components/surat-masuk/StatusSidebar'
 import { AlurSuratPanel } from '@/components/surat/AlurSuratPanel'
 import { TautkanDialog } from '@/components/surat/AlurSuratActions'
 import { PenyelesaianDialog } from '@/components/distribusi/PenyelesaianDialog'
+import { KartuTunjukSilang } from '@/components/tunjuk-silang/KartuTunjukSilang'
 
 export default function SuratMasukDetail() {
     const { id } = useParams()
@@ -203,6 +204,7 @@ export default function SuratMasukDetail() {
                         onPenyelesaian={handlePenyelesaian}
                         isAdmin={isAdmin}
                     />
+                    <KartuTunjukSilang tipe="surat_masuk" id={surat.id} />
                 </div>
             </div>
 

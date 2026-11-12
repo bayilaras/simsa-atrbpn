@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     toast: vi.fn(),
 }))
 
+vi.mock('@/components/tunjuk-silang/KartuTunjukSilang', () => ({ KartuTunjukSilang: ({ tipe, id }) => <div data-testid="kartu-tunjuk-silang">{`${tipe}:${id}`}</div> }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: mocks.user, canWrite: mocks.canWrite }) }))
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }))
 vi.mock('@/services/arsip.service', () => ({
@@ -296,4 +297,9 @@ describe('ArsipDetail - Ubah Metadata', () => {
         expect(document.getElementById('alasan-metadata-dikunci')).toBeNull()
         expect(tombolRekonsiliasiSamping()).toBeEnabled()
     })
+})
+
+it('menyertakan kartu Tunjuk Silang untuk arsip ini', async () => {
+    tampilkan()
+    expect(await screen.findByTestId('kartu-tunjuk-silang')).toHaveTextContent('arsip:arsip-1')
 })

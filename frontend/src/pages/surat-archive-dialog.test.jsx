@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     user: { id: 'actor-a', role: 'admin_unit', unitKerjaId: 'unit-a' },
     rangkaian: { getBySurat: vi.fn() },
 }))
+vi.mock('@/components/tunjuk-silang/KartuTunjukSilang', () => ({ KartuTunjukSilang: ({ tipe, id }) => <div data-testid="kartu-tunjuk-silang">{`${tipe}:${id}`}</div> }))
 vi.mock('@/components/surat/KoreksiBerkasSection', () => ({ default: () => null }))
 vi.mock('@/services/surat-masuk.service', () => ({ default: mocks.masuk }))
 vi.mock('@/services/surat-keluar.service', () => ({ default: mocks.keluar }))
