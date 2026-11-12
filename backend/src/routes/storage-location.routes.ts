@@ -6,6 +6,7 @@ import { validateBody, uuidParamValidator } from '../middlewares/validate.middle
 import { createStorageLocationSchema, updateStorageLocationSchema } from '../validators/schemas';
 import { resolveRecordUnitScope } from '../utils/record-unit-scope.js';
 import { getFrontendOrigin } from '../utils/frontend-origin.js';
+import { allowedSecurityClassifications } from '../services/record-access.service.js';
 
 const router = Router();
 
@@ -49,6 +50,7 @@ router.get('/', async (req: AuthRequest, res, next) => {
             search,
             page: page ? parseInt(page) : 1,
             limit: limit ? parseInt(limit) : 50,
+            securityClassifications: allowedSecurityClassifications(req.user),
         });
 
         res.json({ success: true, ...result });
@@ -64,7 +66,7 @@ router.get('/tree', async (req: AuthRequest, res, next) => {
             return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk melihat lokasi.' });
         }
 
-        const tree = await storageLocationService.getTree(unitKerjaId);
+        const tree = await storageLocationService.getTree(unitKerjaId, allowedSecurityClassifications(req.user));
         res.json({ success: true, data: tree });
     } catch (error) {
         next(error);
@@ -78,7 +80,11 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
         if (!unitKerjaId) {
             return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk melihat lokasi.' });
         }
-        const result = await storageLocationService.findById(id as string, unitKerjaId);
+        const result = await storageLocationService.findByIdWithArsipCount(
+            id as string,
+            unitKerjaId,
+            allowedSecurityClassifications(req.user),
+        );
 
         if (!result) {
             return res.status(404).json({ error: 'Lokasi simpan tidak ditemukan.' });

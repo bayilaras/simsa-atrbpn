@@ -3,6 +3,9 @@
 export const PESAN_KELAS_MELEBIHI_KEWENANGAN =
     'Klasifikasi keamanan melebihi kewenangan pengguna. Kelas Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin.';
 
+export const PESAN_LOKASI_SIMPAN_TIDAK_SESUAI =
+    'Lokasi simpan tidak ditemukan atau bukan milik unit kerja arsip ini. Pilih lokasi simpan lain.';
+
 // Sifat surat masuk sekaligus kelas keamanannya. Kata urgensi yang disebut di
 // sini dibaca Biasa (BIASA_SIFAT_ALIASES di services/access/visibility-spec.ts).
 export const PESAN_SIFAT_TIDAK_DIKENAL =

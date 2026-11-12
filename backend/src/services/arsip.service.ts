@@ -13,10 +13,12 @@ import {
     users,
     recordAccessGrants,
     unitKerja,
+    storageLocations,
+    type StorageLocation,
 } from '../db/schema';
 import { eq, and, desc, sql, ilike, or, isNotNull, isNull, ne, inArray, getTableColumns, type SQL } from 'drizzle-orm';
 import { AppError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors';
-import { PESAN_KELAS_MELEBIHI_KEWENANGAN } from '../constants/pesan-akses.js';
+import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_LOKASI_SIMPAN_TIDAK_SESUAI } from '../constants/pesan-akses.js';
 import { hasPermission, type Role } from '../config/permissions';
 import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-lock';
 import { isAllowedForClassification, recordAccessService } from './record-access.service';
@@ -44,6 +46,8 @@ export interface ArsipFilters {
     jenisArsip?: string;
     tahun?: number;
     search?: string;
+    /** Arsip pada lokasi simpan ini dan seluruh sub-lokasinya. */
+    storageLocationId?: string;
     page?: number;
     limit?: number;
     /** null means all classes (super_admin); [] fails closed. */
@@ -196,6 +200,19 @@ function withoutRuleSnapshot(row: ArchiveWithRuleSnapshot): ArsipBaris {
     return archive;
 }
 
+export type JalurLokasiSimpan = Array<Pick<StorageLocation, 'id' | 'code' | 'name' | 'level'>>;
+
+/** Lokasi simpan beserta semua sub-lokasinya, untuk filter daftar arsip. */
+function lokasiDanSubLokasi(storageLocationId: string): SQL {
+    return sql`${arsip.storageLocationId} in (
+        with recursive cabang as (
+            select sl.id from storage_locations sl where sl.id = ${storageLocationId}::uuid
+            union all
+            select anak.id from storage_locations anak join cabang on anak.parent_id = cabang.id
+        )
+        select id from cabang)`;
+}
+
 export const PESAN_KELAS_DI_BAWAH_SUMBER = 'Klasifikasi arsip tidak boleh lebih rendah dari surat sumber';
 
 function dispositionLabel(code: string | null | undefined): Arsip['hasilAkhir'] {
@@ -270,6 +287,38 @@ export class ArsipService {
         return null;
     }
 
+    /**
+     * Lokasi simpan harus berada di unit kerja arsipnya. Baris lokasi dikunci
+     * sampai transaksi selesai agar tidak terhapus sebelum arsip menautkannya.
+     */
+    private async kunciLokasiSimpan(tx: any, storageLocationId: string, unitKerjaId: string): Promise<void> {
+        const [lokasi] = await tx
+            .select({ id: storageLocations.id })
+            .from(storageLocations)
+            .where(and(
+                eq(storageLocations.id, storageLocationId),
+                eq(storageLocations.unitKerjaId, unitKerjaId),
+            ))
+            .limit(1)
+            .for('key share');
+        if (!lokasi) throw new ValidationError(PESAN_LOKASI_SIMPAN_TIDAK_SESUAI);
+    }
+
+    /** Jalur lokasi simpan dari gedung sampai lokasi yang dipilih. */
+    async jalurLokasiSimpan(storageLocationId: string): Promise<JalurLokasiSimpan> {
+        const rows = barisDari<{ id: string; code: string; name: string; level: string }>(await db.execute(sql`
+            with recursive jalur as (
+                select sl.id, sl.code, sl.name, sl.level, sl.parent_id, 0 as kedalaman
+                from storage_locations sl where sl.id = ${storageLocationId}::uuid
+                union all
+                select induk.id, induk.code, induk.name, induk.level, induk.parent_id, jalur.kedalaman + 1
+                from storage_locations induk join jalur on induk.id = jalur.parent_id
+                where jalur.kedalaman < 8
+            )
+            select id, code, name, level from jalur order by kedalaman desc`));
+        return rows.map(({ id, code, name, level }) => ({ id, code, name, level }));
+    }
+
     private assertNoDirectRetentionTrigger(data: Record<string, any>) {
         if ([
             data.retentionTriggerType,
@@ -301,6 +350,7 @@ export class ArsipService {
             jenisArsip,
             tahun,
             search,
+            storageLocationId,
             page = 1,
             limit = 20,
             securityClassifications,
@@ -327,6 +377,9 @@ export class ArsipService {
         }
         if (tahun) {
             conditions.push(eq(arsip.tahun, tahun));
+        }
+        if (storageLocationId) {
+            conditions.push(lokasiDanSubLokasi(storageLocationId));
         }
         if (search) {
             conditions.push(
@@ -439,9 +492,16 @@ export class ArsipService {
             .where(eq(arsipItems.arsipId, id))
             .orderBy(arsipItems.nomorItem);
 
+        // Nama jalur lokasi ikut rekaman detail; daftar hanya membawa id-nya.
+        const jalur = result.storageLocationId
+            ? await this.jalurLokasiSimpan(result.storageLocationId)
+            : [];
+        const lokasi = jalur.at(-1);
+
         return {
             ...this.toCanonicalReadModel(result as ArchiveWithRuleSnapshot),
             items,
+            lokasiSimpan: lokasi ? { ...lokasi, jalur } : null,
         };
     }
 
@@ -683,6 +743,9 @@ export class ArsipService {
                     data.klasifikasiKeamanan ?? 'biasa',
                 );
             }
+            if (data.storageLocationId) {
+                await this.kunciLokasiSimpan(tx, data.storageLocationId, existing.unitKerjaId);
+            }
 
             const [result] = await tx
                 .update(arsip)
@@ -850,6 +913,7 @@ export class ArsipService {
         tingkatPerkembangan?: string;
         tanggalArsip?: string;
         jumlah?: number;
+        storageLocationId?: string;
         createdBy?: string;
     }, authorizedUnitKerjaId?: string, auditContext?: CriticalAuditContext) {
         const { suratMasuk } = await import('../db/schema');
@@ -885,6 +949,10 @@ export class ArsipService {
                 kelasSumberSurat('surat_masuk', surat),
                 metadata.klasifikasiKeamanan,
             );
+
+            if (metadata.storageLocationId) {
+                await this.kunciLokasiSimpan(tx, metadata.storageLocationId, surat.unitKerjaId);
+            }
 
             // Check if already archived
             const [existing] = await tx
@@ -929,6 +997,7 @@ export class ArsipService {
                     lokasiFc: metadata.lokasiFc,
                     lokasiLaci: metadata.lokasiLaci,
                     lokasiFolder: metadata.lokasiFolder,
+                    storageLocationId: metadata.storageLocationId ?? null,
                     retentionTriggerType: null,
                     retentionTriggerLabel: null,
                     retentionTriggerDate: null,
@@ -1002,7 +1071,8 @@ export class ArsipService {
                     action: 'create',
                     entityType: 'arsip',
                     entityId: arsipEntry.id,
-                    changes: { after: { sourceSuratId: suratMasukId, jenisArsip: 'masuk' } },
+                    changes: { after: { sourceSuratId: suratMasukId, jenisArsip: 'masuk',
+                        storageLocationId: arsipEntry.storageLocationId ?? null } },
                 }, tx);
             }
             return archived;
@@ -1040,6 +1110,7 @@ export class ArsipService {
         tingkatPerkembangan?: string;
         tanggalArsip?: string;
         jumlah?: number;
+        storageLocationId?: string;
         createdBy?: string;
     }, authorizedUnitKerjaId?: string, auditContext?: CriticalAuditContext) {
         const { suratKeluar } = await import('../db/schema');
@@ -1076,6 +1147,10 @@ export class ArsipService {
                 kelasSumberSurat('surat_keluar', surat),
                 metadata.klasifikasiKeamanan,
             );
+
+            if (metadata.storageLocationId) {
+                await this.kunciLokasiSimpan(tx, metadata.storageLocationId, surat.unitKerjaId);
+            }
 
             // Check if already archived
             const [existing] = await tx
@@ -1117,6 +1192,7 @@ export class ArsipService {
                     lokasiFc: metadata.lokasiFc,
                     lokasiLaci: metadata.lokasiLaci,
                     lokasiFolder: metadata.lokasiFolder,
+                    storageLocationId: metadata.storageLocationId ?? null,
                     retentionTriggerType: null,
                     retentionTriggerLabel: null,
                     retentionTriggerDate: null,
@@ -1192,7 +1268,8 @@ export class ArsipService {
                     action: 'create',
                     entityType: 'arsip',
                     entityId: arsipEntry.id,
-                    changes: { after: { sourceSuratId: suratKeluarId, jenisArsip: 'keluar' } },
+                    changes: { after: { sourceSuratId: suratKeluarId, jenisArsip: 'keluar',
+                        storageLocationId: arsipEntry.storageLocationId ?? null } },
                 }, tx);
             }
             return archived;

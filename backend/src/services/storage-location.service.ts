@@ -1,7 +1,7 @@
 import { AppError, ValidationError, ConflictError } from '../utils/errors';
 import { db } from '../config/database';
 import { storageLocations, NewStorageLocation, StorageLocation, arsip, archiveLending } from '../db/schema';
-import { eq, and, sql, isNull, ilike, or } from 'drizzle-orm';
+import { eq, and, sql, isNull, isNotNull, ilike, inArray, or } from 'drizzle-orm';
 import type { RecordUnitScope } from '../utils/record-unit-scope.js';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 import { hasPostgresErrorCode } from '../utils/postgres-errors.js';
@@ -14,7 +14,17 @@ export interface StorageLocationFilters {
     search?: string;
     page?: number;
     limit?: number;
+    /** Plafon kelas pembaca untuk hitungan arsip; lihat ArsipFilters. */
+    securityClassifications?: string[] | null;
 }
+
+interface JumlahArsipLokasi {
+    total: number;
+    masuk: number;
+    keluar: number;
+}
+
+const TANPA_ARSIP: JumlahArsipLokasi = Object.freeze({ total: 0, masuk: 0, keluar: 0 });
 
 export class StorageLocationService {
     private normalizeCode(code: string): string {
@@ -53,8 +63,71 @@ export class StorageLocationService {
         return hierarchy[parentLevel] ?? null;
     }
 
+    /**
+     * Jumlah arsip yang tersimpan langsung di tiap lokasi, dihitung dari tabel
+     * arsip dengan saringan yang sama dengan daftar arsip (unit dan plafon
+     * kelas pembaca). `null` berarti semua kelas; tanpa plafon, hitungan nol.
+     */
+    private async hitungArsipPerLokasi(
+        unitKerjaId: RecordUnitScope,
+        securityClassifications: string[] | null | undefined,
+    ): Promise<Map<string, JumlahArsipLokasi>> {
+        const hasil = new Map<string, JumlahArsipLokasi>();
+        if (securityClassifications !== null && !securityClassifications?.length) return hasil;
+        const rows: Array<{ id: string | null; jenis: string | null; jumlah: number }> = await db
+            .select({
+                id: arsip.storageLocationId,
+                jenis: arsip.jenisArsip,
+                jumlah: sql<number>`count(*)::int`,
+            })
+            .from(arsip)
+            .where(and(
+                isNotNull(arsip.storageLocationId),
+                unitKerjaId === null ? undefined : eq(arsip.unitKerjaId, unitKerjaId),
+                securityClassifications === null ? undefined : inArray(
+                    sql<string>`lower(coalesce(${arsip.klasifikasiKeamanan}, 'biasa'))`,
+                    securityClassifications,
+                ),
+            ))
+            .groupBy(arsip.storageLocationId, arsip.jenisArsip);
+        for (const row of rows) {
+            if (!row.id) continue;
+            const jumlah = hasil.get(row.id) ?? { total: 0, masuk: 0, keluar: 0 };
+            jumlah.total += row.jumlah;
+            if (row.jenis === 'masuk') jumlah.masuk += row.jumlah;
+            if (row.jenis === 'keluar') jumlah.keluar += row.jumlah;
+            hasil.set(row.id, jumlah);
+        }
+        return hasil;
+    }
+
+    /**
+     * `currentCount` = arsip langsung di lokasi; `arsipCount` dan rinciannya
+     * mencakup seluruh sub-lokasi. Kolom current_count tidak dipakai.
+     */
+    private denganJumlahArsip<T extends { id: string; children: any[] }>(
+        node: T,
+        langsung: Map<string, JumlahArsipLokasi>,
+    ): JumlahArsipLokasi {
+        const sendiri = langsung.get(node.id) ?? TANPA_ARSIP;
+        const jumlah = { ...sendiri };
+        for (const child of node.children) {
+            const anak = this.denganJumlahArsip(child, langsung);
+            jumlah.total += anak.total;
+            jumlah.masuk += anak.masuk;
+            jumlah.keluar += anak.keluar;
+        }
+        Object.assign(node, {
+            currentCount: sendiri.total,
+            arsipCount: jumlah.total,
+            arsipMasukCount: jumlah.masuk,
+            arsipKeluarCount: jumlah.keluar,
+        });
+        return jumlah;
+    }
+
     async findAll(filters: StorageLocationFilters) {
-        const { unitKerjaId, level, parentId, search, page = 1, limit = 50 } = filters;
+        const { unitKerjaId, level, parentId, search, page = 1, limit = 50, securityClassifications } = filters;
         const offset = (page - 1) * limit;
 
         const conditions: any[] = [];
@@ -82,13 +155,18 @@ export class StorageLocationService {
             .from(storageLocations)
             .where(whereClause);
 
-        const data = await db
+        const rows = await db
             .select()
             .from(storageLocations)
             .where(whereClause)
             .orderBy(storageLocations.code)
             .limit(limit)
             .offset(offset);
+        const jumlahArsip = await this.hitungArsipPerLokasi(unitKerjaId, securityClassifications);
+        const data = rows.map((row: StorageLocation) => ({
+            ...row,
+            currentCount: jumlahArsip.get(row.id)?.total ?? 0,
+        }));
 
         return {
             data,
@@ -111,7 +189,42 @@ export class StorageLocationService {
         return result || null;
     }
 
-    async getTree(unitKerjaId: RecordUnitScope) {
+    /** Satu lokasi beserta jumlah arsipnya (termasuk sub-lokasi) bagi pembaca ini. */
+    async findByIdWithArsipCount(
+        id: string,
+        unitKerjaId: RecordUnitScope,
+        securityClassifications: string[] | null,
+    ) {
+        const location = await this.findById(id, unitKerjaId);
+        if (!location) return null;
+        const semua: Array<{ id: string; parentId: string | null }> = await db
+            .select({ id: storageLocations.id, parentId: storageLocations.parentId })
+            .from(storageLocations)
+            .where(eq(storageLocations.unitKerjaId, location.unitKerjaId));
+        const anakPerInduk = new Map<string, string[]>();
+        for (const row of semua) {
+            if (!row.parentId) continue;
+            anakPerInduk.set(row.parentId, [...(anakPerInduk.get(row.parentId) ?? []), row.id]);
+        }
+        const susun = (lokasiId: string, dilihat: Set<string>): { id: string; children: any[] } => {
+            dilihat.add(lokasiId);
+            return {
+                id: lokasiId,
+                children: (anakPerInduk.get(lokasiId) ?? [])
+                    .filter(anak => !dilihat.has(anak))
+                    .map(anak => susun(anak, dilihat)),
+            };
+        };
+        const cabang = susun(location.id, new Set());
+        this.denganJumlahArsip(
+            cabang,
+            await this.hitungArsipPerLokasi(location.unitKerjaId, securityClassifications),
+        );
+        const { id: _id, children: _children, ...jumlah } = cabang as any;
+        return { ...location, ...jumlah };
+    }
+
+    async getTree(unitKerjaId: RecordUnitScope, securityClassifications?: string[] | null) {
         // Get all locations for this unit
         const allLocations = await db
             .select()
@@ -137,6 +250,9 @@ export class StorageLocationService {
                 rootNodes.push(node);
             }
         }
+
+        const jumlahArsip = await this.hitungArsipPerLokasi(unitKerjaId, securityClassifications);
+        for (const root of rootNodes) this.denganJumlahArsip(root, jumlahArsip);
 
         return rootNodes;
     }
@@ -303,13 +419,12 @@ export class StorageLocationService {
                 throw new ConflictError('Lokasi tidak dapat dihapus karena masih memiliki sub-lokasi. Hapus sub-lokasinya terlebih dahulu.');
             }
 
+            // Semua arsip yang menautkan lokasi ini, apa pun unit dan kelasnya:
+            // penolakan ini menjaga tautan, bukan menampilkan isi arsip.
             const [hasArsip] = await tx
                 .select({ count: sql<number>`count(*)::int` })
                 .from(arsip)
-                .where(and(
-                    eq(arsip.storageLocationId, id),
-                    eq(arsip.unitKerjaId, unitKerjaId),
-                ));
+                .where(eq(arsip.storageLocationId, id));
 
             if (hasArsip.count > 0) {
                 throw new ConflictError('Lokasi tidak dapat dihapus karena masih menyimpan arsip. Pindahkan arsipnya terlebih dahulu.');

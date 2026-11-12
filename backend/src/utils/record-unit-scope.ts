@@ -31,6 +31,16 @@ export function resolveRecordUnitScope(req: AuthRequest): RecordUnitScope {
         || NO_RECORD_UNIT_ACCESS;
 }
 
+/**
+ * Lokasi simpan milik satu unit hanya boleh dipilih pengguna unit itu atau
+ * super_admin. Pemegang izin kelola lintas unit tidak ikut memakai lokasi
+ * unit lain.
+ */
+export function bolehMemakaiLokasiUnit(req: AuthRequest, unitKerjaId: string): boolean {
+    const scope = resolveRecordUnitScope(req);
+    return scope === null || scope === unitKerjaId;
+}
+
 /** Build a default-deny by-ID predicate shared by record services. */
 export function scopedRecordByIdWhere(
     idColumn: AnyColumn,

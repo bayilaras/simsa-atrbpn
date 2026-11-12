@@ -50,10 +50,14 @@ describe('partial update contracts', () => {
         expect(updateArsipSchema.parse(metadata)).toEqual(metadata);
     });
 
+    it.each(['550e8400-e29b-41d4-a716-446655440002', null])('accepts storage location %j on an archive update', storageLocationId => {
+        expect(updateArsipSchema.parse({ storageLocationId })).toEqual({ storageLocationId });
+    });
+
     it.each([
         {}, { catatan: 'Kolom lama' }, { deskripsi: 'Kolom lama' }, { retentionPeriod: 5 },
         { unitKerjaId: 'unit-lain' }, { sourceSuratId: '550e8400-e29b-41d4-a716-446655440002' },
-        { storageLocationId: '550e8400-e29b-41d4-a716-446655440002' },
+        { storageLocationId: 'G1-R1' }, { storageLocationId: '' },
         { legalHold: false }, { disposalStatus: 'active' }, { extractedText: 'Teks pengganti' },
         { nomorBerkas: '' }, { tanggalArsip: '2026-02-31' }, { jumlah: -1 },
     ])('rejects an invalid or unsupported archive update %j', patch => {
