@@ -186,6 +186,22 @@ describe('POST /api/surat-keluar/:id/archive-full', () => {
         expect(await arsipDari(SURAT.skNull)).toEqual([]);
     });
 
+    it('surat impor berkode mentah tanpa butir katalog: butir pilihan pengarsip dipakai dan kode asal masuk jejak audit', async () => {
+        const skImpor = '64000000-0000-4000-8000-000000000005';
+        await database.exec(`
+            INSERT INTO surat_keluar (id, unit_kerja_id, no_urut, tahun, klasifikasi_keamanan, nomor_surat, perihal, kepada, naskah_dinas, tanggal_surat, approval_status, klasifikasi_fasilitatif_kode, klasifikasi_fasilitatif)
+            VALUES ('${skImpor}','sesditjen',13,2026,'biasa','SK-I/2026','Surat impor','Kanwil I','Nota Dinas','2026-09-14','approved','KU 1','Keuangan lama');
+        `);
+        await request(app).post(`/api/surat-keluar/${skImpor}/archive-full`)
+            .set(sebagai(PENGGUNA.tu)).send(registrasi({ uraianBerkas: 'Arsip surat impor' })).expect(200);
+        const sk = (await database.query<any>(`SELECT is_archived, klasifikasi_fasilitatif_kode FROM surat_keluar WHERE id = '${skImpor}'`)).rows[0];
+        expect(sk).toMatchObject({ is_archived: true, klasifikasi_fasilitatif_kode: 'KU.01' });
+        const audit = (await database.query<any>(`SELECT changes FROM audit_log WHERE entity_type = 'surat_keluar' AND entity_id = '${skImpor}' AND action = 'archive'`)).rows;
+        expect(audit).toHaveLength(1);
+        expect(audit[0].changes.before.kodeKlasifikasiAsal).toBe('KU 1');
+        expect(audit[0].changes.after.kodeKlasifikasi).toBe('KU.01');
+    });
+
     it('surat rahasia berstatus draft tanpa grant: 404 seperti id acak, bukan 409 status persetujuan', async () => {
         const skDraftRahasia = '64000000-0000-4000-8000-000000000004';
         await database.exec(`

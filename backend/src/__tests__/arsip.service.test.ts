@@ -801,7 +801,7 @@ describe('ArsipService', () => {
             expect(archiveRuleAssignmentService.resolveActive).not.toHaveBeenCalled();
         });
 
-        it('accepts only a classification recorded on the outgoing source', async () => {
+        it('accepts only a classification recorded on an outgoing source that carries a catalogue item', async () => {
             enqueue([{
                 id: 'sk-classified',
                 unitKerjaId: 'u1',
@@ -809,6 +809,7 @@ describe('ArsipService', () => {
                 nomorSurat: 'SK-1/2026',
                 tanggalSurat: '2026-02-10',
                 perihal: 'Keuangan',
+                klasifikasiItemId: 10,
                 klasifikasiFasilitatifKode: 'KU.01',
                 klasifikasiSubstantifKode: 'TR.01',
                 approvalStatus: 'approved',

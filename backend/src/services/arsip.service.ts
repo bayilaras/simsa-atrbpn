@@ -1097,11 +1097,37 @@ export class ArsipService {
                 jraItemId: metadata.jraItemId ?? (metadata.jraKode?.trim() ? undefined : surat.jraItemId ?? undefined),
             });
             this.assertRuleIdentityMatchesSource(assignment, surat);
-            this.assertClassificationMatchesSource(
-                assignment.cache.kodeKlasifikasi,
-                [surat.klasifikasiFasilitatifKode, surat.klasifikasiSubstantifKode],
-                'surat keluar sumber',
-            );
+            // Surat tanpa identitas katalog (kode mentah dari sumber impor) tidak
+            // dapat dicocokkan secara harfiah dan tidak dapat lagi disunting
+            // setelah disetujui. Butir katalog pilihan pengarsip dipakai, dan kode
+            // asalnya dicatat pada jejak audit. Surat beridentitas katalog tetap
+            // wajib cocok persis.
+            const kodeAsalTanpaKatalog = surat.klasifikasiItemId
+                ? null
+                : [surat.klasifikasiFasilitatifKode, surat.klasifikasiSubstantifKode]
+                    .map((code: string | null) => code?.trim())
+                    .filter((code: string | undefined): code is string => Boolean(code));
+            if (kodeAsalTanpaKatalog === null) {
+                this.assertClassificationMatchesSource(
+                    assignment.cache.kodeKlasifikasi,
+                    [surat.klasifikasiFasilitatifKode, surat.klasifikasiSubstantifKode],
+                    'surat keluar sumber',
+                );
+            } else if (kodeAsalTanpaKatalog.length > 0) {
+                // Pengaman basis data mencocokkan kode arsip dengan kode surat
+                // saat baris arsip dibuat, jadi pilihan katalog disimpan pada
+                // surat lebih dahulu dalam transaksi yang sama.
+                const tipe = assignment.snapshot.classification.type;
+                await tx
+                    .update(suratKeluar)
+                    .set({
+                        klasifikasiFasilitatifKode: tipe === 'fasilitatif' ? assignment.cache.kodeKlasifikasi : null,
+                        klasifikasiFasilitatif: tipe === 'fasilitatif' ? assignment.snapshot.classification.title : null,
+                        klasifikasiSubstantifKode: tipe === 'substantif' ? assignment.cache.kodeKlasifikasi : null,
+                        klasifikasiSubstantif: tipe === 'substantif' ? assignment.snapshot.classification.title : null,
+                    })
+                    .where(eq(suratKeluar.id, suratKeluarId));
+            }
 
             // Create arsip entry
             const [arsipEntry] = await tx
@@ -1182,7 +1208,11 @@ export class ArsipService {
                     entityType: 'surat_keluar',
                     entityId: suratKeluarId,
                     changes: {
-                        before: { klasifikasiItemId: surat.klasifikasiItemId ?? null, jraItemId: surat.jraItemId ?? null },
+                        before: {
+                            klasifikasiItemId: surat.klasifikasiItemId ?? null,
+                            jraItemId: surat.jraItemId ?? null,
+                            ...(kodeAsalTanpaKatalog?.length ? { kodeKlasifikasiAsal: kodeAsalTanpaKatalog.join(', ') } : {}),
+                        },
                         after: { arsipId: arsipEntry.id, isArchived: true, klasifikasiItemId: assignment.cache.klasifikasiArsipId,
                             jraItemId: assignment.cache.jraItemId, kodeKlasifikasi: assignment.cache.kodeKlasifikasi },
                     },
