@@ -106,14 +106,15 @@ export const alasanSchema = z.object({ alasan: alasanText }).strict();
 const batasWaktuSchema = dateSchema.refine((value) => value >= jakartaDate(), 'Batas waktu tidak boleh sebelum hari ini');
 
 export const disposisiTargetSchema = z.object({
-    unitKerjaId: z.string().trim().min(1).max(50),
+    unitKerjaId: z.string('Unit tujuan disposisi tidak valid').trim()
+        .min(1, 'Unit tujuan disposisi wajib diisi').max(50, 'Unit tujuan disposisi tidak valid'),
     batasWaktu: batasWaktuSchema.nullish(),
-    penanggungJawab: z.boolean().optional().default(false),
+    penanggungJawab: z.boolean('Penanda penanggung jawab disposisi tidak valid').optional().default(false),
 }).strict();
 
 export const disposisiTargetsSchema = z.array(disposisiTargetSchema)
     .min(1, 'Pilih minimal satu unit tujuan')
-    .max(10)
+    .max(10, 'Unit tujuan disposisi maksimal 10')
     .superRefine((targets, ctx) => {
         const ids = targets.map((target) => target.unitKerjaId);
         if (new Set(ids).size !== ids.length) {
@@ -128,10 +129,14 @@ export const disposisiRoutingSchema = z.object({
     targets: disposisiTargetsSchema,
     // Registrasi multipart di-parse multer SETELAH sanitizer global, sehingga
     // MULTILINE_FIELDS tidak pernah melihatnya; normalisasi baris baru di sini [T5-3].
-    instruksi: z.string().max(2000)
+    instruksi: z.string('Instruksi disposisi tidak valid').max(2000, 'Instruksi disposisi maksimal 2000 karakter')
         .transform((value) => value.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim())
         .nullish(),
-    labelTambahan: z.array(z.string().trim().min(1).max(100)).max(10).optional(),
+    labelTambahan: z.array(
+        z.string('Label disposisi tidak valid').trim()
+            .min(1, 'Label disposisi tidak boleh kosong').max(100, 'Label disposisi maksimal 100 karakter'),
+        'Label disposisi tidak valid',
+    ).max(10, 'Label disposisi maksimal 10').optional(),
 }).strict();
 export type DisposisiRoutingInput = z.infer<typeof disposisiRoutingSchema>;
 

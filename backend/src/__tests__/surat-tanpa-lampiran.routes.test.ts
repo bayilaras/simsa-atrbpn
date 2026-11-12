@@ -110,6 +110,25 @@ describe('galat validasi surat masuk', () => {
         expect(rincian(res)).toEqual({ tanggalSurat: 'Tanggal surat wajib diisi' });
     });
 
+    // Jumlah unit tujuan atau label yang melebihi batas dilaporkan dengan pesan umum disposisi.
+    it.each([
+        [{ instruksi: 'x'.repeat(2001) }, 'Instruksi disposisi maksimal 2000 karakter'],
+        [{ targets: Array.from({ length: 11 }, (_, i) => ({ unitKerjaId: `unit_${i}` })) }, 'Disposisi tidak valid. Periksa unit tujuan dan batas waktunya.'],
+        [{ targets: [{ unitKerjaId: '' }] }, 'Unit tujuan disposisi wajib diisi'],
+        [{ labelTambahan: Array.from({ length: 11 }, (_, i) => `Label ${i}`) }, 'Disposisi tidak valid. Periksa unit tujuan dan batas waktunya.'],
+        [{ labelTambahan: ['x'.repeat(101)] }, 'Label disposisi maksimal 100 karakter'],
+    ])('POST menyebut isian disposisi yang salah dalam bahasa Indonesia (%#)', async (ubahan, pesan) => {
+        const disposisi = { targets: [{ unitKerjaId: 'dir_a', penanggungJawab: true }], ...ubahan };
+        const res = await request(app).post('/api/surat-masuk').send({ ...isiMasuk, disposisi }).expect(400);
+        const details = res.body.details as Array<{ field: string; message: string }>;
+        expect(details.map(detail => detail.message)).toContain(pesan);
+        for (const detail of details) {
+            expect(detail.field).toMatch(/^disposisi/);
+            expect(detail.message).not.toMatch(/Too (big|small)|Invalid|expected/);
+        }
+        expect(mocks.masuk.create).not.toHaveBeenCalled();
+    });
+
     it('PUT menyebut isian yang salah dalam bahasa Indonesia', async () => {
         const res = await request(app).put(`/api/surat-masuk/${ID}`)
             .send({ tanggalSurat: '2026-02-30', linkDokumen: 'bukan alamat', keterangan: 'x'.repeat(2001) }).expect(400);
