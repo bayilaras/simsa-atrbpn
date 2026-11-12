@@ -103,6 +103,14 @@ describe('surat keluar sifat (urgensi)', () => {
     it('rejects a sifat longer than the column', () => {
         expect(createSuratKeluarSchema.safeParse({ ...base, sifatSurat: 'x'.repeat(51) }).success).toBe(false);
     });
+
+    it('explains an empty Kepada in Indonesian', () => {
+        const created = createSuratKeluarSchema.safeParse({ ...base, kepada: '' });
+        expect(created.success).toBe(false);
+        expect(created.error?.issues.find((issue) => issue.path[0] === 'kepada')?.message).toBe('Kepada wajib diisi');
+        const updated = updateSuratKeluarSchema.safeParse({ kepada: '' });
+        expect(updated.error?.issues[0]?.message).toBe('Kepada wajib diisi');
+    });
 });
 
 describe('filter sifat daftar surat masuk', () => {

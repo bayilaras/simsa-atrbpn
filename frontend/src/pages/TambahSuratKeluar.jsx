@@ -371,6 +371,7 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
         if (!formData.naskahDinas) return { field: 'naskahDinas', message: 'Naskah Dinas wajib diisi' };
         if (!formData.tanggalSurat) return { message: 'Tanggal Surat wajib diisi' };
         if (!formData.perihal) return { message: 'Perihal wajib diisi' };
+        if (!formData.kepada?.trim()) return { field: 'kepada', message: 'Kepada wajib diisi' };
         // For edit mode, allow existing file or link
         if (filesEnabled && !formData.linkDokumen && !selectedFile && !existingFile) {
             return { field: 'linkDokumen', message: 'Link dokumen atau upload berkas wajib diisi (salah satu)' };
@@ -433,7 +434,10 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
         } catch (err) {
             if (!mountedRef.current) return;
             saveLockedRef.current = false;
-            setError(err.message || 'Gagal menyimpan surat keluar');
+            // Galat validasi server membawa pesan per isian; tampilkan pesan itu, bukan "Validation failed".
+            const rincian = Array.isArray(err?.details) ? err.details.filter(detail => detail?.message) : [];
+            setError(rincian.map(detail => detail.message).join('; ') || err.message || 'Gagal menyimpan surat keluar');
+            setFieldErrors(Object.fromEntries(rincian.filter(detail => detail.field).map(detail => [detail.field, detail.message])));
         } finally {
             if (mountedRef.current) setIsSubmitting(false);
         }
@@ -726,15 +730,19 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
                         <div className="space-y-2">
                             <Label htmlFor="penerima-surat-keluar" className="text-sm font-medium flex items-center gap-2">
                                 <Users className="h-4 w-4 text-muted-foreground" />
-                                Kepada
+                                Kepada <span className="text-destructive">*</span>
                             </Label>
                             <Input
                                 id="penerima-surat-keluar"
+                                required
+                                aria-invalid={Boolean(fieldErrors.kepada)}
+                                aria-describedby={fieldErrors.kepada ? 'penerima-surat-keluar-error' : undefined}
                                 value={formData.kepada}
                                 onChange={(e) => handleChange('kepada', e.target.value)}
                                 placeholder="Instansi/nama penerima surat"
                                 className="h-11 focus-visible:ring-emerald-500"
                             />
+                            {fieldErrors.kepada && <p id="penerima-surat-keluar-error" className="text-sm text-destructive">{fieldErrors.kepada}</p>}
                         </div>
                     </CardContent>
                 </Card>

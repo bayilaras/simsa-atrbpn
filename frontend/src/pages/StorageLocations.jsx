@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from '@/hooks/use-toast'
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
+import { pesanGalat } from '@/lib/pesan-galat'
 
 // Level configuration
 const LEVEL_CONFIG = {
@@ -268,7 +269,7 @@ export default function StorageLocations() {
             toast({
                 variant: 'destructive',
                 title: 'Gagal menyimpan data',
-                description: error.response?.data?.error || error.message || 'Terjadi kesalahan',
+                description: pesanGalat(error, 'Terjadi kesalahan'),
             })
         }
     }
@@ -310,11 +311,15 @@ export default function StorageLocations() {
 
         try {
             await storageLocationService.delete(node.id, unitKerjaId)
-            // alert('Lokasi berhasil dihapus')
+            toast({ title: 'Lokasi berhasil dihapus' })
             fetchData()
         } catch (error) {
-            // alert(error.response?.data?.error || 'Gagal menghapus data')
             console.error(error)
+            toast({
+                variant: 'destructive',
+                title: 'Gagal menghapus lokasi',
+                description: pesanGalat(error, 'Terjadi kesalahan'),
+            })
         }
     }
 

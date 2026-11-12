@@ -125,6 +125,8 @@ export default function Dashboard() {
     const [expiring, setExpiring] = useState([]);
     const [recentActivity, setRecentActivity] = useState([]);
     const [unitKerjaStats, setUnitKerjaStats] = useState([]);
+    // Tahun yang dihitung grafik perbandingan unit, ditampilkan di labelnya.
+    const [unitKerjaYear, setUnitKerjaYear] = useState(() => new Date().getFullYear());
     const [widgetData, setWidgetData] = useState(null);
     const [unitKerjaList, setUnitKerjaList] = useState([]);
     // undefined = uninitialized. A super admin starts on "Semua Unit Kerja"
@@ -171,12 +173,13 @@ export default function Dashboard() {
         setError(null);
         setWidgetError(null);
         const unitKerjaId = (requestedUnit === 'all' || requestedUnit === 'none') ? null : requestedUnit;
+        const comparisonYear = new Date().getFullYear();
         try {
             const promise = Promise.allSettled([
                 Promise.all([
                     dashboardService.getStats(unitKerjaId),
                     dashboardService.getExpiringArchives(unitKerjaId, 90),
-                    dashboardService.getUnitKerjaComparison(unitKerjaId),
+                    dashboardService.getUnitKerjaComparison(unitKerjaId, comparisonYear),
                     dashboardService.getRecentActivity(unitKerjaId, 8),
                 ]),
                 dashboardService.getWidgetData(unitKerjaId),
@@ -189,6 +192,7 @@ export default function Dashboard() {
             setStats(statsResult);
             setExpiring(expiringResult);
             setUnitKerjaStats(comparisonResult || []);
+            setUnitKerjaYear(comparisonYear);
             setRecentActivity(recentResult || []);
             if (widgets.status === 'fulfilled' && widgets.value) {
                 setWidgetData(widgets.value);
@@ -514,13 +518,13 @@ export default function Dashboard() {
                             <Card className="min-w-0 shadow-sm border-border/60">
                                 <CardHeader>
                                     <CardTitle className="text-lg">Perbandingan Unit Kerja</CardTitle>
-                                    <CardDescription>Volume surat per unit kerja bulan ini</CardDescription>
+                                    <CardDescription>Volume surat per unit kerja tahun ini ({unitKerjaYear})</CardDescription>
                                 </CardHeader>
                                 <CardContent>
                                     <div style={{ height: Math.max(200, (unitKerjaStats?.length || 3) * 60) + 'px' }}>
                                         <Bar
                                             role="img"
-                                            aria-label="Grafik volume surat per unit kerja pada bulan ini"
+                                            aria-label={`Grafik volume surat per unit kerja pada tahun ${unitKerjaYear}`}
                                             data={unitKerjaChartData}
                                             options={{
                                                 ...chartOptions,

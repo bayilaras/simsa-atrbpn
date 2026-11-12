@@ -114,12 +114,22 @@ export default function Settings() {
     }, [user]);
 
     const handleSaveProfile = async () => {
+        const name = profile.name.trim();
+        if (!name) {
+            toast({
+                title: 'Nama wajib diisi',
+                description: 'Isi Nama Lengkap sebelum menyimpan profil.',
+                variant: 'destructive',
+            });
+            return;
+        }
         setSaving(true);
         try {
             await settingsService.updateProfile({
-                name: profile.name,
+                name,
                 image: profile.image,
             });
+            setProfile((current) => ({ ...current, name }));
             toast({
                 title: 'Berhasil',
                 description: 'Profil berhasil diperbarui',
@@ -301,6 +311,8 @@ export default function Settings() {
                                     <Label htmlFor="name">Nama Lengkap</Label>
                                     <Input
                                         id="name"
+                                        required
+                                        maxLength={255}
                                         value={profile.name}
                                         onChange={(e) => setProfile({ ...profile, name: e.target.value })}
                                     />

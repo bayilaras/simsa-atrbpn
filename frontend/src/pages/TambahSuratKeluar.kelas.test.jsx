@@ -65,6 +65,7 @@ function isiDanKirim(container) {
     fireEvent.change(document.getElementById('naskah-dinas'), { target: { value: 'Nota Dinas' } })
     fireEvent.change(document.getElementById('tanggal-surat-keluar'), { target: { value: '2026-09-24' } })
     fireEvent.change(document.getElementById('perihal-surat-keluar'), { target: { value: 'Penyampaian data' } })
+    fireEvent.change(document.getElementById('penerima-surat-keluar'), { target: { value: 'Direktur Jenderal' } })
     fireEvent.submit(container.querySelector('form'))
 }
 

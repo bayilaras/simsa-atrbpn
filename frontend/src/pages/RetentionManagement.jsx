@@ -33,6 +33,10 @@ const HASIL_AKHIR_OPTIONS = {
     'Dinilai Kembali': { label: 'Dinilai Kembali', color: 'bg-yellow-500', badgeClass: 'bg-yellow-100 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-200' },
 }
 
+// Berita acara dari halaman ini hanya draf yang tidak disimpan SIMSA, jadi
+// nomornya dikosongkan untuk diisi manual dari register unit.
+const NOMOR_BERITA_ACARA_MANUAL = '……………………'
+
 // Returns a check that stays true only while this is the newest request of
 // its kind, so a slower response for an older unit, page or filter is dropped.
 function startRequest(counters, key) {
@@ -215,9 +219,10 @@ export default function RetentionManagement() {
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Berita Acara Pemusnahan Arsip</title>
+                <title>DRAF Berita Acara Pemusnahan Arsip</title>
                 <style>
                     body { font-family: 'Times New Roman', serif; padding: 40px; line-height: 1.6; }
+                    .draf { text-align: center; font-weight: bold; letter-spacing: 4px; color: #b91c1c; margin-bottom: 5px; }
                     h1 { text-align: center; font-size: 18px; margin-bottom: 5px; }
                     h2 { text-align: center; font-size: 14px; font-weight: normal; margin-bottom: 30px; }
                     .header { text-align: center; margin-bottom: 30px; }
@@ -233,8 +238,9 @@ export default function RetentionManagement() {
             </head>
             <body>
                 <div class="header">
+                    <p class="draf">DRAF</p>
                     <h1>BERITA ACARA PEMUSNAHAN ARSIP</h1>
-                    <h2>Nomor: ${reportData.reportNumber}</h2>
+                    <h2>Nomor: ${NOMOR_BERITA_ACARA_MANUAL}</h2>
                 </div>
                 <div class="content">
                     <p>Pada hari ini, ${reportData.tanggal}, kami yang bertanda tangan di bawah ini:</p>
@@ -773,7 +779,7 @@ export default function RetentionManagement() {
                             Berita Acara Pemusnahan Arsip
                         </DialogTitle>
                         <DialogDescription>
-                            Preview draft berita acara sebelum dicetak
+                            Pratinjau draf berita acara sebelum dicetak. Draf ini tidak disimpan di SIMSA; nomor berita acara diisi manual.
                         </DialogDescription>
                     </DialogHeader>
 
@@ -782,9 +788,10 @@ export default function RetentionManagement() {
                             <div className="bg-card p-8 shadow-sm border rounded-lg min-h-[600px] max-w-[800px] mx-auto text-sm">
                                 {/* Letterhead Simulation */}
                                 <div className="text-center mb-8 border-b-2 border-black pb-4">
+                                    <p className="mb-2 text-xs font-bold tracking-[0.3em] text-red-700 dark:text-red-300">DRAF</p>
                                     <h3 className="font-bold text-lg uppercase tracking-wide mb-1">KEMENTERIAN AGRARIA DAN TATA RUANG/BADAN PERTANAHAN NASIONAL</h3>
                                     <h4 className="font-bold uppercase tracking-wide">BERITA ACARA PEMUSNAHAN ARSIP</h4>
-                                    <p className="text-xs mt-2">Nomor: {reportData.reportNumber}</p>
+                                    <p className="text-xs mt-2">Nomor: {NOMOR_BERITA_ACARA_MANUAL}</p>
                                 </div>
 
                                 <div className="mb-6 space-y-4 leading-relaxed">

@@ -17,6 +17,9 @@ const terbuka = { id: 'd1', status: 'received', masked: false, instruction: 'Moh
 const tersamar = { id: 'd2', status: 'sent', masked: true, instruction: null, batasWaktu: null, sentAt: '2026-09-21T01:00:00Z',
     surat: { id: null, nomorSurat: null, perihal: null, label: 'Dikecualikan' }, sourceUnit: { id: 'sesditjen', name: 'Sesditjen' }, rangkaian: null }
 
+// Bentuk galat services/api.js untuk AppError backend: `error` = nama kelas, `message` = pesan domain.
+const galatApi = (status, body) => Object.assign(new Error(body.message), { status, data: body, response: { status, data: body } })
+
 const halaman = (rows, total = rows.length) => ({ success: true, data: rows, pagination: { page: 1, limit: 20, total, totalPages: Math.ceil(total / 20) } })
 
 function tampil(entry = '/distribusi') {
@@ -111,6 +114,43 @@ describe('Kotak Disposisi', () => {
         await waitFor(() => expect(mocks.svc.getInbox).toHaveBeenCalledTimes(2))
         await waitFor(() => expect(mocks.svc.getStats).toHaveBeenCalledTimes(2))
         expect(mocks.svc.getOutbox).toHaveBeenCalledOnce()
+    })
+
+    it('menerima surat yang ditolak server menampilkan pesannya, bukan nama kelas galat', async () => {
+        mocks.svc.receive.mockRejectedValue(galatApi(400, { success: false, error: 'ValidationError', message: 'Distribution sudah diterima atau diproses', code: 'VALIDATION_ERROR' }))
+        mocks.svc.getInbox.mockResolvedValue(halaman([{ ...terbuka, status: 'sent' }]))
+        tampil()
+        const baris = (await screen.findByRole('link', { name: 'SM-1/2026' })).closest('tr')
+        fireEvent.click(within(baris).getByRole('button', { name: 'Terima Surat' }))
+        await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+            description: 'Distribution sudah diterima atau diproses', variant: 'destructive',
+        })))
+    })
+
+    it('menolak surat yang ditolak server menampilkan pesannya', async () => {
+        mocks.svc.reject.mockRejectedValue(galatApi(409, { success: false, error: 'ConflictError', message: 'Rangkaian surat sudah diberkaskan; disposisinya tidak dapat diubah.', code: 'CONFLICT' }))
+        tampil()
+        const baris = (await screen.findByRole('link', { name: 'SM-1/2026' })).closest('tr')
+        fireEvent.click(within(baris).getByRole('button', { name: 'Tolak & Kembalikan' }))
+        const dialog = within(await screen.findByRole('dialog'))
+        fireEvent.change(dialog.getByPlaceholderText('Tuliskan alasan penolakan di sini...'), { target: { value: 'Bukan kewenangan unit' } })
+        fireEvent.click(dialog.getByRole('button', { name: 'Tolak & Kembalikan' }))
+        await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+            description: 'Rangkaian surat sudah diberkaskan; disposisinya tidak dapat diubah.', variant: 'destructive',
+        })))
+    })
+
+    it('penyelesaian yang ditolak server menampilkan pesannya', async () => {
+        mocks.svc.process.mockRejectedValue(galatApi(400, { success: false, error: 'ValidationError', message: 'Disposisi sudah selesai atau ditolak', code: 'VALIDATION_ERROR' }))
+        tampil()
+        const baris = (await screen.findByRole('link', { name: 'SM-1/2026' })).closest('tr')
+        fireEvent.click(within(baris).getByRole('button', { name: 'Penyelesaian' }))
+        const dialog = within(await screen.findByRole('dialog'))
+        fireEvent.click(await dialog.findByRole('radio', { name: /ND-1\/2026/ }))
+        fireEvent.click(dialog.getByRole('button', { name: 'Simpan Penyelesaian' }))
+        await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+            description: 'Disposisi sudah selesai atau ditolak', variant: 'destructive',
+        })))
     })
 
     it('?penyelesaian=<id> dari detail surat langsung membuka dialog penyelesaian', async () => {

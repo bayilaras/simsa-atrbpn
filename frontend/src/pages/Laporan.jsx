@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { reportService } from '@/services/report.service';
 import { PageHeader } from '@/components/PageHeader';
+import { ResourcePagination } from '@/components/ResourcePagination';
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
 import { canExportReports } from '@/lib/provisioning-access';
@@ -30,6 +31,9 @@ import { Bar } from 'react-chartjs-2';
 // Laporan can be the first chart page a session opens, so it registers the
 // chart.js pieces it needs itself instead of relying on Dashboard.
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
+
+// Ukuran halaman tabel laporan; ekspor tidak memakai paginasi ini.
+const REPORT_PAGE_SIZE = 50;
 
 const MONTHLY_SERIES = [
     { key: 'masuk', label: 'Surat Masuk', color: '#3b82f6' },
@@ -120,6 +124,21 @@ export default function Laporan() {
     const [arsipData, setArsipData] = useState(null);
     const [lendingData, setLendingData] = useState(null);
 
+    // Halaman tiap tab terikat pada filter yang dipakai tab itu, jadi
+    // mengubah filter kembali ke halaman 1.
+    const [pagePositions, setPagePositions] = useState({});
+    const pageQueryKeys = {
+        'surat-masuk': [unitKerjaId, year, tanggalDari, tanggalSampai].join('|'),
+        'surat-keluar': [unitKerjaId, year, tanggalDari, tanggalSampai].join('|'),
+        arsip: [unitKerjaId, year, arsipType, mediaType].join('|'),
+        peminjaman: [unitKerjaId, lendingStatus, tanggalDari, tanggalSampai].join('|'),
+    };
+    const pageOf = (tab) => {
+        const position = pagePositions[tab];
+        return position && position.key === pageQueryKeys[tab] ? position.page : 1;
+    };
+    const activePage = pageOf(activeTab);
+
     // Years for dropdown
     const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
 
@@ -139,6 +158,8 @@ export default function Laporan() {
                         year,
                         tanggalDari: tanggalDari || undefined,
                         tanggalSampai: tanggalSampai || undefined,
+                        page: activePage,
+                        limit: REPORT_PAGE_SIZE,
                     });
                     setSuratMasukData(masuk);
                     break;
@@ -149,6 +170,8 @@ export default function Laporan() {
                         year,
                         tanggalDari: tanggalDari || undefined,
                         tanggalSampai: tanggalSampai || undefined,
+                        page: activePage,
+                        limit: REPORT_PAGE_SIZE,
                     });
                     setSuratKeluarData(keluar);
                     break;
@@ -159,6 +182,8 @@ export default function Laporan() {
                         year,
                         type: arsipType,
                         mediaType,
+                        page: activePage,
+                        limit: REPORT_PAGE_SIZE,
                     });
                     setArsipData(arsip);
                     break;
@@ -169,6 +194,8 @@ export default function Laporan() {
                         status: lendingStatus,
                         tanggalDari: tanggalDari || undefined,
                         tanggalSampai: tanggalSampai || undefined,
+                        page: activePage,
+                        limit: REPORT_PAGE_SIZE,
                     });
                     setLendingData(lending);
                     break;
@@ -184,7 +211,21 @@ export default function Laporan() {
         } finally {
             setLoading(false);
         }
-    }, [activeTab, arsipType, lendingStatus, mediaType, tanggalDari, tanggalSampai, toast, unitKerjaId, year]);
+    }, [activePage, activeTab, arsipType, lendingStatus, mediaType, tanggalDari, tanggalSampai, toast, unitKerjaId, year]);
+
+    const reportPagination = (tab, report) => ({
+        page: pageOf(tab),
+        total: report?.pagination?.total || 0,
+        totalPages: Math.max(1, report?.pagination?.totalPages || 1),
+        loading,
+        error: null,
+        setPage: (next) => setPagePositions((current) => ({
+            ...current,
+            [tab]: { key: pageQueryKeys[tab], page: Math.max(1, next) },
+        })),
+        reload: loadData,
+    });
+    const rowNumber = (tab, index) => (pageOf(tab) - 1) * REPORT_PAGE_SIZE + index + 1;
 
     const handleExport = async (type, format) => {
         if (!unitKerjaId) return;
@@ -522,7 +563,7 @@ export default function Laporan() {
                                 ) : suratMasukData?.data?.length ? (
                                     suratMasukData.data.map((item, index) => (
                                         <TableRow key={item.id} className="hover:bg-muted/80 transition-colors">
-                                            <TableCell data-label="No" className="font-medium text-muted-foreground">{index + 1}</TableCell>
+                                            <TableCell data-label="No" className="font-medium text-muted-foreground">{rowNumber('surat-masuk', index)}</TableCell>
                                             <TableCell data-label="Nomor Surat" className="font-medium">{item.nomorSurat || '-'}</TableCell>
                                             <TableCell data-label="Tanggal">{formatDate(item.tanggalSurat)}</TableCell>
                                             <TableCell data-label="Dari">{item.dari || '-'}</TableCell>
@@ -542,6 +583,9 @@ export default function Laporan() {
                                 )}
                             </TableBody>
                         </Table>
+                        <div className="px-4 pb-4">
+                            <ResourcePagination resource={reportPagination('surat-masuk', suratMasukData)} label="laporan surat masuk" />
+                        </div>
                     </Card>
                 </TabsContent>
 
@@ -601,7 +645,7 @@ export default function Laporan() {
                                 ) : suratKeluarData?.data?.length ? (
                                     suratKeluarData.data.map((item, index) => (
                                         <TableRow key={item.id} className="hover:bg-muted/80 transition-colors">
-                                            <TableCell data-label="No" className="font-medium text-muted-foreground">{index + 1}</TableCell>
+                                            <TableCell data-label="No" className="font-medium text-muted-foreground">{rowNumber('surat-keluar', index)}</TableCell>
                                             <TableCell data-label="Nomor Surat" className="font-medium">{item.nomorSurat || '-'}</TableCell>
                                             <TableCell data-label="Tanggal">{formatDate(item.tanggalSurat)}</TableCell>
                                             <TableCell data-label="Kepada">{item.kepada || '-'}</TableCell>
@@ -623,6 +667,9 @@ export default function Laporan() {
                                 )}
                             </TableBody>
                         </Table>
+                        <div className="px-4 pb-4">
+                            <ResourcePagination resource={reportPagination('surat-keluar', suratKeluarData)} label="laporan surat keluar" />
+                        </div>
                     </Card>
                 </TabsContent>
 
@@ -747,7 +794,7 @@ export default function Laporan() {
                                 ) : arsipData?.data?.length ? (
                                     arsipData.data.map((item, index) => (
                                         <TableRow key={item.id} className="hover:bg-muted/80 transition-colors">
-                                            <TableCell data-label="No" className="font-medium text-muted-foreground">{index + 1}</TableCell>
+                                            <TableCell data-label="No" className="font-medium text-muted-foreground">{rowNumber('arsip', index)}</TableCell>
                                             <TableCell data-label="Kode Klasifikasi" className="font-medium bg-muted/50 px-2 py-1 rounded inline-block text-xs mt-2">{item.kodeKlasifikasi || '-'}</TableCell>
                                             <TableCell data-label="Jenis">
                                                 <Badge variant={item.jenisArsip === 'masuk' ? 'default' : 'secondary'} className="font-normal">
@@ -783,6 +830,9 @@ export default function Laporan() {
                                 )}
                             </TableBody>
                         </Table>
+                        <div className="px-4 pb-4">
+                            <ResourcePagination resource={reportPagination('arsip', arsipData)} label="laporan arsip" />
+                        </div>
                     </Card>
                 </TabsContent>
 
@@ -834,7 +884,7 @@ export default function Laporan() {
                                 ) : lendingData?.data?.length ? (
                                     lendingData.data.map((item, index) => (
                                         <TableRow key={item.id} className="hover:bg-muted/80 transition-colors">
-                                            <TableCell data-label="No" className="font-medium text-muted-foreground">{index + 1}</TableCell>
+                                            <TableCell data-label="No" className="font-medium text-muted-foreground">{rowNumber('peminjaman', index)}</TableCell>
                                             <TableCell data-label="Peminjam" className="font-medium">{item.borrowerName}</TableCell>
                                             <TableCell data-label="Unit">{item.departmentUnit || '-'}</TableCell>
                                             <TableCell data-label="Tgl Pinjam">{formatDate(item.borrowDate)}</TableCell>
@@ -855,6 +905,9 @@ export default function Laporan() {
                                 )}
                             </TableBody>
                         </Table>
+                        <div className="px-4 pb-4">
+                            <ResourcePagination resource={reportPagination('peminjaman', lendingData)} label="laporan peminjaman" />
+                        </div>
                     </Card>
                 </TabsContent>
             </Tabs>

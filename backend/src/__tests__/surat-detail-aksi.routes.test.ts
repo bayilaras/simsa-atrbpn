@@ -12,9 +12,11 @@ vi.mock('../middlewares/auth.middleware', () => ({
 }));
 vi.mock('../services/surat-masuk.service', () => ({ suratMasukService: {
     findById: vi.fn(async () => ({ id: ID, unitKerjaId: 'sesditjen', perihal: 'Permohonan', filePath: null })),
+    findArsipId: vi.fn(async () => null),
 } }));
 vi.mock('../services/surat-keluar.service', () => ({ suratKeluarService: {
     findById: vi.fn(async () => ({ id: ID, unitKerjaId: 'sesditjen', perihal: 'Keputusan Dirjen', filePath: null })),
+    findArsipId: vi.fn(async () => null),
 } }));
 vi.mock('../services/record-access.service.js', () => {
     const akses = { exists: true, allowed: true, mutable: false, via: 'peserta', rangkaianId: 'rs-1', unitKerjaId: 'sesditjen', classification: 'biasa', grantId: null, accessPurpose: null, grantAccessMode: null, grantExpiresAt: null, masked: false };

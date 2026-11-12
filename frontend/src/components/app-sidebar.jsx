@@ -27,6 +27,7 @@ import {
     Scale,
     Settings2,
     Search,
+    FileText,
 } from 'lucide-react'
 
 import {
@@ -213,6 +214,12 @@ const menuGroups = [
                 title: 'Laporan',
                 url: '/laporan',
                 icon: FileBarChart,
+                allowedRoles: ALL_PROVISIONED_ROLES,
+            },
+            {
+                title: 'Formulir',
+                url: '/formulir',
+                icon: FileText,
                 allowedRoles: ALL_PROVISIONED_ROLES,
             },
             {

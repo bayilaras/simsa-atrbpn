@@ -630,6 +630,17 @@ export class SuratKeluarService {
             arsipEntry: arsipEntry || null,
         };
     }
+
+    /** Id arsip hasil pengarsipan surat ini; hak baca arsip diperiksa pemanggil. */
+    async findArsipId(id: string): Promise<string | null> {
+        const { arsip } = await import('../db/schema');
+        const [row] = await db
+            .select({ id: arsip.id })
+            .from(arsip)
+            .where(and(eq(arsip.sourceSuratId, id), eq(arsip.jenisArsip, 'keluar')))
+            .limit(1);
+        return row?.id ?? null;
+    }
 }
 
 export const suratKeluarService = new SuratKeluarService();

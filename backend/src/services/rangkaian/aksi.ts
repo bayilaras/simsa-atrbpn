@@ -5,6 +5,7 @@ import {
     type RangkaianStatus, type RecordReadAccess, type RecordUser, type StatusAlur, type SuratJenis,
 } from './deps.js';
 import { rangkaianStatusService } from './rangkaian-status.service.js';
+import { wewenangBatalRelasi } from './rangkaian-link.service.js';
 import { FULL_ADMIN_ROLES, isFullAdmin, unitEfektif } from './roles.js';
 import { rowsOf, uuidArraySql } from './sql-rows.js';
 
@@ -218,6 +219,31 @@ export async function disposisiDapatDitutup(user: RecordUser, distribusiIds: str
           FROM surat_distributions d JOIN surat_masuk sm ON sm.id = d.surat_masuk_id
          WHERE d.id = ANY(${uuidArraySql(distribusiIds)}) AND d.status IN ('sent', 'received')`));
     return new Set(rows.filter((row) => isPengawasRecordUnit(row.unit)).map((row) => row.id));
+}
+
+/**
+ * Id relasi (dari daftar yang diberikan) yang dapat dibatalkan pengguna ini:
+ * relasi aktif pada rangkaian aktif/selesai yang lolos `wewenangBatalRelasi`,
+ * predikat endpoint batal (pembuat relasi atau pengawas). Per relasi, karena
+ * `batal_relasi` level rangkaian hanya mencakup pengawas.
+ */
+export async function relasiDapatDibatalkan(user: RecordUser, relasiIds: string[]): Promise<Set<string>> {
+    if (relasiIds.length === 0 || !isFullAdmin(user)) return new Set();
+    const rows = rowsOf<{ id: string; rangkaian_id: string; unit_pencatat_id: string; created_by: string | null }>(await db.execute(sql`
+        SELECT r.id::text AS id, r.rangkaian_id::text AS rangkaian_id, rs.unit_pencatat_id, r.created_by::text AS created_by
+          FROM rangkaian_relasi r JOIN rangkaian_surat rs ON rs.id = r.rangkaian_id
+         WHERE r.id = ANY(${uuidArraySql(relasiIds)}) AND r.cancelled_at IS NULL
+           AND rs.status IN ('aktif', 'selesai')`));
+    // Hasil predikat hanya bergantung pada rangkaian, unit pencatat, dan
+    // apakah pengguna pembuat relasinya; nilai yang sama dipakai ulang.
+    const wewenang = new Map<string, Promise<boolean | null>>();
+    const boleh = new Set<string>();
+    for (const row of rows) {
+        const kunci = `${row.rangkaian_id}|${row.unit_pencatat_id}|${row.created_by === user.id}`;
+        if (!wewenang.has(kunci)) wewenang.set(kunci, wewenangBatalRelasi(db, user, row));
+        if ((await wewenang.get(kunci)) === true) boleh.add(row.id);
+    }
+    return boleh;
 }
 
 /** `aksiDiizinkan` untuk GET rangkaian (id rangkaian yang sudah di-resolve getDetail). */

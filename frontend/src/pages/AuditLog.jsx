@@ -229,7 +229,7 @@ export default function AuditLog() {
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                 <Input
                                     id="audit-search"
-                                    placeholder="Cari user, email, atau ID..."
+                                    placeholder="Cari nama pengguna, email, atau ID entitas..."
                                     value={search}
                                     onChange={(e) => applyFilter(setSearch)(e.target.value)}
                                     className="pl-9 bg-background focus:bg-background"

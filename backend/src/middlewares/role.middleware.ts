@@ -35,7 +35,7 @@ export function canWriteMiddleware() {
         if (isReadOnlyRole(userRole) || missingUnitMandate(req)) {
             return res.status(403).json({
                 error: 'Forbidden',
-                message: 'Read-only access. You cannot modify data.'
+                message: 'Akses hanya-baca. Anda tidak dapat mengubah data.'
             });
         }
 

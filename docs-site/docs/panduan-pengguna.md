@@ -321,7 +321,7 @@ Jenis peristiwa yang tersedia mencakup kegiatan selesai, berkas ditutup, serah t
 
 ### Pemindahan, pemusnahan, dan alih media
 
-Menu **Penyusutan** hanya muncul bila modulnya diaktifkan operator. Selama modul belum diaktifkan, pemindahan dan pemusnahan arsip dilakukan di luar SIMSA mengikuti prosedur unit; gunakan **Manajemen Retensi** untuk melihat arsip yang masa retensinya sudah atau hampir habis dan untuk mencetak draf berita acara pemusnahan melalui **Generate Berita Acara**.
+Menu **Penyusutan** hanya muncul bila modulnya diaktifkan operator. Selama modul belum diaktifkan, pemindahan dan pemusnahan arsip dilakukan di luar SIMSA mengikuti prosedur unit; gunakan **Manajemen Retensi** untuk melihat arsip yang masa retensinya sudah atau hampir habis dan untuk mencetak draf berita acara pemusnahan tanpa nomor (nomor diisi manual) melalui **Generate Berita Acara**.
 
 Pada menu **Penyusutan**:
 

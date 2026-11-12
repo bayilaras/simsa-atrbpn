@@ -49,6 +49,35 @@ describe('private file preview', () => {
         expect(revokeObjectURL).toHaveBeenCalledWith('blob:http://localhost:3000/private-preview');
     });
 
+    it('mode tayang: toolbar PDF dimatikan, tanpa tab baru dan tanpa tombol unduh', async () => {
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true, status: 200, headers: new Headers(),
+            blob: async () => new Blob(['%PDF-1.7'], { type: 'application/pdf' }),
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        render(<FilePreviewSection surat={{ ...surat, berkasHanyaTayang: true }} />);
+        expect(screen.getByText(/Izin akses Anda hanya untuk penayangan/)).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Download' })).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Muat dokumen' }));
+        expect(await screen.findByTitle('PDF Preview')).toHaveAttribute('src', 'blob:http://localhost:3000/private-preview#toolbar=0&navpanes=0');
+        expect(screen.queryByRole('link', { name: 'Buka di Tab Baru' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Download' })).not.toBeInTheDocument();
+        expect(fetchMock).toHaveBeenCalledOnce();
+        expect(fetchMock.mock.calls[0][0]).toBe('/api/files/surat_masuk/surat%2Fa');
+    });
+
+    it('akses normal tetap menampilkan toolbar PDF, tab baru, dan tombol unduh', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true, status: 200, headers: new Headers(),
+            blob: async () => new Blob(['%PDF-1.7'], { type: 'application/pdf' }),
+        }));
+        render(<FilePreviewSection surat={{ ...surat, berkasHanyaTayang: false }} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Muat dokumen' }));
+        expect(await screen.findByTitle('PDF Preview')).toHaveAttribute('src', 'blob:http://localhost:3000/private-preview#toolbar=1&navpanes=0');
+        expect(screen.getByRole('link', { name: 'Buka di Tab Baru' })).toHaveAttribute('href', 'blob:http://localhost:3000/private-preview');
+        expect(screen.getByRole('button', { name: 'Download' })).toBeEnabled();
+    });
+
     it('re-authorizes each download instead of bypassing a view-only grant with the preview blob', async () => {
         const fetchMock = vi.fn().mockResolvedValueOnce({
             ok: true, status: 200, headers: new Headers(),

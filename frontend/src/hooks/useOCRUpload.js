@@ -64,6 +64,8 @@ export function validateNewBulkFiles(existingFiles, incomingFiles) {
 
 function getUploadErrorMessage(error, fallback) {
     const body = error?.response?.data || error?.data;
+    // Pembatas laju dan galat global mengirim nama galat di `error` dan alasannya di `message`.
+    if (body?.message) return body.message;
     if (body?.error) return body.error;
     if (Array.isArray(body?.errors) && body.errors.length > 0) {
         return body.errors

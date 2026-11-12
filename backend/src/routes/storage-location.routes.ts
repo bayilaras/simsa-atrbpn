@@ -81,7 +81,7 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
         const result = await storageLocationService.findById(id as string, unitKerjaId);
 
         if (!result) {
-            return res.status(404).json({ error: 'Storage location not found' });
+            return res.status(404).json({ error: 'Lokasi simpan tidak ditemukan.' });
         }
 
         res.json({ success: true, data: result });
@@ -144,7 +144,7 @@ router.put('/:id', canWriteMiddleware(), validateBody(updateStorageLocationSchem
         });
 
         if (!result) {
-            return res.status(404).json({ error: 'Storage location not found' });
+            return res.status(404).json({ error: 'Lokasi simpan tidak ditemukan.' });
         }
 
         res.json({ success: true, data: result });
@@ -166,7 +166,7 @@ router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res, next) 
         });
 
         if (!result) {
-            return res.status(404).json({ error: 'Storage location not found' });
+            return res.status(404).json({ error: 'Lokasi simpan tidak ditemukan.' });
         }
 
         res.json({ success: true, message: 'Storage location deleted successfully' });

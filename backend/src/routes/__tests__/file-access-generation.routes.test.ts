@@ -155,6 +155,20 @@ describe('authorized private file access', () => {
         expect(mocks.downloadFile).toHaveBeenCalledWith(locator, { generation: undefined, abortSignal: expect.any(AbortSignal) });
     });
 
+    it.each([
+        ['view', 403],
+        ['manage', 403],
+        ['download', 200],
+    ] as const)('menolak unduhan surat lewat izin mode %s sesuai tanda berkasHanyaTayang', async (grantAccessMode, status) => {
+        mocks.select
+            .mockReturnValueOnce(limitedRows([{ filePath: `blob:${locator}`, fileName: 'final.pdf' }]))
+            .mockReturnValueOnce(unrestrictedRows([attachment]));
+        mocks.accessCheckRead.mockResolvedValueOnce({ exists: true, allowed: true, grantId: 'grant-1', grantAccessMode, via: 'owner', rangkaianId: null });
+        mocks.markGrantUsed.mockResolvedValue(true);
+        await request(app).get(`/api/files/surat_masuk/${attachment.entityId}?download=1`).expect(status);
+        expect(mocks.downloadFile).toHaveBeenCalledTimes(status === 200 ? 1 : 0);
+    });
+
     it.each([['not_scanned', 'pending'], ['infected', 'blocked'], ['scan_error', 'blocked']])('retains archive %s quarantine guidance without reading bytes', async (malwareScanStatus, expected) => {
         mocks.select.mockReturnValueOnce(limitedRows([{ ...attachment, entityType: 'arsip', malwareScanStatus }]));
         const response = await request(app).get(`/api/files/attachment/${attachment.id}`).expect(423);

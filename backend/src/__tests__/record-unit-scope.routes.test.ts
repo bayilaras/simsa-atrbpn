@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     },
     suratKeluar: {
         findById: vi.fn(),
+        findArsipId: vi.fn(async () => null),
     },
     dosir: {
         getById: vi.fn(),

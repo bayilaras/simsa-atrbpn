@@ -381,7 +381,7 @@ describe('DistributionService', () => {
 
         it('should throw if distribution not found', async () => {
             enqueue([]);
-            await expect(svc.receive('missing', 'u1', 'unit-1')).rejects.toThrow('Distribution not found');
+            await expect(svc.receive('missing', 'u1', 'unit-1')).rejects.toThrow('Distribusi tidak ditemukan.');
             expect(rangkaianMocks.lockRangkaian).not.toHaveBeenCalled();
         });
 

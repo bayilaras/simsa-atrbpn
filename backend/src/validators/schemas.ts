@@ -20,7 +20,7 @@ export const dateSchema = z.string()
 
 const optionalNomorSuratSchema = z.preprocess(
     value => typeof value === 'string' && value.trim() === '' ? undefined : value,
-    z.string().trim().min(1, 'Nomor surat is required').max(255).optional(),
+    z.string().trim().min(1, 'Nomor surat wajib diisi').max(255).optional(),
 );
 
 export type SuratBlobFolder = 'surat-masuk' | 'surat-keluar';
@@ -145,15 +145,15 @@ export type TindakLanjutInput = z.infer<typeof tindakLanjutInputSchema>;
 // Surat Masuk schemas
 // Fields must match database schema in db/schema/surat-masuk.ts
 export const createSuratMasukSchema = z.object({
-    unitKerjaId: z.string().min(1, 'Unit kerja is required').max(50),
+    unitKerjaId: z.string().min(1, 'Unit kerja wajib diisi').max(50),
     noUrut: z.coerce.number().int().positive().optional(), // Auto-generated if not provided
     tahun: z.coerce.number().int().min(2000).max(2100).optional(), // Defaults to current year
     jenisSurat: z.string().max(100).optional(),
     sifatSurat: z.string().max(50).optional(), // Biasa, Segera, Sangat Segera
     nomorSurat: optionalNomorSuratSchema,
     tanggalSurat: dateSchema,
-    perihal: z.string().min(1, 'Perihal is required').max(2000),
-    dari: z.string().min(1, 'Pengirim is required').max(255), // Field name is 'dari' in DB
+    perihal: z.string().min(1, 'Perihal wajib diisi').max(2000),
+    dari: z.string().min(1, 'Pengirim wajib diisi').max(255), // Field name is 'dari' in DB
     kepada: z.string().max(255).optional(),
     status: z.enum(['belum_dibalas', 'sudah_dibalas']).optional().default('belum_dibalas'),
     disposisi: z.preprocess(parseJsonObjectString, z.union([disposisiRoutingSchema, legacyDisposisiLabels])).optional(),
@@ -199,7 +199,7 @@ export const querySuratMasukSchema = paginationSchema.extend({
 // Surat Keluar schemas
 // Fields must match database schema in db/schema/surat-keluar.ts.
 const suratKeluarBaseSchema = z.object({
-    unitKerjaId: z.string().min(1, 'Unit kerja is required').max(50),
+    unitKerjaId: z.string().min(1, 'Unit kerja wajib diisi').max(50),
     tahun: z.coerce.number().int().min(2000).max(2100).optional(),
     naskahDinas: z.string().max(100).optional(),
     // Urgensi saja (biasa, penting, segera, sangat_segera); tanpa default agar PUT tidak menimpanya.
@@ -211,8 +211,8 @@ const suratKeluarBaseSchema = z.object({
     numberingMode: z.enum(['auto', 'manual']).optional(),
     nomorSurat: optionalNomorSuratSchema,
     tanggalSurat: dateSchema,
-    perihal: z.string().min(1, 'Perihal is required').max(2000),
-    kepada: z.string().min(1, 'Penerima is required').max(2000),
+    perihal: z.string().min(1, 'Perihal wajib diisi').max(2000),
+    kepada: z.string().min(1, 'Kepada wajib diisi').max(2000),
     linkDokumen: z.string().url().optional().or(z.literal('')),
     balasanUntuk: uuidSchema.optional().nullable(),
     asalNaskah: z.enum(['inisiatif', 'tindak_lanjut']).optional(),
@@ -459,7 +459,7 @@ const optionalVitalField = <T extends z.ZodType>(schema: T) => z.preprocess(
 
 export const createArsipVitalSchema = z.object({
     arsipId: uuidSchema,
-    unitKerjaId: z.string().min(1, 'Unit kerja is required').max(50),
+    unitKerjaId: z.string().min(1, 'Unit kerja wajib diisi').max(50),
     kategoriVital: z.enum(KATEGORI_ARSIP_VITAL),
     tingkatKekritisan: z.enum(['sangat_kritis', 'kritis', 'penting']),
     alasanPenetapan: optionalVitalField(z.string().max(2000)),
@@ -480,7 +480,7 @@ export const updateArsipVitalSchema = createArsipVitalSchema.partial()
 // Arsip Terjaga schemas
 export const createArsipTerjagaSchema = z.object({
     arsipId: uuidSchema,
-    unitKerjaId: z.string().min(1, 'Unit kerja is required').max(50),
+    unitKerjaId: z.string().min(1, 'Unit kerja wajib diisi').max(50),
     kategoriTerjaga: z.enum(['kepulauan', 'perjanjian_internasional', 'masalah_strategis']),
     dasarHukum: z.string().max(2000).optional(),
     uraianIsi: z.string().max(2000).optional(),
@@ -515,9 +515,9 @@ export type CreateArsipTerjaga = z.infer<typeof createArsipTerjagaSchema>;
 export type UpdateArsipTerjaga = z.infer<typeof updateArsipTerjagaSchema>;
 // Autentikasi schemas
 export const createAutentikasiSchema = z.object({
-    nomorBeritaAcara: z.string().min(1, 'Nomor berita acara is required').max(100),
+    nomorBeritaAcara: z.string().min(1, 'Nomor berita acara wajib diisi').max(100),
     tanggalAutentikasi: dateSchema,
-    kegiatan: z.string().min(1, 'Kegiatan is required').max(255),
+    kegiatan: z.string().min(1, 'Kegiatan wajib diisi').max(255),
     itemArsipIds: z.array(uuidSchema).min(1, 'At least one archive must be selected'),
     // Optional overrides for PDF generation if needed
     jabatanPenandaTangan: z.string().max(100).optional(),
@@ -550,7 +550,7 @@ export type ConfirmBulkUpload = z.infer<typeof confirmBulkUploadSchema>;
 // ==================== Dosir schemas ====================
 
 export const createDosirSchema = z.object({
-    judul: z.string().min(1, 'Judul is required').max(500),
+    judul: z.string().min(1, 'Judul wajib diisi').max(500),
     deskripsi: z.string().max(2000).optional(),
     kategori: z.string().max(100).optional(),
     tanggalMulai: dateSchema.optional(),
@@ -596,8 +596,8 @@ export type LinkSuratToDosir = z.infer<typeof linkSuratToDosirSchema>;
  */
 export const createDistributionSchema = z.object({
     suratMasukId: uuidSchema,
-    sourceUnitId: z.string().min(1, 'Source unit is required').max(50),
-    targetUnitId: z.string().min(1, 'Target unit is required').max(50).optional(),
+    sourceUnitId: z.string().min(1, 'Unit asal wajib diisi').max(50),
+    targetUnitId: z.string().min(1, 'Unit tujuan wajib diisi').max(50).optional(),
     // DistributeDialog mengirim `instruction: null` bila instruksi dikosongkan.
     instruction: z.string().max(2000).nullish(),
     ccUnits: z.array(z.string().max(50)).optional(),
@@ -677,7 +677,7 @@ export type LacakQuery = z.infer<typeof lacakQuerySchema>;
 // ==================== Penyusutan schemas ====================
 
 export const createPenyusutanSchema = z.object({
-    unitKerjaId: z.string().min(1, 'Unit kerja is required').max(50),
+    unitKerjaId: z.string().min(1, 'Unit kerja wajib diisi').max(50),
     jenisPenyusutan: z.enum(['pemindahan', 'pemusnahan', 'penyerahan', 'alih_media']),
     arsipIds: z.array(uuidSchema).min(1, 'Minimal satu arsip harus dipilih'),
     keterangan: z.string().max(2000).optional(),
@@ -696,7 +696,7 @@ export const removePenyusutanItemsSchema = z.object({
 });
 
 export const legalHoldActionSchema = z.object({
-    unitKerjaId: z.string().min(1, 'Unit kerja is required').max(50),
+    unitKerjaId: z.string().min(1, 'Unit kerja wajib diisi').max(50),
     reason: z.string()
         .trim()
         .min(10, 'Alasan legal hold minimal 10 karakter')
@@ -710,9 +710,9 @@ export type LegalHoldAction = z.infer<typeof legalHoldActionSchema>;
 // ==================== Storage Location schemas ====================
 
 export const createStorageLocationSchema = z.object({
-    unitKerjaId: z.string().min(1, 'Unit kerja is required').max(50),
-    code: z.string().trim().min(1, 'Kode lokasi is required').max(50),
-    name: z.string().min(1, 'Nama lokasi is required').max(255),
+    unitKerjaId: z.string().min(1, 'Unit kerja wajib diisi').max(50),
+    code: z.string().trim().min(1, 'Kode lokasi wajib diisi').max(50),
+    name: z.string().min(1, 'Nama lokasi wajib diisi').max(255),
     level: z.enum(['gedung', 'ruang', 'rak', 'box']),
     parentId: uuidSchema.optional().nullable(),
     description: z.string().max(2000).optional(),
@@ -735,7 +735,7 @@ export const borrowArchiveSchema = z.object({
     lendingType: z.enum(['arsip', 'box']),
     arsipId: uuidSchema.optional(), // Required when lendingType = 'arsip'
     storageLocationId: uuidSchema.optional(), // Required when lendingType = 'box'
-    borrowerName: z.string().min(1, 'Nama peminjam is required').max(255),
+    borrowerName: z.string().min(1, 'Nama peminjam wajib diisi').max(255),
     departmentUnit: z.string().max(255).optional(),
     dueDate: dateSchema,
     purpose: z.string().max(2000).optional(),

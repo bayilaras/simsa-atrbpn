@@ -68,6 +68,8 @@ export interface RelasiRangkaian {
     jenisRelasi: 'balasan' | 'tindak_lanjut' | 'menjelaskan' | 'merujuk';
     keterangan: string | null;
     createdAt: string;
+    /** Diisi rute GET rangkaian — true bila pengguna dapat membatalkan relasi ini (pembuat atau pengawas). */
+    bolehBatal?: boolean;
 }
 
 export interface DisposisiRangkaian {

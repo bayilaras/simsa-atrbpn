@@ -286,7 +286,7 @@ export default function SuratKeluarDetail() {
         <div className="space-y-6">
             {/* Breadcrumb */}
             <nav className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Link to="/surat" className="hover:text-foreground transition-colors">Surat</Link>
+                <Link to="/surat/keluar" className="hover:text-foreground transition-colors">Surat</Link>
                 <span>/</span>
                 <Link to="/surat/keluar" className="hover:text-foreground transition-colors">Keluar</Link>
                 <span>/</span>
@@ -621,7 +621,7 @@ export default function SuratKeluarDetail() {
 
                             {surat.isArchived && surat.arsipId && aksesMelalui === 'owner' && (
                                 <Button variant="outline" className="w-full" size="sm" asChild>
-                                    <Link to={`/arsip?id=${surat.arsipId}`}>
+                                    <Link to={`/arsip/detail/${encodeURIComponent(surat.arsipId)}`}>
                                         <Eye className="mr-2 h-4 w-4" />
                                         Lihat di Arsip
                                     </Link>
