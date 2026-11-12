@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import TunjukSilang from './TunjukSilang';
@@ -83,7 +83,7 @@ it('traces a document picked by search and links each related record to its deta
     await waitFor(() => expect(mocks.getByEntity).toHaveBeenCalledWith('arsip', ARSIP_ID));
     expect(await screen.findByRole('link', { name: /Undangan rapat/ })).toHaveAttribute('href', `/surat/masuk/${SURAT_ID}`);
     expect(screen.getByText('Surat Masuk • No: 12/UND/2026 • Undangan')).toBeInTheDocument();
-    expect(screen.getByText('1 tunjuk silang ditemukan')).toBeInTheDocument();
+    expect(screen.getByText('1 tunjuk silang dapat Anda lihat')).toBeInTheDocument();
     expect(screen.queryByText(SURAT_ID)).toBeNull();
     expect(screen.getByRole('button', { name: 'Ganti' })).toBeInTheDocument();
 });
@@ -211,4 +211,100 @@ it('shows registry rows with labels and a neutral placeholder for unreadable rec
     expect(placeholder.closest('a')).toBeNull();
     expect(screen.queryByText(SURAT_ID)).toBeNull();
     expect(screen.queryByText(ARSIP_ID)).toBeNull();
+});
+
+it('marks controlled-class documents in the picker and explains the mark', async () => {
+    mocks.arsipSearch.mockResolvedValue(daftar([arsip, { ...arsip, id: ARSIP_TERKUNCI_ID, uraianBerkas: 'Berkas terbatas', klasifikasiKeamanan: 'Terbatas' }]));
+    renderPage();
+
+    const terbatas = await screen.findByRole('button', { name: /Berkas terbatas/ });
+    expect(terbatas).toBeEnabled();
+    expect(within(terbatas).getByText('Perlu persetujuan akses')).toBeInTheDocument();
+    expect(within(screen.getByRole('button', { name: /Berkas pengadaan/ })).queryByText('Perlu persetujuan akses')).toBeNull();
+    expect(screen.getByText(/hanya dapat ditelusuri atau ditautkan selama Anda memegang persetujuan akses/)).toBeInTheDocument();
+});
+
+it('treats an outgoing letter without a recorded class as controlled and an urgent incoming letter as open', async () => {
+    mocks.keluarGetAll.mockResolvedValue(daftar([
+        { id: SURAT_ID, nomorSurat: 'K-1', perihal: 'Surat lama', unitKerjaId: 'unit-a', isArchived: false, klasifikasiKeamanan: null },
+        { id: REF_ID, nomorSurat: 'K-2', perihal: 'Surat biasa', unitKerjaId: 'unit-a', isArchived: false, klasifikasiKeamanan: 'biasa' },
+    ]));
+    mocks.masukGetAll.mockResolvedValue(daftar([{ ...suratMasuk, sifatSurat: 'Segera' }]));
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Surat Keluar' }));
+    expect(within(await screen.findByRole('button', { name: /Surat lama/ })).getByText('Perlu persetujuan akses')).toBeInTheDocument();
+    expect(within(screen.getByRole('button', { name: /Surat biasa/ })).queryByText('Perlu persetujuan akses')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Surat Masuk' }));
+    const masuk = await screen.findByRole('button', { name: /Undangan rapat/ });
+    expect(within(masuk).queryByText('Perlu persetujuan akses')).toBeNull();
+    expect(screen.queryByText(/hanya dapat ditelusuri atau ditautkan/)).toBeNull();
+});
+
+it('explains that an access approval is needed when a controlled-class document cannot be traced', async () => {
+    mocks.arsipSearch.mockResolvedValue(daftar([{ ...arsip, klasifikasiKeamanan: 'terbatas' }]));
+    mocks.getByEntity.mockRejectedValue(Object.assign(new Error('Dokumen tidak ditemukan atau di luar jangkauan Anda'), { status: 404 }));
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Berkas pengadaan/ }));
+
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+        title: 'Tunjuk silang belum dapat ditampilkan',
+        description: expect.stringContaining('persetujuan akses yang masih berlaku'),
+    })));
+});
+
+it('adds the access approval hint when saving a controlled-class document is refused', async () => {
+    mocks.arsipSearch.mockResolvedValue(daftar([{ ...arsip, klasifikasiKeamanan: 'terbatas' }]));
+    mocks.create.mockRejectedValue(Object.assign(new Error('Dokumen sumber atau tujuan tidak dapat ditautkan'), { status: 404 }));
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Tambah Tunjuk Silang' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Tambah Tunjuk Silang' });
+    fireEvent.click(await within(dialog).findByRole('button', { name: /Berkas pengadaan/ }));
+    fireEvent.click(await within(dialog).findByRole('button', { name: /Undangan rapat/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Simpan Tunjuk Silang' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+        'Dokumen sumber atau tujuan tidak dapat ditautkan. Dokumen berkelas Terbatas atau lebih tinggi hanya dapat ditautkan selama Anda memegang persetujuan akses untuk mengelolanya.',
+    );
+});
+
+it('does not claim a document has no cross reference when none is visible to the viewer', async () => {
+    mocks.getByEntity.mockResolvedValue({ data: [], subject: null, pagination: { page: 1, limit: 100, total: 0 } });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Berkas pengadaan/ }));
+
+    expect(await screen.findByText('Tidak ada tunjuk silang yang dapat Anda lihat untuk dokumen ini')).toBeInTheDocument();
+    expect(screen.queryByText(/Belum ada tunjuk silang/)).toBeNull();
+});
+
+it('drops the answer for a document that is no longer the one being traced', async () => {
+    const jawaban = [];
+    mocks.getByEntity.mockImplementation(() => new Promise((resolve) => { jawaban.push(resolve); }));
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Berkas pengadaan/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ganti' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Berkas ditahan/ }));
+    await waitFor(() => expect(jawaban).toHaveLength(2));
+
+    await act(async () => { jawaban[1]({ data: [], subject: null, pagination: null }); });
+    expect(await screen.findByText('Tidak ada tunjuk silang yang dapat Anda lihat untuk dokumen ini')).toBeInTheDocument();
+    await act(async () => { jawaban[0]({ data: [hubungan], subject: null, pagination: null }); });
+
+    expect(screen.queryByRole('link', { name: /Undangan rapat/ })).toBeNull();
+    expect(screen.getByText('Tidak ada tunjuk silang yang dapat Anda lihat untuk dokumen ini')).toBeInTheDocument();
+});
+
+it('shows nothing when the answer arrives after the traced document was released', async () => {
+    const jawaban = [];
+    mocks.getByEntity.mockImplementation(() => new Promise((resolve) => { jawaban.push(resolve); }));
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Berkas pengadaan/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ganti' }));
+    await act(async () => { jawaban[0]({ data: [hubungan], subject: null, pagination: null }); });
+
+    expect(screen.queryByRole('link', { name: /Undangan rapat/ })).toBeNull();
+    expect(screen.queryByText('Memuat tunjuk silang...')).toBeNull();
 });

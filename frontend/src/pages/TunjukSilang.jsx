@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
     Link2, Search, Plus, Unlink, RefreshCw, ArrowRight, ArrowLeft,
@@ -79,29 +79,43 @@ export default function TunjukSilang() {
         return () => window.clearTimeout(loadTimer)
     }, [canViewRegistry, fetchData, fetchStats])
 
+    // Kunci penelusuran terakhir; jawaban untuk dokumen yang sudah diganti atau dilepas diabaikan.
+    const kunciTelusur = useRef(null)
+
     const telusuri = useCallback(async (dokumen) => {
+        const kunci = `${dokumen.tipe}:${dokumen.id}`
+        kunciTelusur.current = kunci
         setLookupLoading(true)
         try {
             const result = await tunjukSilangService.getByEntity(dokumen.tipe, dokumen.id)
+            if (kunciTelusur.current !== kunci) return null
             setLookupResults(result.data)
+            setLookupLoading(false)
             return result
         } catch (err) {
+            if (kunciTelusur.current !== kunci) return null
             toast({
                 title: 'Tunjuk silang belum dapat ditampilkan',
-                description: pesanGalat(err, 'Silakan coba lagi.'),
+                description: err?.status === 404 && dokumen.perluPersetujuan
+                    ? 'Dokumen ini berkelas Terbatas atau lebih tinggi. Tunjuk silangnya hanya dapat ditelusuri selama Anda memegang persetujuan akses yang masih berlaku.'
+                    : pesanGalat(err, 'Silakan coba lagi.'),
                 variant: 'destructive',
             })
             setLookupResults(null)
-            return null
-        } finally {
             setLookupLoading(false)
+            return null
         }
     }, [toast])
 
     const pilihDicari = (dokumen) => {
         setDicari(dokumen)
         setLookupResults(null)
-        if (dokumen) telusuri(dokumen)
+        if (dokumen) {
+            telusuri(dokumen)
+        } else {
+            kunciTelusur.current = null
+            setLookupLoading(false)
+        }
     }
 
     // Tautan dari halaman rinci surat/arsip membawa ?jenis=...&id=... agar dokumen itu langsung ditelusuri.
@@ -357,15 +371,15 @@ export default function TunjukSilang() {
                                             <div className="p-3 bg-muted rounded-full w-12 h-12 mx-auto mb-3 flex items-center justify-center">
                                                 <Info className="h-6 w-6 text-muted-foreground" />
                                             </div>
-                                            <h3 className="font-medium text-foreground">Tidak Ditemukan</h3>
-                                            <p className="text-sm text-muted-foreground mt-1">Belum ada tunjuk silang untuk dokumen ini</p>
+                                            <h3 className="font-medium text-foreground">Tidak Ada yang Dapat Ditampilkan</h3>
+                                            <p className="text-sm text-muted-foreground mt-1">Tidak ada tunjuk silang yang dapat Anda lihat untuk dokumen ini</p>
                                         </div>
                                     ) : (
                                         <div className="space-y-4">
                                             <div className="flex flex-wrap items-center justify-between gap-3">
                                                 <p className="text-sm font-medium flex items-center gap-2">
                                                     <CheckCircle2 className="h-4 w-4 text-green-600" />
-                                                    {lookupResults.length} tunjuk silang ditemukan
+                                                    {lookupResults.length} tunjuk silang dapat Anda lihat
                                                 </p>
                                             </div>
                                             <div className="grid gap-3">
