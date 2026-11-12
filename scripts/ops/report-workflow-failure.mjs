@@ -10,8 +10,8 @@
 //   report-workflow-failure.mjs          (run by the notify job, needs `gh`)
 // GH_TOKEN                  token with issues: write
 // GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID   set by GitHub Actions
-// FAILURE_ISSUE_MIN_HOURS   optional 0-168: skip the comment while the open
-//                           issue was updated more recently (hourly workflows)
+// FAILURE_ISSUE_MIN_HOURS   optional 0-168: skip the comment while the workflow's
+//                           own last report on the open issue is more recent
 import { execFile } from 'node:child_process';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -32,19 +32,30 @@ export function failureReport(environment) {
       + 'Rincian hanya tersedia bagi pengelola pada halaman run tersebut. Tutup isu ini setelah penyebabnya ditangani; kegagalan berikutnya membuka isu baru.' };
 }
 
+// The repository is public, so anyone can open an issue with the same title or
+// comment on ours. Only issues and comments written with the workflow token
+// count, both for choosing the issue and for the minimum interval.
+const WORKFLOW_AUTHORS = new Set(['github-actions', 'app/github-actions', 'github-actions[bot]']);
+const byWorkflow = author => WORKFLOW_AUTHORS.has(author?.login);
+
 /** `gh(args)` resolves to stdout. Returns what was done, never any issue content. */
 export async function reportWorkflowFailure(environment, { gh, now = Date.now } = {}) {
   const report = failureReport(environment), target = ['--repo', report.repository];
-  const listed = JSON.parse(await gh(['issue', 'list', ...target, '--state', 'open', '--limit', '200', '--json', 'number,title,updatedAt']));
+  const listed = JSON.parse(await gh(['issue', 'list', ...target, '--state', 'open', '--author', 'app/github-actions', '--limit', '200', '--json', 'number,title,createdAt,author']));
   // Exact title only, oldest first: a similarly named issue is never touched.
-  const existing = (Array.isArray(listed) ? listed : []).filter(issue => issue?.title === report.title && Number.isSafeInteger(issue.number))
+  const existing = (Array.isArray(listed) ? listed : []).filter(issue => issue?.title === report.title && Number.isSafeInteger(issue.number) && byWorkflow(issue.author))
     .sort((a, b) => a.number - b.number)[0];
   if (!existing) {
     await gh(['issue', 'create', ...target, '--title', report.title, '--body', report.body]);
     return { action: 'created' };
   }
-  const updated = Date.parse(existing.updatedAt);
-  if (report.minimumHours > 0 && Number.isFinite(updated) && now() - updated < report.minimumHours * 3600000) return { action: 'already_reported' };
+  if (report.minimumHours > 0) {
+    const since = now() - report.minimumHours * 3600000, recent = time => Number.isFinite(time) && time > since;
+    if (recent(Date.parse(existing.createdAt))) return { action: 'already_reported' };
+    const comments = JSON.parse(await gh(['api', '--method', 'GET', `repos/${report.repository}/issues/${existing.number}/comments`,
+      '-f', `since=${new Date(since).toISOString()}`, '-f', 'per_page=100']));
+    if ((Array.isArray(comments) ? comments : []).some(comment => byWorkflow(comment?.user) && recent(Date.parse(comment.created_at)))) return { action: 'already_reported' };
+  }
   await gh(['issue', 'comment', String(existing.number), ...target, '--body', report.body]);
   return { action: 'commented' };
 }
