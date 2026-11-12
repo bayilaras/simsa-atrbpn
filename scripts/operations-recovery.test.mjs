@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { recoveryAttestation,publishRecoveryStatus,finalizeRecoveryAttempt,recordRecoveryFailure,recoveryFailureNotices } from './operations-recovery.mjs';
+import { recoveryAttestation,publishRecoveryStatus,finalizeRecoveryAttempt,recordRecoveryFailure,recoveryFailureNotices,deferredDocumentBudget } from './operations-recovery.mjs';
+import { readFile } from 'node:fs/promises';
 import { unwrapRecoveryKeys } from './operations-recovery-delivery.mjs';
 import { seal,sha256,documentReferences,documentBudgetFromEnvironment } from './operations-recovery-documents.mjs';
 import { randomBytes,scryptSync } from 'node:crypto';
@@ -41,13 +42,32 @@ test('a crossed document limit or a mistyped limit is announced to the operator,
  const [plain]=recoveryFailureNotices('document_inventory',over,{});
  assert.match(plain,/^Jumlah objek unik 51 melewati batas 50\./);
  let invalid;try{documentBudgetFromEnvironment({OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES:'4GiB'});}catch(caught){invalid=caught;}
- assert.equal(recordRecoveryFailure({},'configuration',invalid).failureCode,'DOCUMENT_BUDGET_SETTING_INVALID');
- const [setting]=recoveryFailureNotices('configuration',invalid,{GITHUB_ACTIONS:'true'});
+ assert.equal(recordRecoveryFailure({},'document_inventory',invalid).failureCode,'DOCUMENT_BUDGET_SETTING_INVALID');
+ const [setting]=recoveryFailureNotices('document_inventory',invalid,{GITHUB_ACTIONS:'true'});
  assert.match(setting,/^::error title=SIMSA backup - pengaturan batas dokumen tidak valid::Nilai variabel OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES tidak dapat dipakai\./);
+ assert.match(setting,/Database tetap dicadangkan pada run ini, tetapi dokumen TIDAK dicadangkan\.$/);
  assert.doesNotMatch(setting,/4GiB|[%\r\n]/);
  // Anything else stays suppressed, including a forged setting name.
  assert.deepEqual(recoveryFailureNotices('database_snapshot',new Error('raw detail'),{GITHUB_ACTIONS:'true'}),[]);
  assert.deepEqual(recoveryFailureNotices('configuration',Object.assign(new Error('x'),{safeCode:'DOCUMENT_BUDGET_SETTING_INVALID',documentBudgetSetting:'raw detail'}),{}),[]);
+});
+test('a mistyped document limit is raised only after the encrypted database is delivered',async()=>{
+ for(const value of ['8GiB','8589934592 ']){
+  const held=deferredDocumentBudget({OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES:value});
+  assert.equal(held.limits,undefined);assert.equal(held.error.safeCode,'DOCUMENT_BUDGET_SETTING_INVALID');assert.equal(held.error.documentBudgetSetting,'OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES');
+ }
+ const valid=deferredDocumentBudget({OPERATIONS_RECOVERY_MAX_DOCUMENT_OBJECTS:'9000'});
+ assert.equal(valid.error,undefined);assert.equal(valid.limits.maxObjects,9000);
+ // runRecovery needs Linux, Node 24 and PostgreSQL 18, so the order of its
+ // stages is checked on the source: the held error may not be thrown earlier.
+ const source=await readFile(new URL('./operations-recovery.mjs',import.meta.url),'utf8'),body=source.slice(source.indexOf('export async function runRecovery'));
+ const at=text=>{const index=body.indexOf(text);assert.notEqual(index,-1,text);return index;};
+ assert.ok(at('deferredDocumentBudget(environment)')<at("stage='database_snapshot'"));
+ assert.ok(at('report.backup.deliveryVerified=true')<at('throw invalidDocumentBudget'));
+ assert.ok(at("stage='document_inventory'")<at('throw invalidDocumentBudget'));
+ assert.ok(at('throw invalidDocumentBudget')<at('documentReferences('));
+ assert.equal(body.split('throw invalidDocumentBudget').length,2);
+ assert.equal(body.includes('documentBudgetFromEnvironment('),false);
 });
 test('status keeps completion age and binds sanitized evidence hash',()=>{
  const actual=recoveryAttestation(report);assert.equal(actual.backup.completedAt,time);assert.match(actual.backup.evidenceSha256,/^[a-f0-9]{64}$/);

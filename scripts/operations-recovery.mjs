@@ -26,10 +26,15 @@ export function recoveryFailureNotices(stage,error,environment={}){
  if(stage==='document_inventory'&&error?.safeCode&&error.documentBudget?.exceeded)
   return [actions?documentBudgetAnnotation(error.documentBudget,{failed:true}):documentBudgetFailureMessage(error.documentBudget)];
  if(error?.safeCode==='DOCUMENT_BUDGET_SETTING_INVALID'&&Object.values(DOCUMENT_BUDGET_SETTINGS).includes(error.documentBudgetSetting)){
-  const text=`Nilai variabel ${error.documentBudgetSetting} tidak dapat dipakai. Isi dengan bilangan bulat positif tanpa satuan atau pemisah, dalam rentang yang tertulis di docs/OPERATIONS_RECOVERY.md, atau kosongkan untuk memakai nilai bawaan. Backup tidak dijalankan.`;
+  const text=`Nilai variabel ${error.documentBudgetSetting} tidak dapat dipakai. Isi dengan bilangan bulat positif tanpa satuan atau pemisah, dalam rentang yang tertulis di docs/OPERATIONS_RECOVERY.md, atau kosongkan untuk memakai nilai bawaan. Database tetap dicadangkan pada run ini, tetapi dokumen TIDAK dicadangkan.`;
   return [actions?`::error title=SIMSA backup - pengaturan batas dokumen tidak valid::${text}`:text];
  }
  return [];
+}
+// A mistyped optional document limit must not cost the day's database backup:
+// it is read first, but only raised once the encrypted database is delivered.
+export function deferredDocumentBudget(environment){
+ try{return {limits:documentBudgetFromEnvironment(environment)};}catch(error){return {error};}
 }
 const required=(env,key)=>{check(typeof env[key]==='string'&&env[key].length>0,'RECOVERY_CONFIGURATION_MISSING');return env[key];};
 export function recoveryAttestation(report){
@@ -67,8 +72,7 @@ export async function runRecovery(environment){
   check([pgBin,parent,output].every(isAbsolute),'ABSOLUTE_RECOVERY_PATHS_REQUIRED');
   const passphrase=required(environment,'BACKUP_ENCRYPTION_PASSPHRASE');check(passphrase.length>=32,'BACKUP_PASSPHRASE_TOO_SHORT');
   const {token}=privateBlobConfiguration(environment);
-  // A mistyped limit stops the run here, before the database is read.
-  const limits=documentBudgetFromEnvironment(environment);
+  const {limits,error:invalidDocumentBudget}=deferredDocumentBudget(environment);
   await mkdir(output,{mode:0o700});
   const operation=parseNeonBackupOperation(['create','--pg-bin',pgBin,'--output',join(parent,'database'),'--key-directory',join(parent,'keys')],environment);
   stage='database_snapshot';const backup=await runNeonBackup(operation);
@@ -88,7 +92,8 @@ export async function runRecovery(environment){
    try{check(roundtrip.equals(keys),'KEY_ENVELOPE_ROUNDTRIP_FAILED');}finally{roundtrip.fill(0);}
    report.backup.deliveryVerified=true;
   }finally{wrappingKey.fill(0);keys.fill(0);}
-  stage='document_inventory';const sql=await workspace.command('pg_restore',['--data-only','--schema=public','--table=file_attachments','--table=regulatory_rule_sets','--file=-'],{input:plain.archive,metadata:true,maximum:20*1024*1024});
+  stage='document_inventory';if(invalidDocumentBudget)throw invalidDocumentBudget;
+  const sql=await workspace.command('pg_restore',['--data-only','--schema=public','--table=file_attachments','--table=regulatory_rule_sets','--file=-'],{input:plain.archive,metadata:true,maximum:20*1024*1024});
   let references;try{references=documentReferences(parseCopyTable(sql.toString(),'file_attachments'),parseCopyTable(sql.toString(),'regulatory_rule_sets'),{captureMissingHashes:environment.OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES==='true',limits});}finally{sql.fill(0);}
   report.documentBudget=documentBudgetUsage(references,limits);
   const annotation=documentBudgetAnnotation(report.documentBudget);if(annotation&&environment.GITHUB_ACTIONS==='true')console.log(annotation);
