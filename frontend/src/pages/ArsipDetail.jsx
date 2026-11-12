@@ -411,23 +411,24 @@ export default function ArsipDetail() {
             setArsip(refreshed?.data || refreshed)
         } catch (err) {
             const kelasTerkendali = kelasPerluPersetujuan(perubahan.klasifikasiKeamanan)
-            const ditolak = err?.status === 404
+            const perluPersetujuan = Boolean(rekamanPerluPersetujuan(err, 'arsip', id))
+            const ditolak = err?.status === 404 || perluPersetujuan
             // Server sudah memperbarui daftar item, tetapi tab Item Arsip baru
             // berubah setelah muat ulang, yang tidak lagi mungkin bila ditolak.
             const itemBelumTermuat = ditolak
                 && (arsip?.items?.length ?? 0) > 0
                 && FIELD_CERMIN_ITEM.some(field => Object.hasOwn(perubahan, field))
-            // 404: server tidak lagi membuka arsip ini untuk akun ini (mis. kelas
-            // dinaikkan tanpa persetujuan untuk kelas baru), jadi hak aksi lama
-            // tidak berlaku. Galat jaringan/server tidak mengunci tombol.
+            // 404 atau jawaban "perlu persetujuan akses": server tidak lagi membuka
+            // arsip ini untuk akun ini (mis. kelas dinaikkan tanpa persetujuan untuk
+            // kelas baru), jadi hak aksi lama tidak berlaku. Galat jaringan/server tidak mengunci tombol.
             if (ditolak) {
                 setArsip(current => ({
                     ...current,
                     aksiDiizinkan: [],
-                    alasanTerkunci: kelasTerkendali ? 'perlu_persetujuan_akses' : 'tidak_berwenang',
+                    alasanTerkunci: kelasTerkendali || perluPersetujuan ? 'perlu_persetujuan_akses' : 'tidak_berwenang',
                 }))
             }
-            const keterangan = kelasTerkendali
+            const keterangan = kelasTerkendali || perluPersetujuan
                 ? 'Arsip kini berkelas Terbatas atau lebih tinggi dan memerlukan persetujuan akses sebelum dapat dibuka kembali.'
                 : 'Perubahan sudah tersimpan. Muat ulang halaman untuk melihat data terbaru.'
             toast({
