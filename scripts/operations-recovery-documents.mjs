@@ -6,24 +6,47 @@ import { createServer } from 'node:http';
 export const sha256 = value => createHash('sha256').update(value).digest('hex');
 const check = (value, code) => { if (!value) throw Object.assign(new Error(code), { safeCode: code }); };
 const MAX_OBJECT = 50 * 1024 * 1024;
-// Hard, reviewed budgets. Every run GETs each unique stored object once with
-// cache=0 (one Blob simple operation plus its bytes as data transfer), so bytes
-// and objects are counted after URL deduplication. Sized for the Vercel Pro
-// plan, where Blob usage is billed instead of blocked, and the 60-minute job
-// timeout; never use these limits on Hobby (10 GB transfer and 10,000 simple
-// operations per 30 days, then Blob is blocked for 30 days). References stay a
-// separate metadata sanity bound. Raise only after the owner review described
-// in docs/OPERATIONS_RECOVERY.md.
-const MAX_TOTAL = 1024 * 1024 * 1024;
-const MAX_OBJECTS = 1000;
-const MAX_COUNT = 2000;
+// Document budget. Every run GETs each unique stored object once with cache=0
+// (one Blob simple operation plus its bytes as data transfer), so bytes and
+// objects are counted after URL deduplication; references stay a separate
+// metadata sanity bound. The defaults leave room for months of daily use on the
+// Vercel Pro plan, where Blob usage is billed instead of blocked. Never use
+// them on Hobby (10 GB transfer and 10,000 simple operations per 30 days, then
+// Blob is blocked for 30 days). Each limit can be set per environment with the
+// variable named in DOCUMENT_BUDGET_SETTINGS; see docs/OPERATIONS_RECOVERY.md
+// for cost, run time and disk before raising one.
+const GIB = 1024 * 1024 * 1024;
+export const DOCUMENT_BUDGET_DEFAULTS = Object.freeze({ maxReferences: 10000, maxObjects: 5000, maxTotalBytes: 4 * GIB });
+export const DOCUMENT_BUDGET_SETTINGS = Object.freeze({ maxReferences: 'OPERATIONS_RECOVERY_MAX_DOCUMENT_REFERENCES',
+  maxObjects: 'OPERATIONS_RECOVERY_MAX_DOCUMENT_OBJECTS', maxTotalBytes: 'OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES' });
+// An override above these is refused: the job timeout, runner disk and the
+// 20 MiB inventory read were never sized for more. A restore accepts any
+// authenticated manifest up to here, so a bundle made with raised limits
+// restores without repeating the setting.
+export const DOCUMENT_BUDGET_CEILINGS = Object.freeze({ maxReferences: 40000, maxObjects: 20000, maxTotalBytes: 16 * GIB });
 // One envelope seals one document; the manifest and wrapped keys are far smaller.
 const MAX_ENVELOPE = MAX_OBJECT + 28;
 // Largest single user action: one confirmed bulk-upload batch, mirroring
 // BULK_UPLOAD_LIMITS in the backend bulk-upload service and the upload hook.
 const BULK_UPLOAD_BATCH = Object.freeze({ objects: 50, bytes: 100 * 1024 * 1024 });
-export const DOCUMENT_BUDGET = Object.freeze({ maxReferences: MAX_COUNT, maxObjects: MAX_OBJECTS, maxObjectBytes: MAX_OBJECT, maxTotalBytes: MAX_TOTAL,
-  warningRatio: 0.75, bulkUploadBatch: BULK_UPLOAD_BATCH });
+export const DOCUMENT_BUDGET = Object.freeze({ ...DOCUMENT_BUDGET_DEFAULTS, maxObjectBytes: MAX_OBJECT,
+  warningRatio: 0.8, bulkUploadBatch: BULK_UPLOAD_BATCH });
+// Unset or empty keeps the default. Anything else must be a plain positive
+// integer no smaller than one bulk-upload batch and no larger than the ceiling;
+// a mistyped value stops the run instead of silently changing the limit.
+export function documentBudgetFromEnvironment(environment = {}) {
+  const minimum = { maxReferences: BULK_UPLOAD_BATCH.objects, maxObjects: BULK_UPLOAD_BATCH.objects, maxTotalBytes: BULK_UPLOAD_BATCH.bytes };
+  const limits = {};
+  for (const [key, setting] of Object.entries(DOCUMENT_BUDGET_SETTINGS)) {
+    const raw = environment[setting];
+    if (raw === undefined || raw === '') { limits[key] = DOCUMENT_BUDGET_DEFAULTS[key]; continue; }
+    const value = /^[1-9][0-9]{0,14}$/.test(raw) ? Number(raw) : NaN;
+    if (!(value >= minimum[key] && value <= DOCUMENT_BUDGET_CEILINGS[key]))
+      throw Object.assign(new Error('DOCUMENT_BUDGET_SETTING_INVALID'), { safeCode: 'DOCUMENT_BUDGET_SETTING_INVALID', documentBudgetSetting: setting });
+    limits[key] = value;
+  }
+  return Object.freeze(limits);
+}
 function uniqueDocuments(references) {
   const unique = new Map();
   for (const ref of references) { const prior = unique.get(ref.url);
@@ -34,24 +57,39 @@ function uniqueDocuments(references) {
 // predict that failure: one bulk-upload batch between two daily runs can take
 // usage from below the ratio straight past a limit. The headroom warning
 // therefore also fires whenever the room left is smaller than one batch.
-export function documentBudgetUsage(references) {
+// `exceeded` names the first limit crossed and the setting that raises it, or
+// is null while everything fits.
+export function documentBudgetUsage(references, limits = DOCUMENT_BUDGET_DEFAULTS) {
+  const { maxReferences, maxObjects, maxTotalBytes } = limits;
   const objects = uniqueDocuments(references), bytes = objects.reduce((sum, ref) => sum + ref.sizeBytes, 0);
-  const referencesRatio = references.length / MAX_COUNT, objectsRatio = objects.length / MAX_OBJECTS, bytesRatio = bytes / MAX_TOTAL;
-  const referencesHeadroom = MAX_COUNT - references.length, objectsHeadroom = MAX_OBJECTS - objects.length, bytesHeadroom = MAX_TOTAL - bytes;
+  const referencesRatio = references.length / maxReferences, objectsRatio = objects.length / maxObjects, bytesRatio = bytes / maxTotalBytes;
+  const referencesHeadroom = maxReferences - references.length, objectsHeadroom = maxObjects - objects.length, bytesHeadroom = maxTotalBytes - bytes;
   const ratioWarning = Math.max(referencesRatio, objectsRatio, bytesRatio) >= DOCUMENT_BUDGET.warningRatio;
   const headroomWarning = referencesHeadroom < BULK_UPLOAD_BATCH.objects || objectsHeadroom < BULK_UPLOAD_BATCH.objects || bytesHeadroom < BULK_UPLOAD_BATCH.bytes;
-  return { references: references.length, objects: objects.length, bytes, maxReferences: MAX_COUNT, maxObjects: MAX_OBJECTS, maxTotalBytes: MAX_TOTAL,
-    referencesRatio, objectsRatio, bytesRatio, referencesHeadroom, objectsHeadroom, bytesHeadroom, ratioWarning, headroomWarning, warning: ratioWarning || headroomWarning };
+  const over = referencesHeadroom < 0 ? 'maxReferences' : objectsHeadroom < 0 ? 'maxObjects' : bytesHeadroom < 0 ? 'maxTotalBytes' : null;
+  return { references: references.length, objects: objects.length, bytes, maxReferences, maxObjects, maxTotalBytes,
+    referencesRatio, objectsRatio, bytesRatio, referencesHeadroom, objectsHeadroom, bytesHeadroom, ratioWarning, headroomWarning, warning: ratioWarning || headroomWarning,
+    exceeded: over ? { limit: over, setting: DOCUMENT_BUDGET_SETTINGS[over] } : null };
 }
 const mib = bytes => (bytes / (1024 * 1024)).toFixed(1);
+const usageNumbers = usage => `${usage.objects}/${usage.maxObjects} objek unik, ${mib(usage.bytes)}/${mib(usage.maxTotalBytes)} MiB, ${usage.references}/${usage.maxReferences} referensi`;
+// Plain operator message for a run stopped by a limit: which limit, what was
+// measured, what that means for this run, and the setting that raises it.
+// Numbers and fixed words only (no '%', no newline, no file names).
+export function documentBudgetFailureMessage(usage) {
+  const crossed = { maxReferences: `Jumlah referensi dokumen ${usage.references} melewati batas ${usage.maxReferences}`,
+    maxObjects: `Jumlah objek unik ${usage.objects} melewati batas ${usage.maxObjects}`,
+    maxTotalBytes: `Ukuran total objek unik ${mib(usage.bytes)} MiB (${usage.bytes} byte) melewati batas ${mib(usage.maxTotalBytes)} MiB (${usage.maxTotalBytes} byte)` }[usage.exceeded?.limit];
+  const raise = usage.exceeded ? ` Untuk menaikkan batas, isi variabel ${usage.exceeded.setting} pada environment production-recovery dengan angka yang lebih besar, lalu jalankan ulang.` : '';
+  return `${crossed ?? 'Batas dokumen terlampaui'}. Run ini TIDAK mencadangkan dokumen apa pun; hanya database terenkripsi yang tersimpan. Pemakaian: ${usageNumbers(usage)}.${raise} Lihat docs/OPERATIONS_RECOVERY.md.`;
+}
 // GitHub Actions annotation for a usage record, or null when nothing needs attention.
 // Numbers only (no '%', no newline), so the workflow command needs no escaping.
 export function documentBudgetAnnotation(usage, { failed = false } = {}) {
   if (!failed && !usage.warning) return null;
-  const numbers = `${usage.objects}/${usage.maxObjects} objek unik, ${mib(usage.bytes)}/${mib(usage.maxTotalBytes)} MiB, ${usage.references}/${usage.maxReferences} referensi`;
-  if (failed) return `::error title=SIMSA backup melewati batas dokumen::${numbers}. Dokumen tidak dicadangkan pada run ini. Lihat docs/OPERATIONS_RECOVERY.md.`;
+  if (failed) return `::error title=SIMSA backup melewati batas dokumen::${documentBudgetFailureMessage(usage)}`;
   const batch = usage.headroomWarning ? ` Sisa ruang (${usage.objectsHeadroom} objek, ${mib(usage.bytesHeadroom)} MiB) lebih kecil dari satu batch unggah massal (${BULK_UPLOAD_BATCH.objects} berkas, ${mib(BULK_UPLOAD_BATCH.bytes)} MiB); satu unggahan massal dapat membuat backup berikutnya gagal tanpa peringatan lain.` : '';
-  return `::warning title=SIMSA backup mendekati batas::${numbers}.${batch} Tinjau kuota Blob dan batas di docs/OPERATIONS_RECOVERY.md.`;
+  return `::warning title=SIMSA backup mendekati batas::${usageNumbers(usage)}.${batch} Backup run ini tetap lengkap. Tinjau kuota Blob dan cara menaikkan batas di docs/OPERATIONS_RECOVERY.md.`;
 }
 export function seal(bytes, key, context) {
   check(Buffer.isBuffer(key) && key.length === 32, 'INVALID_KEY');
@@ -95,18 +133,21 @@ export function parseCopyTable(sql, table) {
   return lines.map(line => { const cells = line.split('\t');
     check(cells.length === columns.length, 'COPY_ROW_WIDTH'); return Object.fromEntries(columns.map((key, i) => [key, decode(cells[i])])); });
 }
-export function documentReferences(attachments, ruleSets, {captureMissingHashes=false}={}) {
+export function documentReferences(attachments, ruleSets, {captureMissingHashes=false, limits=DOCUMENT_BUDGET_DEFAULTS}={}) {
   const refs = attachments.map(row => ({id:row.id, kind:'attachment', entityType:row.entity_type, entityId:row.entity_id,
     url:row.file_url, sha256:row.sha256?.toLowerCase(), sizeBytes:Number(row.size_bytes), storageAccess:row.storage_access,
     fileName:row.file_name ?? null}));
   for (const row of ruleSets) if (row.source_document_blob_url) refs.push({id:row.id,kind:'regulatory_source',url:row.source_document_blob_url,
     sha256:row.source_document_sha256?.toLowerCase(),sizeBytes:Number(row.source_document_size_bytes),storageAccess:'private'});
-  check(refs.length > 0 && refs.length <= MAX_COUNT, 'DOCUMENT_COUNT_OUTSIDE_BUDGET');
+  check(refs.length > 0, 'DOCUMENT_COUNT_OUTSIDE_BUDGET');
   for (const ref of refs) check(/^[a-f0-9-]{36}$/i.test(ref.id) && (/^[a-f0-9]{64}$/.test(ref.sha256 || '') || captureMissingHashes && ref.sha256 == null)
     && Number.isSafeInteger(ref.sizeBytes) && ref.sizeBytes > 0 && ref.sizeBytes <= MAX_OBJECT && ref.storageAccess === 'private', 'DOCUMENT_METADATA_INCOMPLETE');
-  const usage = documentBudgetUsage(refs);
-  // The usage record (counts and sizes only) travels with the failure so a red run still reports its numbers.
-  const over = usage.objects > MAX_OBJECTS ? 'DOCUMENT_OBJECTS_OUTSIDE_BUDGET' : usage.bytes > MAX_TOTAL ? 'DOCUMENT_BYTES_OUTSIDE_BUDGET' : null;
+  const usage = documentBudgetUsage(refs, limits);
+  // Nothing is downloaded once a limit is crossed: the manifest and the restore
+  // proof describe complete backups only, so a partial one could not be told
+  // apart from a full one. The usage record (counts and sizes only) travels
+  // with the failure so the red run still states which limit and by how much.
+  const over = { maxReferences: 'DOCUMENT_COUNT_OUTSIDE_BUDGET', maxObjects: 'DOCUMENT_OBJECTS_OUTSIDE_BUDGET', maxTotalBytes: 'DOCUMENT_BYTES_OUTSIDE_BUDGET' }[usage.exceeded?.limit];
   if (over) throw Object.assign(new Error(over), { safeCode: over, documentBudget: usage });
   return refs;
 }
@@ -148,7 +189,7 @@ export async function restoreDocuments({directory,key,targetDirectory,targetKey,
   let manifest;try{manifest=JSON.parse(manifestBytes);}finally{manifestBytes.fill(0);}
   check(manifest.schemaVersion===1 && manifest.archiveSha256===expectedArchiveSha256,'DOCUMENT_DATABASE_BINDING_MISMATCH');
   const expected=documentReferences(manifest.references.filter(r=>r.kind==='attachment').map(r=>({id:r.id,entity_type:r.entityType,entity_id:r.entityId,file_url:r.url,sha256:r.sha256,size_bytes:r.sizeBytes,storage_access:r.storageAccess})),
-    manifest.references.filter(r=>r.kind==='regulatory_source').map(r=>({id:r.id,source_document_blob_url:r.url,source_document_sha256:r.sha256,source_document_size_bytes:r.sizeBytes})),{captureMissingHashes:true});
+    manifest.references.filter(r=>r.kind==='regulatory_source').map(r=>({id:r.id,source_document_blob_url:r.url,source_document_sha256:r.sha256,source_document_size_bytes:r.sizeBytes})),{captureMissingHashes:true,limits:DOCUMENT_BUDGET_CEILINGS});
   check(expected.length===manifest.references.length && manifest.objects.length>0,'DOCUMENT_MANIFEST_INVALID');
   await exclusiveDirectory(targetDirectory);
   const restored=[];

@@ -17,7 +17,8 @@ jobs:
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && vars.OPERATIONS_RECOVERY_ENABLED == 'true'
     environment: production-recovery
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # Sized for the default 4 GiB document budget; review it before raising a limit.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -53,6 +54,11 @@ jobs:
           OPERATIONS_RECOVERY_PRIVATE_ROOT: ${{ runner.temp }}/simsa-recovery-private
           OPERATIONS_RECOVERY_DELIVERY: ${{ runner.temp }}/simsa-recovery-delivery
           OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES: ${{ vars.OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES }}
+          # Optional document budget overrides; an unset variable keeps the
+          # default in scripts/operations-recovery-documents.mjs.
+          OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES: ${{ vars.OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES }}
+          OPERATIONS_RECOVERY_MAX_DOCUMENT_OBJECTS: ${{ vars.OPERATIONS_RECOVERY_MAX_DOCUMENT_OBJECTS }}
+          OPERATIONS_RECOVERY_MAX_DOCUMENT_REFERENCES: ${{ vars.OPERATIONS_RECOVERY_MAX_DOCUMENT_REFERENCES }}
           OPERATIONS_RECOVERY_PUBLISH_STATUS: 'true'
         run: node scripts/operations-recovery.mjs run
       - name: Preserve encrypted archives and sanitized attempt evidence
