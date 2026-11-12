@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useReducedMotion } from '@/hooks/use-reduced-motion'
+import { usePersetujuanMenungguCount } from '@/hooks/use-persetujuan-menunggu-count'
+import { TAUTAN_PERSETUJUAN_MENUNGGU } from '@/lib/persetujuan-menunggu'
 import { MailOpen, Send, Archive, AlertTriangle, TrendingUp, Clock, Eye, Loader2, Plus, FileText, FolderArchive, ArrowRight, Building2, CalendarClock, FileBarChart, Inbox, ArrowUpRight, Shield, ShieldAlert, BookOpen, BookX, HardDrive, FileArchive, Image, Film, Music, File, CheckCircle2, ArrowRightCircle, ClipboardCheck, Stamp, Play } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -110,6 +112,7 @@ export default function Dashboard() {
     // Konvensi sidebar: modul opsional hanya disembunyikan bila bernilai false.
     const advancedWorkflowsEnabled = capabilities.advancedArchiveWorkflows !== false;
     const isAdmin = canWrite();
+    const persetujuanMenunggu = usePersetujuanMenungguCount({ enabled: isAdmin });
     const reducedMotion = useReducedMotion();
     const chartOptions = { ...baseChartOptions, animation: reducedMotion ? false : undefined };
     const [loading, setLoading] = useState(true);
@@ -464,6 +467,23 @@ export default function Dashboard() {
                                 </Link>
                             </Button>
                         </div>
+                        {persetujuanMenunggu.total > 0 && (
+                            <div className="mt-3 flex flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="min-w-0 space-y-1">
+                                    <p className="text-sm flex items-start gap-2">
+                                        <Send aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                                        {`${persetujuanMenunggu.total.toLocaleString('id-ID')} surat keluar menunggu keputusan Anda`}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">Surat ini diajukan kepada Anda sebagai penyetuju.</p>
+                                </div>
+                                <Button asChild variant="outline" className="w-full sm:w-auto whitespace-normal text-left h-auto min-h-9 py-2">
+                                    <Link to={TAUTAN_PERSETUJUAN_MENUNGGU}>
+                                        Tinjau surat yang menunggu
+                                        <ArrowRight aria-hidden="true" className="ml-2 h-4 w-4 shrink-0" />
+                                    </Link>
+                                </Button>
+                            </div>
+                        )}
                     </section>}
                     {/* Stats Grid */}
                     <div className="grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
