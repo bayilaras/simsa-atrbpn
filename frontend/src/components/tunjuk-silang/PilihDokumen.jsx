@@ -7,14 +7,14 @@ import { Label } from '@/components/ui/label'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { pesanGalat } from '@/lib/pesan-galat'
 import { cn } from '@/lib/utils'
-import { JENIS_DOKUMEN, jenisDokumen } from './dokumen'
+import { CATATAN_PERLU_PERSETUJUAN, JENIS_DOKUMEN, LENCANA_PERLU_PERSETUJUAN, jenisDokumen } from './dokumen'
 
 // Batas yang sama dengan validasi kata kunci di server.
 const MAKS_KATA_KUNCI = 255
 
 /**
  * Memilih satu dokumen: tentukan jenisnya, cari berdasarkan nomor atau perihal, lalu pilih dari hasil.
- * `value` berbentuk { tipe, id, nomor, judul, jenis, unitKerjaId } atau null.
+ * `value` berbentuk { tipe, id, nomor, judul, jenis, unitKerjaId, perluPersetujuan } atau null.
  *
  * - `unitKerjaId` mempersempit pencarian ke satu unit kerja (dipakai agar tujuan seunit dengan sumber).
  * - `hanyaDapatDitautkan` menonaktifkan dokumen yang sudah tidak dapat diubah.
@@ -49,6 +49,7 @@ export function PilihDokumen({
     }, [adaPilihan, cari, kueri, kunci, unitKerjaId])
 
     const labelJenis = opsi.label.toLowerCase()
+    const adaPerluPersetujuan = !memuat && !hasil.galat && hasil.data.some((baris) => opsi.ringkas(baris).perluPersetujuan)
 
     if (value) {
         const terpilih = jenisDokumen(value.tipe)
@@ -109,7 +110,7 @@ export function PilihDokumen({
                     disabled={disabled || dokumenIni || terkunci}
                     onClick={() => onChange({
                         tipe, id: baris.id, nomor: ringkas.nomor, judul: ringkas.judul, jenis: ringkas.jenis,
-                        unitKerjaId: baris.unitKerjaId || null,
+                        unitKerjaId: baris.unitKerjaId || null, perluPersetujuan: ringkas.perluPersetujuan === true,
                     })}
                     className={cn(
                         'flex w-full items-start justify-between gap-3 rounded-lg border border-border bg-card p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
@@ -122,6 +123,9 @@ export function PilihDokumen({
                     </div>
                     {dokumenIni && <Badge variant="secondary" className="shrink-0">Dokumen sumber</Badge>}
                     {!dokumenIni && terkunci && <Badge variant="secondary" className="shrink-0">Tidak dapat ditautkan</Badge>}
+                    {!dokumenIni && !terkunci && ringkas.perluPersetujuan && (
+                        <Badge variant="outline" className="shrink-0">{LENCANA_PERLU_PERSETUJUAN}</Badge>
+                    )}
                 </button>
             )
         })
@@ -169,6 +173,7 @@ export function PilihDokumen({
             <div role="group" aria-label={`${judul}: hasil pencarian`} aria-busy={memuat} className="max-h-56 space-y-2 overflow-y-auto">
                 {daftar}
             </div>
+            {adaPerluPersetujuan && <p className="text-xs text-muted-foreground">{CATATAN_PERLU_PERSETUJUAN}</p>}
             {!memuat && !hasil.galat && hasil.total > hasil.data.length && (
                 <p className="text-xs text-muted-foreground">
                     Menampilkan {hasil.data.length} dari {hasil.total} dokumen terbaru. Persempit kata kunci untuk menemukan dokumen lain.

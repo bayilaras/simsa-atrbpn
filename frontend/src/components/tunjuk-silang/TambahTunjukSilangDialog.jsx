@@ -13,6 +13,9 @@ import { JENIS_RELASI } from './dokumen'
 // Batas yang sama dengan validasi server (keterangan ≤ 2000).
 const MAKS_KETERANGAN = 2000
 
+const PETUNJUK_PERSETUJUAN =
+    'Dokumen berkelas Terbatas atau lebih tinggi hanya dapat ditautkan selama Anda memegang persetujuan akses untuk mengelolanya.'
+
 /**
  * Menambah tunjuk silang antara dua dokumen yang dipilih lewat pencarian.
  * Isi dialog hanya terpasang selama dialog terbuka, jadi setiap pembukaan mulai dari awal.
@@ -68,7 +71,8 @@ function TambahIsi({ menyimpan, setMenyimpan, onOpenChange, onBerhasil }) {
             onBerhasil?.({ sumber, tujuan })
         } catch (err) {
             setMenyimpan(false)
-            setGalat(pesanGalat(err, 'Tunjuk silang belum dapat disimpan. Silakan coba lagi.'))
+            const pesan = pesanGalat(err, 'Tunjuk silang belum dapat disimpan. Silakan coba lagi.')
+            setGalat(err?.status === 404 && (sumber.perluPersetujuan || tujuan.perluPersetujuan) ? `${pesan}. ${PETUNJUK_PERSETUJUAN}` : pesan)
         }
     }
 

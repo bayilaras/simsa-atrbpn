@@ -1,11 +1,26 @@
 import { FileText, FolderOpen, Mail, Send } from 'lucide-react'
 import { arsipService } from '@/services/arsip.service'
 import dosirService from '@/services/dosir.service'
+import { normalisasiKelas } from '@/lib/kelas-keamanan'
 import { suratKeluarService } from '@/services/surat-keluar.service'
 import { suratMasukService } from '@/services/surat-masuk.service'
 
 export const BATAS_HASIL_DOKUMEN = 10
 export const LABEL_DI_LUAR_JANGKAUAN = 'Dokumen lain (tidak dalam jangkauan Anda)'
+
+export const LENCANA_PERLU_PERSETUJUAN = 'Perlu persetujuan akses'
+export const CATATAN_PERLU_PERSETUJUAN =
+    'Dokumen bertanda “Perlu persetujuan akses” berkelas Terbatas atau lebih tinggi. '
+    + 'Dokumen itu hanya dapat ditelusuri atau ditautkan selama Anda memegang persetujuan akses yang masih berlaku.'
+
+/**
+ * Daftar modul menampilkan dokumen menurut kelas yang boleh dilihat peran, sedangkan tunjuk silang
+ * memeriksa tiap dokumen satu per satu: kelas Terbatas ke atas memerlukan persetujuan akses yang
+ * masih berlaku. Daftar tidak membawa keterangan persetujuan, jadi baris hanya ditandai.
+ */
+function perluPersetujuan(kelas) {
+    return normalisasiKelas(kelas) !== 'biasa'
+}
 
 const JENIS_ARSIP = { masuk: 'Arsip surat masuk', keluar: 'Arsip surat keluar' }
 
@@ -27,6 +42,7 @@ export const JENIS_DOKUMEN = [
             judul: arsip.uraianBerkas || arsip.perihalOriginal || null,
             jenis: arsip.jenisArsip || null,
             dapatDitautkan: (arsip.disposalStatus ?? 'active') === 'active' && arsip.legalHold !== true,
+            perluPersetujuan: perluPersetujuan(arsip.klasifikasiKeamanan),
         }),
     },
     {
@@ -42,6 +58,7 @@ export const JENIS_DOKUMEN = [
             judul: surat.perihal || null,
             jenis: surat.jenisSurat || null,
             dapatDitautkan: surat.isArchived !== true,
+            perluPersetujuan: perluPersetujuan(surat.sifatSurat),
         }),
     },
     {
@@ -57,6 +74,8 @@ export const JENIS_DOKUMEN = [
             judul: surat.perihal || null,
             jenis: surat.naskahDinas || null,
             dapatDitautkan: surat.isArchived !== true,
+            // Surat keluar lama tanpa klasifikasi diperlakukan sebagai Terbatas, sama dengan server.
+            perluPersetujuan: perluPersetujuan(surat.klasifikasiKeamanan ?? 'terbatas'),
         }),
     },
     {
@@ -72,6 +91,7 @@ export const JENIS_DOKUMEN = [
             judul: dosir.judul || null,
             jenis: dosir.kategori || null,
             dapatDitautkan: (dosir.status ?? 'open') === 'open',
+            perluPersetujuan: false,
         }),
     },
 ]
