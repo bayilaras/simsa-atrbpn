@@ -137,6 +137,19 @@ describe('CSV/XLSX import dialog', () => {
         expect(screen.getByRole('status')).toHaveTextContent('Perubahan belum diterapkan')
     })
 
+    it('warns in the preview about rows the import will reject for their date, and still lets the rest be imported', async () => {
+        await open()
+        await choose(csv())
+        mocks.post.mockResolvedValueOnce(preview({ format: 'csv', sheet: undefined, dateIssues: { total: 1, rows: [
+            { row: 2, value: '11/25/2026', reason: 'Tanggal "11/25/2026" tampaknya ditulis dengan bulan lebih dulu, sehingga tidak dipakai.' }] } }))
+        click('Pratinjau')
+        const notice = await screen.findByRole('alert')
+        expect(notice).toHaveTextContent('1 dari 3 baris akan ditolak karena tanggalnya')
+        expect(notice).toHaveTextContent('Baris data ke-2: Tanggal "11/25/2026" tampaknya ditulis dengan bulan lebih dulu')
+        expect(screen.getByText(/ditulis dengan urutan hari, bulan, tahun \(misalnya 03\/11\/2026 atau 3 November 2026\)/)).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Impor 3 baris' })).toBeEnabled()
+    })
+
     it('previews a single-tab workbook without asking for a tab', async () => {
         await open()
         await choose(workbook())
