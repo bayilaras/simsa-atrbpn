@@ -24,6 +24,15 @@ interface JumlahArsipLokasi {
     keluar: number;
 }
 
+export const PESAN_LOKASI_MASIH_MENYIMPAN_ARSIP =
+    'Lokasi tidak dapat dihapus karena masih menyimpan arsip. Pindahkan arsipnya terlebih dahulu.';
+// Arsip yang tersisa tidak tampil bagi penghapus; jangan menyuruh memindahkannya.
+export const PESAN_LOKASI_ARSIP_DI_LUAR_KEWENANGAN =
+    'Lokasi tidak dapat dihapus karena masih ditautkan ke arsip yang tidak dapat Anda kelola. Hubungi Super Admin.';
+// Metadata arsip yang penyusutannya sudah dilaksanakan tidak dapat diubah lagi.
+export const PESAN_LOKASI_ARSIP_SUDAH_DISUSUTKAN =
+    'Lokasi tidak dapat dihapus karena masih ditautkan ke arsip yang penyusutannya sudah dilaksanakan. Catatan arsip tersebut tidak dapat diubah lagi.';
+
 const TANPA_ARSIP: JumlahArsipLokasi = Object.freeze({ total: 0, masuk: 0, keluar: 0 });
 
 export class StorageLocationService {
@@ -396,7 +405,17 @@ export class StorageLocationService {
         }));
     }
 
-    async delete(id: string, unitKerjaId: string, auditContext?: CriticalAuditContext) {
+    /**
+     * `securityClassifications` (plafon kelas penghapus; null = semua kelas)
+     * hanya memilih kalimat penolakan. Lokasi yang masih ditautkan arsip mana
+     * pun tetap tidak terhapus.
+     */
+    async delete(
+        id: string,
+        unitKerjaId: string,
+        auditContext?: CriticalAuditContext,
+        securityClassifications: string[] | null = null,
+    ) {
         return await db.transaction(async (tx: any) => {
             const [existing] = await tx
                 .select()
@@ -421,13 +440,29 @@ export class StorageLocationService {
 
             // Semua arsip yang menautkan lokasi ini, apa pun unit dan kelasnya:
             // penolakan ini menjaga tautan, bukan menampilkan isi arsip.
+            const belumDieksekusi = sql`${arsip.disposalStatus} is distinct from 'executed'`;
+            const dalamPlafon = securityClassifications === null
+                ? sql`true`
+                : securityClassifications.length === 0
+                    ? sql`false`
+                    : inArray(sql<string>`lower(coalesce(${arsip.klasifikasiKeamanan}, 'biasa'))`, securityClassifications);
             const [hasArsip] = await tx
-                .select({ count: sql<number>`count(*)::int` })
+                .select({
+                    count: sql<number>`count(*)::int`,
+                    dapatDipindah: sql<number>`count(*) filter (where ${belumDieksekusi} and ${dalamPlafon})::int`,
+                    belumDieksekusi: sql<number>`count(*) filter (where ${belumDieksekusi})::int`,
+                })
                 .from(arsip)
                 .where(eq(arsip.storageLocationId, id));
 
+            if (hasArsip.dapatDipindah > 0) {
+                throw new ConflictError(PESAN_LOKASI_MASIH_MENYIMPAN_ARSIP);
+            }
+            if (hasArsip.belumDieksekusi > 0) {
+                throw new ConflictError(PESAN_LOKASI_ARSIP_DI_LUAR_KEWENANGAN);
+            }
             if (hasArsip.count > 0) {
-                throw new ConflictError('Lokasi tidak dapat dihapus karena masih menyimpan arsip. Pindahkan arsipnya terlebih dahulu.');
+                throw new ConflictError(PESAN_LOKASI_ARSIP_SUDAH_DISUSUTKAN);
             }
 
             const [hasLendingHistory] = await tx

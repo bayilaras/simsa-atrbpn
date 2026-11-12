@@ -313,6 +313,6 @@ describe('archive lending and storage unit boundaries', () => {
         expect(state.storage.update).toHaveBeenCalledWith(
             locationId, { name: 'Baru' }, 'sesditjen', auditContext,
         );
-        expect(state.storage.delete).toHaveBeenCalledWith(locationId, 'sesditjen', auditContext);
+        expect(state.storage.delete).toHaveBeenCalledWith(locationId, 'sesditjen', auditContext, expect.anything());
     });
 });

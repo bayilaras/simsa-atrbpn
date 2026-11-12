@@ -169,7 +169,7 @@ router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res, next) 
 
         const result = await storageLocationService.delete(id as string, unitKerjaId, {
             userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip,
-        });
+        }, allowedSecurityClassifications(req.user));
 
         if (!result) {
             return res.status(404).json({ error: 'Lokasi simpan tidak ditemukan.' });
