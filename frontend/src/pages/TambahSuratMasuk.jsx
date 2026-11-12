@@ -143,6 +143,29 @@ const KETERANGAN_OPTIONS = [
 // Identitas surat yang perubahannya wajib beralasan bila surat anggota rangkaian (T24-3, F-I1).
 const KOLOM_IDENTITAS = ['nomorSurat', 'perihal', 'sifatSurat'];
 
+// Isian server yang namanya berbeda dengan isian formulir.
+const ISIAN_FORMULIR = { alasan: 'alasanKoreksi' };
+
+// Galat validasi server membawa pesan per isian (err.details); ringkasannya
+// tidak pernah menampilkan teks mentah "Validation failed".
+function uraikanGalatSimpan(err) {
+    const rincian = Array.isArray(err?.details) ? err.details.filter(detail => detail?.message) : [];
+    const perIsian = {};
+    for (const detail of rincian) {
+        const isian = String(detail.field ?? '').split('.')[0];
+        const kunci = ISIAN_FORMULIR[isian] ?? isian;
+        if (kunci && !perIsian[kunci]) perIsian[kunci] = detail.message;
+    }
+    const pesan = [...new Set(rincian.map(detail => detail.message))];
+    if (pesan.length > 0) {
+        return { ringkasan: `Surat belum dapat disimpan. Periksa isian berikut: ${pesan.join('; ')}`, perIsian };
+    }
+    const umum = err?.message && err.message !== 'Validation failed' ? err.message : '';
+    return { ringkasan: umum || 'Gagal menyimpan surat masuk. Periksa kembali isian Anda, lalu coba lagi.', perIsian };
+}
+
+const PesanIsian = ({ id, pesan }) => (pesan ? <p id={id} className="text-sm text-destructive">{pesan}</p> : null);
+
 export default function TambahSuratMasuk() {
     const { id } = useParams(); // Get ID from URL for edit mode
     const isEditMode = Boolean(id);
@@ -414,10 +437,10 @@ export default function TambahSuratMasuk() {
         const archiveSelectionError = validateSuratArchiveSelection(formData);
         if (archiveSelectionError) return { message: archiveSelectionError };
         if (!formData.jenisSurat) return { field: 'jenisSurat', message: 'Jenis Surat wajib diisi' };
-        if (!formData.tanggalSurat) return { message: 'Tanggal Surat wajib diisi' };
-        if (!formData.perihal) return { message: 'Perihal wajib diisi' };
-        if (!formData.dari) return { message: 'Pengirim (Dari) wajib diisi' };
-        if (!formData.kepada) return { message: 'Penerima (Kepada) wajib diisi' };
+        if (!formData.tanggalSurat) return { field: 'tanggalSurat', message: 'Tanggal Surat wajib diisi' };
+        if (!formData.perihal) return { field: 'perihal', message: 'Perihal wajib diisi' };
+        if (!formData.dari) return { field: 'dari', message: 'Pengirim (Dari) wajib diisi' };
+        if (!formData.kepada) return { field: 'kepada', message: 'Penerima (Kepada) wajib diisi' };
         // Lampiran opsional; link yang diketik tetap harus berupa alamat lengkap.
         const galatLink = filesEnabled ? linkDokumenError(formData.linkDokumen) : null;
         if (galatLink) return { field: 'linkDokumen', message: galatLink };
@@ -504,7 +527,9 @@ export default function TambahSuratMasuk() {
         } catch (err) {
             if (!mountedRef.current) return;
             saveLockedRef.current = false;
-            setError(err.message || 'Gagal menyimpan surat masuk');
+            const { ringkasan, perIsian } = uraikanGalatSimpan(err);
+            setError(ringkasan);
+            setFieldErrors(perIsian);
         } finally {
             if (mountedRef.current) setIsSubmitting(false);
         }
@@ -668,7 +693,8 @@ export default function TambahSuratMasuk() {
                                 <SearchableSelect
                                     id="sifat-surat"
                                     ariaLabel="Sifat surat"
-                                    aria-describedby={bantuanSifat ? 'sifat-surat-bantuan' : undefined}
+                                    aria-invalid={Boolean(fieldErrors.sifatSurat)}
+                                    aria-describedby={[bantuanSifat && 'sifat-surat-bantuan', fieldErrors.sifatSurat && 'sifat-surat-error'].filter(Boolean).join(' ') || undefined}
                                     disabled={saveLocked || rangkaianTerkunci}
                                     options={opsiSifat.map(opt => ({ value: opt.value, label: opt.label }))}
                                     value={sifatSurat}
@@ -676,6 +702,7 @@ export default function TambahSuratMasuk() {
                                     placeholder="Pilih sifat surat..."
                                     searchPlaceholder="Cari sifat surat..."
                                 />
+                                <PesanIsian id="sifat-surat-error" pesan={fieldErrors.sifatSurat} />
                                 {bantuanSifat && (
                                     <div id="sifat-surat-bantuan" className="space-y-1">
                                         {sifatDiganti && (
@@ -729,12 +756,15 @@ export default function TambahSuratMasuk() {
                                 </Label>
                                 <Input
                                     id="nomor-surat"
+                                    aria-invalid={Boolean(fieldErrors.nomorSurat)}
+                                    aria-describedby={fieldErrors.nomorSurat ? 'nomor-surat-error' : undefined}
                                     value={formData.nomorSurat}
                                     onChange={(e) => handleChange('nomorSurat', e.target.value)}
                                     placeholder="Kosongkan untuk nomor otomatis"
                                     disabled={rangkaianTerkunci}
                                     className="h-11 focus-visible:ring-primary"
                                 />
+                                <PesanIsian id="nomor-surat-error" pesan={fieldErrors.nomorSurat} />
                                 <p className="text-xs text-muted-foreground flex items-center gap-1">
                                     <Info className="h-3 w-3" />
                                     Nomor eksternal tetap dipakai bila diisi; jika kosong, template unit diterapkan saat penyimpanan.
@@ -760,10 +790,13 @@ export default function TambahSuratMasuk() {
                                     id="tanggal-surat"
                                     type="date"
                                     required
+                                    aria-invalid={Boolean(fieldErrors.tanggalSurat)}
+                                    aria-describedby={fieldErrors.tanggalSurat ? 'tanggal-surat-error' : undefined}
                                     value={formData.tanggalSurat}
                                     onChange={(e) => handleChange('tanggalSurat', e.target.value)}
                                     className="h-11 focus-visible:ring-primary"
                                 />
+                                <PesanIsian id="tanggal-surat-error" pesan={fieldErrors.tanggalSurat} />
                             </div>
                         </div>
 
@@ -774,6 +807,8 @@ export default function TambahSuratMasuk() {
                             <Textarea
                                 id="perihal-surat"
                                 required
+                                aria-invalid={Boolean(fieldErrors.perihal)}
+                                aria-describedby={fieldErrors.perihal ? 'perihal-surat-error' : undefined}
                                 value={formData.perihal}
                                 onChange={(e) => handleChange('perihal', e.target.value)}
                                 placeholder="Tuliskan perihal/hal surat..."
@@ -781,6 +816,7 @@ export default function TambahSuratMasuk() {
                                 disabled={rangkaianTerkunci}
                                 className="resize-none focus-visible:ring-primary"
                             />
+                            <PesanIsian id="perihal-surat-error" pesan={fieldErrors.perihal} />
                         </div>
 
                         {perluAlasanKoreksi && (
@@ -854,11 +890,14 @@ export default function TambahSuratMasuk() {
                                 <Input
                                     id="pengirim-surat"
                                     required
+                                    aria-invalid={Boolean(fieldErrors.dari)}
+                                    aria-describedby={fieldErrors.dari ? 'pengirim-surat-error' : undefined}
                                     value={formData.dari}
                                     onChange={(e) => handleChange('dari', e.target.value)}
                                     placeholder="Instansi/nama pengirim surat"
                                     className="h-11 focus-visible:ring-primary"
                                 />
+                                <PesanIsian id="pengirim-surat-error" pesan={fieldErrors.dari} />
                             </div>
 
                             <div className="space-y-2">
@@ -869,11 +908,14 @@ export default function TambahSuratMasuk() {
                                 <Input
                                     id="penerima-surat"
                                     required
+                                    aria-invalid={Boolean(fieldErrors.kepada)}
+                                    aria-describedby={fieldErrors.kepada ? 'penerima-surat-error' : undefined}
                                     value={formData.kepada}
                                     onChange={(e) => handleChange('kepada', e.target.value)}
                                     placeholder="Unit kerja/pejabat penerima"
                                     className="h-11 focus-visible:ring-primary"
                                 />
+                                <PesanIsian id="penerima-surat-error" pesan={fieldErrors.kepada} />
                             </div>
                         </div>
 
@@ -901,6 +943,7 @@ export default function TambahSuratMasuk() {
                                         ))}
                                     </SelectContent>
                                 </Select>
+                                <PesanIsian id="keterangan-surat-error" pesan={fieldErrors.keterangan} />
                             </div>
 
                             <div className="space-y-2 md:col-span-2">
@@ -969,6 +1012,10 @@ export default function TambahSuratMasuk() {
                                     setDirty();
                                 }}
                                 label="Klik untuk memilih klasifikasi arsip..."
+                            />
+                            <PesanIsian
+                                id="klasifikasi-arsip-error"
+                                pesan={fieldErrors.klasifikasiItemId || fieldErrors.jraItemId || fieldErrors.klasifikasiKode || fieldErrors.klasifikasiUraian}
                             />
                             <p className="text-xs text-muted-foreground">
                                 Pilih pasangan klasifikasi dan JRA. Pilihan ini diteruskan saat surat diberkaskan menjadi arsip; perhitungan retensi mengikuti pemicu yang dicatat pada siklus hidup arsip.
