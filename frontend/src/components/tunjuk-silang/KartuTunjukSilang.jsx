@@ -42,7 +42,7 @@ export function KartuTunjukSilang({ tipe, id }) {
     } else if (status === 'gagal') {
         isi = <p className="text-sm text-muted-foreground">Tunjuk silang belum dapat dimuat. Muat ulang halaman untuk mencoba lagi.</p>
     } else if (hasil.data.length === 0) {
-        isi = <p className="text-sm text-muted-foreground">Belum ada tunjuk silang untuk dokumen ini.</p>
+        isi = <p className="text-sm text-muted-foreground">Tidak ada tunjuk silang yang dapat Anda lihat untuk dokumen ini.</p>
     } else {
         isi = (
             <ul className="space-y-3">

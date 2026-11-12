@@ -78,11 +78,11 @@ it('gives a read-only viewer no link to the dosir or the management page', async
     expect(screen.getByRole('link', { name: /Berkas pengadaan/ })).toBeInTheDocument();
 });
 
-it('states plainly when the record has no cross reference', async () => {
+it('does not claim the record has no cross reference when none is visible to the viewer', async () => {
     mocks.getByEntity.mockResolvedValue({ data: [], subject: null, pagination: null });
     renderKartu();
 
-    expect(await screen.findByText('Belum ada tunjuk silang untuk dokumen ini.')).toBeInTheDocument();
+    expect(await screen.findByText('Tidak ada tunjuk silang yang dapat Anda lihat untuk dokumen ini.')).toBeInTheDocument();
 });
 
 it('renders nothing when the viewer may not trace this record', async () => {
