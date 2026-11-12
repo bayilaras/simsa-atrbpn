@@ -448,7 +448,7 @@ Halaman **Surat Keluar** mengelola semua surat yang dikirim dari unit kerja Anda
 
 1. Klik menu **Surat** > **Surat Keluar** pada sidebar.
 2. Tabel menampilkan informasi serupa dengan Surat Masuk, dengan kolom **Perihal & Tujuan** (penerima surat). Kolom **Status** menampilkan status persetujuan: **Draft**, **Menunggu Persetujuan**, **Disetujui**, atau **Perlu Perbaikan**.
-3. Di **Filter Lanjutan**, penyaring **Persetujuan** menyediakan pilihan **Semua surat**, **Menunggu keputusan saya**, dan **Buatan saya, belum diajukan**.
+3. Klik **Filter**; di panelnya, penyaring **Persetujuan** menyediakan pilihan **Semua surat**, **Menunggu keputusan saya**, dan **Buatan saya, belum diajukan**.
 
 #### Menambah Surat Keluar Baru
 

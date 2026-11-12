@@ -18,7 +18,7 @@ Tabel daftar surat keluar mirip dengan surat masuk, dengan perbedaan:
 - Kolom **Status** menampilkan status persetujuan: **Draft**, **Menunggu Persetujuan**, **Disetujui**, atau **Perlu Perbaikan** (surat yang ditolak penyetuju). Surat yang sudah diarsipkan bertanda **Arsip**
 - Tanda tambahan: **File**, **Balasan**, **Inisiatif** atau **Tindak Lanjut**, dan klasifikasi keamanan surat
 - Menu tiga titik (⋯) berisi **Detail & File**, **Edit Surat** dan **Hapus Surat** (hanya untuk Draft atau Perlu Perbaikan), serta **Arsipkan** (hanya setelah Disetujui)
-- Di **Filter Lanjutan** ada penyaring **Persetujuan**: **Semua surat**, **Menunggu keputusan saya**, atau **Buatan saya, belum diajukan**
+- Klik **Filter**; di panelnya ada penyaring **Persetujuan**: **Semua surat**, **Menunggu keputusan saya**, atau **Buatan saya, belum diajukan**
 
 ---
 
