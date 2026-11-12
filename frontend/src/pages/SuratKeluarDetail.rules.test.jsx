@@ -139,3 +139,30 @@ it.each([['sangat_segera', 'Sangat Segera'], ['Kilat', 'Kilat'], [null, 'Belum t
     render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
     expect((await screen.findByText('Sifat Surat')).parentElement).toHaveTextContent(shown)
 })
+
+it('offers submission on behalf of a creator who no longer serves, with a one-line explanation', async () => {
+    mocks.canWrite = true
+    mocks.getEligibleApprovers.mockResolvedValue([{ id: 'approver-1', name: 'Penyetuju', role: 'admin_unit' }])
+    mocks.getById.mockResolvedValue({
+        id: 'surat-id', nomorSurat: '007/2026', perihal: 'Draft pembuat lama', unitKerjaId: 'unit-a', approvalStatus: 'draft',
+        createdBy: 'user-lama', aksesMelalui: 'owner', aksiDiizinkan: [], pengajuanAtasNama: { namaPembuat: 'Admin Lama' },
+    })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    expect(await screen.findByText('Pembuat surat (Admin Lama) sudah tidak aktif atau tidak lagi bertugas di unit ini. Anda mengajukan atas nama pembuat.')).toBeInTheDocument()
+    await waitFor(() => expect(mocks.getEligibleApprovers).toHaveBeenCalledWith('surat-id'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Ajukan Persetujuan' })).toBeEnabled())
+})
+
+it('does not offer submission to another administrator while the creator still serves', async () => {
+    mocks.canWrite = true
+    mocks.getById.mockResolvedValue({
+        id: 'surat-id', nomorSurat: '008/2026', perihal: 'Draft pembuat aktif', unitKerjaId: 'unit-a', approvalStatus: 'draft',
+        createdBy: 'user-lain', aksesMelalui: 'owner', aksiDiizinkan: ['edit'], pengajuanAtasNama: null,
+    })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    expect((await screen.findAllByText('Draft pembuat aktif')).length).toBeGreaterThan(0)
+    await waitFor(() => expect(mocks.getHistory).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: 'Ajukan Persetujuan' })).toBeNull()
+    expect(screen.queryByText(/mengajukan atas nama pembuat/)).toBeNull()
+    expect(mocks.getEligibleApprovers).not.toHaveBeenCalled()
+})

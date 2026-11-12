@@ -3,12 +3,13 @@ import { uploadFileToBlob } from './blob-upload.service';
 
 export const suratKeluarService = {
     // List surat keluar with pagination and filters
-    async getAll({ unitKerjaId, tahun, naskahDinas, search, tanggalDari, tanggalSampai, page = 1, limit = 20 } = {}) {
+    async getAll({ unitKerjaId, tahun, naskahDinas, search, persetujuan, tanggalDari, tanggalSampai, page = 1, limit = 20 } = {}) {
         const response = await api.get('/api/surat-keluar', {
             unitKerjaId,
             tahun,
             naskahDinas,
             search,
+            persetujuan,
             tanggalDari,
             tanggalSampai,
             page,
