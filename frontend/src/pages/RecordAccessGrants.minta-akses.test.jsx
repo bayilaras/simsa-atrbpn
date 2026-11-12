@@ -72,6 +72,7 @@ describe('permohonan akses dari halaman detail', () => {
 
         const dialog = await screen.findByRole('dialog')
         expect(within(dialog).getByLabelText('ID rekod')).toHaveValue('')
+        expect(within(dialog).getByLabelText('ID rekod')).toHaveAttribute('placeholder', 'Kode di akhir alamat halaman detail')
         expect(within(dialog).queryByRole('group', { name: 'Rekod yang diminta' })).not.toBeInTheDocument()
         expect(within(dialog).getByText('Cara termudah: buka rekod dari daftarnya, lalu pilih Minta Akses agar formulir ini terisi sendiri. Bila mengisi sendiri, ID rekod adalah deret kode di akhir alamat halaman detailnya.')).toBeInTheDocument()
     })

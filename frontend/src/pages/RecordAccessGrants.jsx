@@ -294,7 +294,7 @@ export default function RecordAccessGrants() {
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="request-entity-id">ID rekod</Label>
-                            <Input id="request-entity-id" value={requestForm.entityId} onChange={(event) => setRequestForm((form) => ({ ...form, entityId: event.target.value.trim() }))} placeholder="Salin ID dari halaman detail" autoComplete="off" />
+                            <Input id="request-entity-id" value={requestForm.entityId} onChange={(event) => setRequestForm((form) => ({ ...form, entityId: event.target.value.trim() }))} placeholder="Kode di akhir alamat halaman detail" autoComplete="off" />
                         </div>
                         </>
                         )}
