@@ -188,6 +188,20 @@ describe('a sheet imported in parts', () => {
     });
 });
 
+it('warns in the preview about rows the import will reject for their date', async () => {
+    api.post.mockImplementation(async (_endpoint, body) => ({ ...preview(body.type), totalRows: 4, dateIssues: { total: 1, rows: [
+        { row: 3, value: '31/02/2026', reason: 'Tanggal "31/02/2026" tidak ada di kalender. Periksa hari, bulan, dan tahunnya.' }] } }));
+    render(<ImportFromGDrive {...props} />);
+    open();
+    await discover();
+    await showPreview();
+    const notice = screen.getByRole('alert');
+    expect(notice).toHaveTextContent('1 dari 4 baris akan ditolak karena tanggalnya');
+    expect(notice).toHaveTextContent('Baris data ke-3: Tanggal "31/02/2026" tidak ada di kalender. Periksa hari, bulan, dan tahunnya.');
+    expect(screen.getByText(/ditulis dengan urutan hari, bulan, tahun \(misalnya 03\/11\/2026 atau 3 November 2026\)/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Impor 4 baris' })).toBeEnabled();
+});
+
 it('discards a late source lookup and requires a fresh preview after changing sheets', async () => {
     let finish;
     api.get.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));

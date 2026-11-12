@@ -14,6 +14,7 @@ import { isWebAddress, resolveSheetMapping, type GoogleSheetsImportType, type Sh
 import { DuplicateSuratImportError, type SuratImportIdentityKey, type SuratImportMatch } from './surat-import-identity.js';
 import { assertImportResumable, importPrefixHash, type ImportResume } from './import-resume.js';
 import { normalizeSifatSurat, sifatSuratMasukSumber } from './sifat-surat.js';
+import { importDateProblem, parseImportDate } from './import-tanggal.js';
 import {
     SYNC_REASONS, syncImportedLetter, syncSourceText, type ImportCounterpart, type ImportDuplicateKind, type ImportFieldChange,
     type ImportSync, type ImportSyncTarget,
@@ -77,6 +78,14 @@ export interface ImportPreview {
     /** 1-based among the non-empty rows; 0 when the source is empty. */
     headerRow: number;
     mapping: SheetColumnMapping[];
+    /** Rows of the whole source the import will reject for their date, read as the import reads it. */
+    dateIssues: ImportDateIssues;
+}
+
+export interface ImportDateIssues {
+    total: number;
+    /** The first PREVIEW_DATE_ISSUES of them; `row` counts data rows from 1, as the import report does. */
+    rows: Array<{ row: number; value: string; reason: string }>;
 }
 
 /** A tab by gid, or by name for older clients. */
@@ -121,6 +130,8 @@ type ImportSyncSource = { values: Record<string, string>; counterpart: ImportCou
 const REPORTED_PERIHAL_LENGTH = 200;
 const ALREADY_RECORDED = 'Sudah tercatat di SIMSA pada unit ini.';
 const EMPTY_ROW = 'Nomor surat dan perihal kosong.';
+const EMPTY_DATE = 'Tanggal surat kosong.';
+const PREVIEW_DATE_ISSUES = 10;
 const IDENTITY_LABELS: Record<string, string> = {
     nomor: 'Nomor surat dan tahun',
     counterpart: 'Tanggal, perihal, dan pengirim/tujuan',
@@ -131,56 +142,6 @@ function sameAsEarlierRow(key: SuratImportIdentityKey, row: number): string {
 }
 
 export class GoogleDriveImportService {
-    /**
-     * Parse date string in various formats to ISO YYYY-MM-DD
-     * Handles: DD/MM/YYYY, MM/DD/YYYY, DD-MM-YYYY, YYYY-MM-DD, etc.
-     */
-    private parseDate(dateStr: string): string | null {
-        if (!dateStr || dateStr.trim() === '' || dateStr === '-') return null;
-
-        const trimmed = dateStr.trim();
-
-        // Already ISO format: YYYY-MM-DD
-        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-
-        // DD/MM/YYYY or DD-MM-YYYY
-        const ddmmyyyy = trimmed.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$/);
-        if (ddmmyyyy) {
-            const [, d, m, y] = ddmmyyyy;
-            const day = parseInt(d);
-            const month = parseInt(m);
-            // If day > 12, it must be DD/MM/YYYY format
-            if (day > 12) {
-                return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-            }
-            // If month > 12, it must be MM/DD/YYYY format
-            if (month > 12) {
-                return `${y}-${d.padStart(2, '0')}-${m.padStart(2, '0')}`;
-            }
-            // Assume DD/MM/YYYY (Indonesian format)
-            return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-        }
-
-        // Try native Date parsing as fallback
-        const parsed = new Date(trimmed);
-        if (!isNaN(parsed.getTime())) {
-            return parsed.toISOString().split('T')[0];
-        }
-
-        return null;
-    }
-
-    /**
-     * Extract year from a date string
-     */
-    private extractYear(dateStr: string): number {
-        const parsed = this.parseDate(dateStr);
-        if (parsed) {
-            return parseInt(parsed.split('-')[0]);
-        }
-        return new Date().getFullYear();
-    }
-
     /**
      * Extract spreadsheet ID from various Google Sheets URL formats
      */
@@ -270,12 +231,26 @@ export class GoogleDriveImportService {
      */
     previewRows(allRows: string[][], maxRows: number = 10, importType: GoogleSheetsImportType = 'surat-masuk'): ImportPreview {
         this.assertPreviewRows(maxRows);
-        if (allRows.length === 0) return { headers: [], rows: [], totalRows: 0, importType, headerRow: 0, mapping: [] };
-        const { headers, headerRowIndex, mapping } = resolveSheetMapping(allRows, importType);
+        if (allRows.length === 0) return { headers: [], rows: [], totalRows: 0, importType, headerRow: 0, mapping: [], dateIssues: { total: 0, rows: [] } };
+        const { headers, headerRowIndex, mapping, columnMap } = resolveSheetMapping(allRows, importType);
         const dataRows = allRows.slice(headerRowIndex + 1);
         this.assertDataRows(dataRows);
         return { headers, rows: dataRows.slice(0, maxRows), totalRows: dataRows.length,
-            importType, headerRow: headerRowIndex + 1, mapping };
+            importType, headerRow: headerRowIndex + 1, mapping, dateIssues: this.dateIssues(dataRows, columnMap) };
+    }
+
+    /** The rows whose date the import will not accept; rows it skips as empty are left out. */
+    private dateIssues(dataRows: string[][], colMap: Record<string, number>): ImportDateIssues {
+        const issues: ImportDateIssues = { total: 0, rows: [] };
+        dataRows.forEach((row, index) => {
+            if (!this.getField(row, colMap, 'nomorSurat') && !this.getField(row, colMap, 'perihal')) return;
+            const value = this.getField(row, colMap, 'tanggalSurat');
+            const reason = importDateProblem(value) ?? (parseImportDate(value) ? null : EMPTY_DATE);
+            if (!reason) return;
+            issues.total++;
+            if (issues.rows.length < PREVIEW_DATE_ISSUES) issues.rows.push({ row: index + 1, value, reason });
+        });
+        return issues;
     }
 
     /**
@@ -347,7 +322,7 @@ export class GoogleDriveImportService {
         const syncSource = (row: string[], names: string[], counterpart: Omit<ImportCounterpart, 'value'>): ImportSyncSource => {
             const values: Record<string, string> = {
                 perihal: field(row, 'perihal'),
-                tanggalSurat: this.parseDate(field(row, 'tanggalSurat')) ?? '',
+                tanggalSurat: parseImportDate(field(row, 'tanggalSurat')) ?? '',
                 sifatSurat: normalizeSifatSurat(field(row, 'sifatSurat')) ?? '',
                 linkDokumen: isWebAddress(field(row, 'linkDokumen')) ? field(row, 'linkDokumen') : '',
                 naskahDinas: field(row, 'naskahDinas'),
@@ -382,10 +357,10 @@ export class GoogleDriveImportService {
 
         const noUrut = parseInt(this.getField(row, colMap, 'noUrut') || String(i + 1)) || (i + 1);
         const tanggalStr = this.getField(row, colMap, 'tanggalSurat');
-        const parsedDate = this.parseDate(tanggalStr);
+        // An unreadable date rejects the row here; it is never guessed or left out.
+        const parsedDate = parseImportDate(tanggalStr);
         const dari = this.getField(row, colMap, 'dari');
-        const tahun = tanggalStr ? this.extractYear(tanggalStr) : new Date().getFullYear();
-        const effectiveTahun = isNaN(tahun) ? new Date().getFullYear() : tahun;
+        const effectiveTahun = parsedDate ? Number(parsedDate.slice(0, 4)) : new Date().getFullYear();
 
         const disposisiRaw = this.getField(row, colMap, 'disposisi');
         const disposisiArr = disposisiRaw ? disposisiRaw.split(/[,;]/).map(d => d.trim()).filter(Boolean) : [];
@@ -417,10 +392,10 @@ export class GoogleDriveImportService {
 
         const noUrut = parseInt(this.getField(row, colMap, 'noUrut') || String(i + 1)) || (i + 1);
         const tanggalStr = this.getField(row, colMap, 'tanggalSurat');
-        const parsedDate = this.parseDate(tanggalStr);
+        // An unreadable date rejects the row here; it is never guessed or left out.
+        const parsedDate = parseImportDate(tanggalStr);
         const kepada = this.getField(row, colMap, 'kepada');
-        const tahun = tanggalStr ? this.extractYear(tanggalStr) : new Date().getFullYear();
-        const effectiveTahun = isNaN(tahun) ? new Date().getFullYear() : tahun;
+        const effectiveTahun = parsedDate ? Number(parsedDate.slice(0, 4)) : new Date().getFullYear();
 
         const klasifikasiJenis = this.getField(row, colMap, 'klasifikasiJenis');
         const klasifikasiKode = this.getField(row, colMap, 'klasifikasiKode');

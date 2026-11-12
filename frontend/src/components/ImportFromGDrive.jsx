@@ -4,6 +4,7 @@ import api from '@/services/api';
 import { addImportPart, buildGoogleSheetsImportPayload, emptyImportTotals, IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import';
 import { runResumableImport, unfinishedImportNotice } from '@/lib/resumable-import';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import ImportDateIssues from '@/components/ImportDateIssues';
 import ImportRowReport from '@/components/ImportRowReport';
 import ImportSyncOption from '@/components/ImportSyncOption';
 import ImportUnitRequiredButton from '@/components/ImportUnitRequiredButton';
@@ -411,7 +412,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                 <div className="space-y-2">
                                     <p className="text-sm font-medium">Tujuan: {typeLabel}</p>
                                     <p className="text-xs text-muted-foreground">Judul ditemukan pada baris data ke-{previewData.headerRow} (baris kosong tidak dihitung).</p>
-                                    <p className="text-sm text-muted-foreground">Setiap baris perlu tanggal surat yang valid (YYYY-MM-DD atau DD/MM/YYYY). Jika nomor surat kosong atau “-”, isi perihal serta pengirim atau tujuan (untuk surat keluar, tautan dokumen juga cukup) agar data dapat dikenali saat impor ulang.</p>
+                                    <p className="text-sm text-muted-foreground">Setiap baris perlu tanggal surat yang valid, ditulis dengan urutan hari, bulan, tahun (misalnya 03/11/2026 atau 3 November 2026) atau sebagai 2026-11-03. Baris dengan tanggal yang tidak dapat dibaca ditolak, tidak ditebak. Jika nomor surat kosong atau “-”, isi perihal serta pengirim atau tujuan (untuk surat keluar, tautan dokumen juga cukup) agar data dapat dikenali saat impor ulang.</p>
                                     {type === 'surat-masuk' && <p className="text-sm text-muted-foreground">{CATATAN_KELAS_IMPOR_SURAT_MASUK}</p>}
                                     <div className="overflow-x-auto rounded-lg border">
                                         <table className="w-full text-sm">
@@ -461,6 +462,8 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                         </tbody>
                                     </table>
                                 </div>
+
+                                <ImportDateIssues issues={previewData.dateIssues} totalRows={previewData.totalRows} />
 
                                 <ImportSyncOption type={type} checked={sinkron} onChange={setSinkron} />
 

@@ -101,6 +101,68 @@ describe('per-row import report', () => {
         expect(result.rows?.every(row => row.status === 'invalid')).toBe(true);
     });
 
+    it('stores day-first dates the built-in parser would read month-first, and rejects the rows it cannot read exactly', async () => {
+        const result = await service.importRows('surat-keluar', [header,
+            letter(1, '1/UND/2026', '03/11/26', 'Tahun dua angka'),
+            letter(2, '2/UND/2026', '03.11.2026', 'Pemisah titik'),
+            letter(3, '3/UND/2026', '03/11/2026 10:00', 'Dengan jam'),
+            letter(4, '4/UND/2026', '3 Nov 2026', 'Nama bulan'),
+            letter(5, '5/UND/2026', '11/25/2026', 'Bulan lebih dulu'),
+            letter(6, '6/UND/2026', '31/02/2026', 'Bukan tanggal kalender'),
+            letter(7, '7/UND/2026', 'Nov 3, 2026', 'Penulisan lain'),
+        ], 'unit-a', audit);
+
+        expect(mocks.outgoing.mock.calls.map(([record]) => [record.nomorSurat, record.tanggalSurat, record.tahun])).toEqual([
+            ['1/UND/2026', '2026-11-03', 2026], ['2/UND/2026', '2026-11-03', 2026],
+            ['3/UND/2026', '2026-11-03', 2026], ['4/UND/2026', '2026-11-03', 2026],
+        ]);
+        expect(result).toMatchObject({ success: false, totalRows: 7, importedRows: 4, skippedRows: 3, duplicateRows: 0 });
+        expect(result.rows?.slice(4)).toEqual([
+            { row: 5, no: '5', nomorSurat: '5/UND/2026', tanggal: '11/25/2026', perihal: 'Bulan lebih dulu', status: 'invalid',
+                reason: expect.stringContaining('Tanggal "11/25/2026" tampaknya ditulis dengan bulan lebih dulu') },
+            { row: 6, no: '6', nomorSurat: '6/UND/2026', tanggal: '31/02/2026', perihal: 'Bukan tanggal kalender', status: 'invalid',
+                reason: 'Tanggal "31/02/2026" tidak ada di kalender. Periksa hari, bulan, dan tahunnya.' },
+            { row: 7, no: '7', nomorSurat: '7/UND/2026', tanggal: 'Nov 3, 2026', perihal: 'Penulisan lain', status: 'invalid',
+                reason: expect.stringContaining('Tanggal "Nov 3, 2026" tidak dapat dibaca. Tulis dengan urutan hari, bulan, tahun') },
+        ]);
+        expect(result.errors[0]).toContain('Row 5: Tanggal "11/25/2026"');
+    });
+
+    it('rejects an unreadable date for surat masuk before the lookup and any write', async () => {
+        const result = await service.importRows('surat-masuk', [['Nomor Surat', 'Tanggal Surat', 'Perihal', 'Dari'],
+            ['SM-1', '11/25/2026', 'Permohonan data', 'Kantah A'], ['SM-2', '25/11/2026', 'Permohonan data', 'Kantah A']], 'unit-a', audit);
+        expect(result.rows?.map(row => row.status)).toEqual(['invalid', 'imported']);
+        expect(mocks.matches).toHaveBeenCalledWith([expect.objectContaining({ nomorSurat: 'SM-2' })]);
+        expect(mocks.incoming).toHaveBeenCalledTimes(1);
+        expect(mocks.incoming).toHaveBeenCalledWith(expect.objectContaining({ nomorSurat: 'SM-2', tanggalSurat: '2026-11-25', tahun: 2026 }), audit, {});
+    });
+
+    it('flags in the preview the rows the import will reject for their date, with the same reasons', () => {
+        const rows = [header,
+            letter(1, '1/UND/2026', '03/11/26', 'Dibaca'),
+            letter(2, '2/UND/2026', '11/25/2026', 'Bulan lebih dulu'),
+            letter(3, '3/UND/2026', '', 'Tanpa tanggal'),
+            ['4', '', 'besok', '', 'Biasa', link(4)],
+            letter(5, '5/UND/2026', '31/02/2026', 'Bukan tanggal kalender'),
+        ];
+        const preview = service.previewRows(rows, 2, 'surat-keluar');
+        expect(preview.rows).toHaveLength(2);
+        // Counted over the whole source, not only the rows shown; the import skips row 4 as empty, so it is not flagged.
+        expect(preview.dateIssues).toEqual({ total: 3, rows: [
+            { row: 2, value: '11/25/2026', reason: expect.stringContaining('bulan lebih dulu') },
+            { row: 3, value: '', reason: 'Tanggal surat kosong.' },
+            { row: 5, value: '31/02/2026', reason: 'Tanggal "31/02/2026" tidak ada di kalender. Periksa hari, bulan, dan tahunnya.' },
+        ] });
+        expect(service.previewRows([header, letter(1, '1/UND/2026', '3 November 2026', 'Dibaca')], 10, 'surat-keluar').dateIssues).toEqual({ total: 0, rows: [] });
+    });
+
+    it('lists at most ten flagged rows in the preview and counts them all', () => {
+        const rows = Array.from({ length: 25 }, (_, i) => letter(i + 1, `${i + 1}/UND/2026`, '11/25/2026', `Surat ${i + 1}`));
+        const { dateIssues } = service.previewRows([header, ...rows], 5, 'surat-keluar');
+        expect(dateIssues.total).toBe(25);
+        expect(dateIssues.rows.map(issue => issue.row)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    });
+
     it('shortens a long perihal in the report only', async () => {
         const long = 'Perihal panjang '.repeat(40).trim();
         const result = await service.importRows('surat-keluar', [header, letter(1, '1/UND/2026', '05/01/2026', long)], 'unit-a', audit);

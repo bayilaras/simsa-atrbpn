@@ -31,7 +31,7 @@ Pada surat masuk, kolom Sifat Surat sekaligus menjadi klasifikasi keamanan. Bari
 
 Bila sumber diubah setelah diimpor (misalnya perihal diperbaiki), centang **Sinkronkan surat yang sudah tercatat** sebelum mengimpor ulang. Perihal, tanggal, sifat, tautan dokumen, dan jenis naskah surat keluar (surat masuk: perihal, tanggal, jenis surat) yang berbeda diperbarui dan dicatat di log audit; sel kosong tidak menghapus data, dan surat yang sudah disetujui, diarsipkan, atau dihapus tidak diubah.
 
-Kolom wajib surat: nomor surat, tanggal surat, perihal (`Hal` juga dikenali), dan pengirim untuk surat masuk. Tanggal ditulis `YYYY-MM-DD` atau `DD/MM/YYYY`, atau sebagai sel tanggal Excel. Maksimal 1.000 baris data dan 4 MiB per berkas. Jangan mengganti tanggal yang belum diketahui dengan tanggal hari ini.
+Kolom wajib surat: nomor surat, tanggal surat, perihal (`Hal` juga dikenali), dan pengirim untuk surat masuk. Tanggal ditulis dengan urutan hari, bulan, tahun (`03/11/2026`, `3-11-2026`, `3.11.2026`, `3 November 2026`, atau `3 Nov 2026`), sebagai `2026-11-03`, atau sebagai sel tanggal Excel; tahun dua angka `00`-`69` dibaca 2000-an dan `70`-`99` dibaca 1900-an. Tanggal selalu dibaca hari lebih dulu: `03/11/2026` adalah 3 November. Baris dengan tanggal yang tidak dapat dibaca (termasuk angka padat seperti `031126`), yang tidak ada di kalender, yang tahunnya di luar 1920 sampai 2199, atau yang tampak ditulis bulan lebih dulu (misalnya `11/25/2026`) ditolak dan disebutkan pada pratinjau serta laporan impor. Maksimal 1.000 baris data dan 4 MiB per berkas. Jangan mengganti tanggal yang belum diketahui dengan tanggal hari ini.
 
 ## 3. Buat inventaris arsip fisik
 
