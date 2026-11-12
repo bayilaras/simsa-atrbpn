@@ -30,6 +30,7 @@ import {
 } from '../services/record-access.service.js';
 import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_SIFAT_TIDAK_DIKENAL } from '../constants/pesan-akses.js';
 import { rankKelas } from '../services/access/visibility-spec.js';
+import { badanPerluPersetujuan, rekamanPerluPersetujuan } from '../services/access/perlu-persetujuan.js';
 import { berkasHanyaTayang } from '../services/access/berkas-akses.js';
 import auditLogService from '../services/audit-log.service.js';
 import { suratAksiPayload } from '../services/rangkaian/aksi.js';
@@ -191,6 +192,8 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
         const id = req.params.id as string;
         const access = await recordAccessService.checkRead(req.user, 'surat_masuk', id);
         if (!access.exists || !access.allowed) {
+            const perlu = await rekamanPerluPersetujuan(req.user, 'surat_masuk', id, access);
+            if (perlu) return res.status(403).json(badanPerluPersetujuan(perlu));
             return res.status(404).json({ error: 'Surat masuk not found' });
         }
         const result = await suratMasukService.findById(id, scopeForAuthorizedRead(req, access));
