@@ -38,6 +38,7 @@ Sidebar menampilkan menu navigasi yang dikelompokkan sebagai berikut:
 
 **ADMINISTRASI**
 - 📊 Laporan
+- 📄 Formulir
 - 📝 Audit Log 🔒
 - 🔑 Persetujuan Akses Arsip
 - 🖥️ Monitoring Operasional 🔒
@@ -62,10 +63,11 @@ Tautan **📖 Panduan** ada di bagian bawah sidebar.
 
 ### Melipat Sidebar
 
-- Klik ikon **hamburger** (☰) di bagian atas untuk **melipat** sidebar.
+- Klik ikon **menu** (☰) di bagian atas untuk **melipat** sidebar.
 - Sidebar yang dilipat hanya menampilkan **ikon** saja, tanpa teks.
-- Hover mouse di atas ikon untuk melihat **tooltip** nama menu.
-- Klik ikon hamburger lagi untuk **membuka** kembali sidebar.
+- Arahkan kursor ke ikon untuk melihat nama menu.
+- Klik ikon menu lagi untuk **membuka** kembali sidebar.
+- Kelompok menu selain **Utama** dan **Manajemen Surat** dapat dibuka atau ditutup dengan mengeklik nama kelompoknya.
 
 ---
 
@@ -84,7 +86,7 @@ Menu yang ditandai 🔒 **hanya tersedia** untuk Super Admin:
 
 **Admin Unit Kerja** melihat semua menu lain untuk unit kerja yang ditetapkan. Di **Pengaturan**, tab **Profil**, **Preferensi**, dan **Template** tersedia untuk Admin Unit Kerja; tab **Unit Kerja** hanya untuk Super Admin.
 
-Akun lama Admin Dirjen dan Admin Sesditjen melihat menu yang sama dengan Admin Unit Kerja. Akun lama Staff dan Auditor hanya melihat Dashboard, Surat, Arsip Aktif, Layanan Arsip, Laporan, Persetujuan Akses Arsip, dan Pengaturan (tab Profil dan Preferensi); Auditor lama juga melihat Tata Kelola Retensi.
+Akun lama Admin Dirjen dan Admin Sesditjen melihat menu yang sama dengan Admin Unit Kerja. Akun lama Staff dan Auditor hanya melihat Dashboard, Surat, Arsip Aktif, Layanan Arsip, Laporan, Formulir, Persetujuan Akses Arsip, dan Pengaturan (tab Profil dan Preferensi); Auditor lama juga melihat Tata Kelola Retensi.
 
 > 💡 Jika kamu tidak melihat menu tertentu di sidebar, artinya role kamu tidak memiliki akses ke menu tersebut.
 
@@ -94,6 +96,7 @@ Akun lama Admin Dirjen dan Admin Sesditjen melihat menu yang sama dengan Admin U
 
 - Menu yang sedang **aktif** (halaman yang sedang dibuka) akan ditandai dengan **highlight** berwarna.
 - Bagi Super Admin dan Admin Unit Kerja, sub-menu **Lacak Surat** menampilkan angka bila ada surat yang perlu dilengkapi.
+- Sub-menu **Surat Keluar** menampilkan angka bila ada surat keluar yang menunggu keputusan kamu sebagai penyetuju. Menu ini tetap membuka daftar lengkap surat keluar.
 
 ---
 
