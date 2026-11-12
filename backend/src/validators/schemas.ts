@@ -286,6 +286,8 @@ export const querySuratKeluarSchema = paginationSchema.extend({
     klasifikasiFasilitatif: z.string().max(255).optional(),
     klasifikasiSubstantif: z.string().max(255).optional(),
     status: z.enum(['draft', 'dikirim', 'arsip']).optional(),
+    /** Penyaring kerja persetujuan; hanya mempersempit daftar yang sudah boleh dibaca. */
+    persetujuan: z.enum(['menunggu_saya', 'draft_saya']).optional(),
     search: z.string().max(255).optional(),
 });
 

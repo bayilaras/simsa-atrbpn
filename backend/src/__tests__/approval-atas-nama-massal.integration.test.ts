@@ -241,3 +241,25 @@ describe('pengajuan dan persetujuan massal', () => {
         expect((await auditSurat(SK.milik1)).map(row => row.changes.tindakan)).toEqual(['ajukan_persetujuan', 'tolak']);
     });
 });
+
+describe('GET /api/surat-keluar?persetujuan= mempersempit daftar kerja persetujuan', () => {
+    const idDaftar = async (user: object, persetujuan: string) => {
+        const res = await request(app).get('/api/surat-keluar').query({ persetujuan, limit: 100 }).set(sebagai(user)).expect(200);
+        return res.body.data.map((row: any) => row.id).sort();
+    };
+
+    it('draft_saya: hanya surat buatan pengguna yang belum diajukan', async () => {
+        expect(await idDaftar(PENGGUNA.bppt, 'draft_saya')).toEqual([SK.milik1, SK.milik2]);
+        await ajukan(PENGGUNA.bppt, SK.milik1, ORANG.bppt2).expect(200);
+        expect(await idDaftar(PENGGUNA.bppt, 'draft_saya')).toEqual([SK.milik2]);
+        expect(await idDaftar(BPPT2, 'draft_saya')).toEqual([SK.pembuatAktif]);
+    });
+
+    it('menunggu_saya: hanya surat yang menunggu keputusan pengguna', async () => {
+        expect(await idDaftar(BPPT2, 'menunggu_saya')).toEqual([]);
+        await ajukan(PENGGUNA.bppt, SK.milik1, ORANG.bppt2).expect(200);
+        expect(await idDaftar(BPPT2, 'menunggu_saya')).toEqual([SK.milik1]);
+        expect(await idDaftar(PENGGUNA.bppt, 'menunggu_saya')).toEqual([]);
+        await request(app).get('/api/surat-keluar').query({ persetujuan: 'lainnya' }).set(sebagai(BPPT2)).expect(400);
+    });
+});
