@@ -81,7 +81,8 @@ Bila belum ada administrator aktif lain pada unit surat, tampil keterangan *Belu
 
 - **Dashboard** (admin) menampilkan baris *N surat keluar menunggu keputusan Anda* dengan tombol **Tinjau surat yang menunggu**.
 - Halaman Surat Keluar menampilkan kartu kuning *N surat menunggu keputusan Anda* berisi tombol menuju surat tersebut dan tombol **Tampilkan semua di daftar**.
-- Bila kartu itu menyebut ada surat yang tidak tampil di daftar (biasanya karena tingkat keamanan suratnya), buka surat tersebut lewat tombol di kartu.
+- Bila kartu itu menyebut ada surat yang tidak tampil di daftar, tingkat keamanan surat itu di atas kewenangan kamu. Surat itu baru dapat dibuka, disetujui, atau ditolak setelah kamu memperoleh persetujuan akses dari Super Admin.
+- Surat berkelas Terbatas yang menunggu keputusan kamu juga hanya dapat disetujui atau ditolak bila kamu dapat membukanya. Bila halaman surat menampilkan *Perlu persetujuan akses*, klik **Minta Akses** lebih dulu; tanpa itu, **Setujui (N)** pada daftar menolak surat tersebut dengan alasannya.
 
 ### Mengajukan atau Menyetujui Beberapa Surat Sekaligus
 

@@ -91,6 +91,9 @@ describe.each(KASUS)('detail $nama yang perlu persetujuan akses', (kasus) => {
         expect(screen.getByText('Perihal terbatas')).toBeInTheDocument()
         expect(screen.getByText('Sudah mengajukan? Status permohonan dapat dipantau di menu Persetujuan Akses Arsip.')).toBeInTheDocument()
         expect(screen.getByRole('button', { name: kasus.daftar })).toBeInTheDocument()
+        const catatanPenyetuju = 'Bila surat ini menunggu keputusan Anda, minta akses lebih dulu: surat baru dapat disetujui atau ditolak setelah dapat dibuka.'
+        if (kasus.jenis === 'surat_keluar') expect(screen.getByText(catatanPenyetuju)).toBeInTheDocument()
+        else expect(screen.queryByText(catatanPenyetuju)).not.toBeInTheDocument()
         expect(screen.queryByText(kasus.tidakAda)).not.toBeInTheDocument()
         expect(screen.queryByText(ID)).not.toBeInTheDocument()
         expect(mocks.toast).not.toHaveBeenCalled()

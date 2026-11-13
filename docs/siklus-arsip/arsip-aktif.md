@@ -43,7 +43,7 @@ Bila daftar dibuka dari halaman [Lokasi Simpan](../layanan-fisik/lokasi-simpan.m
 
 ### Ekspor Formulir 4 dan Formulir 6
 
-Klik tombol **Export**, lalu pilih Excel (.xlsx) atau PDF pada formulir yang dibutuhkan. Isi ekspor mengikuti tab, unit, pencarian, dan tahun yang sedang dipilih.
+Klik tombol **Export**, lalu pilih Excel (.xlsx) atau PDF pada formulir yang dibutuhkan. Isi ekspor mengikuti tab, unit, pencarian, dan tahun yang sedang dipilih. Saringan lokasi simpan tidak ikut ke berkas ekspor.
 
 | Formulir | Isi |
 |----------|-----|

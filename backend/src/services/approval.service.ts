@@ -20,7 +20,7 @@ import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-
 import { denganRetryDeadlock } from '../utils/deadlock-retry.js';
 import { afterSuratKeluarChanged } from './rangkaian/tindak-lanjut.hook.js';
 import auditLogService from './audit-log.service.js';
-import { recordAccessService } from './record-access.service.js';
+import { recordAccessService, type ReadExecutor } from './record-access.service.js';
 
 const log = createLogger('ApprovalService');
 
@@ -197,6 +197,24 @@ async function resolvePengajuanAtasNama(
     if (!akses.allowed || !akses.mutable) throw new ForbiddenError(pesanDitolak);
 
     return { pembuatId: pembuat.id, namaPembuat: pembuat.name ?? null };
+}
+
+export const PESAN_PERLU_AKSES_UNTUK_MEMUTUS = 'Anda belum dapat membaca surat ini. Minta persetujuan akses lebih dulu; surat dapat disetujui atau ditolak setelah dapat dibaca.';
+
+/**
+ * Penyetuju memutus surat yang dapat ia baca dengan aturan yang sama dengan
+ * halaman detail (plafon kelas dan grant untuk kelas terkendali). Tanpa ini,
+ * persetujuan massal dapat memutus surat yang isinya tidak boleh ia buka.
+ */
+async function assertPenyetujuDapatMembaca(
+    executor: ReadExecutor,
+    actor: { id: string; role: string; unitKerjaId: string | null },
+    suratId: string,
+): Promise<void> {
+    const akses = await recordAccessService.checkRead(actor, 'surat_keluar', suratId, executor);
+    if (!akses.exists || !akses.allowed || akses.masked) {
+        throw new ForbiddenError(PESAN_PERLU_AKSES_UNTUK_MEMUTUS);
+    }
 }
 
 function pesanGagalMassal(error: unknown): string {
@@ -535,6 +553,7 @@ export class ApprovalService {
             if (surat.approvalStatus !== 'pending' || surat.currentApproverId !== freshActor.id) {
                 throw new ConflictError('Surat tidak sedang menunggu persetujuan pengguna ini.');
             }
+            await assertPenyetujuDapatMembaca(tx, freshActor, surat.id);
 
             const [request] = await tx
                 .select()
@@ -712,6 +731,7 @@ export class ApprovalService {
             if (surat.approvalStatus !== 'pending' || surat.currentApproverId !== freshActor.id) {
                 throw new ConflictError('Surat tidak sedang menunggu persetujuan pengguna ini.');
             }
+            await assertPenyetujuDapatMembaca(tx, freshActor, surat.id);
 
             const [request] = await tx
                 .select()

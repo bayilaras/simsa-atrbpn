@@ -272,6 +272,25 @@ describe('pengajuan dan persetujuan massal', () => {
         expect(riwayat).toEqual([{ action: 'APPROVE', notes: 'Disetujui bersama' }]);
     });
 
+    it('penyetuju harus dapat membaca surat terkendali sebelum memutusnya', async () => {
+        await database.exec(`INSERT INTO record_access_grants (id, requester_id, target_user_id, entity_type, entity_id, unit_kerja_id, required_classification, purpose, access_mode, status, decided_by, decided_at, decision_reason, expires_at)
+            VALUES ('73000000-0000-4000-8000-000000000002','${USER_ID.bppt}','${USER_ID.bppt}','surat_keluar','${SK.terbatasNonaktif}','dir_bppt','terbatas','Tindak lanjut surat terbatas','manage','approved','${USER_ID.approver}','2026-09-01T00:00:00Z','Kebutuhan kerja terverifikasi','2099-01-01T00:00:00Z');`);
+        await ajukan(PENGGUNA.bppt, SK.terbatasNonaktif, ORANG.bppt2).expect(200);
+        const pesan = 'Anda belum dapat membaca surat ini. Minta persetujuan akses lebih dulu; surat dapat disetujui atau ditolak setelah dapat dibaca.';
+
+        const massal = await request(app).post('/api/approval/approve-bulk').set(sebagai(BPPT2)).send({ suratIds: [SK.terbatasNonaktif] }).expect(200);
+        expect(massal.body.data).toMatchObject({ berhasil: 0, gagal: 1 });
+        expect(massal.body.data.hasil[0]).toEqual({ suratId: SK.terbatasNonaktif, berhasil: false, pesan });
+        const tolak = await request(app).post('/api/approval/reject').set(sebagai(BPPT2)).send({ suratId: SK.terbatasNonaktif, notes: 'Perbaiki tujuan' }).expect(403);
+        expect(tolak.body.error).toBe(pesan);
+        expect(await statusSurat(SK.terbatasNonaktif)).toEqual({ approval_status: 'pending', current_approver_id: ORANG.bppt2 });
+
+        await database.exec(`INSERT INTO record_access_grants (id, requester_id, target_user_id, entity_type, entity_id, unit_kerja_id, required_classification, purpose, access_mode, status, decided_by, decided_at, decision_reason, expires_at)
+            VALUES ('73000000-0000-4000-8000-000000000003','${ORANG.bppt2}','${ORANG.bppt2}','surat_keluar','${SK.terbatasNonaktif}','dir_bppt','terbatas','Memeriksa surat yang diajukan','view','approved','${USER_ID.approver}','2026-09-01T00:00:00Z','Penyetuju surat','2099-01-01T00:00:00Z');`);
+        await request(app).post('/api/approval/approve').set(sebagai(BPPT2)).send({ suratId: SK.terbatasNonaktif }).expect(200);
+        expect(await statusSurat(SK.terbatasNonaktif)).toEqual({ approval_status: 'approved', current_approver_id: null });
+    });
+
     it('penolakan tunggal juga tercatat pada jejak audit', async () => {
         await ajukan(PENGGUNA.bppt, SK.milik1, ORANG.bppt2).expect(200);
         await request(app).post('/api/approval/reject').set(sebagai(BPPT2)).send({ suratId: SK.milik1, notes: 'Perbaiki tujuan' }).expect(200);

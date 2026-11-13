@@ -160,7 +160,7 @@ describe('penyaring kerja persetujuan', () => {
             { requestId: 'req-10', suratId: 'sk-10', nomorSurat: 'SK-10/2026', perihal: 'Kelas lebih tinggi dua' },
         ])
         await tampil('/surat/keluar?persetujuan=menunggu_saya')
-        expect(await screen.findByText('2 surat yang menunggu tidak tampil di daftar di bawah, biasanya karena tingkat keamanan suratnya. Buka surat itu lewat tombol di kartu ini.')).toBeInTheDocument()
+        expect(await screen.findByText('2 surat yang menunggu tidak tampil di daftar di bawah karena tingkat keamanannya di atas kewenangan Anda. Surat itu baru dapat dibuka dan diputus setelah Anda memperoleh persetujuan akses dari Super Admin.')).toBeInTheDocument()
         expect(screen.getByRole('link', { name: 'SK-9/2026 — Kelas lebih tinggi' })).toHaveAttribute('href', '/surat/keluar/sk-9')
         expect(screen.getByRole('link', { name: 'SK-10/2026 — Kelas lebih tinggi dua' })).toHaveAttribute('href', '/surat/keluar/sk-10')
     })

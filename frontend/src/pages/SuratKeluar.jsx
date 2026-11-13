@@ -481,7 +481,7 @@ export default function SuratKeluar() {
                     <CardContent className="flex flex-wrap gap-2">
                         {menungguTakTampil > 0 && (
                             <p className="w-full text-sm text-muted-foreground">
-                                {`${menungguTakTampil} surat yang menunggu tidak tampil di daftar di bawah, biasanya karena tingkat keamanan suratnya. Buka surat itu lewat tombol di kartu ini.`}
+                                {`${menungguTakTampil} surat yang menunggu tidak tampil di daftar di bawah karena tingkat keamanannya di atas kewenangan Anda. Surat itu baru dapat dibuka dan diputus setelah Anda memperoleh persetujuan akses dari Super Admin.`}
                             </p>
                         )}
                         {menungguUntukKartu.slice(0, 5).map(item => (

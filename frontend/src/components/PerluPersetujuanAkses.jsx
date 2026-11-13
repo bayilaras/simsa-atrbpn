@@ -40,6 +40,11 @@ export function PerluPersetujuanAkses({ rekaman, daftarPath, daftarLabel }) {
                         {sebutan} ini berkelas keamanan {labelKelasTerkendali(rekaman.klasifikasi)}. Datanya tetap tersimpan
                         dan tidak dihapus, tetapi isinya baru dapat dibuka setelah permohonan akses Anda disetujui Super Admin.
                     </p>
+                    {rekaman.entityType === 'surat_keluar' && (
+                        <p className="mt-2 text-muted-foreground text-center max-w-md">
+                            Bila surat ini menunggu keputusan Anda, minta akses lebih dulu: surat baru dapat disetujui atau ditolak setelah dapat dibuka.
+                        </p>
+                    )}
                     {(rekaman.nomor || rekaman.perihal) && (
                         <dl className="mt-4 w-full max-w-md rounded-md border bg-muted/40 p-3 text-sm">
                             <dt className="text-xs text-muted-foreground">{LABEL_JENIS_REKAMAN[rekaman.entityType]}</dt>
