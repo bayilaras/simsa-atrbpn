@@ -244,6 +244,10 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'POST /storage-latency': 'bukan-rekaman',
         'GET /status': 'bukan-rekaman',
         'GET /metrics': 'bukan-rekaman',
+        // Super Admin saja: nama berkas dan status pindai, tanpa isi atau rujukan surat.
+        'GET /scan-failures': 'bukan-rekaman',
+        'POST /scan-failures/requeue': 'bukan-rekaman',
+        'POST /scan-failures/:attachmentId/requeue': 'bukan-rekaman',
     },
     'penyusutan.routes.ts': {
         'GET /print/daftar-arsip-aktif': proyeksi('printTemplateService.generateDaftarArsipAktif'),

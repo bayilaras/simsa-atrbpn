@@ -55,6 +55,9 @@ describe('pola akses kelas keamanan', () => {
             'services/penyusutan.service.ts': 2,
             'services/report.service.ts': 1,
             'services/retention-governance.service.ts': 2,
+            // Hitungan isi lokasi simpan memakai ekspresi yang sama dengan
+            // daftar arsip (arsip.service.ts), agar angka sama dengan daftar.
+            'services/storage-location.service.ts': 2,
             'services/surat-keluar.service.ts': 2,
         };
         // sifat_surat surat masuk sudah seluruhnya lewat klasifikasiInSql;
