@@ -1,10 +1,12 @@
 import { Router, type Response } from 'express';
-import { authMiddleware } from '../middlewares/auth.middleware.js';
+import { authMiddleware, type AuthRequest } from '../middlewares/auth.middleware.js';
 import { roleMiddleware } from '../middlewares/role.middleware.js';
 import { httpMetrics } from '../services/http-metrics.service.js';
 import { pool } from '../config/database.js';
 import { timingSafeEqual } from 'node:crypto';
-import { getOperationsStatus } from '../services/operations-status.service.js';
+import { getOperationsStatus, invalidateOperationsStatus } from '../services/operations-status.service.js';
+import { listFailedScans, requeueFailedScans } from '../services/malware-scan-requeue.service.js';
+import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware.js';
 import { getReadiness } from '../services/readiness.service.js';
 import { scheduleMalwareScanWake } from '../services/malware-scan-dispatch.service.js';
 import { MALWARE_DEFINITION_REFRESH_BEFORE_MS } from '../services/malware-scanner.service.js';
@@ -108,6 +110,42 @@ router.get('/status', async (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.json({ success: true, data: await getOperationsStatus() });
 });
+// Failed scans only; infected files are never listed or requeued.
+router.get('/scan-failures', async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+        res.json({ success: true, data: await listFailedScans() });
+    } catch {
+        res.status(503).json({ success: false, message: 'Daftar berkas yang gagal dipindai belum dapat dimuat. Coba lagi beberapa saat lagi.' });
+    }
+});
+async function requeueScans(req: AuthRequest, res: Response, attachmentId?: string) {
+    res.setHeader('Cache-Control', 'no-store');
+    if (Object.keys(req.query).length || (req.body != null
+        && (typeof req.body !== 'object' || Array.isArray(req.body) || Object.keys(req.body).length))
+        || (attachmentId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(attachmentId))) {
+        res.status(400).json({ success: false, message: 'Permintaan antre ulang tidak valid.' });
+        return;
+    }
+    try {
+        const result = await requeueFailedScans({ attachmentId },
+            { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip });
+        if (attachmentId && !result.requeued) {
+            res.status(409).json({ success: false, message: 'Berkas ini tidak sedang berstatus gagal dipindai. Muat ulang halaman untuk melihat status terbaru.' });
+            return;
+        }
+        invalidateOperationsStatus();
+        // Acceleration only; without it the scheduled scanner picks the files up.
+        let wakeScheduled = false;
+        if (result.requeued) { try { wakeScheduled = scheduleMalwareScanWake(); } catch { /* Queue state is already persisted. */ } }
+        res.json({ success: true, data: { ...result, wakeScheduled } });
+    } catch {
+        res.status(503).json({ success: false, message: 'Berkas belum dapat diantre ulang. Coba lagi beberapa saat lagi.' });
+    }
+}
+router.post('/scan-failures/requeue', sensitiveLimiter, (req: AuthRequest, res) => requeueScans(req, res));
+router.post('/scan-failures/:attachmentId/requeue', sensitiveLimiter,
+    (req: AuthRequest, res) => requeueScans(req, res, String(req.params.attachmentId)));
 router.get('/metrics', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     const memory = process.memoryUsage();

@@ -2,7 +2,7 @@
 
 Panduan mengelola arsip vital dan arsip terjaga.
 
-> 🔒 **Hanya Admin** yang bisa mengakses menu ini.
+> 🔒 **Hanya Super Admin dan Admin Unit Kerja** yang bisa mengakses menu ini.
 
 ---
 
@@ -18,11 +18,22 @@ Arsip vital adalah arsip yang **sangat penting** bagi kelangsungan organisasi. K
 
 ### Cara Mengelola:
 
-1. Di sidebar, klik **Arsip Vital** di bawah **Layanan & Fisik**.
-2. Lihat daftar arsip yang sudah ditandai sebagai vital.
-3. Klik **"+ Tambah Arsip Vital"** untuk menandai arsip baru sebagai vital.
-4. Pilih arsip dari daftar dan isi alasan mengapa arsip tersebut vital.
-5. Klik **"Simpan"**.
+1. Di sidebar, klik **Arsip Vital** di bawah **Layanan & Fisik**. Super Admin memilih unit kerja terlebih dahulu.
+2. Lihat tab **Daftar Arsip Vital**. Kartu di atasnya menunjukkan Total Arsip Vital, Perlu Review, dan Belum Diproteksi.
+3. Klik **"Tetapkan Arsip Vital"** untuk menetapkan arsip sebagai vital.
+4. Isi tiga bagian formulir:
+   - **Identifikasi Arsip** — cari arsip dengan nomor berkas atau isi ringkas, lalu pilih hasilnya.
+   - **Klasifikasi Kepentingan** — **Kategori Vital**, **Tingkat Kekritisan**, dan **Alasan Penetapan**. Arsip, kategori, dan tingkat kekritisan wajib diisi.
+   - **Metode Proteksi & Backup** — metode proteksi, jadwal dan lokasi backup, tanggal penetapan, tanggal review berikutnya, dan penanggung jawab.
+5. Simpan penetapan.
+
+Tab **Monitoring Proteksi** menampilkan arsip vital yang perlu ditinjau ulang. Tombol **Cetak Daftar** mencetak daftar arsip vital.
+
+| Status Proteksi | Keterangan |
+|-----------------|------------|
+| **Terlindungi** | Proteksi sudah dicatat |
+| **Perlu Review** | Tanggal review sudah tiba |
+| **Belum Diproteksi** | Belum ada metode proteksi |
 
 ---
 
@@ -37,11 +48,16 @@ Arsip terjaga adalah arsip yang **harus dilindungi oleh negara** berdasarkan per
 
 ### Cara Mengelola:
 
-1. Di sidebar, klik **Arsip Terjaga** di bawah **Layanan & Fisik**. Menu ini hanya muncul bila modul Arsip Terjaga diaktifkan operator.
-2. Lihat daftar arsip yang berstatus terjaga.
-3. Klik **"+ Tambah Arsip Terjaga"** untuk menambah.
-4. Pilih arsip dan isi dasar hukum perlindungan.
-5. Klik **"Simpan"**.
+> **Modul belum aktif**
+>
+> Menu **Arsip Terjaga** hanya muncul bila modul Arsip Terjaga diaktifkan operator. Selama modul belum diaktifkan, pencatatan dan pelaporan arsip terjaga dilakukan di luar SIMSA mengikuti prosedur unit.
+
+Bila modul sudah diaktifkan:
+
+1. Di sidebar, klik **Arsip Terjaga** di bawah **Layanan & Fisik**.
+2. Lihat tab **Daftar Arsip Terjaga**.
+3. Klik **"Tetapkan Arsip Terjaga"**, cari dan pilih arsipnya, lalu lengkapi kategori dan isian lain.
+4. Simpan penetapan.
 
 ---
 

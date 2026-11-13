@@ -2,26 +2,33 @@
 
 Panduan proses penyusutan arsip di SIMSA.
 
+:::info Modul belum aktif
+Menu **Penyusutan** hanya muncul bila modulnya diaktifkan operator. Selama modul belum diaktifkan, pemindahan dan pemusnahan arsip dilakukan di luar SIMSA mengikuti prosedur unit. Gunakan [Manajemen Retensi](manajemen-retensi.md) untuk melihat arsip yang masa retensinya sudah atau hampir habis dan untuk mencetak draf berita acara pemusnahan tanpa nomor (nomor diisi manual) melalui **Generate Berita Acara**.
+:::
+
 ---
 
 ## Apa Itu Penyusutan?
 
-**Penyusutan arsip** adalah kegiatan **mengurangi volume arsip** yang telah melewati masa retensinya. Ada tiga tindakan penyusutan:
+**Penyusutan arsip** adalah kegiatan **mengurangi volume arsip** yang telah melewati masa retensinya. Bila modul diaktifkan, halaman Penyusutan mengelola tiga jenis usulan:
 
-| Tindakan | Keterangan |
-|----------|------------|
-| **Musnah** 🗑️ | Arsip dimusnahkan secara permanen |
-| **Serah** 🏛️ | Arsip diserahkan ke lembaga arsip (ANRI/arsip daerah) |
-| **Perpanjang** 🔄 | Masa retensi diperpanjang untuk penilaian kembali |
+| Jenis | Keterangan |
+|-------|------------|
+| **Pemindahan** | Arsip dipindahkan dari unit pengolah ke unit kearsipan |
+| **Pemusnahan** 🗑️ | Arsip dimusnahkan secara permanen |
+| **Alih Media** | Arsip dialihkan ke media lain |
+
+Penyerahan arsip permanen tidak dibuat di halaman ini, tetapi melalui menu **Tata Kelola Retensi**. Tab **Penyerahan (Riwayat)** hanya untuk membaca catatan lama.
 
 ---
 
 ## Alur Penyusutan
 
 ```
-Arsip Melampaui    →    Masuk Daftar    →    Pilih Tindakan    →    Proses
-Masa Retensi            Penyusutan           (Musnah/Serah)         Selesai
+Draft  →  Diusulkan  →  Ditinjau  →  Disetujui  →  Dilaksanakan
 ```
+
+Setiap tahap dikerjakan akun yang berbeda. Admin Unit Kerja dapat mengusulkan dan meninjau usulan unitnya; tahap **Disetujui** dan **Dilaksanakan** hanya dapat dilakukan Super Admin.
 
 ---
 
@@ -29,21 +36,19 @@ Masa Retensi            Penyusutan           (Musnah/Serah)         Selesai
 
 ### Langkah 1: Buka Menu Penyusutan
 
-1. Di sidebar, klik **Penyusutan** di bawah grup **Siklus Hidup Arsip**.
+Di sidebar, klik **Penyusutan** di bawah grup **Siklus Hidup Arsip**.
 
-:::info Modul opsional
-Menu **Penyusutan** hanya muncul bila modulnya diaktifkan operator. Selama modul belum diaktifkan, pemindahan dan pemusnahan arsip dilakukan di luar SIMSA mengikuti prosedur unit. Gunakan [Manajemen Retensi](manajemen-retensi.md) untuk melihat arsip yang masa retensinya sudah atau hampir habis dan untuk mencetak draf berita acara pemusnahan tanpa nomor (nomor diisi manual) melalui **Generate Berita Acara**.
-:::
+### Langkah 2: Buat Usulan
 
-### Langkah 2: Lihat Daftar Arsip
+1. Pilih tab **Pemindahan**, **Pemusnahan**, atau **Alih Media**.
+2. Klik **"Buat Usulan"**, pilih arsip yang memenuhi syarat, dan isi keterangan bila perlu.
 
-Daftar menampilkan arsip yang **memenuhi syarat penyusutan** (sudah melewati masa retensi).
+### Langkah 3: Majukan Tahap
 
-### Langkah 3: Pilih Tindakan
-
-1. Klik arsip untuk melihat detail.
-2. Pilih tindakan yang sesuai (**Musnah**, **Serah**, atau **Perpanjang**).
-3. Ikuti proses konfirmasi.
+1. Buka usulan dari **Riwayat Usulan**.
+2. Periksa daftar arsip di dalamnya.
+3. Majukan tahapnya dengan **Usulkan**, **Tinjau**, **Setujui**, lalu **Laksanakan** sesuai kewenangan.
+4. Cetak daftar usul atau berita acara pada tahap yang tersedia.
 
 > ⚠️ **Perhatian:** Pemusnahan arsip **bersifat permanen** dan tidak bisa dibatalkan. Pastikan sudah sesuai ketentuan sebelum memusnahkan.
 

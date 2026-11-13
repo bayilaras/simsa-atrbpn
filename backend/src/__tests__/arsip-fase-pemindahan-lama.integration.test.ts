@@ -170,6 +170,89 @@ describe('ekspor Formulir 4 dan Formulir 6', () => {
     });
 });
 
+describe('ekspor Formulir 4 dan Formulir 6 per item arsip', () => {
+    beforeAll(async () => {
+        await database.exec(`
+            INSERT INTO arsip_items (arsip_id, nomor_item, uraian_item, tingkat_perkembangan, tanggal_item, jumlah) VALUES
+                ('${ARSIP.pindahPenunjuk}','2','ITEM-PINDAH-DUA','Asli','2020-02-02',3),
+                ('${ARSIP.pindahPenunjuk}','1','ITEM-PINDAH-SATU','Salinan','2020-01-01',2),
+                ('${ARSIP.pindahDanMusnah}','1','ITEM-MUSNAH','Asli','2020-01-01',1),
+                ('${ARSIP.aktif}','1','ITEM-AKTIF-SATU','Asli','2026-01-01',5),
+                ('${ARSIP.aktif}','2','ITEM-AKTIF-DUA','Asli','2026-01-02',6);
+        `);
+    });
+
+    it('rincian item dikelompokkan per arsip dan hanya untuk id yang diteruskan', async () => {
+        const { arsipService } = await import('../services/arsip.service');
+        const items = await arsipService.itemPerArsip([ARSIP.pindahPenunjuk, ARSIP.pindahTanpaPenunjuk, ARSIP.pindahPenunjuk]);
+        expect([...items.keys()]).toEqual([ARSIP.pindahPenunjuk]);
+        expect(items.get(ARSIP.pindahPenunjuk)?.map((row) => [row.nomorItem, row.uraianItem, row.jumlah])).toEqual([
+            ['1', 'ITEM-PINDAH-SATU', 2], ['2', 'ITEM-PINDAH-DUA', 3],
+        ]);
+        const select = vi.spyOn(holder.db, 'select');
+        expect((await arsipService.itemPerArsip([])).size).toBe(0);
+        expect(select).not.toHaveBeenCalled();
+    });
+
+    it('item bernomor sama diurutkan menurut waktu dibuat', async () => {
+        const { arsipService } = await import('../services/arsip.service');
+        // Urutan id sengaja berlawanan dengan urutan waktu dibuat.
+        await database.exec(`
+            INSERT INTO arsip_items (id, arsip_id, nomor_item, uraian_item, created_at) VALUES
+                ('ffffffff-0000-4000-8000-000000000001','${ARSIP.aktif}','','URUT-A','2026-01-01T00:00:01Z'),
+                ('88888888-0000-4000-8000-000000000002','${ARSIP.aktif}','','URUT-B','2026-01-01T00:00:02Z'),
+                ('11111111-0000-4000-8000-000000000003','${ARSIP.aktif}','','URUT-C','2026-01-01T00:00:03Z');
+        `);
+        try {
+            const items = await arsipService.itemPerArsip([ARSIP.aktif]);
+            expect(items.get(ARSIP.aktif)?.map((row) => row.uraianItem).filter((uraian) => uraian?.startsWith('URUT-')))
+                .toEqual(['URUT-A', 'URUT-B', 'URUT-C']);
+        } finally {
+            await database.exec(`DELETE FROM arsip_items WHERE uraian_item LIKE 'URUT-%'`);
+        }
+    });
+
+    it('Formulir 6 mencetak tiap item pemindahan lama dan tidak memuat item arsip yang dimusnahkan', async () => {
+        const { exportService } = await import('../services/export.service');
+        const isi = await isiExcel(await exportService.generateExcelArsip(
+            { unitKerjaId: 'sesditjen', securityClassifications: KELAS }, 'formulir6',
+        ));
+        const berkas = `(Berkas: Berkas ${nomor(ARSIP.pindahPenunjuk)})`;
+        expect(isi).toContain(JSON.stringify(`ITEM-PINDAH-SATU\n${berkas}`));
+        expect(isi).toContain(JSON.stringify(`ITEM-PINDAH-DUA\n${berkas}`));
+        expect(isi.indexOf('ITEM-PINDAH-SATU')).toBeLessThan(isi.indexOf('ITEM-PINDAH-DUA'));
+        expect(isi).not.toContain('ITEM-MUSNAH');
+        expect(isi).not.toContain('ITEM-AKTIF');
+        // Empat arsip inaktif, salah satunya dua item: lima baris bernomor 1-5.
+        expect(nomorTercantum(isi)).toHaveLength(4);
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(await exportService.generateExcelArsip(
+            { unitKerjaId: 'sesditjen', securityClassifications: KELAS }, 'formulir6',
+        ) as any);
+        const sheet = workbook.worksheets[0];
+        expect([8, 9, 10, 11, 12, 13].map((row) => sheet.getCell(row, 1).value)).toEqual([1, 2, 3, 4, 5, null]);
+    });
+
+    it('Formulir 4 mencetak tiap item arsip aktif', async () => {
+        const { exportService } = await import('../services/export.service');
+        const isi = await isiExcel(await exportService.generateExcelArsip(
+            { unitKerjaId: 'sesditjen', securityClassifications: KELAS }, 'formulir4',
+        ));
+        expect(isi).toContain('ITEM-AKTIF-SATU');
+        expect(isi).toContain('ITEM-AKTIF-DUA');
+        expect(isi).not.toContain('ITEM-PINDAH');
+        expect(isi).not.toContain('ITEM-MUSNAH');
+    });
+
+    it('item arsip di luar kelas keamanan pembaca tidak ikut', async () => {
+        const { exportService } = await import('../services/export.service');
+        const isi = await isiExcel(await exportService.generateExcelArsip(
+            { unitKerjaId: 'sesditjen', securityClassifications: [] }, 'formulir4',
+        ));
+        expect(isi).not.toContain('ITEM-');
+    });
+});
+
 describe('Formulir 4 dan Formulir 6 cetak di modul Penyusutan', () => {
     it('daftar arsip inaktif memuat pemindahan lama dan baru tanpa arsip yang dimusnahkan', async () => {
         const { penyusutanService } = await import('../services/penyusutan.service');

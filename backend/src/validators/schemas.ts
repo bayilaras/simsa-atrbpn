@@ -11,7 +11,7 @@ import { KATEGORI_PERLU_DILENGKAPI } from '../services/perlu-dilengkapi.constant
 // Common schemas
 export const uuidSchema = z.string().uuid('Invalid UUID format');
 export const dateSchema = z.string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format')
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Tanggal harus berformat TTTT-BB-HH, misalnya 2026-01-31')
     .refine((value) => {
         const parsed = new Date(`${value}T00:00:00.000Z`);
         return !Number.isNaN(parsed.getTime())
@@ -20,15 +20,23 @@ export const dateSchema = z.string()
 
 const optionalNomorSuratSchema = z.preprocess(
     value => typeof value === 'string' && value.trim() === '' ? undefined : value,
-    z.string().trim().min(1, 'Nomor surat wajib diisi').max(255).optional(),
+    z.string('Nomor surat tidak valid').trim().min(1, 'Nomor surat wajib diisi')
+        .max(255, 'Nomor surat maksimal 255 karakter').optional(),
 );
+
+const PESAN_LOKASI_BERKAS_TIDAK_VALID = 'Berkas unggahan tidak dapat dikenali. Unggah ulang berkas.';
+const PESAN_LINK_DOKUMEN_TIDAK_VALID = 'Link dokumen harus berupa alamat lengkap, misalnya https://contoh.go.id/berkas';
+
+/** Isian teks opsional dengan pesan batas panjang berbahasa Indonesia. */
+const teksMaks = (label: string, maks: number) =>
+    z.string(`${label} tidak valid`).max(maks, `${label} maksimal ${maks} karakter`);
 
 export type SuratBlobFolder = 'surat-masuk' | 'surat-keluar';
 
 /** Accept only canonical private object locators created for the expected record type. */
 export function privateObjectLocatorSchema(folder: SuratBlobFolder) {
     return z.string()
-        .max(2048, 'File URL is too long')
+        .max(2048, PESAN_LOKASI_BERKAS_TIDAK_VALID)
         .superRefine((value, ctx) => {
             try {
                 const url = new URL(value);
@@ -53,13 +61,13 @@ export function privateObjectLocatorSchema(folder: SuratBlobFolder) {
                 ) {
                     ctx.addIssue({
                         code: 'custom',
-                        message: `filePath must be a canonical private object under ${folder}/`,
+                        message: PESAN_LOKASI_BERKAS_TIDAK_VALID,
                     });
                 }
             } catch {
                 ctx.addIssue({
                     code: 'custom',
-                    message: `filePath must be a canonical private object under ${folder}/`,
+                    message: PESAN_LOKASI_BERKAS_TIDAK_VALID,
                 });
             }
         });
@@ -92,20 +100,21 @@ function parseJsonObjectString(value: unknown) {
     }
 }
 
-const alasanText = z.string().trim().min(10, 'Alasan minimal 10 karakter').max(2000);
+const alasanText = z.string('Alasan wajib diisi').trim().min(10, 'Alasan minimal 10 karakter').max(2000, 'Alasan maksimal 2000 karakter');
 export const alasanSchema = z.object({ alasan: alasanText }).strict();
 
 const batasWaktuSchema = dateSchema.refine((value) => value >= jakartaDate(), 'Batas waktu tidak boleh sebelum hari ini');
 
 export const disposisiTargetSchema = z.object({
-    unitKerjaId: z.string().trim().min(1).max(50),
+    unitKerjaId: z.string('Unit tujuan disposisi tidak valid').trim()
+        .min(1, 'Unit tujuan disposisi wajib diisi').max(50, 'Unit tujuan disposisi tidak valid'),
     batasWaktu: batasWaktuSchema.nullish(),
-    penanggungJawab: z.boolean().optional().default(false),
+    penanggungJawab: z.boolean('Penanda penanggung jawab disposisi tidak valid').optional().default(false),
 }).strict();
 
 export const disposisiTargetsSchema = z.array(disposisiTargetSchema)
     .min(1, 'Pilih minimal satu unit tujuan')
-    .max(10)
+    .max(10, 'Unit tujuan disposisi maksimal 10')
     .superRefine((targets, ctx) => {
         const ids = targets.map((target) => target.unitKerjaId);
         if (new Set(ids).size !== ids.length) {
@@ -120,10 +129,14 @@ export const disposisiRoutingSchema = z.object({
     targets: disposisiTargetsSchema,
     // Registrasi multipart di-parse multer SETELAH sanitizer global, sehingga
     // MULTILINE_FIELDS tidak pernah melihatnya; normalisasi baris baru di sini [T5-3].
-    instruksi: z.string().max(2000)
+    instruksi: z.string('Instruksi disposisi tidak valid').max(2000, 'Instruksi disposisi maksimal 2000 karakter')
         .transform((value) => value.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim())
         .nullish(),
-    labelTambahan: z.array(z.string().trim().min(1).max(100)).max(10).optional(),
+    labelTambahan: z.array(
+        z.string('Label disposisi tidak valid').trim()
+            .min(1, 'Label disposisi tidak boleh kosong').max(100, 'Label disposisi maksimal 100 karakter'),
+        'Label disposisi tidak valid',
+    ).max(10, 'Label disposisi maksimal 10').optional(),
 }).strict();
 export type DisposisiRoutingInput = z.infer<typeof disposisiRoutingSchema>;
 
@@ -145,31 +158,38 @@ export type TindakLanjutInput = z.infer<typeof tindakLanjutInputSchema>;
 // Surat Masuk schemas
 // Fields must match database schema in db/schema/surat-masuk.ts
 export const createSuratMasukSchema = z.object({
-    unitKerjaId: z.string().min(1, 'Unit kerja wajib diisi').max(50),
-    noUrut: z.coerce.number().int().positive().optional(), // Auto-generated if not provided
-    tahun: z.coerce.number().int().min(2000).max(2100).optional(), // Defaults to current year
-    jenisSurat: z.string().max(100).optional(),
-    sifatSurat: z.string().max(50).optional(), // Biasa, Segera, Sangat Segera
+    unitKerjaId: z.string('Unit kerja wajib diisi').min(1, 'Unit kerja wajib diisi').max(50, 'Unit kerja tidak valid'),
+    noUrut: z.coerce.number('Nomor urut harus berupa angka').int('Nomor urut harus berupa bilangan bulat')
+        .positive('Nomor urut harus lebih dari 0').optional(), // Auto-generated if not provided
+    tahun: z.coerce.number('Tahun harus berupa angka').int('Tahun harus berupa bilangan bulat')
+        .min(2000, 'Tahun harus antara 2000 dan 2100').max(2100, 'Tahun harus antara 2000 dan 2100').optional(), // Defaults to current year
+    jenisSurat: teksMaks('Jenis surat', 100).optional(),
+    sifatSurat: teksMaks('Sifat surat', 50).optional(), // Biasa, Segera, Sangat Segera
     nomorSurat: optionalNomorSuratSchema,
-    tanggalSurat: dateSchema,
-    perihal: z.string().min(1, 'Perihal wajib diisi').max(2000),
-    dari: z.string().min(1, 'Pengirim wajib diisi').max(255), // Field name is 'dari' in DB
-    kepada: z.string().max(255).optional(),
-    status: z.enum(['belum_dibalas', 'sudah_dibalas']).optional().default('belum_dibalas'),
-    disposisi: z.preprocess(parseJsonObjectString, z.union([disposisiRoutingSchema, legacyDisposisiLabels])).optional(),
+    tanggalSurat: z.string('Tanggal surat wajib diisi').pipe(dateSchema),
+    perihal: z.string('Perihal wajib diisi').min(1, 'Perihal wajib diisi').max(2000, 'Perihal maksimal 2000 karakter'),
+    dari: z.string('Pengirim wajib diisi').min(1, 'Pengirim wajib diisi').max(255, 'Pengirim maksimal 255 karakter'), // Field name is 'dari' in DB
+    kepada: teksMaks('Penerima', 255).optional(),
+    status: z.enum(['belum_dibalas', 'sudah_dibalas'], 'Status surat tidak valid').optional().default('belum_dibalas'),
+    disposisi: z.preprocess(parseJsonObjectString, z.union(
+        [disposisiRoutingSchema, legacyDisposisiLabels],
+        'Disposisi tidak valid. Periksa unit tujuan dan batas waktunya.',
+    )).optional(),
     referensi: z.preprocess(parseJsonObjectString, z.object({
-        jenis: z.literal('surat_keluar'),
-        id: uuidSchema,
-    }).strict()).optional(),
-    keterangan: z.string().max(2000).optional(),
-    linkDokumen: z.string().url().optional().or(z.literal('')),
+        jenis: z.literal('surat_keluar', 'Surat rujukan tidak valid'),
+        id: z.string('Surat rujukan tidak valid').uuid('Surat rujukan tidak valid'),
+    }, 'Surat rujukan tidak valid').strict()).optional(),
+    keterangan: teksMaks('Keterangan', 2000).optional(),
+    linkDokumen: z.string(PESAN_LINK_DOKUMEN_TIDAK_VALID).url(PESAN_LINK_DOKUMEN_TIDAK_VALID).optional().or(z.literal('')),
     // File attachment fields (set by a provider-authorized direct upload)
     filePath: privateObjectLocatorSchema('surat-masuk').optional(),
-    fileOriginalName: z.string().max(255).optional(),
-    klasifikasiKode: z.string().max(50).optional(),
-    klasifikasiUraian: z.string().max(1000).optional(),
-    klasifikasiItemId: z.coerce.number().int().positive().nullable().optional(),
-    jraItemId: z.coerce.number().int().positive().nullable().optional(),
+    fileOriginalName: teksMaks('Nama berkas', 255).optional(),
+    klasifikasiKode: teksMaks('Kode klasifikasi', 50).optional(),
+    klasifikasiUraian: teksMaks('Uraian klasifikasi', 1000).optional(),
+    klasifikasiItemId: z.coerce.number('Klasifikasi arsip tidak valid').int('Klasifikasi arsip tidak valid')
+        .positive('Klasifikasi arsip tidak valid').nullable().optional(),
+    jraItemId: z.coerce.number('Pilihan JRA tidak valid').int('Pilihan JRA tidak valid')
+        .positive('Pilihan JRA tidak valid').nullable().optional(),
 });
 
 // Zod 4 applies inner defaults even through partial(). Status surat masuk kini
@@ -177,7 +197,8 @@ export const createSuratMasukSchema = z.object({
 export const updateSuratMasukSchema = createSuratMasukSchema.partial()
     .omit({ unitKerjaId: true, status: true, disposisi: true, referensi: true })
     .extend({
-        disposisi: legacyDisposisiLabels.optional(),
+        disposisi: z.union([z.string(), z.array(z.string())], 'Disposisi tidak valid')
+            .pipe(legacyDisposisiLabels).optional(),
         alasan: alasanText.optional(),
     });
 
@@ -213,7 +234,7 @@ const suratKeluarBaseSchema = z.object({
     tanggalSurat: dateSchema,
     perihal: z.string().min(1, 'Perihal wajib diisi').max(2000),
     kepada: z.string().min(1, 'Kepada wajib diisi').max(2000),
-    linkDokumen: z.string().url().optional().or(z.literal('')),
+    linkDokumen: z.string().url(PESAN_LINK_DOKUMEN_TIDAK_VALID).optional().or(z.literal('')),
     balasanUntuk: uuidSchema.optional().nullable(),
     asalNaskah: z.enum(['inisiatif', 'tindak_lanjut']).optional(),
     tindakLanjut: z.preprocess(parseJsonObjectString, tindakLanjutInputSchema).optional(),
@@ -286,6 +307,8 @@ export const querySuratKeluarSchema = paginationSchema.extend({
     klasifikasiFasilitatif: z.string().max(255).optional(),
     klasifikasiSubstantif: z.string().max(255).optional(),
     status: z.enum(['draft', 'dikirim', 'arsip']).optional(),
+    /** Penyaring kerja persetujuan; hanya mempersempit daftar yang sudah boleh dibaca. */
+    persetujuan: z.enum(['menunggu_saya', 'draft_saya']).optional(),
     search: z.string().max(255).optional(),
 });
 
@@ -357,6 +380,8 @@ export const archiveRegistrationSchema = z.object({
     lokasiFc: z.string().trim().max(50).optional(),
     lokasiLaci: z.string().trim().max(50).optional(),
     lokasiFolder: z.string().trim().max(50).optional(),
+    // Opsional; server memeriksa lokasi berada di unit kerja arsip.
+    storageLocationId: uuidSchema.optional(),
     items: z.array(archiveItemRegistrationSchema).min(1).max(100),
     // Deprecated client display/cache fields. Never trusted by the server.
     jraUraian: z.string().max(2000).optional(),
@@ -425,6 +450,8 @@ export const updateArsipSchema = z.object({
     lokasiFc: z.string().trim().max(50).optional(),
     lokasiLaci: z.string().trim().max(50).optional(),
     lokasiFolder: z.string().trim().max(50).optional(),
+    // null melepas arsip dari lokasi simpan.
+    storageLocationId: uuidSchema.nullable().optional(),
     personInCharge: z.string().trim().max(255).optional(),
     unitPengolah: z.string().trim().min(1).max(255).optional(),
     keterangan: z.string().trim().max(4000).optional(),
@@ -442,6 +469,7 @@ export const queryArsipSchema = paginationSchema.extend({
     tahun: z.coerce.number().int().min(2000).max(2100).optional(),
     jenisSurat: z.enum(['masuk', 'keluar']).optional(),
     klasifikasiId: uuidSchema.optional(),
+    storageLocationId: uuidSchema.optional(),
     expiring: z.coerce.boolean().optional(),
     search: z.string().max(255).optional(),
 });

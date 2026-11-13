@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     user: { id: 'actor-a', role: 'admin_unit', unitKerjaId: 'unit-a' },
     rangkaian: { getBySurat: vi.fn() },
 }))
+vi.mock('@/components/tunjuk-silang/KartuTunjukSilang', () => ({ KartuTunjukSilang: ({ tipe, id }) => <div data-testid="kartu-tunjuk-silang">{`${tipe}:${id}`}</div> }))
 vi.mock('@/components/surat/KoreksiBerkasSection', () => ({ default: () => null }))
 vi.mock('@/services/surat-masuk.service', () => ({ default: mocks.masuk }))
 vi.mock('@/services/surat-keluar.service', () => ({ default: mocks.keluar }))
@@ -24,6 +25,8 @@ vi.mock('@/services/approval.service', () => ({ default: { getPending: vi.fn().m
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: mocks.user, canWrite: () => true }) }))
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ capabilities: { files: false } }) }))
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }))
+// Formulir arsip memuat daftar lokasi simpan unit surat.
+vi.mock('@/services/storage-location.service', () => ({ default: { getTree: vi.fn().mockResolvedValue({ success: true, data: [] }) } }))
 vi.mock('@/components/ExportButton', () => ({ ExportButton: () => null }))
 vi.mock('@/components/ImportFromGDrive', () => ({ default: () => null }))
 vi.mock('@/components/ImportCsvDialog', () => ({ default: () => null }))

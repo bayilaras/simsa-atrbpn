@@ -13,10 +13,18 @@ import {
     users,
     recordAccessGrants,
     unitKerja,
+    storageLocations,
+    type StorageLocation,
+    archiveLending,
 } from '../db/schema';
 import { eq, and, desc, sql, ilike, or, isNotNull, isNull, ne, inArray, getTableColumns, type SQL } from 'drizzle-orm';
 import { AppError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors';
-import { PESAN_KELAS_MELEBIHI_KEWENANGAN } from '../constants/pesan-akses.js';
+import {
+    PESAN_BOKS_TUJUAN_SEDANG_DIPINJAM,
+    PESAN_KELAS_MELEBIHI_KEWENANGAN,
+    PESAN_LOKASI_ARSIP_SEDANG_DIPINJAM,
+    PESAN_LOKASI_SIMPAN_TIDAK_SESUAI,
+} from '../constants/pesan-akses.js';
 import { hasPermission, type Role } from '../config/permissions';
 import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-lock';
 import { isAllowedForClassification, recordAccessService } from './record-access.service';
@@ -44,6 +52,8 @@ export interface ArsipFilters {
     jenisArsip?: string;
     tahun?: number;
     search?: string;
+    /** Arsip pada lokasi simpan ini dan seluruh sub-lokasinya. */
+    storageLocationId?: string;
     page?: number;
     limit?: number;
     /** null means all classes (super_admin); [] fails closed. */
@@ -196,6 +206,19 @@ function withoutRuleSnapshot(row: ArchiveWithRuleSnapshot): ArsipBaris {
     return archive;
 }
 
+export type JalurLokasiSimpan = Array<Pick<StorageLocation, 'id' | 'code' | 'name' | 'level'>>;
+
+/** Lokasi simpan beserta semua sub-lokasinya, untuk filter daftar arsip. */
+function lokasiDanSubLokasi(storageLocationId: string): SQL {
+    return sql`${arsip.storageLocationId} in (
+        with recursive cabang as (
+            select sl.id from storage_locations sl where sl.id = ${storageLocationId}::uuid
+            union all
+            select anak.id from storage_locations anak join cabang on anak.parent_id = cabang.id
+        )
+        select id from cabang)`;
+}
+
 export const PESAN_KELAS_DI_BAWAH_SUMBER = 'Klasifikasi arsip tidak boleh lebih rendah dari surat sumber';
 
 function dispositionLabel(code: string | null | undefined): Arsip['hasilAkhir'] {
@@ -270,6 +293,56 @@ export class ArsipService {
         return null;
     }
 
+    /**
+     * Lokasi simpan harus berada di unit kerja arsipnya dan tidak sedang
+     * dipinjam sebagai boks. Baris lokasi dikunci sampai transaksi selesai agar
+     * tidak terhapus, dan agar peminjaman boks (yang mengunci baris yang sama)
+     * tidak berjalan bersamaan dengan penautan arsip ke boks itu.
+     */
+    private async kunciLokasiSimpan(tx: any, storageLocationId: string, unitKerjaId: string): Promise<void> {
+        const [lokasi] = await tx
+            .select({ id: storageLocations.id })
+            .from(storageLocations)
+            .where(and(
+                eq(storageLocations.id, storageLocationId),
+                eq(storageLocations.unitKerjaId, unitKerjaId),
+            ))
+            .limit(1)
+            .for('key share');
+        if (!lokasi) throw new ValidationError(PESAN_LOKASI_SIMPAN_TIDAK_SESUAI);
+        if (await this.boksSedangDipinjam(tx, storageLocationId)) {
+            throw new ConflictError(PESAN_BOKS_TUJUAN_SEDANG_DIPINJAM);
+        }
+    }
+
+    /** Peminjaman per boks menandai arsip lewat tautan lokasinya. */
+    private async boksSedangDipinjam(tx: any, storageLocationId: string): Promise<boolean> {
+        const [pinjaman] = await tx
+            .select({ id: archiveLending.id })
+            .from(archiveLending)
+            .where(and(
+                eq(archiveLending.storageLocationId, storageLocationId),
+                inArray(archiveLending.status, ['borrowed', 'overdue']),
+            ))
+            .limit(1);
+        return Boolean(pinjaman);
+    }
+
+    /** Jalur lokasi simpan dari gedung sampai lokasi yang dipilih. */
+    async jalurLokasiSimpan(storageLocationId: string): Promise<JalurLokasiSimpan> {
+        const rows = barisDari<{ id: string; code: string; name: string; level: string }>(await db.execute(sql`
+            with recursive jalur as (
+                select sl.id, sl.code, sl.name, sl.level, sl.parent_id, 0 as kedalaman
+                from storage_locations sl where sl.id = ${storageLocationId}::uuid
+                union all
+                select induk.id, induk.code, induk.name, induk.level, induk.parent_id, jalur.kedalaman + 1
+                from storage_locations induk join jalur on induk.id = jalur.parent_id
+                where jalur.kedalaman < 8
+            )
+            select id, code, name, level from jalur order by kedalaman desc`));
+        return rows.map(({ id, code, name, level }) => ({ id, code, name, level }));
+    }
+
     private assertNoDirectRetentionTrigger(data: Record<string, any>) {
         if ([
             data.retentionTriggerType,
@@ -301,6 +374,7 @@ export class ArsipService {
             jenisArsip,
             tahun,
             search,
+            storageLocationId,
             page = 1,
             limit = 20,
             securityClassifications,
@@ -327,6 +401,9 @@ export class ArsipService {
         }
         if (tahun) {
             conditions.push(eq(arsip.tahun, tahun));
+        }
+        if (storageLocationId) {
+            conditions.push(lokasiDanSubLokasi(storageLocationId));
         }
         if (search) {
             conditions.push(
@@ -415,6 +492,29 @@ export class ArsipService {
         return hasil;
     }
 
+    /**
+     * Item arsip untuk sekumpulan arsip, diambil dalam satu query dan
+     * dikelompokkan per arsip. Tidak menyaring unit atau kelas keamanan:
+     * pemanggil wajib meneruskan id dari baris yang sudah tersaring unit dan
+     * kelasnya.
+     */
+    async itemPerArsip(arsipIds: string[]): Promise<Map<string, ArsipItem[]>> {
+        const hasil = new Map<string, ArsipItem[]>();
+        const ids = [...new Set(arsipIds)];
+        if (ids.length === 0) return hasil;
+        const rows: ArsipItem[] = await db
+            .select()
+            .from(arsipItems)
+            .where(sql`${arsipItems.arsipId} = any(${uuidArraySql(ids)})`)
+            .orderBy(arsipItems.arsipId, arsipItems.nomorItem, arsipItems.createdAt, arsipItems.id);
+        for (const row of rows) {
+            const daftar = hasil.get(row.arsipId);
+            if (daftar) daftar.push(row);
+            else hasil.set(row.arsipId, [row]);
+        }
+        return hasil;
+    }
+
     async findById(id: string) {
         const [result] = await db
             .select(ARCHIVE_WITH_RULE_SNAPSHOT)
@@ -439,9 +539,16 @@ export class ArsipService {
             .where(eq(arsipItems.arsipId, id))
             .orderBy(arsipItems.nomorItem);
 
+        // Nama jalur lokasi ikut rekaman detail; daftar hanya membawa id-nya.
+        const jalur = result.storageLocationId
+            ? await this.jalurLokasiSimpan(result.storageLocationId)
+            : [];
+        const lokasi = jalur.at(-1);
+
         return {
             ...this.toCanonicalReadModel(result as ArchiveWithRuleSnapshot),
             items,
+            lokasiSimpan: lokasi ? { ...lokasi, jalur } : null,
         };
     }
 
@@ -683,6 +790,18 @@ export class ArsipService {
                     data.klasifikasiKeamanan ?? 'biasa',
                 );
             }
+            // Status pinjam arsip mengikuti boksnya; selama arsip atau boksnya
+            // dipinjam, tautan lokasi tidak berpindah.
+            const lokasiBaru = data.storageLocationId ?? null;
+            if (Object.hasOwn(data, 'storageLocationId') && lokasiBaru !== (existing.storageLocationId ?? null)) {
+                if (
+                    existing.lendingStatus === 'borrowed'
+                    || (existing.storageLocationId && await this.boksSedangDipinjam(tx, existing.storageLocationId))
+                ) {
+                    throw new ConflictError(PESAN_LOKASI_ARSIP_SEDANG_DIPINJAM);
+                }
+                if (lokasiBaru) await this.kunciLokasiSimpan(tx, lokasiBaru, existing.unitKerjaId);
+            }
 
             const [result] = await tx
                 .update(arsip)
@@ -850,6 +969,7 @@ export class ArsipService {
         tingkatPerkembangan?: string;
         tanggalArsip?: string;
         jumlah?: number;
+        storageLocationId?: string;
         createdBy?: string;
     }, authorizedUnitKerjaId?: string, auditContext?: CriticalAuditContext) {
         const { suratMasuk } = await import('../db/schema');
@@ -885,6 +1005,10 @@ export class ArsipService {
                 kelasSumberSurat('surat_masuk', surat),
                 metadata.klasifikasiKeamanan,
             );
+
+            if (metadata.storageLocationId) {
+                await this.kunciLokasiSimpan(tx, metadata.storageLocationId, surat.unitKerjaId);
+            }
 
             // Check if already archived
             const [existing] = await tx
@@ -929,6 +1053,7 @@ export class ArsipService {
                     lokasiFc: metadata.lokasiFc,
                     lokasiLaci: metadata.lokasiLaci,
                     lokasiFolder: metadata.lokasiFolder,
+                    storageLocationId: metadata.storageLocationId ?? null,
                     retentionTriggerType: null,
                     retentionTriggerLabel: null,
                     retentionTriggerDate: null,
@@ -1002,7 +1127,8 @@ export class ArsipService {
                     action: 'create',
                     entityType: 'arsip',
                     entityId: arsipEntry.id,
-                    changes: { after: { sourceSuratId: suratMasukId, jenisArsip: 'masuk' } },
+                    changes: { after: { sourceSuratId: suratMasukId, jenisArsip: 'masuk',
+                        storageLocationId: arsipEntry.storageLocationId ?? null } },
                 }, tx);
             }
             return archived;
@@ -1040,6 +1166,7 @@ export class ArsipService {
         tingkatPerkembangan?: string;
         tanggalArsip?: string;
         jumlah?: number;
+        storageLocationId?: string;
         createdBy?: string;
     }, authorizedUnitKerjaId?: string, auditContext?: CriticalAuditContext) {
         const { suratKeluar } = await import('../db/schema');
@@ -1077,6 +1204,10 @@ export class ArsipService {
                 metadata.klasifikasiKeamanan,
             );
 
+            if (metadata.storageLocationId) {
+                await this.kunciLokasiSimpan(tx, metadata.storageLocationId, surat.unitKerjaId);
+            }
+
             // Check if already archived
             const [existing] = await tx
                 .select()
@@ -1097,11 +1228,37 @@ export class ArsipService {
                 jraItemId: metadata.jraItemId ?? (metadata.jraKode?.trim() ? undefined : surat.jraItemId ?? undefined),
             });
             this.assertRuleIdentityMatchesSource(assignment, surat);
-            this.assertClassificationMatchesSource(
-                assignment.cache.kodeKlasifikasi,
-                [surat.klasifikasiFasilitatifKode, surat.klasifikasiSubstantifKode],
-                'surat keluar sumber',
-            );
+            // Surat tanpa identitas katalog (kode mentah dari sumber impor) tidak
+            // dapat dicocokkan secara harfiah dan tidak dapat lagi disunting
+            // setelah disetujui. Butir katalog pilihan pengarsip dipakai, dan kode
+            // asalnya dicatat pada jejak audit. Surat beridentitas katalog tetap
+            // wajib cocok persis.
+            const kodeAsalTanpaKatalog = surat.klasifikasiItemId
+                ? null
+                : [surat.klasifikasiFasilitatifKode, surat.klasifikasiSubstantifKode]
+                    .map((code: string | null) => code?.trim())
+                    .filter((code: string | undefined): code is string => Boolean(code));
+            if (kodeAsalTanpaKatalog === null) {
+                this.assertClassificationMatchesSource(
+                    assignment.cache.kodeKlasifikasi,
+                    [surat.klasifikasiFasilitatifKode, surat.klasifikasiSubstantifKode],
+                    'surat keluar sumber',
+                );
+            } else if (kodeAsalTanpaKatalog.length > 0) {
+                // Pengaman basis data mencocokkan kode arsip dengan kode surat
+                // saat baris arsip dibuat, jadi pilihan katalog disimpan pada
+                // surat lebih dahulu dalam transaksi yang sama.
+                const tipe = assignment.snapshot.classification.type;
+                await tx
+                    .update(suratKeluar)
+                    .set({
+                        klasifikasiFasilitatifKode: tipe === 'fasilitatif' ? assignment.cache.kodeKlasifikasi : null,
+                        klasifikasiFasilitatif: tipe === 'fasilitatif' ? assignment.snapshot.classification.title : null,
+                        klasifikasiSubstantifKode: tipe === 'substantif' ? assignment.cache.kodeKlasifikasi : null,
+                        klasifikasiSubstantif: tipe === 'substantif' ? assignment.snapshot.classification.title : null,
+                    })
+                    .where(eq(suratKeluar.id, suratKeluarId));
+            }
 
             // Create arsip entry
             const [arsipEntry] = await tx
@@ -1117,6 +1274,7 @@ export class ArsipService {
                     lokasiFc: metadata.lokasiFc,
                     lokasiLaci: metadata.lokasiLaci,
                     lokasiFolder: metadata.lokasiFolder,
+                    storageLocationId: metadata.storageLocationId ?? null,
                     retentionTriggerType: null,
                     retentionTriggerLabel: null,
                     retentionTriggerDate: null,
@@ -1182,7 +1340,11 @@ export class ArsipService {
                     entityType: 'surat_keluar',
                     entityId: suratKeluarId,
                     changes: {
-                        before: { klasifikasiItemId: surat.klasifikasiItemId ?? null, jraItemId: surat.jraItemId ?? null },
+                        before: {
+                            klasifikasiItemId: surat.klasifikasiItemId ?? null,
+                            jraItemId: surat.jraItemId ?? null,
+                            ...(kodeAsalTanpaKatalog?.length ? { kodeKlasifikasiAsal: kodeAsalTanpaKatalog.join(', ') } : {}),
+                        },
                         after: { arsipId: arsipEntry.id, isArchived: true, klasifikasiItemId: assignment.cache.klasifikasiArsipId,
                             jraItemId: assignment.cache.jraItemId, kodeKlasifikasi: assignment.cache.kodeKlasifikasi },
                     },
@@ -1192,7 +1354,8 @@ export class ArsipService {
                     action: 'create',
                     entityType: 'arsip',
                     entityId: arsipEntry.id,
-                    changes: { after: { sourceSuratId: suratKeluarId, jenisArsip: 'keluar' } },
+                    changes: { after: { sourceSuratId: suratKeluarId, jenisArsip: 'keluar',
+                        storageLocationId: arsipEntry.storageLocationId ?? null } },
                 }, tx);
             }
             return archived;

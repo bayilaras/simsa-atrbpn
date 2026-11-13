@@ -14,8 +14,11 @@ const mocks = vi.hoisted(() => ({
     toast: vi.fn(),
 }))
 
+vi.mock('@/components/tunjuk-silang/KartuTunjukSilang', () => ({ KartuTunjukSilang: ({ tipe, id }) => <div data-testid="kartu-tunjuk-silang">{`${tipe}:${id}`}</div> }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: mocks.user, canWrite: mocks.canWrite }) }))
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }))
+// Formulir Ubah Metadata memuat daftar lokasi simpan unit arsip.
+vi.mock('@/services/storage-location.service', () => ({ default: { getTree: vi.fn().mockResolvedValue({ success: true, data: [] }) } }))
 vi.mock('@/services/arsip.service', () => ({
     arsipService: {
         getById: mocks.getById,
@@ -251,6 +254,35 @@ describe('ArsipDetail - Ubah Metadata', () => {
         expect(tombolRekonsiliasiSamping()).toBeDisabled()
     })
 
+    it('mengunci tombol bila muat ulang dijawab perlu persetujuan akses setelah kelas dinaikkan', async () => {
+        mocks.getById.mockResolvedValue({ ...rekod, items: [{ id: 'item-1', nomorItem: '1', lokasiFc: 'FC-01' }] })
+        tampilkan()
+        await screen.findByRole('heading', { name: 'Detail Arsip' })
+        mocks.getById.mockRejectedValue(Object.assign(new Error('Rekaman ini berkelas keamanan terkendali.'), {
+            status: 403,
+            data: { error: 'Rekaman ini berkelas keamanan terkendali.', code: 'ACCESS_APPROVAL_REQUIRED', rekaman: { jenis: 'arsip', id: 'arsip-1', klasifikasi: 'terbatas' } },
+        }))
+        await simpanKelasTerbatas()
+
+        tombolUbah().forEach(button => expect(button).toBeDisabled())
+        expect(document.getElementById('alasan-metadata-dikunci')).toHaveTextContent(
+            'Arsip kini berkelas Terbatas atau lebih tinggi dan memerlukan persetujuan akses sebelum dapat dibuka atau diubah kembali.',
+        )
+        expect(tombolRekonsiliasiSamping()).toBeDisabled()
+        expect(toastMuatUlang().description).toMatch(/memerlukan persetujuan akses/)
+        expect(screen.queryByText('Arsip Tidak Ditemukan')).not.toBeInTheDocument()
+    })
+
+    it('403 lain saat muat ulang tidak mengunci tombol', async () => {
+        tampilkan()
+        await screen.findByRole('heading', { name: 'Detail Arsip' })
+        mocks.getById.mockRejectedValue(Object.assign(new Error('Anda tidak memiliki izin.'), { status: 403, data: { error: 'Anda tidak memiliki izin.' } }))
+        await simpanKelasTerbatas()
+
+        tombolUbah().forEach(button => expect(button).toBeEnabled())
+        expect(document.getElementById('alasan-metadata-dikunci')).toBeNull()
+    })
+
     it('404 setelah kelas dan lokasi diubah menyebut daftar item yang belum termuat', async () => {
         const items = [
             { id: 'item-1', nomorItem: '1', uraianItem: 'Surat permohonan', lokasiFc: 'FC-01', lokasiLaci: 'L-02', lokasiFolder: 'F-003' },
@@ -296,4 +328,9 @@ describe('ArsipDetail - Ubah Metadata', () => {
         expect(document.getElementById('alasan-metadata-dikunci')).toBeNull()
         expect(tombolRekonsiliasiSamping()).toBeEnabled()
     })
+})
+
+it('menyertakan kartu Tunjuk Silang untuk arsip ini', async () => {
+    tampilkan()
+    expect(await screen.findByTestId('kartu-tunjuk-silang')).toHaveTextContent('arsip:arsip-1')
 })

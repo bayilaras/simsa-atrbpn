@@ -217,7 +217,7 @@ describe('StorageLocationService', () => {
         it('should throw if location has arsip items', async () => {
             enqueue([{ id: 'loc-1', unitKerjaId: 'u1' }]);
             enqueue([{ count: 0 }]); // no children
-            enqueue([{ count: 5 }]); // has arsip
+            enqueue([{ count: 5, dapatDipindah: 5, belumDieksekusi: 5 }]); // has arsip
             await expect(service.delete('loc-1', 'u1')).rejects.toThrow('Lokasi tidak dapat dihapus karena masih menyimpan arsip. Pindahkan arsipnya terlebih dahulu.');
         });
 

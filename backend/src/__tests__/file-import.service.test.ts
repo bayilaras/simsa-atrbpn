@@ -52,6 +52,27 @@ describe('file import shares the Google Sheets mapping and import path', () => {
         expect(mocks.outgoing).not.toHaveBeenCalled();
     });
 
+    it('reads XLSX date cells, unformatted serial numbers and typed dates as the same calendar date', async () => {
+        const workbook = await singleSheetWorkbook(sheet => {
+            sheet.addRow(['Nomor Surat', 'Tanggal Surat', 'Hal', 'Kepada']);
+            sheet.addRow(['1/A/2026', new Date(Date.UTC(2026, 10, 3)), 'Sel tanggal', 'Sekretariat']);
+            sheet.addRow(['2/A/2026', new Date(Date.UTC(2026, 10, 3, 23, 30)), 'Sel tanggal dengan jam', 'Sekretariat']);
+            sheet.addRow(['3/A/2026', 46329, 'Nomor seri tanpa format', 'Sekretariat']);
+            sheet.addRow(['4/A/2026', '03/11/26', 'Teks', 'Sekretariat']);
+            sheet.addRow(['5/A/2026', '11/25/2026', 'Bulan lebih dulu', 'Sekretariat']);
+            sheet.getCell('B2').numFmt = 'dd/mm/yyyy';
+            sheet.getCell('B3').numFmt = 'dd/mm/yyyy hh:mm';
+        });
+        const preview = await fileImportService.preview(upload(workbook), undefined, 10, 'surat-keluar');
+        expect(preview.dateIssues).toEqual({ total: 1, rows: [{ row: 5, value: '11/25/2026', reason: expect.stringContaining('bulan lebih dulu') }] });
+
+        const result = await fileImportService.importSurat('surat-keluar', upload(workbook), undefined, 'unit-a', audit);
+        expect(created().map(record => [record.nomorSurat, record.tanggalSurat])).toEqual([
+            ['1/A/2026', '2026-11-03'], ['2/A/2026', '2026-11-03'], ['3/A/2026', '2026-11-03'], ['4/A/2026', '2026-11-03']]);
+        expect(result).toMatchObject({ importedRows: 4, skippedRows: 1 });
+        expect(result.rows?.[4]).toMatchObject({ status: 'invalid', tanggal: '11/25/2026' });
+    });
+
     it('imports the register tab through the canonical outgoing-letter creation', async () => {
         const result = await fileImportService.importSurat('surat-keluar', upload(await registerWorkbook()), '2026', 'unit-a', audit);
         expect(result).toMatchObject({ success: true, totalRows: 3, importedRows: 3, duplicateRows: 0, skippedRows: 0, errors: [] });

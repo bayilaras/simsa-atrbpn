@@ -1,44 +1,39 @@
 # ✅ Autentikasi Arsip
 
-Panduan proses verifikasi keabsahan arsip.
+Panduan membuat berita acara autentikasi arsip hasil alih media.
+
+> 🔒 **Hanya Super Admin** yang bisa mengakses menu ini. Menu hanya muncul bila penyimpanan berkas sudah disiapkan operator.
 
 ---
 
 ## Apa Itu Autentikasi Arsip?
 
-Autentikasi arsip adalah proses **memverifikasi keabsahan dan keaslian** suatu arsip. Proses ini penting untuk memastikan arsip:
-- Tidak dipalsukan
-- Tidak diubah tanpa izin
-- Memiliki **bukti legalitas** yang sah
+Autentikasi adalah pernyataan bahwa **arsip hasil alih media sesuai dengan aslinya**. Di SIMSA, autentikasi dicatat dalam bentuk **Berita Acara Autentikasi** yang memuat daftar arsip elektronik yang diautentikasi.
+
+SIMSA tidak membuat tanda tangan elektronik pada berita acara ini.
 
 ---
 
 ## Cara Menggunakan
 
 ### Langkah 1: Buka Menu
-Di sidebar, klik **Autentikasi** di bawah **Media & Autentikasi**.
+Di sidebar, klik **Autentikasi** di bawah **Media & Autentikasi**. Halaman **Autentikasi Alih Media** menampilkan **Daftar Autentikasi** yang dapat dicari menurut nomor berita acara.
 
-### Langkah 2: Pilih Arsip
-Pilih arsip yang ingin diautentikasi dari daftar.
+### Langkah 2: Buat Berita Acara
 
-### Langkah 3: Proses Autentikasi
+1. Klik **"Buat Autentikasi Baru"**.
+2. Isi **Data Berita Acara**:
+   - Nomor Berita Acara
+   - Tanggal Autentikasi
+   - Nama Kegiatan
+   - Tempat Dilakukan
+   - Jabatan Penanda Tangan (Mengetahui)
+3. Pada bagian **Pilih Arsip**, centang arsip elektronik yang telah dialihmediakan. Minimal satu arsip harus dipilih.
+4. Klik **"Simpan & Generate Berita Acara"**.
 
-1. Periksa keaslian arsip (fisik atau digital).
-2. Isi **form autentikasi**:
-   - Hasil verifikasi (Asli / Salinan / Tidak Sah)
-   - Catatan verifikasi
-   - Tanggal autentikasi
-3. Klik **"Simpan"**.
+### Langkah 3: Unduh Berita Acara
 
-### Langkah 4: Lihat Hasil
-
-Arsip yang sudah diautentikasi akan mendapat label:
-
-| Label | Keterangan |
-|-------|------------|
-| ✅ **Asli** | Arsip terverifikasi asli |
-| 📋 **Salinan Sah** | Salinan yang diverifikasi sesuai aslinya |
-| ❌ **Tidak Sah** | Arsip tidak lolos verifikasi |
+Daftar autentikasi menampilkan nomor berita acara, tanggal, kegiatan, jumlah arsip, dan petugas. Klik **Unduh BA** pada baris yang dimaksud untuk mengunduh berkasnya.
 
 ---
 

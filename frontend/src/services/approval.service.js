@@ -33,6 +33,25 @@ const approvalService = {
         return response.data;
     },
 
+    // Massal: server memproses tiap surat seperti rute tunggal dan
+    // mengembalikan { hasil: [{ suratId, berhasil, pesan }], berhasil, gagal }.
+    async submitBulk(suratIds, nextApproverId, notes) {
+        const response = await api.post('/api/approval/submit-bulk', {
+            suratIds,
+            nextApproverId,
+            ...(notes?.trim() ? { notes: notes.trim() } : {}),
+        });
+        return response.data;
+    },
+
+    async approveBulk(suratIds, notes) {
+        const response = await api.post('/api/approval/approve-bulk', {
+            suratIds,
+            ...(notes?.trim() ? { notes: notes.trim() } : {}),
+        });
+        return response.data;
+    },
+
     async reject(suratId, notes) {
         const response = await api.post('/api/approval/reject', {
             suratId,

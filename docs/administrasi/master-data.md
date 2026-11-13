@@ -43,11 +43,9 @@ Klasifikasi arsip dan Jadwal Retensi Arsip (JRA) disimpan sebagai edisi aturan b
 
 ---
 
-[⬅️ Sebelumnya: User Management](user-management.md)
+[⬅️ Sebelumnya: Manajemen Pengguna](user-management.md)
 
 ---
 
 > 🎉 **Selamat!** Kamu sudah selesai membaca seluruh panduan SIMSA.\
-> Jika ada pertanyaan, hubungi **Super Admin** atau **Tim IT** di unit kerja kamu.
-
-*© 2024 Kementerian ATR/BPN — SIMSA v1.0.0 (BETA)*
+> Jika ada pertanyaan, hubungi **Super Admin** di unit kerja kamu.

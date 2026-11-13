@@ -24,6 +24,7 @@ const state = vi.hoisted(() => ({
         findAll: vi.fn(),
         getTree: vi.fn(),
         findById: vi.fn(),
+        findByIdWithArsipCount: vi.fn(),
         generateQRCode: vi.fn(),
         generateArsipQRCode: vi.fn(),
         create: vi.fn(),
@@ -106,7 +107,7 @@ describe('archive lending and storage unit boundaries', () => {
         state.lending.findById.mockResolvedValue({ id: lendingId });
         state.lending.getHistoryByArsipId.mockResolvedValue([]);
         state.lending.getHistoryByLocationId.mockResolvedValue([]);
-        state.storage.findById.mockResolvedValue({ id: locationId });
+        state.storage.findByIdWithArsipCount.mockResolvedValue({ id: locationId });
         state.storage.generateQRCode.mockResolvedValue({ qrDataUrl: 'data:image/png;base64,x' });
         state.storage.generateArsipQRCode.mockResolvedValue({
             qrDataUrl: 'data:image/png;base64,x',
@@ -125,7 +126,8 @@ describe('archive lending and storage unit boundaries', () => {
         expect(state.lending.getHistoryByLocationId).toHaveBeenCalledWith(locationId, 'sesditjen', ['biasa', 'terbatas']);
         expect(state.storage.generateArsipQRCode)
             .toHaveBeenCalledWith(arsipId, expect.any(String), 'sesditjen');
-        expect(state.storage.findById).toHaveBeenCalledWith(locationId, 'sesditjen');
+        expect(state.storage.findByIdWithArsipCount)
+            .toHaveBeenCalledWith(locationId, 'sesditjen', ['biasa', 'terbatas']);
         expect(state.storage.generateQRCode)
             .toHaveBeenCalledWith(locationId, expect.any(String), 'sesditjen');
     });
@@ -141,7 +143,8 @@ describe('archive lending and storage unit boundaries', () => {
         expect((await request(app).get('/api/storage-locations/tree?unitKerjaId=ditjen')).status).toBe(200);
 
         expect(state.lending.getStats).toHaveBeenCalledWith('ditjen', ['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']);
-        expect(state.storage.getTree).toHaveBeenCalledWith('ditjen');
+        expect(state.storage.getTree)
+            .toHaveBeenCalledWith('ditjen', ['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']);
     });
 
     it('forces the server unit for non-superadmin creates', async () => {
@@ -310,6 +313,6 @@ describe('archive lending and storage unit boundaries', () => {
         expect(state.storage.update).toHaveBeenCalledWith(
             locationId, { name: 'Baru' }, 'sesditjen', auditContext,
         );
-        expect(state.storage.delete).toHaveBeenCalledWith(locationId, 'sesditjen', auditContext);
+        expect(state.storage.delete).toHaveBeenCalledWith(locationId, 'sesditjen', auditContext, expect.anything());
     });
 });

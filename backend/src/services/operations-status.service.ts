@@ -23,7 +23,7 @@ const validCount = (value: unknown) => (typeof value === 'number' || (typeof val
 // healthy and two in a row are reported. Enrollment runs before any read.
 const FIXITY_ENROLLMENT_GRACE_HOURS = 28;
 const FIXITY_OVERDUE_GRACE_HOURS = 28;
-const QUEUE_KEYS = ['scanWaiting', 'scanOverdue', 'scanErrors', 'fixityOverdue', 'fixityErrors', 'fixityUnscheduled', 'mismatched'];
+const QUEUE_KEYS = ['scanWaiting', 'scanOverdue', 'scanErrors', 'scanInfected', 'fixityOverdue', 'fixityErrors', 'fixityUnscheduled', 'mismatched'];
 
 export function evaluateRecoveryCheck(id: 'backup' | 'restore', evidence: unknown, now: number): Check {
     const label = id === 'backup' ? 'Backup database dan dokumen' : 'Uji pemulihan backup';
@@ -58,13 +58,20 @@ export function buildOperationsStatus(input: { now: number; readiness: unknown; 
     const expiry = date(worker.definitionsExpiresAt), seen = date(worker.lastSeenAt);
     if (Number.isFinite(expiry)) checks[2].expiresAt = new Date(expiry).toISOString();
     if (Number.isFinite(seen)) checks[2].checkedAt = new Date(seen).toISOString();
-    const scanCounts = { waiting: count(queues.scanWaiting), overdue: count(queues.scanOverdue), errors: count(queues.scanErrors) };
+    const scanCounts = { waiting: count(queues.scanWaiting), overdue: count(queues.scanOverdue), errors: count(queues.scanErrors), infected: count(queues.scanInfected) };
     const fixityCounts = { overdue: count(queues.fixityOverdue), errors: count(queues.fixityErrors), unscheduled: count(queues.fixityUnscheduled), mismatched: count(queues.mismatched) };
     // COUNT returns decimal strings in pg. Missing/malformed fields are an
     // unavailable snapshot, never evidence that the queues contain zero jobs.
     const unavailable = !QUEUE_KEYS.every(key => validCount(queues[key]));
-    checks.push({ id: 'scan_queue', label: 'Antrean pemindaian', status: unavailable ? 'unknown' : scanCounts.errors || scanCounts.overdue ? 'attention' : 'healthy',
-        message: unavailable ? 'Antrean belum dapat diperiksa.' : 'Berkas menunggu lebih dari 30 menit atau gagal dipindai perlu ditindaklanjuti.', ...(!unavailable ? { counts: scanCounts } : {}) });
+    // A failed scan can be requeued by a Super Admin and clears once the file
+    // scans clean; an infected file stays locked and is reported separately.
+    const scanNotes = [
+        scanCounts.overdue ? 'Ada berkas yang menunggu pemindaian lebih dari 30 menit.' : '',
+        scanCounts.errors ? 'Ada berkas yang gagal dipindai dan dapat diantre ulang.' : '',
+        scanCounts.infected ? 'Ada berkas yang terdeteksi berbahaya; berkas tetap dikunci, tidak dapat diantre ulang, dan perlu diganti.' : '',
+    ].filter(Boolean);
+    checks.push({ id: 'scan_queue', label: 'Antrean pemindaian', status: unavailable ? 'unknown' : scanNotes.length ? 'attention' : 'healthy',
+        message: unavailable ? 'Antrean belum dapat diperiksa.' : scanNotes.join(' ') || 'Tidak ada berkas yang terlambat dipindai, gagal dipindai, atau terdeteksi berbahaya.', ...(!unavailable ? { counts: scanCounts } : {}) });
     checks.push({ id: 'fixity', label: 'Integritas dokumen berkala', status: unavailable ? 'unknown' : fixityCounts.mismatched ? 'failed' : Object.values(fixityCounts).some(Boolean) ? 'attention' : 'healthy',
         message: unavailable ? 'Jadwal integritas belum dapat diperiksa.' : `Periksa berkas rusak, pemeriksaan gagal, jadwal terlambat lebih dari ${FIXITY_OVERDUE_GRACE_HOURS} jam, atau berkas bersih yang belum terjadwal lebih dari ${FIXITY_ENROLLMENT_GRACE_HOURS} jam.`, ...(!unavailable ? { counts: fixityCounts } : {}) });
     checks.push(evaluateRecoveryCheck('backup', recovery.backup, input.now), evaluateRecoveryCheck('restore', recovery.restore, input.now));
@@ -125,7 +132,8 @@ export async function collectOperationsStatus(readEvidence: () => Promise<unknow
         pool.query({ text: `SELECT
             (SELECT count(*) FROM file_attachments WHERE ${pendingScan}) AS "scanWaiting",
             (SELECT count(*) FROM file_attachments WHERE ${pendingScan} AND created_at < now() - interval '30 minutes') AS "scanOverdue",
-            (SELECT count(*) FROM file_attachments WHERE malware_scan_status IN ('scan_error', 'infected')) AS "scanErrors",
+            (SELECT count(*) FROM file_attachments WHERE malware_scan_status = 'scan_error') AS "scanErrors",
+            (SELECT count(*) FROM file_attachments WHERE malware_scan_status = 'infected') AS "scanInfected",
             (SELECT count(*) FROM file_fixity_jobs j JOIN file_attachments f ON f.id=j.attachment_id
                 WHERE ${fixityEligible} AND j.next_check_at < now() - interval '${FIXITY_OVERDUE_GRACE_HOURS} hours') AS "fixityOverdue",
             (SELECT count(*) FROM file_fixity_jobs j JOIN file_attachments f ON f.id=j.attachment_id
@@ -143,9 +151,29 @@ export async function collectOperationsStatus(readEvidence: () => Promise<unknow
 let cached: Awaited<ReturnType<typeof collectOperationsStatus>> | null = null;
 let pending: Promise<Awaited<ReturnType<typeof collectOperationsStatus>>> | null = null;
 let until = 0;
+let generation = 0;
 export function getOperationsStatus() {
     if (cached && Date.now() < until) return Promise.resolve(cached);
     if (pending) return pending;
-    pending = collectOperationsStatus(readReusableRecoveryEvidence).then(result => { cached = result; until = Date.now() + 30000; return result; }).finally(() => { pending = null; });
-    return pending;
+    const started = generation;
+    const current = collectOperationsStatus(readReusableRecoveryEvidence).then(result => {
+        // A collection that began before an invalidation still answers its
+        // own callers, but is not kept for later requests.
+        if (started === generation) { cached = result; until = Date.now() + 30000; }
+        return result;
+    }).finally(() => { if (pending === current) pending = null; });
+    pending = current;
+    return current;
+}
+/**
+ * Makes the next status request re-read the queues, e.g. right after a requeue.
+ * A collection already in flight is not reused either. This only covers the
+ * instance that handled the change; another instance serves its own copy for
+ * at most 30 seconds.
+ */
+export function invalidateOperationsStatus() {
+    generation += 1;
+    cached = null;
+    pending = null;
+    until = 0;
 }

@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { AlertCircle, CheckCircle2, FileSpreadsheet, Upload } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import ImportDateIssues from '@/components/ImportDateIssues'
 import ImportRowReport from '@/components/ImportRowReport'
 import ImportSyncOption from '@/components/ImportSyncOption'
 import ImportUnitRequiredButton from '@/components/ImportUnitRequiredButton'
@@ -196,7 +197,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
                     Berkas: {file?.name}{preview.sheet ? ` · Lembar: ${preview.sheet}` : ''} · judul pada baris berisi ke-{preview.headerRow} (baris kosong tidak dihitung)
                 </p>
             </div>
-            <p className="text-sm text-muted-foreground">Setiap baris perlu tanggal surat yang valid (YYYY-MM-DD atau DD/MM/YYYY). Jika nomor surat kosong atau “-”, isi perihal serta pengirim atau tujuan (untuk surat keluar, tautan dokumen juga cukup) agar data dapat dikenali saat impor ulang.</p>
+            <p className="text-sm text-muted-foreground">Setiap baris perlu tanggal surat yang valid, ditulis dengan urutan hari, bulan, tahun (misalnya 03/11/2026 atau 3 November 2026) atau sebagai 2026-11-03. Baris dengan tanggal yang tidak dapat dibaca ditolak, tidak ditebak. Jika nomor surat kosong atau “-”, isi perihal serta pengirim atau tujuan (untuk surat keluar, tautan dokumen juga cukup) agar data dapat dikenali saat impor ulang.</p>
             {type === 'surat-masuk' && <p className="text-sm text-muted-foreground">{CATATAN_KELAS_IMPOR_SURAT_MASUK}</p>}
             <div className="overflow-x-auto rounded-lg border">
                 <table className="w-full text-sm">
@@ -222,6 +223,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
                     </tr>)}</tbody>
                 </table>
             </div>
+            <ImportDateIssues issues={preview.dateIssues} totalRows={preview.totalRows} />
             <ImportSyncOption type={type} checked={sinkron} onChange={setSinkron} disabled={busy} />
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button variant="outline" onClick={() => { version.current++; setPreview(null); setError(''); setStep('file') }} disabled={busy}>Kembali</Button>

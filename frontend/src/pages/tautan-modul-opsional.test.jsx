@@ -15,6 +15,7 @@ vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ loading:
     capabilities: state.capabilities, features: {}, authentication: {} }) }))
 vi.mock('react-router-dom', async importOriginal => ({ ...await importOriginal(), useNavigate: () => state.navigate }))
 vi.mock('react-chartjs-2', () => ({ Line: () => null, Bar: () => null, Doughnut: () => null }))
+vi.mock('@/hooks/use-persetujuan-menunggu-count', () => ({ usePersetujuanMenungguCount: () => ({ total: 0 }) }))
 vi.mock('@/components/formulir/Formulir13', () => ({ default: () => <h1>Template pemindahan arsip</h1> }))
 vi.mock('@/services/settings.service', () => ({ default: { getAllUnitKerja: vi.fn(async () => []) } }))
 vi.mock('@/services/dashboard.service', () => ({ default: {

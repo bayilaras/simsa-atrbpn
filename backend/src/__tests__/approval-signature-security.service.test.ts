@@ -38,6 +38,18 @@ vi.mock('../services/email.service.js', () => ({
 vi.mock('../utils/logger.js', () => ({
     createLogger: () => ({ info: vi.fn(), error: vi.fn(), warn: vi.fn() }),
 }));
+// Gerbang baca penyetuju diuji dengan basis data nyata di
+// approval-atas-nama-massal.integration.test.ts; di sini selalu lolos.
+const readMocks = vi.hoisted(() => ({
+    checkRead: vi.fn(async () => ({ exists: true, allowed: true, masked: false })),
+}));
+vi.mock('../services/record-access.service.js', async (importOriginal) => {
+    const actual: any = await importOriginal();
+    return {
+        ...actual,
+        recordAccessService: { ...actual.recordAccessService, checkRead: readMocks.checkRead },
+    };
+});
 
 const { ApprovalService, buildApprovalReviewUrl } = await import('../services/approval.service.js');
 

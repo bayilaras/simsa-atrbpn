@@ -11,6 +11,10 @@ vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: mocks.user,
 vi.mock('@/services/settings.service', () => ({ default: { getAllUnitKerja: vi.fn(async () => [{ id: 'unit-a', name: 'Unit A' }]) } }))
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ capabilities: { files: false, fileUploads: false } }) }))
 vi.mock('react-router-dom', async importOriginal => ({ ...await importOriginal(), useNavigate: () => mocks.navigate }))
+const persetujuan = vi.hoisted(() => ({ total: 0, opsi: [] }))
+vi.mock('@/hooks/use-persetujuan-menunggu-count', () => ({
+    usePersetujuanMenungguCount: (opsi) => { persetujuan.opsi.push(opsi); return { total: persetujuan.total } },
+}))
 vi.mock('react-chartjs-2', () => {
     const Chart = ({ options }) => <div data-testid="chart" data-animation={String(options.animation)} />
     return { Line: Chart, Bar: Chart, Doughnut: Chart }
@@ -27,6 +31,8 @@ beforeEach(() => {
     dashboardService.getWidgetData.mockReset().mockImplementation(async () => mocks.widgets)
     mocks.user = { id: 'reader', name: 'Siti', role: 'staff', unitKerjaId: 'unit-a' }
     mocks.navigate.mockReset()
+    persetujuan.total = 0
+    persetujuan.opsi.length = 0
     mocks.widgets = { archiveLifecycle: {}, storageCapacity: [], lendingOverview: {}, penyusutanOverview: [], mediaBreakdown: [],
         vitalTerjagaAlerts: { vitalTotal: 0, vitalUnprotected: 0, terjagaTotal: 1, terjagaUnreported: 0,
             terjagaReportingStages: { belum_dilaporkan: 0, dicatat: 1, dikirim: 0, diterima: 0, bukti_diverifikasi: 0, perlu_ditinjau: 0 } } }
@@ -43,6 +49,26 @@ function passFocusRefreshInterval() {
 async function show() { render(<MemoryRouter><Dashboard /></MemoryRouter>); await screen.findByRole('heading', { name: 'Halo, Siti' }) }
 
 describe('dashboard daily workflow', () => {
+    it('tells an approver how many outgoing letters wait for a decision and links to the filtered list', async () => {
+        mocks.user.role = 'admin_unit'
+        persetujuan.total = 12
+        await show()
+        const priority = screen.getByRole('region', { name: 'Perlu ditindaklanjuti' })
+        expect(priority).toHaveTextContent('12 surat keluar menunggu keputusan Anda')
+        expect(within(priority).getByRole('link', { name: 'Tinjau surat yang menunggu' })).toHaveAttribute('href', '/surat/keluar?persetujuan=menunggu_saya')
+        expect(persetujuan.opsi.at(-1)).toEqual({ enabled: true })
+    })
+    it('omits the approval line when nothing waits and never asks for it on behalf of a read-only role', async () => {
+        mocks.user.role = 'admin_unit'
+        await show()
+        expect(screen.getByRole('region', { name: 'Perlu ditindaklanjuti' })).not.toHaveTextContent('menunggu keputusan Anda')
+        cleanup()
+        mocks.user.role = 'staff'
+        persetujuan.total = 5
+        await show()
+        expect(persetujuan.opsi.at(-1)).toEqual({ enabled: false })
+        expect(screen.queryByText(/menunggu keputusan Anda/)).toBeNull()
+    })
     it('puts the overdue action before charts and preserves the assigned unit in its destination', async () => {
         mocks.user.role = 'admin_unit'
         mocks.widgets.lendingOverview = { borrowed: 7, overdue: 4 }

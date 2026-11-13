@@ -6,9 +6,15 @@ export const tunjukSilangService = {
         return response;
     },
 
+    // Tunjuk silang aktif satu dokumen: { data, subject, pagination }. `subject` dan
+    // `relatedLabel` tiap baris adalah label tampilan yang sudah disaring server.
     async getByEntity(entityType, entityId) {
         const response = await api.get(`/api/tunjuk-silang/${entityType}/${entityId}`);
-        return response.data || response;
+        return {
+            data: Array.isArray(response?.data) ? response.data : [],
+            subject: response?.subject || null,
+            pagination: response?.pagination || null,
+        };
     },
 
     async getStats() {

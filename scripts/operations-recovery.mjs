@@ -10,13 +10,31 @@ import { runNeonBackup } from './neon-backup.mjs';
 import { makeBackupWorkspace } from './neon-backup-runtime.mjs';
 import { authenticatedDatabaseBundle,restoreDatabaseProof } from './operations-recovery-database.mjs';
 import { restoreDeliveryProof } from './operations-recovery-delivery.mjs';
-import { seal,unseal,sha256,parseCopyTable,documentReferences,documentBudgetUsage,documentBudgetAnnotation,backupDocuments,restoreDocuments,privateBlobConfiguration } from './operations-recovery-documents.mjs';
+import { seal,unseal,sha256,parseCopyTable,documentReferences,documentBudgetUsage,documentBudgetAnnotation,documentBudgetFailureMessage,documentBudgetFromEnvironment,DOCUMENT_BUDGET_SETTINGS,backupDocuments,restoreDocuments,privateBlobConfiguration } from './operations-recovery-documents.mjs';
 const check=(value,code)=>{if(!value)throw Object.assign(new Error(code),{safeCode:code});};
 export function recordRecoveryFailure(report,stage,error){
  report.failureStage=stage;report.failureCode=error?.safeCode||'RECOVERY_FAILED_DETAILS_SUPPRESSED';
  // A document budget failure carries its counts and sizes, so the red run still records them.
  if(error?.safeCode&&error.documentBudget)report.documentBudget=error.documentBudget;
  return report;
+}
+// Operator-facing lines for a failure the operator can fix by changing a
+// setting: a workflow annotation in GitHub Actions (printed like the budget
+// warning), plain text on stderr elsewhere so stdout keeps only the report.
+export function recoveryFailureNotices(stage,error,environment={}){
+ const actions=environment.GITHUB_ACTIONS==='true';
+ if(stage==='document_inventory'&&error?.safeCode&&error.documentBudget?.exceeded)
+  return [actions?documentBudgetAnnotation(error.documentBudget,{failed:true}):documentBudgetFailureMessage(error.documentBudget)];
+ if(error?.safeCode==='DOCUMENT_BUDGET_SETTING_INVALID'&&Object.values(DOCUMENT_BUDGET_SETTINGS).includes(error.documentBudgetSetting)){
+  const text=`Nilai variabel ${error.documentBudgetSetting} tidak dapat dipakai. Isi dengan bilangan bulat positif tanpa satuan atau pemisah, dalam rentang yang tertulis di docs/OPERATIONS_RECOVERY.md, atau kosongkan untuk memakai nilai bawaan. Database tetap dicadangkan pada run ini, tetapi dokumen TIDAK dicadangkan.`;
+  return [actions?`::error title=SIMSA backup - pengaturan batas dokumen tidak valid::${text}`:text];
+ }
+ return [];
+}
+// A mistyped optional document limit must not cost the day's database backup:
+// it is read first, but only raised once the encrypted database is delivered.
+export function deferredDocumentBudget(environment){
+ try{return {limits:documentBudgetFromEnvironment(environment)};}catch(error){return {error};}
 }
 const required=(env,key)=>{check(typeof env[key]==='string'&&env[key].length>0,'RECOVERY_CONFIGURATION_MISSING');return env[key];};
 export function recoveryAttestation(report){
@@ -54,6 +72,7 @@ export async function runRecovery(environment){
   check([pgBin,parent,output].every(isAbsolute),'ABSOLUTE_RECOVERY_PATHS_REQUIRED');
   const passphrase=required(environment,'BACKUP_ENCRYPTION_PASSPHRASE');check(passphrase.length>=32,'BACKUP_PASSPHRASE_TOO_SHORT');
   const {token}=privateBlobConfiguration(environment);
+  const {limits,error:invalidDocumentBudget}=deferredDocumentBudget(environment);
   await mkdir(output,{mode:0o700});
   const operation=parseNeonBackupOperation(['create','--pg-bin',pgBin,'--output',join(parent,'database'),'--key-directory',join(parent,'keys')],environment);
   stage='database_snapshot';const backup=await runNeonBackup(operation);
@@ -73,9 +92,10 @@ export async function runRecovery(environment){
    try{check(roundtrip.equals(keys),'KEY_ENVELOPE_ROUNDTRIP_FAILED');}finally{roundtrip.fill(0);}
    report.backup.deliveryVerified=true;
   }finally{wrappingKey.fill(0);keys.fill(0);}
-  stage='document_inventory';const sql=await workspace.command('pg_restore',['--data-only','--schema=public','--table=file_attachments','--table=regulatory_rule_sets','--file=-'],{input:plain.archive,metadata:true,maximum:20*1024*1024});
-  let references;try{references=documentReferences(parseCopyTable(sql.toString(),'file_attachments'),parseCopyTable(sql.toString(),'regulatory_rule_sets'),{captureMissingHashes:environment.OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES==='true'});}finally{sql.fill(0);}
-  report.documentBudget=documentBudgetUsage(references);
+  stage='document_inventory';if(invalidDocumentBudget)throw invalidDocumentBudget;
+  const sql=await workspace.command('pg_restore',['--data-only','--schema=public','--table=file_attachments','--table=regulatory_rule_sets','--file=-'],{input:plain.archive,metadata:true,maximum:20*1024*1024});
+  let references;try{references=documentReferences(parseCopyTable(sql.toString(),'file_attachments'),parseCopyTable(sql.toString(),'regulatory_rule_sets'),{captureMissingHashes:environment.OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES==='true',limits});}finally{sql.fill(0);}
+  report.documentBudget=documentBudgetUsage(references,limits);
   const annotation=documentBudgetAnnotation(report.documentBudget);if(annotation&&environment.GITHUB_ACTIONS==='true')console.log(annotation);
   stage='document_backup';const documentDirectory=join(output,'documents');
   report.documentBackup=await backupDocuments({references,token,directory:documentDirectory,key:documentKey,sourceSnapshotAt:report.sourceSnapshotAt,archiveSha256:report.archiveSha256,captureMissingHashes:environment.OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES==='true'});
@@ -86,7 +106,7 @@ export async function runRecovery(environment){
   report.restore.documentsVerified=report.documentRestore.allHashesMatch&&report.documentRestore.unauthorizedDenied;report.restore.completedAt=new Date().toISOString();
   report.status='success';
  }catch(error){recordRecoveryFailure(report,stage,error);
-  if(stage==='document_inventory'&&error?.safeCode&&error.documentBudget&&environment.GITHUB_ACTIONS==='true')console.log(documentBudgetAnnotation(error.documentBudget,{failed:true}));}
+  for(const line of recoveryFailureNotices(stage,error,environment))(environment.GITHUB_ACTIONS==='true'?console.log:console.error)(line);}
  finally{plain?.archive.fill(0);plain?.evidence.fill(0);documentKey?.fill(0);targetKey?.fill(0);keyEnvelope?.fill(0);
   report.finishedAt=new Date().toISOString();
   await finalizeRecoveryAttempt(report,{persist:async()=>{if(output){await mkdir(output,{recursive:true,mode:0o700});await writeFile(join(output,'recovery-proof.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx',mode:0o600});await writeFile(join(output,'recovery-status-v1.json'),JSON.stringify(recoveryAttestation(report),null,2)+'\n',{flag:'wx',mode:0o600});}},

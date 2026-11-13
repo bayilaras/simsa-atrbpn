@@ -17,7 +17,8 @@ jobs:
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && vars.OPERATIONS_RECOVERY_ENABLED == 'true'
     environment: production-recovery
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # Sized for the default 4 GiB document budget; review it before raising a limit.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -53,6 +54,11 @@ jobs:
           OPERATIONS_RECOVERY_PRIVATE_ROOT: ${{ runner.temp }}/simsa-recovery-private
           OPERATIONS_RECOVERY_DELIVERY: ${{ runner.temp }}/simsa-recovery-delivery
           OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES: ${{ vars.OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES }}
+          # Optional document budget overrides; an unset variable keeps the
+          # default in scripts/operations-recovery-documents.mjs.
+          OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES: ${{ vars.OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES }}
+          OPERATIONS_RECOVERY_MAX_DOCUMENT_OBJECTS: ${{ vars.OPERATIONS_RECOVERY_MAX_DOCUMENT_OBJECTS }}
+          OPERATIONS_RECOVERY_MAX_DOCUMENT_REFERENCES: ${{ vars.OPERATIONS_RECOVERY_MAX_DOCUMENT_REFERENCES }}
           OPERATIONS_RECOVERY_PUBLISH_STATUS: 'true'
         run: node scripts/operations-recovery.mjs run
       - name: Preserve encrypted archives and sanitized attempt evidence
@@ -64,3 +70,28 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
           include-hidden-files: false
+
+  # Repository watchers get an email from the issue. The repository is public:
+  # the issue holds a fixed sentence and the run link only. A timed-out job
+  # ends as "cancelled", so that result is reported as well.
+  notify-failure:
+    name: Report failure
+    needs: recovery
+    if: ${{ always() && (needs.recovery.result == 'failure' || needs.recovery.result == 'cancelled') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+      - name: Open or update the failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ops/report-workflow-failure.mjs

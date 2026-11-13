@@ -57,6 +57,7 @@ import { PROVISIONED_ROLES } from '@/lib/provisioning-access'
 import { useAppConfig } from '@/context/app-config-context'
 import { usePerluDilengkapiCount } from '@/hooks/use-perlu-dilengkapi-count'
 import { formatJumlahBadge } from '@/lib/perlu-dilengkapi'
+import { usePersetujuanMenungguCount } from '@/hooks/use-persetujuan-menunggu-count'
 
 // Role constants for menu access
 const ADMIN_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']
@@ -86,7 +87,7 @@ const menuGroups = [
                 allowedRoles: ALL_PROVISIONED_ROLES,
                 subItems: [
                     { title: 'Surat Masuk', url: '/surat/masuk', icon: MailOpen },
-                    { title: 'Surat Keluar', url: '/surat/keluar', icon: Send },
+                    { title: 'Surat Keluar', url: '/surat/keluar', icon: Send, badge: 'persetujuanMenunggu' },
                     { title: 'Lacak Surat', url: '/surat/lacak', icon: Search, badge: 'perluDilengkapi' },
                 ],
             },
@@ -303,6 +304,8 @@ export function AppSidebar() {
     const userRole = user?.role || 'user'
     // D7: hanya FULL_ADMIN yang memicu request ringkasan (role read-only tidak punya aksi di daftar kerja).
     const perluDilengkapi = usePerluDilengkapiCount({ enabled: ADMIN_ROLES.includes(userRole) })
+    // Hanya administrator yang dapat menjadi penyetuju surat keluar.
+    const persetujuanMenunggu = usePersetujuanMenungguCount({ enabled: ADMIN_ROLES.includes(userRole) })
 
     useEffect(() => {
         setOpenMobile(false)
@@ -375,14 +378,16 @@ export function AppSidebar() {
                                                         <CollapsibleContent>
                                                             <SidebarMenuSub>
                                                                 {item.subItems.map((subItem) => {
-                                                                    const jumlah = subItem.badge === 'perluDilengkapi' ? perluDilengkapi.total : 0
+                                                                    const menungguPersetujuan = subItem.badge === 'persetujuanMenunggu'
+                                                                    const jumlah = subItem.badge === 'perluDilengkapi' ? perluDilengkapi.total
+                                                                        : menungguPersetujuan ? persetujuanMenunggu.total : 0
                                                                     return (
                                                                         <SidebarMenuSubItem key={subItem.title}>
                                                                             <SidebarMenuSubButton asChild isActive={isActive(subItem.url)}>
                                                                                 <Link
                                                                                     to={subItem.url}
                                                                                     aria-current={isActive(subItem.url) ? 'page' : undefined}
-                                                                                    aria-label={jumlah > 0 ? `${subItem.title} (${jumlah} perlu dilengkapi)` : undefined}
+                                                                                    aria-label={jumlah > 0 ? `${subItem.title} (${jumlah} ${menungguPersetujuan ? 'menunggu keputusan Anda' : 'perlu dilengkapi'})` : undefined}
                                                                                 >
                                                                                     {subItem.title}
                                                                                     {jumlah > 0 && (

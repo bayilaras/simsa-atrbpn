@@ -69,7 +69,7 @@ export function DisposisiRegistrasiSection({
                                 ))}
                             </div>
                         )}
-                        <Textarea id="instruksi-registrasi" value={instruksi} onChange={(event) => onInstruksi(event.target.value)} rows={3} disabled={disabled} />
+                        <Textarea id="instruksi-registrasi" value={instruksi} onChange={(event) => onInstruksi(event.target.value)} rows={3} maxLength={2000} disabled={disabled} />
                     </div>
                 </div>
             )}

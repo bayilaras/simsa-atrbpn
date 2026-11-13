@@ -17,7 +17,7 @@ import {
 import { createLogger } from '../utils/logger';
 import { blobStorageService } from '../services/blob-storage.service';
 import { deleteRequestCreatedBlob } from '../utils/blob-upload-compensation.js';
-import { resolveRecordUnitScope, scopeForAuthorizedRead } from '../utils/record-unit-scope.js';
+import { bolehMemakaiLokasiUnit, resolveRecordUnitScope, scopeForAuthorizedRead } from '../utils/record-unit-scope.js';
 import {
     sanitizeSuratMasukWithLinks,
     sanitizeSuratRecord,
@@ -28,8 +28,9 @@ import {
     normalizeSecurityClassification,
     recordAccessService,
 } from '../services/record-access.service.js';
-import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_SIFAT_TIDAK_DIKENAL } from '../constants/pesan-akses.js';
+import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_LOKASI_SIMPAN_TIDAK_SESUAI, PESAN_SIFAT_TIDAK_DIKENAL } from '../constants/pesan-akses.js';
 import { rankKelas } from '../services/access/visibility-spec.js';
+import { badanPerluPersetujuan, rekamanPerluPersetujuan } from '../services/access/perlu-persetujuan.js';
 import { berkasHanyaTayang } from '../services/access/berkas-akses.js';
 import auditLogService from '../services/audit-log.service.js';
 import { suratAksiPayload } from '../services/rangkaian/aksi.js';
@@ -191,6 +192,8 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
         const id = req.params.id as string;
         const access = await recordAccessService.checkRead(req.user, 'surat_masuk', id);
         if (!access.exists || !access.allowed) {
+            const perlu = await rekamanPerluPersetujuan(req.user, 'surat_masuk', id, access);
+            if (perlu) return res.status(403).json(badanPerluPersetujuan(perlu));
             return res.status(404).json({ error: 'Surat masuk not found' });
         }
         const result = await suratMasukService.findById(id, scopeForAuthorizedRead(req, access));
@@ -563,6 +566,10 @@ router.post('/:id/archive-full', validateIdParam(), canWriteMiddleware(), async 
         const kelasArsip = parsed.data.klasifikasiKeamanan ?? kelasSumber;
         if (!isAllowedForClassification(req.user, kelasArsip) && kelasArsip !== kelasSumber) {
             return res.status(403).json({ error: PESAN_KELAS_MELEBIHI_KEWENANGAN });
+        }
+        if (parsed.data.storageLocationId
+            && !bolehMemakaiLokasiUnit(req, access.unitKerjaId || existing.unitKerjaId)) {
+            return res.status(400).json({ error: PESAN_LOKASI_SIMPAN_TIDAK_SESUAI });
         }
 
         const { arsipService } = await import('../services/arsip.service');

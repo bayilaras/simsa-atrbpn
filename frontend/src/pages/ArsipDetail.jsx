@@ -27,11 +27,15 @@ import {
     PESAN_ITEM_BELUM_TERMUAT,
     statusAksiArsip,
 } from '@/components/arsip/edit-arsip-form'
+import { namaJalurLokasi } from '@/components/arsip/lokasi-simpan'
 import { arsipService } from '@/services/arsip.service'
 import { useAuth } from '@/context/AuthContext'
+import { PerluPersetujuanAkses } from '@/components/PerluPersetujuanAkses'
+import { rekamanPerluPersetujuan } from '@/lib/akses-rekaman'
 import { useToast } from '@/hooks/use-toast'
 import { format, formatDistanceToNow, differenceInDays } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
+import { KartuTunjukSilang } from '@/components/tunjuk-silang/KartuTunjukSilang'
 
 // ─── Helpers ────────────────────────────────────────────────
 function formatDate(dateStr) {
@@ -286,6 +290,7 @@ export default function ArsipDetail() {
     const [arsip, setArsip] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
+    const [perluAkses, setPerluAkses] = useState(null)
     const [ruleHistory, setRuleHistory] = useState([])
     const [historyLoading, setHistoryLoading] = useState(true)
     const [historyError, setHistoryError] = useState(null)
@@ -306,6 +311,7 @@ export default function ArsipDetail() {
                 setLoading(true)
                 setHistoryLoading(true)
                 setError(null)
+                setPerluAkses(null)
                 setHistoryError(null)
                 const [archiveResult, historyResult] = await Promise.allSettled([
                     arsipService.getById(id),
@@ -322,6 +328,12 @@ export default function ArsipDetail() {
                     setHistoryError(historyResult.reason?.message || 'Gagal memuat riwayat aturan')
                 }
             } catch (err) {
+                const perlu = rekamanPerluPersetujuan(err, 'arsip', id)
+                if (perlu) {
+                    setArsip(null)
+                    setPerluAkses(perlu)
+                    return
+                }
                 setError(err.message || 'Gagal memuat data arsip')
             } finally {
                 setLoading(false)
@@ -395,29 +407,32 @@ export default function ArsipDetail() {
                 field,
                 hasil && Object.hasOwn(hasil, field) ? hasil[field] : perubahan[field],
             ])),
+            // Nama lokasi baru datang dari muat ulang; nama lama tidak ditampilkan.
+            ...(Object.hasOwn(perubahan, 'storageLocationId') ? { lokasiSimpan: null } : {}),
         }))
         try {
             const refreshed = await arsipService.getById(id)
             setArsip(refreshed?.data || refreshed)
         } catch (err) {
             const kelasTerkendali = kelasPerluPersetujuan(perubahan.klasifikasiKeamanan)
-            const ditolak = err?.status === 404
+            const perluPersetujuan = Boolean(rekamanPerluPersetujuan(err, 'arsip', id))
+            const ditolak = err?.status === 404 || perluPersetujuan
             // Server sudah memperbarui daftar item, tetapi tab Item Arsip baru
             // berubah setelah muat ulang, yang tidak lagi mungkin bila ditolak.
             const itemBelumTermuat = ditolak
                 && (arsip?.items?.length ?? 0) > 0
                 && FIELD_CERMIN_ITEM.some(field => Object.hasOwn(perubahan, field))
-            // 404: server tidak lagi membuka arsip ini untuk akun ini (mis. kelas
-            // dinaikkan tanpa persetujuan untuk kelas baru), jadi hak aksi lama
-            // tidak berlaku. Galat jaringan/server tidak mengunci tombol.
+            // 404 atau jawaban "perlu persetujuan akses": server tidak lagi membuka
+            // arsip ini untuk akun ini (mis. kelas dinaikkan tanpa persetujuan untuk
+            // kelas baru), jadi hak aksi lama tidak berlaku. Galat jaringan/server tidak mengunci tombol.
             if (ditolak) {
                 setArsip(current => ({
                     ...current,
                     aksiDiizinkan: [],
-                    alasanTerkunci: kelasTerkendali ? 'perlu_persetujuan_akses' : 'tidak_berwenang',
+                    alasanTerkunci: kelasTerkendali || perluPersetujuan ? 'perlu_persetujuan_akses' : 'tidak_berwenang',
                 }))
             }
-            const keterangan = kelasTerkendali
+            const keterangan = kelasTerkendali || perluPersetujuan
                 ? 'Arsip kini berkelas Terbatas atau lebih tinggi dan memerlukan persetujuan akses sebelum dapat dibuka kembali.'
                 : 'Perubahan sudah tersimpan. Muat ulang halaman untuk melihat data terbaru.'
             toast({
@@ -429,6 +444,10 @@ export default function ArsipDetail() {
 
     // ─── Loading State ─────────────────
     if (loading) return <ArsipDetailSkeleton />
+
+    if (perluAkses) {
+        return <PerluPersetujuanAkses rekaman={perluAkses} daftarPath="/arsip" daftarLabel="Kembali ke Daftar Arsip" />
+    }
 
     // ─── Error State ────────────────────
     if (error || !arsip) {
@@ -758,7 +777,14 @@ export default function ArsipDetail() {
                                         Lokasi Penyimpanan
                                     </CardTitle>
                                 </CardHeader>
-                                <CardContent>
+                                <CardContent className="space-y-3">
+                                    {arsip.lokasiSimpan && (
+                                        <EnhancedInfoField
+                                            icon={MapPin}
+                                            label="Lokasi Simpan"
+                                            value={namaJalurLokasi(arsip.lokasiSimpan.jalur, arsip.lokasiSimpan.code)}
+                                        />
+                                    )}
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                         <EnhancedInfoField icon={FolderOpen} label="Filing Cabinet (FC)" value={arsip.lokasiFc} />
                                         <EnhancedInfoField icon={FolderOpen} label="Laci" value={arsip.lokasiLaci} />
@@ -1107,6 +1133,8 @@ export default function ArsipDetail() {
                             </div>
                         </CardContent>
                     </Card>
+
+                    <KartuTunjukSilang tipe="arsip" id={arsip.id} />
 
                     {/* Metadata */}
                     <Card className="shadow-sm">

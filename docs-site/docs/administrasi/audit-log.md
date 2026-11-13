@@ -8,7 +8,7 @@ Panduan melihat log aktivitas pengguna di SIMSA.
 
 ## Apa Itu Audit Log?
 
-Audit log adalah **catatan otomatis** dari semua aktivitas yang dilakukan pengguna di SIMSA. Setiap aksi (tambah, edit, hapus, login, dll) tercatat lengkap dengan:
+Audit log adalah **catatan otomatis** dari aktivitas penting yang dilakukan pengguna di SIMSA. Setiap aksi (membuat, mengubah, menghapus, mengarsipkan, mengekspor, dan lainnya) tercatat lengkap dengan:
 - **Siapa** yang melakukan
 - **Apa** yang dilakukan
 - **Kapan** dilakukan
@@ -21,45 +21,46 @@ Audit log adalah **catatan otomatis** dari semua aktivitas yang dilakukan penggu
 ### Langkah 1: Buka Menu
 Di sidebar, klik **Audit Log** di bawah **Administrasi**.
 
-### Langkah 2: Lihat Tabel Log
+### Langkah 2: Baca Daftar Aktivitas
 
-:::tip Tampilan Tabel Audit Log
-Tabel menampilkan kolom-kolom berikut:
+:::tip Tampilan Audit Log
+Setiap aktivitas tampil sebagai satu baris berisi:
 
-| Kolom | Contoh |
-|-------|--------|
-| **Waktu** | 10:32:15 |
-| **Pengguna** | admin@email.com |
-| **Aksi** | CREATE, UPDATE, DELETE, LOGIN |
-| **Detail** | Buat surat SM/001, Edit surat SK/015 |
-| **IP Address** | 192.168.1.10 |
-
-Setiap baris mencatat satu aktivitas yang dilakukan pengguna.
+| Bagian | Contoh |
+|--------|--------|
+| **Pelaku dan aksi** | Nama pengguna, aksi yang dilakukan (misalnya *Mengubah*), dan jenis datanya (misalnya *Surat Masuk*) |
+| **Waktu** | Tanggal dan jam kejadian |
+| **IP Address** | Alamat jaringan asal permintaan |
+| **Detail Perubahan** | Isian yang berubah, nilai sebelum dan sesudahnya. Untuk arsip ada bagian **Daftar Item Arsip** |
 :::
 
-### Langkah 3: Filter Log
+### Langkah 3: Saring Log
 
-Gunakan filter untuk menyaring log:
+Gunakan penyaring di atas daftar:
 
-| Filter | Keterangan |
-|--------|------------|
-| **Pengguna** | Cari log berdasarkan pengguna tertentu |
-| **Aksi** | Filter berdasarkan jenis aksi (CREATE, UPDATE, DELETE, LOGIN) |
-| **Tanggal** | Filter berdasarkan rentang tanggal |
-| **Pencarian** | Cari kata kunci di kolom Detail |
+| Penyaring | Keterangan |
+|-----------|------------|
+| **Cari audit log** | Cari nama pengguna, email, atau ID data |
+| **Rentang** | Tanggal mulai dan tanggal akhir |
+| **Tipe Entity** | Jenis data: Surat Masuk, Surat Keluar, Arsip, User, Persetujuan Akses, Rangkaian Surat, Relasi Rangkaian, atau Disposisi |
+| **Aksi** | Jenis aksi, lihat tabel di bawah |
 
 ---
 
 ## Jenis Aksi yang Dicatat
 
-| Aksi | Warna | Keterangan |
-|------|-------|------------|
-| **CREATE** | 🟢 Hijau | Membuat data baru |
-| **UPDATE** | 🔵 Biru | Mengedit data |
-| **DELETE** | 🔴 Merah | Menghapus data |
-| **LOGIN** | ⚪ Abu-abu | Login ke sistem |
-| **LOGOUT** | ⚪ Abu-abu | Logout dari sistem |
+| Aksi | Keterangan |
+|------|------------|
+| **Membuat** / **Mengubah** / **Menghapus** | Penambahan, perubahan, dan penghapusan data |
+| **Mengarsipkan** / **Memulihkan** / **Ubah Status** | Perubahan tahap sebuah data |
+| **Meminta Akses** / **Menyetujui Akses** / **Menolak Akses** / **Mencabut Akses** | Proses persetujuan akses rekod terkendali |
+| **Lihat via Rangkaian** | Surat unit lain yang dibaca melalui rangkaian surat |
+| **Ekspor Data** | Pengunduhan berkas ekspor |
+| **Menggabungkan** / **Menautkan** / **Membatalkan** | Perubahan pada rangkaian surat dan tautannya |
+| **Mendisposisikan** / **Menerima Disposisi** / **Menyelesaikan Disposisi** / **Menolak Disposisi** | Proses disposisi surat |
+
+Audit Log hanya untuk dibaca; catatan di dalamnya tidak dapat diubah atau dihapus dari halaman ini.
 
 ---
 
-[⬅️ Sebelumnya: Laporan](laporan.md) | [Selanjutnya: User Management ➡️](user-management.md)
+[⬅️ Sebelumnya: Laporan](laporan.md) | [Selanjutnya: Manajemen Pengguna ➡️](user-management.md)

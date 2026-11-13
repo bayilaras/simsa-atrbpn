@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 // F1 regresi (lihat SuratMasukDetail.no-loop.test.jsx): pola yang sama juga
 // berlaku di SuratKeluarDetail -- AlurSuratPanel asli, getById ditunda.
 const mocks = vi.hoisted(() => ({ getById: vi.fn(), getBySurat: vi.fn(), toast: vi.fn(), canWrite: false, getHistory: vi.fn(), getEligibleApprovers: vi.fn() }))
+vi.mock('@/components/tunjuk-silang/KartuTunjukSilang', () => ({ KartuTunjukSilang: ({ tipe, id }) => <div data-testid="kartu-tunjuk-silang">{`${tipe}:${id}`}</div> }))
 vi.mock('@/components/surat/KoreksiBerkasSection', () => ({ default: () => null }))
 vi.mock('@/services/surat-keluar.service', () => ({ default: { getById: mocks.getById } }))
 vi.mock('@/services/rangkaian.service', () => ({ default: { getBySurat: mocks.getBySurat } }))

@@ -520,7 +520,6 @@ export const dashboardService = {
                     code: storageLocations.code,
                     level: storageLocations.level,
                     capacity: storageLocations.capacity,
-                    currentCount: storageLocations.currentCount,
                 }).from(storageLocations)
                     .where(and(
                         ...storageUnitFilter,
@@ -613,7 +612,6 @@ export const dashboardService = {
                 const allBoxStats = await db.select({
                     prefix: sql<string>`LEFT(${storageLocations.code}, 2)`,
                     totalCapacity: sql<number>`COALESCE(SUM(${storageLocations.capacity}), 0)::int`,
-                    totalCount: sql<number>`COALESCE(SUM(${storageLocations.currentCount}), 0)::int`,
                     boxCount: count(),
                 }).from(storageLocations)
                     .where(and(
@@ -623,20 +621,40 @@ export const dashboardService = {
                     ))
                     .groupBy(sql`LEFT(${storageLocations.code}, 2)`);
 
+                // Isi boks dihitung dari arsip yang menautkannya, dengan saringan
+                // unit dan kelas yang sama dengan widget lain; kolom
+                // current_count tidak pernah diisi.
+                const arsipPerPrefix = await db.select({
+                    prefix: sql<string>`LEFT(${storageLocations.code}, 2)`,
+                    total: count(),
+                }).from(arsip)
+                    .innerJoin(storageLocations, eq(arsip.storageLocationId, storageLocations.id))
+                    .where(and(
+                        ...arsipUnitFilter,
+                        archiveClass,
+                        eq(storageLocations.level, 'box'),
+                        or(...prefixConditions),
+                    ))
+                    .groupBy(sql`LEFT(${storageLocations.code}, 2)`);
+                const arsipCountMap = new Map<string, number>(
+                    arsipPerPrefix.map((row: any) => [row.prefix, Number(row.total) || 0]),
+                );
+
                 const boxStatsMap = new Map(allBoxStats.map((s: any) => [s.prefix, s]));
 
                 storageCapacity = storageData.map((loc: any) => {
                     const prefix = loc.code?.substring(0, 2) || '';
                     const stats = boxStatsMap.get(prefix);
+                    const totalCount = arsipCountMap.get(prefix) || 0;
                     return {
                         id: loc.id,
                         name: loc.name,
                         code: loc.code,
                         totalCapacity: stats?.totalCapacity || 0,
-                        currentCount: stats?.totalCount || 0,
+                        currentCount: totalCount,
                         boxCount: stats?.boxCount || 0,
                         usagePercent: stats?.totalCapacity
-                            ? Math.round((stats.totalCount / stats.totalCapacity) * 100)
+                            ? Math.round((totalCount / stats.totalCapacity) * 100)
                             : 0,
                     };
                 });

@@ -70,8 +70,8 @@ Menu dikelompokkan menjadi **Utama**, **Manajemen Surat**, **Siklus Hidup Arsip*
 
 - **Pencarian:** mencari surat masuk, surat keluar, arsip, dan dosir.
 - **Tema:** pilih terang, gelap, atau mengikuti sistem.
-- **Notifikasi:** memisahkan notifikasi surat dan retensi; klik item untuk membuka rekod terkait.
-- **Avatar:** melihat email/role dan keluar dari aplikasi.
+- **Notifikasi:** terbagi atas tab **Surat**, **Arsip**, **Alur**, dan **Semua**; klik item untuk membuka rekod terkait.
+- **Avatar:** melihat nama dan email, membuka **Panduan Pengguna**, dan **Keluar** dari aplikasi. Super Admin juga melihat **Pengaturan** di menu ini.
 
 ### Pencarian global
 
@@ -108,7 +108,7 @@ Prinsip yang harus selalu dipakai:
 1. Buka Dashboard dan baca notifikasi.
 2. Pelajari daftar serta detail Surat Masuk dan Surat Keluar.
 3. Gunakan pencarian global dan filter daftar.
-4. Buka Arsip Aktif dan pahami tab Identifikasi, Item, Retensi, Jejak Aturan, Keamanan, dan Surat.
+4. Buka Arsip Aktif dan pahami tab Identifikasi, Item Arsip, Retensi & Lokasi, Jejak Aturan, Keamanan, dan Surat Asli.
 5. Gunakan Laporan sesuai lingkup akses.
 6. Ajukan Persetujuan Akses jika rekod terkendali diperlukan untuk tugas.
 
@@ -148,11 +148,13 @@ Prinsip yang harus selalu dipakai:
 
 Dashboard merangkum jumlah surat, arsip, tren bulanan, aktivitas terbaru, arsip yang mendekati batas retensi, dan widget pengelolaan arsip. Super Admin dapat memilih **Semua Unit Kerja** atau unit tertentu dan membuka tab **Pengawasan**.
 
-Gunakan Dashboard sebagai daftar perhatian, bukan sebagai keputusan pemusnahan. Angka **Segera Musnah** atau indikator kedaluwarsa tetap harus diperiksa terhadap pemicu terverifikasi, JRA, appraisal, legal hold, dan workflow penyusutan.
+Bagi admin, bagian **Perlu ditindaklanjuti** menampilkan baris *N surat keluar menunggu keputusan Anda* dengan tombol **Tinjau surat yang menunggu** bila ada surat keluar yang diajukan kepada Anda sebagai penyetuju.
+
+Gunakan Dashboard sebagai daftar perhatian, bukan sebagai keputusan pemusnahan. Angka **Perlu Telaah Retensi** atau indikator kedaluwarsa tetap harus diperiksa terhadap pemicu terverifikasi, JRA, appraisal, legal hold, dan workflow penyusutan.
 
 Pada ikon lonceng:
 
-- pilih tab **Surat**, **Arsip**, atau **Semua**;
+- pilih tab **Surat**, **Arsip**, **Alur**, atau **Semua**;
 - klik notifikasi untuk membuka rekod;
 - tandai sudah dibaca setelah ditindaklanjuti; dan
 - gunakan **Perbarui notifikasi** bila data baru belum tampak.
@@ -163,29 +165,32 @@ Pada ikon lonceng:
 
 Untuk admin:
 
-1. Buka **Surat > Surat Masuk** lalu klik **Tambah Surat Masuk**.
-2. Isi nomor, tanggal surat, tanggal diterima, pengirim, tujuan/perihal, naskah atau sifat surat, klasifikasi, dan metadata lain yang tersedia. Sifat surat terdiri atas Biasa, Segera, Sangat Segera, Terbatas, Rahasia, Sangat Rahasia, Undangan, dan Penting. Terbatas, Rahasia, dan Sangat Rahasia adalah kelas keamanan surat: admin dapat memilih Terbatas, sedangkan sifat Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin. Surat Terbatas, Rahasia, atau Sangat Rahasia hanya dapat dibuka atau diubah dengan persetujuan akses berjangka, juga oleh pencatatnya; ajukan persetujuan akses setelah menyimpan.
-3. Lampirkan dokumen bila diperlukan dan fasilitas penyimpanan file tersedia. Untuk pencatatan inventaris fisik, metadata dapat disimpan tanpa lampiran.
+1. Buka **Surat > Surat Masuk** lalu klik **Surat Baru**.
+2. Isi jenis dan sifat surat, nomor, tanggal surat, perihal, pengirim, penerima, disposisi bila ada, klasifikasi, dan metadata lain yang tersedia. Nomor boleh dikosongkan agar dibuat otomatis dari template unit. Sifat surat terdiri atas Biasa, Segera, Sangat Segera, Terbatas, Rahasia, Sangat Rahasia, Undangan, dan Penting. Terbatas, Rahasia, dan Sangat Rahasia adalah kelas keamanan surat: admin dapat memilih Terbatas, sedangkan sifat Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin. Surat Terbatas, Rahasia, atau Sangat Rahasia hanya dapat dibuka atau diubah dengan persetujuan akses berjangka, juga oleh pencatatnya; ajukan persetujuan akses setelah menyimpan.
+3. Isi **Link Dokumen** atau unggah berkas PDF bila ada dan fasilitas penyimpanan file tersedia. Keduanya tidak wajib; hasil pindai dapat ditambahkan nanti lewat **Edit Surat**. Link dokumen harus berupa alamat lengkap, misalnya `https://contoh.go.id/berkas`.
 4. Periksa nomor, tanggal, pengirim, perihal, unit, dan file sebelum menyimpan.
-5. Buka detail untuk mengedit, membalas, mendistribusikan, atau mengarsipkan sesuai tombol dan kewenangan.
+5. Bila ada isian yang ditolak, pesannya tampil di bawah isian terkait dan ringkasannya berbunyi *Surat belum dapat disimpan. Periksa isian berikut: ...*
+6. Di daftar, status surat adalah **Belum Diproses** atau **Sudah Dibalas**. Tindakan per surat ada di menu tiga titik (⋯): **Detail & File**, **Edit Surat**, **Distribusi**, **Arsipkan**, dan **Hapus Surat**. Di halaman detail, gunakan **Edit**, menu **Tindak Lanjut** (misalnya **Saya Balas** atau **Disposisi ke Direktorat**), dan **Arsipkan** sesuai kewenangan.
 
 ### Surat keluar
 
-1. Buka **Surat > Surat Keluar** lalu klik **Tambah Surat Keluar**.
-2. Isi jenis naskah dinas, nomor, tanggal, tujuan, perihal, dan klasifikasi sesuai dokumen sumber. Lampiran digital digunakan bila fasilitas penyimpanan file tersedia.
-3. Untuk membalas surat masuk, buka detail surat masuk dan pilih **Balas Surat** agar referensi asal tetap terhubung.
+1. Buka **Surat > Surat Keluar** lalu klik **Buat Surat Inisiatif**, atau pilih **Tindak Lanjut Surat Masuk…** dari menu panah di sampingnya.
+2. Isi jenis naskah dinas, nomor, tanggal, tujuan, perihal, klasifikasi, dan klasifikasi keamanan sesuai dokumen sumber. Link dokumen dan berkas tidak wajib, tetapi hanya dapat ditambahkan selama surat masih draf atau ditolak, yaitu sebelum diajukan untuk persetujuan.
+3. Untuk membalas surat masuk, buka detail surat masuk, klik **Tindak Lanjut**, lalu pilih **Saya Balas** agar referensi asal tetap terhubung.
 4. Simpan surat sebagai draft, lalu buka halaman detail dan periksa seluruh metadata.
 5. Klik **Ajukan Persetujuan**, pilih administrator aktif lain sebagai penyetuju, isi catatan bila perlu, lalu kirim.
-6. Penyetuju yang ditunjuk membuka antrean atau detail surat dan memilih **Setujui** atau **Tolak**. Alasan wajib diisi saat menolak.
+6. Penyetuju yang ditunjuk membuka surat itu dari Dashboard, dari kartu *surat menunggu keputusan Anda* di halaman Surat Keluar, atau dari penyaring **Menunggu keputusan saya**, lalu memilih **Setujui** atau **Tolak**. Alasan wajib diisi saat menolak.
 7. Surat yang ditolak dapat diperbaiki dan diajukan ulang. Surat yang telah disetujui final dapat diarsipkan melalui halaman detail.
+
+Beberapa surat dapat diajukan atau disetujui sekaligus: centang surat di daftar, lalu pakai **Ajukan Persetujuan (N)** atau **Setujui (N)** pada bilah **Tindakan untuk surat terpilih** (paling banyak 100 surat). Bila pembuat surat sudah nonaktif atau pindah unit, Super Admin atau admin unit surat dapat mengajukan atas namanya.
 
 Pembuat tidak dapat menyetujui suratnya sendiri. Selama status **Menunggu Persetujuan** atau **Disetujui**, surat terkunci dari edit dan hapus; surat belum dapat diarsipkan sebelum persetujuan final. Seluruh pengajuan, keputusan, catatan, dan pelaku tampil pada riwayat. Ini adalah persetujuan proses internal, bukan tanda tangan elektronik, serta tidak menggunakan BSrE/PSrE.
 
 ### Distribusi
 
-1. Buka detail surat masuk dan pilih **Distribusikan**.
-2. Pilih unit kerja tujuan dan tulis catatan yang menjelaskan tindak lanjut.
-3. Periksa Inbox **Distribusi** untuk kiriman masuk dan riwayat kiriman keluar.
+1. Di daftar Surat Masuk pilih **Distribusi** dari menu tiga titik (⋯), atau di detail surat pilih **Tindak Lanjut > Disposisi ke Direktorat**.
+2. Centang unit tujuan, pilih penanggung jawab dan batas waktu bila perlu, tulis instruksi, lalu klik **Disposisikan**.
+3. Buka menu **Distribusi**: tab **Kotak Masuk** untuk kiriman masuk (terima, buat tindak lanjut, selesaikan, atau tolak) dan tab **Kotak Keluar** untuk kiriman yang Anda buat.
 
 Jangan menghapus surat hanya untuk memperbaiki kesalahan kecil. Gunakan fungsi edit/koreksi yang tersedia agar jejak aktivitas tetap dapat ditelusuri. Penghapusan hanya dilakukan oleh petugas berwenang setelah memastikan dampaknya.
 
@@ -197,9 +202,11 @@ Setelah impor (CSV/XLSX maupun Google Sheets), **Rincian hasil impor per baris**
 
 Sifat surat masuk sekaligus menjadi klasifikasi keamanan, sehingga impor memakai batas yang sama dengan formulir. Baris surat masuk bersifat **Rahasia** atau **Sangat Rahasia** hanya dapat diimpor oleh Super Admin. Bila diimpor oleh Admin Unit Kerja, Admin Dirjen, atau Admin Sesditjen, baris itu ditolak dengan keterangan "Klasifikasi keamanan melebihi kewenangan pengguna…", tidak dicocokkan dengan surat yang sudah tercatat (juga saat sinkron), dan baris lain tetap tersimpan. Minta Super Admin mengimpor atau mencatat surat tersebut. Impor surat keluar tidak terpengaruh karena sifatnya adalah urgensi dan klasifikasi keamanannya selalu dicatat Biasa.
 
-Sifat urgensi Segera, Sangat Segera, Amat Segera/Kilat, Penting, dan Undangan dibaca sebagai Biasa, dan sel sifat yang kosong atau berisi "-" dicatat sebagai Biasa. Sifat lain yang tidak dikenal, misalnya "Konfidensial", ditolak per baris untuk semua pengguna, termasuk Super Admin, dengan keterangan "Sifat surat tidak dikenal…", karena surat seperti itu tidak dapat dibaca siapa pun. Penolakan ini hanya untuk baris yang akan dicatat sebagai surat baru; saat sinkron, baris yang cocok dengan surat yang sudah tercatat tetap memperbarui perihal, tanggal, dan jenis surat. Pratinjau impor Google Sheets dan CSV/XLSX hanya menampilkan pemetaan kolom dan contoh baris tanpa memeriksa baris, jadi baris yang ditolak baru terlihat di rincian hasil setelah **Impor**. Perbaiki sifatnya di sumber lalu impor ulang.
+Sifat urgensi Segera, Sangat Segera, Amat Segera/Kilat, Penting, dan Undangan dibaca sebagai Biasa, dan sel sifat yang kosong atau berisi "-" dicatat sebagai Biasa. Sifat lain yang tidak dikenal, misalnya "Konfidensial", ditolak per baris untuk semua pengguna, termasuk Super Admin, dengan keterangan "Sifat surat tidak dikenal…", karena surat seperti itu tidak dapat dibaca siapa pun. Penolakan ini hanya untuk baris yang akan dicatat sebagai surat baru; saat sinkron, baris yang cocok dengan surat yang sudah tercatat tetap memperbarui perihal, tanggal, dan jenis surat. Pratinjau impor Google Sheets dan CSV/XLSX menampilkan pemetaan kolom, contoh baris, dan peringatan untuk baris yang tanggalnya akan ditolak; penolakan karena sifat baru terlihat di rincian hasil setelah **Impor**. Perbaiki sifatnya di sumber lalu impor ulang.
 
-Pada Arsip Aktif, **Impor CSV** memakai kolom `Nomor Berkas`, `Tanggal`, `Uraian`, `Jenis Arsip` (`masuk` atau `keluar`) dengan tanggal `YYYY-MM-DD` atau `DD/MM/YYYY`, maksimal 1.000 rekod dan 10 MiB per CSV. Pilih CSV lalu **Pratinjau**, koreksi baris yang ditolak pada sumbernya, dan klik **Impor data valid** setelah memeriksa hasil. Baris yang berhasil tetap tersimpan bila baris lain gagal; periksa hasil sebelum mengulang.
+Tanggal selalu dibaca dengan urutan **hari, bulan, tahun**: `03/11/2026`, `3-11-2026`, `3.11.2026`, `03/11/26`, `3 November 2026`, `3 Nov 2026`, atau `03-Nov-26`. Penulisan `2026-11-03` dan sel tanggal Excel juga diterima. Tahun dua angka 00–69 dibaca 2000-an dan 70–99 dibaca 1900-an. Baris yang tanggalnya tidak dapat dibaca **ditolak, tidak ditebak**: tanggal yang jelas ditulis bulan lebih dulu (misalnya `11/25/2026`), tanggal yang tidak ada di kalender (misalnya `31/02/2026`), tahun di luar 1920 sampai 2199, dan angka tanpa pemisah seperti `031126`. Bila ada baris seperti itu, pratinjau menampilkan kotak peringatan *n dari total baris akan ditolak karena tanggalnya* beserta daftar *Baris data ke-…* dan alasannya. Baris lain tetap dapat diimpor; perbaiki tanggal di sumber data, lalu buat pratinjau lagi agar baris itu ikut tersimpan.
+
+Pada Arsip Aktif, **Impor CSV** memakai kolom `Nomor Berkas`, `Tanggal`, `Uraian`, `Jenis Arsip` (`masuk` atau `keluar`) dengan tanggal `YYYY-MM-DD` atau `DD/MM/YYYY`, maksimal 1.000 rekod dan 10 MiB per CSV. Pilih CSV lalu **Pratinjau**, koreksi baris yang ditolak pada sumbernya, centang *Saya sudah memeriksa pratinjau dan memahami bahwa impor ini permanen.*, lalu klik **Impor data valid**. Arsip yang diimpor tidak dapat dihapus dari aplikasi dan impor tidak dapat dibatalkan. Baris yang berhasil tetap tersimpan bila baris lain gagal; periksa hasil sebelum mengulang.
 
 Impor ini mencatat metadata, bukan mengunggah berkas digital. Impor arsip belum memetakan kolom lokasi terstruktur; catatan lokasi dapat ditempatkan pada `Keterangan`. Klasifikasi/JRA hasil impor perlu dicocokkan melalui rekonsiliasi, tidak otomatis terverifikasi. Lihat [langkah inventaris fisik](./mulai-inventaris-internal.md).
 
@@ -222,35 +229,38 @@ OCR PDF hasil pindai dibatasi maksimal 10 halaman dan dapat gagal bila citra ter
 
 ### Mengarsipkan surat
 
-1. Buka detail surat yang telah selesai diproses lalu klik **Arsipkan**.
+1. Buka detail surat yang telah selesai diproses lalu klik **Arsipkan**. Surat keluar harus sudah disetujui admin lain.
 2. Periksa atau isi **Nomor Berkas**.
 3. Pilih **Klasifikasi Arsip & Jadwal Retensi**. Pilih klasifikasi dahulu, kemudian butir JRA yang sesuai.
 4. Baca pratinjau retensi aktif, retensi inaktif, hasil JRA, versi, dan referensi.
-5. Isi uraian berkas, unit pengolah, kurun waktu, item arsip, tingkat perkembangan, tanggal, jumlah, dan lokasi fisik.
+5. Isi uraian berkas, unit pengolah, kurun waktu, item arsip, tingkat perkembangan, tanggal, jumlah, dan lokasi fisik (No. Filing Cabinet, No. Laci, No. Folder). Bila perlu, pilih juga **Lokasi Simpan** dari daftar gedung, ruang, rak, atau boks.
 6. Tetapkan klasifikasi keamanan dan PIC. Admin Unit Kerja hanya dapat memilih Biasa/Terbuka atau Terbatas; bila surat sumber berkelas Rahasia atau Sangat Rahasia, kelas itu dipertahankan pada arsip, dan kelas yang lebih tinggi hanya dapat dipilih Super Admin.
-7. Periksa ulang lalu simpan.
+7. Periksa ulang, centang *Saya memahami bahwa pengarsipan ini permanen dan tidak dapat dibatalkan.*, lalu klik **Simpan Arsip**.
+
+Pengarsipan bersifat permanen. Setelah disimpan, surat terkunci: tidak dapat diubah atau dihapus, dan berkas PDF tidak dapat lagi ditambahkan dari halaman surat. Arsip tidak dapat dihapus dari aplikasi. Lengkapi hasil pindai sebelum mengarsipkan.
 
 Saran JRA dari aplikasi membantu pencarian, tetapi **bukan keputusan otomatis**. Petugas tetap menilai isi, fungsi, konteks, dan rumusan pemicu. Pemicu retensi juga tidak ditetapkan pada dialog registrasi; catat setelah arsip dibuat melalui **Tata Kelola Retensi**.
 
 ### Daftar dan detail arsip
 
 - **Arsip Surat Masuk/Keluar:** gunakan pencarian, tahun, filter lanjutan, unit (jika berwenang), dan pagination.
-- **Tab Retensi:** menampilkan informasi dan kemajuan masa simpan berdasarkan data otoritatif.
+- **Tab Retensi & Lokasi:** menampilkan lokasi penyimpanan, termasuk **Lokasi Simpan** bila sudah dipilih, serta informasi dan kemajuan masa simpan.
 - **Tab Jejak Aturan:** menunjukkan versi klasifikasi/JRA dan revisi yang pernah dipakai.
 - **Tab Keamanan:** menunjukkan klasifikasi keamanan dan kontrol akses.
-- **Tab Surat:** menghubungkan arsip dengan surat sumber.
-- **Export:** pilih **Formulir 4** (Daftar Arsip Aktif) atau **Formulir 6** (Daftar Arsip Inaktif), lalu Excel atau PDF. Isi ekspor mengikuti tab, unit, pencarian, dan tahun yang sedang dipilih.
+- **Tab Surat Asli:** menghubungkan arsip dengan surat sumber.
+- **Kartu Tunjuk Silang:** menampilkan dokumen lain yang ditautkan dengan arsip ini.
+- **Export:** pilih **Formulir 4** (Daftar Arsip Aktif) atau **Formulir 6** (Daftar Arsip Inaktif), lalu Excel atau PDF. Isi ekspor mengikuti tab, unit, pencarian, dan tahun yang sedang dipilih. Saringan lokasi simpan tidak ikut ke berkas ekspor. Arsip yang memiliki beberapa item dicetak satu baris per item; arsip berkelas Terbatas atau lebih tinggi tetap dicetak satu baris ringkasan berkas.
 
 Formulir 4 memuat arsip yang masa aktifnya belum berakhir. Formulir 6 memuat arsip yang masa aktifnya sudah berakhir menurut klasifikasi/JRA dan peristiwa pemicu retensi yang sudah terverifikasi, serta arsip yang pemindahannya ke penyimpanan inaktif sudah dicatat di SIMSA melalui modul Penyusutan; pemindahan di luar SIMSA tidak mengubah isi formulir. Arsip yang belum terverifikasi dan belum dicatat pindah tetap tercantum di Formulir 4, sedangkan arsip yang sudah dimusnahkan atau diserahkan tidak tercantum di keduanya. Arsip yang pemindahannya dilaksanakan melalui modul Penyusutan sebelum pembaruan siklus arsip pada September 2026 tetap tercantum di Formulir 6. Bila belum ada arsip inaktif untuk filter yang dipilih, Formulir 6 tidak diunduh dan muncul keterangan "Belum ada arsip inaktif untuk filter ini…". Rincian kolom ada di [Arsip Aktif](./siklus-arsip/arsip-aktif.md#ekspor-formulir-4-dan-formulir-6).
 
 Arsip lama berstatus aturan belum terverifikasi dapat dibaca tetapi tidak boleh masuk penyusutan. Admin dapat memilih **Rekonsiliasi Klasifikasi/JRA**, memilih aturan aktif, dan mengisi alasan yang spesifik. Rekonsiliasi tidak tersedia bila arsip sedang legal hold, berada dalam workflow penyusutan, atau sudah dieksekusi.
 
-Untuk memperbaiki data berkas yang salah catat, admin yang berwenang atas unit arsip memilih **Ubah Metadata** di halaman detail. Isian yang dapat diubah: nomor dan uraian berkas, unit pengolah, kurun waktu, nomor dan uraian item, tingkat perkembangan, tanggal arsip, jumlah, media, No. Filing Cabinet, No. Laci, No. Folder, klasifikasi keamanan, PIC, dan keterangan. Hanya isian yang diubah yang disimpan, dan perubahannya tercatat di log audit. Klasifikasi/JRA tetap diubah melalui **Rekonsiliasi Klasifikasi/JRA**. **Ubah Metadata** dikunci bila arsip sedang legal hold, sedang dalam proses penyusutan, atau penyusutannya sudah dilaksanakan. Untuk arsip berkelas Terbatas atau lebih tinggi, **Ubah Metadata** dan **Rekonsiliasi Klasifikasi/JRA** hanya aktif bila persetujuan akses Anda atas arsip itu bermode **Tayang dan kelola**; tombol yang dikunci menampilkan alasannya. Perubahan nomor item, uraian item, tingkat perkembangan, tanggal arsip, atau lokasi ikut memperbarui item ringkasan dan item di lokasi lama yang sama pada tab **Item Arsip**; rinciannya ada di [Arsip Aktif](./siklus-arsip/arsip-aktif.md#daftar-item-ikut-diperbarui). Admin Unit Kerja hanya dapat memilih klasifikasi keamanan Biasa/Terbuka atau Terbatas; kelas yang sudah tersimpan boleh dipertahankan.
+Untuk memperbaiki data berkas yang salah catat, admin yang berwenang atas unit arsip memilih **Ubah Metadata** di halaman detail. Isian yang dapat diubah: nomor dan uraian berkas, unit pengolah, kurun waktu, nomor dan uraian item, tingkat perkembangan, tanggal arsip, jumlah, media, No. Filing Cabinet, No. Laci, No. Folder, Lokasi Simpan, klasifikasi keamanan, PIC, dan keterangan. Lokasi Simpan tidak dapat diubah selama arsip atau boksnya dipinjam. Hanya isian yang diubah yang disimpan, dan perubahannya tercatat di log audit. Klasifikasi/JRA tetap diubah melalui **Rekonsiliasi Klasifikasi/JRA**. **Ubah Metadata** dikunci bila arsip sedang legal hold, sedang dalam proses penyusutan, atau penyusutannya sudah dilaksanakan. Untuk arsip berkelas Terbatas atau lebih tinggi, **Ubah Metadata** dan **Rekonsiliasi Klasifikasi/JRA** hanya aktif bila persetujuan akses Anda atas arsip itu bermode **Tayang dan kelola**; tombol yang dikunci menampilkan alasannya. Perubahan nomor item, uraian item, tingkat perkembangan, tanggal arsip, atau lokasi ikut memperbarui item ringkasan dan item di lokasi lama yang sama pada tab **Item Arsip**; rinciannya ada di [Arsip Aktif](./siklus-arsip/arsip-aktif.md#daftar-item-ikut-diperbarui). Admin Unit Kerja hanya dapat memilih klasifikasi keamanan Biasa/Terbuka atau Terbatas; kelas yang sudah tersimpan boleh dipertahankan.
 
 ### Dosir dan lokasi fisik
 
 - Gunakan **Pemberkasan (Dosir)** untuk menghimpun arsip yang berhubungan dalam satu berkas/kegiatan.
-- Gunakan **Lokasi Simpan** untuk menjaga kode ruang, rak/lemari, laci, folder, atau box tetap konsisten.
+- Gunakan **Lokasi Simpan** untuk mengelola daftar gedung, ruang, rak, dan boks. Halaman itu menampilkan jumlah arsip yang tertaut ke tiap lokasi dan tombol **Lihat arsip di lokasi ini**. Lokasi yang masih ditautkan arsip tidak dapat dihapus.
 - Cocokkan lokasi di sistem dengan label fisik saat menyimpan, meminjamkan, memindahkan, dan mengembalikan arsip.
 
 ## 8. Klasifikasi arsip dan JRA
@@ -363,22 +373,24 @@ Fitur ini mencatat sirkulasi secara langsung; pastikan kewenangan peminjaman tel
 
 ### Fitur layanan lainnya
 
-- **Layanan Arsip:** catat dan pantau permintaan layanan internal.
+- **Layanan Arsip:** catat dan pantau permohonan penggandaan atau legalisasi arsip lewat **Buat Permohonan**.
 - **Arsip Vital / Arsip Terjaga:** tandai dan kelola arsip yang memerlukan perlindungan khusus sesuai kewenangan. Menu Arsip Terjaga hanya muncul bila modulnya diaktifkan operator.
-- **Arsip Elektronik:** kelola media digital dan metadata teknis.
-- **Autentikasi:** catat proses autentikasi arsip.
-- **Tunjuk Silang:** hubungkan rekod yang berkaitan tanpa menggandakan arsip.
+- **Arsip Elektronik:** catat data teknis berkas digital sebuah arsip lewat **Tambah Metadata**.
+- **Autentikasi:** buat berita acara autentikasi arsip hasil alih media (khusus Super Admin).
+- **Tunjuk Silang:** hubungkan arsip, surat masuk, surat keluar, dan dosir yang berkaitan tanpa menggandakan arsip. Dokumen dipilih lewat pencarian nomor atau perihal, dan hubungannya tampil pada kartu **Tunjuk Silang** di halaman rinci surat dan arsip. Tunjuk silang yang keliru dibatalkan dengan alasan, bukan dihapus.
 - **Formulir:** galeri ini berisi format referensi kosong. Untuk dokumen berbasis data, gunakan tombol cetak/unduh pada modul Peminjaman, Penyusutan, Arsip Vital/Terjaga, atau Laporan agar isi berasal dari rekod aplikasi. Formulir 4 dan Formulir 6 berisi data diunduh dari menu **Export** di halaman Arsip. Bila modul Penyusutan atau Arsip Terjaga belum diaktifkan, template terkait tetap dapat dilihat dan dicetak untuk diisi manual.
 
 ## 12. Persetujuan akses rekod terkendali
 
 Untuk Terbatas, Rahasia, atau Sangat Rahasia, role admin tidak otomatis memberikan hak melihat/unduh.
 
-1. Buka **Administrasi > Persetujuan Akses**.
-2. Klik **Minta akses**.
-3. Pilih jenis rekod, masukkan UUID rekod, dan pilih mode minimum: tayang, tayang dan unduh, atau tayang dan kelola.
+1. Buka surat atau arsip dari daftarnya. Bila isinya belum boleh Anda buka, halaman menampilkan **Perlu persetujuan akses** beserta nomor dan perihalnya.
+2. Klik **Minta Akses**. Formulir permohonan terbuka dengan rekod itu sudah terpilih.
+3. Pilih mode minimum: tayang saja, tayang dan unduh, atau tayang dan kelola.
 4. Jelaskan kebutuhan kedinasan secara spesifik lalu kirim.
-5. Pantau status pada **Permohonan Saya**.
+5. Pantau status pada **Administrasi > Persetujuan Akses Arsip**, tab **Permohonan Saya**.
+
+Permohonan juga dapat dibuat dari tombol **Minta akses** di halaman itu; karena belum ada rekod terpilih, isi **ID rekod** dengan deret kode di akhir alamat halaman detail rekod.
 
 Khusus Super Admin, tab **Perlu Keputusan** digunakan untuk menyetujui/menolak, menetapkan masa berlaku, atau mencabut akses. Pemohon tidak boleh menyetujui permohonannya sendiri. Persetujuan di SIMSA tidak menggantikan clearance, surat tugas, atau kewenangan pejabat.
 
@@ -387,9 +399,9 @@ Khusus Super Admin, tab **Perlu Keputusan** digunakan untuk menyetujui/menolak, 
 ### Laporan
 
 1. Buka **Administrasi > Laporan**.
-2. Pilih tahun/rentang tanggal lalu klik **Tampilkan Data**.
+2. Pilih tahun atau isi **Dari Tanggal** / **Sampai Tanggal**, lalu klik **Tampilkan Data**. Bila tanggal diisi, pilihan tahun diabaikan untuk surat masuk dan surat keluar.
 3. Gunakan tab **Ringkasan**, **Surat Masuk**, **Surat Keluar**, **Arsip**, atau **Peminjaman**.
-4. Pada tab yang menyediakan ekspor, pilih Excel atau PDF.
+4. Pada tab Surat Masuk, Surat Keluar, atau Arsip, pilih **Excel** atau **PDF**. Isi berkas surat sama dengan tabel di layar; ekspor arsip hanya memakai tahun.
 5. Periksa periode, unit, jumlah baris, dan filter sebelum menggunakan hasil.
 
 File ekspor adalah salinan kerja. Lindungi, batasi distribusi, dan hapus salinan lokal sesuai kebijakan setelah tidak diperlukan.
@@ -398,7 +410,7 @@ File ekspor adalah salinan kerja. Lindungi, batasi distribusi, dan hapus salinan
 
 Super Admin membuka **Administrasi > Audit Log** untuk:
 
-- mencari pengguna/email/ID;
+- mencari nama pengguna, email, atau ID data;
 - memfilter tipe entitas dan aksi;
 - memeriksa waktu, pelaku, rekod, IP, dan rincian perubahan yang tersedia; serta
 - menelusuri urutan kejadian bersama jejak aturan, appraisal, pemicu, atau manifest.
@@ -410,13 +422,15 @@ Audit Log bukan alasan untuk membagikan informasi sensitif. Ekspor atau tangkapa
 Khusus Super Admin:
 
 1. Buka **Manajemen Pengguna** dan klik **Tambah Pengguna**.
-2. Isi email yang tepat, nama, role, unit kerja, jabatan, NIP, dan kredensial bila digunakan.
+2. Isi email yang tepat, nama, role, unit kerja, jabatan, NIP, dan kata sandi agar pengguna dapat masuk dengan email dan kata sandi.
 3. Untuk Google, email yang diprovisi harus sama dengan akun Google pengguna.
-4. Gunakan edit untuk mengubah role, unit, jabatan, NIP, atau status.
+4. Gunakan **Ubah Peran/Unit** dari menu tindakan untuk mengubah role, unit, jabatan, NIP, atau status.
 5. Nonaktifkan akun segera saat pegawai mutasi/berhenti atau akses tidak lagi diperlukan.
 6. Hindari menghapus akun yang memiliki histori; nonaktifkan bila tujuan utamanya menghentikan akses.
 
 Gunakan **Pengaturan** untuk konfigurasi yang memang tersedia bagi Super Admin, termasuk unit kerja atau templat. Uji perubahan pada data yang aman sebelum digunakan secara luas.
+
+Di **Monitoring Operasional**, kartu **Antrean pemindaian** menunjukkan jumlah berkas **Menunggu**, **Terlambat**, **Gagal**, dan **Terdeteksi berbahaya**. Berkas yang gagal dipindai belum dapat dibuka; gunakan **Antre ulang** per berkas atau **Antre ulang semua yang gagal dipindai** (paling banyak 100 berkas per tekan) agar dipindai lagi. Berkas yang terdeteksi berbahaya tetap dikunci, tidak dapat diantre ulang, dan perlu diganti.
 
 ## 15. Panduan penggunaan pada ponsel/tablet
 
@@ -436,7 +450,7 @@ Gunakan **Pengaturan** untuk konfigurasi yang memang tersedia bagi Super Admin, 
 - Pastikan domain aplikasi benar sebelum masuk.
 - Gunakan klasifikasi keamanan yang sesuai dan asas need-to-know.
 - Jangan mengunggah file yang tidak berhubungan dengan pekerjaan.
-- File umum dibatasi maksimum 10 MiB dan isi file diperiksa terhadap jenis yang dinyatakan. PDF, Word, Excel, JPG, PNG, dan GIF didukung pada alur lampiran umum; tampilan form tertentu dapat membatasi lebih ketat.
+- File umum dibatasi maksimum 10 MiB dan isi file diperiksa terhadap jenis yang dinyatakan. PDF, Word, Excel, JPG, PNG, dan GIF didukung pada alur lampiran umum; tampilan form tertentu dapat membatasi lebih ketat, misalnya formulir surat masuk dan surat keluar hanya menerima PDF.
 - Lampiran tetap dikarantina sampai pemeriksaan keamanan menyatakan bersih. Bila terlalu lama, jangan mengunggah berulang-ulang; laporkan kepada admin.
 - Penghapusan langsung bitstream/lampiran dinonaktifkan. Gunakan workflow penyusutan yang menjaga persetujuan dan bukti.
 - Keluar setelah bekerja di komputer bersama dan jangan menyimpan password di browser publik.
@@ -452,7 +466,9 @@ Gunakan **Pengaturan** untuk konfigurasi yang memang tersedia bagi Super Admin, 
 | Sesi tiba-tiba berakhir | Kemungkinan idle sekitar 30 menit atau sesi tidak valid. Masuk kembali dan periksa apakah perubahan terakhir sudah tersimpan. |
 | Pencarian tidak menemukan data | Ketik minimal dua karakter, periksa ejaan/filter/unit, lalu cari melalui daftar khusus. Data terkendali tetap tersembunyi tanpa akses. |
 | Unggah ditolak | Periksa ukuran maksimum, ekstensi, jenis MIME, isi file, dan apakah file rusak. Simpan ulang dari aplikasi sumber bila perlu. |
-| File ada tetapi tidak dapat dibuka | File mungkin masih dikarantina, terdeteksi bermasalah, atau memerlukan persetujuan akses. Hubungi admin dengan ID rekod dan waktu unggah, tanpa mengirim file lewat kanal pribadi. |
+| File ada tetapi tidak dapat dibuka | File mungkin masih menunggu pemindaian keamanan, gagal dipindai, terdeteksi bermasalah, atau memerlukan persetujuan akses. Hubungi Super Admin dengan nomor rekod dan waktu unggah agar berkas diantre ulang dari Monitoring Operasional, tanpa mengirim file lewat kanal pribadi. |
+| Halaman surat/arsip menampilkan **Perlu persetujuan akses** | Rekod berkelas Terbatas atau lebih tinggi. Klik **Minta Akses** dan tunggu keputusan Super Admin. |
+| Baris impor ditolak karena tanggal | Tulis tanggal dengan urutan hari, bulan, tahun (misalnya 03/11/2026 atau 3 November 2026) atau sebagai 2026-11-03, lalu buat pratinjau lagi. |
 | Arsip tidak masuk kandidat penyusutan | Periksa jatuh tempo, pemicu terverifikasi, keputusan appraisal, legal hold, provenance versi aturan, reservasi manifest, dan batch aktif. |
 | Tidak dapat menelaah/menyetujui | Sistem mencegah self-review. Minta akun pejabat lain yang berwenang melakukan tahap tersebut. |
 | Manifest permanen tidak dapat dibuat | Pastikan keputusan Permanen telah disetujui serta objek digital bersih dan lolos fixity; pastikan arsip belum direservasi/dieksekusi. |

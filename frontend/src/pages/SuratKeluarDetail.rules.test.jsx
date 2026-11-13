@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import SuratKeluarDetail from './SuratKeluarDetail'
 
 const mocks = vi.hoisted(() => ({ getById: vi.fn(), toast: vi.fn(), canWrite: false, getBySurat: vi.fn(), getHistory: vi.fn(), getEligibleApprovers: vi.fn() }))
+vi.mock('@/components/tunjuk-silang/KartuTunjukSilang', () => ({ KartuTunjukSilang: ({ tipe, id }) => <div data-testid="kartu-tunjuk-silang">{`${tipe}:${id}`}</div> }))
 vi.mock('@/components/surat/KoreksiBerkasSection', () => ({ default: () => null }))
 vi.mock('@/services/surat-keluar.service', () => ({ default: { getById: mocks.getById } }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ canWrite: () => mocks.canWrite, user: { id: 'user-a' } }) }))
@@ -138,4 +139,37 @@ it.each([['sangat_segera', 'Sangat Segera'], ['Kilat', 'Kilat'], [null, 'Belum t
     mocks.getById.mockResolvedValue({ id: 'surat-id', nomorSurat: '005/2026', perihal: 'Undangan rapat', unitKerjaId: 'unit-a', sifatSurat })
     render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
     expect((await screen.findByText('Sifat Surat')).parentElement).toHaveTextContent(shown)
+})
+
+it('menyertakan kartu Tunjuk Silang untuk surat keluar ini', async () => {
+    mocks.getById.mockResolvedValue({ id: 'surat-id', nomorSurat: '001/2026', perihal: 'Surat keluar', unitKerjaId: 'unit-a' })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    expect(await screen.findByTestId('kartu-tunjuk-silang')).toHaveTextContent('surat_keluar:surat-id')
+})
+
+it('offers submission on behalf of a creator who no longer serves, with a one-line explanation', async () => {
+    mocks.canWrite = true
+    mocks.getEligibleApprovers.mockResolvedValue([{ id: 'approver-1', name: 'Penyetuju', role: 'admin_unit' }])
+    mocks.getById.mockResolvedValue({
+        id: 'surat-id', nomorSurat: '007/2026', perihal: 'Draft pembuat lama', unitKerjaId: 'unit-a', approvalStatus: 'draft',
+        createdBy: 'user-lama', aksesMelalui: 'owner', aksiDiizinkan: [], pengajuanAtasNama: { namaPembuat: 'Admin Lama' },
+    })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    expect(await screen.findByText('Pembuat surat (Admin Lama) sudah tidak aktif atau tidak lagi bertugas di unit ini. Anda mengajukan atas nama pembuat.')).toBeInTheDocument()
+    await waitFor(() => expect(mocks.getEligibleApprovers).toHaveBeenCalledWith('surat-id'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Ajukan Persetujuan' })).toBeEnabled())
+})
+
+it('does not offer submission to another administrator while the creator still serves', async () => {
+    mocks.canWrite = true
+    mocks.getById.mockResolvedValue({
+        id: 'surat-id', nomorSurat: '008/2026', perihal: 'Draft pembuat aktif', unitKerjaId: 'unit-a', approvalStatus: 'draft',
+        createdBy: 'user-lain', aksesMelalui: 'owner', aksiDiizinkan: ['edit'], pengajuanAtasNama: null,
+    })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    expect((await screen.findAllByText('Draft pembuat aktif')).length).toBeGreaterThan(0)
+    await waitFor(() => expect(mocks.getHistory).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: 'Ajukan Persetujuan' })).toBeNull()
+    expect(screen.queryByText(/mengajukan atas nama pembuat/)).toBeNull()
+    expect(mocks.getEligibleApprovers).not.toHaveBeenCalled()
 })

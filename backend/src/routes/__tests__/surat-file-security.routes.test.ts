@@ -105,6 +105,13 @@ vi.mock('../../services/record-access.service', async importOriginal => ({
 
 vi.mock('../../services/rangkaian/aksi.js', () => ({ suratAksiPayload: mocks.aksiPayload }));
 
+// Pemeriksaan "perlu persetujuan akses" membaca basis data; berkas ini tanpa
+// basis data, dan perilakunya diuji di perlu-persetujuan-akses.integration.test.ts.
+vi.mock('../../services/access/perlu-persetujuan.js', () => ({
+    rekamanPerluPersetujuan: vi.fn(async () => null),
+    badanPerluPersetujuan: vi.fn(),
+}));
+
 vi.mock('../../services/blob-storage.service', () => ({
     blobStorageService: {
         uploadFile: mocks.blobUpload,

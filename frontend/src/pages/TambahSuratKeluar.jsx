@@ -1,4 +1,4 @@
-import { buildSuratFormPayload } from '@/lib/surat-form-payload'
+import { CATATAN_LAMPIRAN_OPSIONAL, PETUNJUK_LAMPIRAN_MENYUSUL_KELUAR, buildSuratFormPayload, linkDokumenError } from '@/lib/surat-form-payload'
 import { buildSuratArchiveSelection, readSuratArchiveSelection, selectedSuratArchiveRules, validateSuratArchiveSelection } from '@/lib/surat-archive-selection'
 import { archiveUploadError } from '@/lib/archive-upload';
 import { createElement, useCallback, useState, useRef, useEffect } from 'react';
@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { suratKeluarService } from '@/services/surat-keluar.service';
 import { suratMasukService } from '@/services/surat-masuk.service';
+import { rekamanPerluPersetujuan } from '@/lib/akses-rekaman';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { KlasifikasiPicker } from '@/components/KlasifikasiPicker';
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
@@ -286,6 +287,12 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
                 }
             }
         } catch (err) {
+            // Surat berkelas terkendali tanpa persetujuan akses: halaman detail
+            // menjelaskan keadaannya dan menyediakan tombol Minta Akses.
+            if (rekamanPerluPersetujuan(err, 'surat_keluar', id)) {
+                navigate(`/surat/keluar/${id}`, { replace: true });
+                return;
+            }
             console.error('Error fetching surat data:', err);
             setError('Gagal memuat data surat');
         } finally {
@@ -372,10 +379,9 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
         if (!formData.tanggalSurat) return { message: 'Tanggal Surat wajib diisi' };
         if (!formData.perihal) return { message: 'Perihal wajib diisi' };
         if (!formData.kepada?.trim()) return { field: 'kepada', message: 'Kepada wajib diisi' };
-        // For edit mode, allow existing file or link
-        if (filesEnabled && !formData.linkDokumen && !selectedFile && !existingFile) {
-            return { field: 'linkDokumen', message: 'Link dokumen atau upload berkas wajib diisi (salah satu)' };
-        }
+        // Lampiran opsional; link yang diketik tetap harus berupa alamat lengkap.
+        const galatLink = filesEnabled ? linkDokumenError(formData.linkDokumen) : null;
+        if (galatLink) return { field: 'linkDokumen', message: galatLink };
         return null;
     };
 
@@ -835,7 +841,7 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
                         <SectionHeader
                             icon={Upload}
                             title="Lampiran Dokumen"
-                            description="Unggah berkas atau masukkan link dokumen"
+                            description="Unggah berkas atau masukkan link dokumen (opsional)"
                             step={5}
                         />
 
@@ -883,8 +889,6 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
                                     tabIndex={selectedFile || saveLocked ? undefined : 0}
                                     aria-label={selectedFile ? undefined : 'Pilih berkas untuk diunggah'}
                                     aria-disabled={saveLocked}
-                                    aria-invalid={Boolean(fieldErrors.linkDokumen)}
-                                    aria-describedby={fieldErrors.linkDokumen ? 'link-dokumen-keluar-error' : undefined}
                                     onKeyDown={selectedFile ? undefined : (e) => {
                                         if (e.key === 'Enter' || e.key === ' ') {
                                             e.preventDefault();
@@ -983,8 +987,8 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
                             <div className="flex items-start gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-100">
                                 <Info className="h-4 w-4 text-emerald-600 flex-shrink-0 mt-0.5" />
                                 <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                                    <strong>Catatan:</strong> Salah satu dari link dokumen atau upload berkas wajib diisi.
-                                    Anda dapat mengisi keduanya jika diperlukan.
+                                    <strong>Catatan:</strong> {CATATAN_LAMPIRAN_OPSIONAL}
+                                    {!formData.linkDokumen && !selectedFile && !existingFile && ` ${PETUNJUK_LAMPIRAN_MENYUSUL_KELUAR}`}
                                 </p>
                             </div>
                         </div>

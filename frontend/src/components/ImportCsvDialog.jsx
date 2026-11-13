@@ -7,6 +7,11 @@ import { IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import'
 import { outcomeUnknown, runResumableImport } from '@/lib/resumable-import'
 
 const labels = { 'surat-masuk': 'Surat Masuk', 'surat-keluar': 'Surat Keluar', arsip: 'Arsip' }
+// Arsip tidak dapat dihapus dari aplikasi (DELETE /api/arsip/:id dinonaktifkan)
+// dan impor tidak punya jalur pembatalan; surat hasil impor masih dapat dihapus.
+const PESAN_IMPOR_ARSIP_PERMANEN =
+    'Arsip yang diimpor tidak dapat dihapus dari aplikasi, dan impor tidak dapat dibatalkan. Periksa hasil pratinjau sebelum mengimpor.'
+const PERNYATAAN_IMPOR_ARSIP = 'Saya sudah memeriksa pratinjau dan memahami bahwa impor ini permanen.'
 const statuses = { valid: 'Valid', imported: 'Diimpor', duplicate: 'Duplikat', invalid: 'Perlu koreksi' }
 
 /** Join the parts of a resumable CSV import into one result. */
@@ -29,6 +34,9 @@ function interruptedCsvNotice({ interruptedAt, error }, saved) {
 
 function CsvImportForm({ type, unitKerjaId, onImportComplete, onBusyChange }) {
     const inputId = useId()
+    const pernyataanId = useId()
+    const perluPernyataan = type === 'arsip'
+    const [paham, setPaham] = useState(false)
     const [file, setFile] = useState(null)
     const [result, setResult] = useState(null)
     const [busy, setBusy] = useState(false)
@@ -44,10 +52,11 @@ function CsvImportForm({ type, unitKerjaId, onImportComplete, onBusyChange }) {
         setFile(event.target.files?.[0] || null)
         setResult(null)
         setError('')
+        setPaham(false)
     }
     const canImport = result?.dryRun === true && result.success && result.valid > 0
     const run = async dryRun => {
-        if (!file || !unitKerjaId || unitKerjaId === 'all' || (!dryRun && !canImport)) return
+        if (!file || !unitKerjaId || unitKerjaId === 'all' || (!dryRun && (!canImport || (perluPernyataan && !paham)))) return
         if (!file.name.toLowerCase().endsWith('.csv') || file.size > 10 * 1024 * 1024) {
             setError('Pilih berkas CSV dengan ukuran maksimal 10 MiB.')
             return
@@ -134,9 +143,17 @@ function CsvImportForm({ type, unitKerjaId, onImportComplete, onBusyChange }) {
         <p className="text-sm text-muted-foreground">
             Pratinjau memeriksa tanggal dan duplikasi tanpa menyimpan. Impor memeriksa ulang hak akses, aturan, dan data terbaru; perubahan bersamaan dapat mengubah hasil. Baris yang berhasil tetap tersimpan bila baris lain gagal.
         </p>
+        {perluPernyataan && <div role="note" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+            <p><strong>Impor arsip bersifat permanen.</strong> {PESAN_IMPOR_ARSIP_PERMANEN}</p>
+            <label htmlFor={pernyataanId} className="mt-2 flex items-start gap-2 font-medium">
+                <input id={pernyataanId} type="checkbox" className="mt-0.5 h-4 w-4 shrink-0" checked={paham} disabled={busy}
+                    aria-required="true" onChange={event => setPaham(event.target.checked)} />
+                <span>{PERNYATAAN_IMPOR_ARSIP}</span>
+            </label>
+        </div>}
         <div className="flex flex-wrap justify-end gap-2">
             <Button variant="outline" onClick={() => run(true)} disabled={!file || busy}>Pratinjau</Button>
-            <Button onClick={() => run(false)} disabled={!canImport || busy}>Impor data valid</Button>
+            <Button onClick={() => run(false)} disabled={!canImport || busy || (perluPernyataan && !paham)}>Impor data valid</Button>
         </div>
         {busy && <p role="status" className="text-sm">
             {progress?.total ? `Memproses CSV… ${progress.processed} dari ${progress.total} rekod diproses.` : 'Memproses CSV…'}

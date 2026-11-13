@@ -11,6 +11,10 @@ const perlu = vi.hoisted(() => ({ total: 0, opsi: [] }))
 vi.mock('@/hooks/use-perlu-dilengkapi-count', () => ({
     usePerluDilengkapiCount: (opsi) => { perlu.opsi.push(opsi); return { total: perlu.total } },
 }))
+const persetujuan = vi.hoisted(() => ({ total: 0, opsi: [] }))
+vi.mock('@/hooks/use-persetujuan-menunggu-count', () => ({
+    usePersetujuanMenungguCount: (opsi) => { persetujuan.opsi.push(opsi); return { total: persetujuan.total } },
+}))
 function RouteControl() {
     const navigate = useNavigate()
     return <button onClick={() => navigate('/users')}>Pergi ke pengguna</button>
@@ -22,6 +26,8 @@ beforeEach(() => {
     state.role = 'super_admin'
     perlu.total = 0
     perlu.opsi.length = 0
+    persetujuan.total = 0
+    persetujuan.opsi.length = 0
     vi.stubGlobal('innerWidth', 1366)
     vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
 })
@@ -124,5 +130,26 @@ describe('sidebar task groups', () => {
         show({ route: '/surat/lacak' })
         expect(perlu.opsi.at(-1)).toEqual({ enabled: false })
         expect(screen.getByRole('link', { name: 'Lacak Surat' })).toHaveAttribute('href', '/surat/lacak')
+    })
+    it('menampilkan jumlah surat yang menunggu keputusan pada Surat Keluar; menu tetap membuka daftar lengkap', () => {
+        state.role = 'admin_unit'
+        persetujuan.total = 7
+        const pertama = show({ route: '/surat/keluar' })
+        const link = screen.getByRole('link', { name: 'Surat Keluar (7 menunggu keputusan Anda)' })
+        expect(link).toHaveAttribute('href', '/surat/keluar')
+        expect(link).toHaveAttribute('aria-current', 'page')
+        expect(within(link).getByText('7')).toHaveAttribute('aria-hidden', 'true')
+        expect(persetujuan.opsi.at(-1)).toEqual({ enabled: true })
+        pertama.unmount()
+
+        persetujuan.total = 0
+        const kedua = show({ route: '/surat/keluar' })
+        expect(screen.getByRole('link', { name: 'Surat Keluar', exact: true })).toHaveAttribute('href', '/surat/keluar')
+        kedua.unmount()
+
+        state.role = 'staff'
+        show({ route: '/surat/keluar' })
+        expect(persetujuan.opsi.at(-1)).toEqual({ enabled: false })
+        expect(screen.getByRole('link', { name: 'Surat Keluar', exact: true })).toHaveAttribute('href', '/surat/keluar')
     })
 })

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 import RecordAccessGrants from './RecordAccessGrants'
 
 const mocks = vi.hoisted(() => ({ mine: vi.fn(), review: vi.fn(), role: 'super_admin', toast: vi.fn() }))
@@ -24,7 +25,7 @@ beforeEach(() => {
 
 describe('record access pagination', () => {
     it('reaches record 101 and retains an independent page for each review category', async () => {
-        render(<RecordAccessGrants />)
+        render(<MemoryRouter><RecordAccessGrants /></MemoryRouter>)
         await screen.findByText('mine-1')
         const mineNav = screen.getByRole('navigation', { name: 'Halaman permohonan saya' })
         for (let page = 2; page <= 6; page += 1) {
@@ -53,7 +54,7 @@ describe('record access pagination', () => {
     it('never requests reviewer data for staff and distinguishes failure from an empty list', async () => {
         mocks.role = 'staff'
         mocks.mine.mockRejectedValueOnce(new Error('Daftar belum dapat diambil'))
-        render(<RecordAccessGrants />)
+        render(<MemoryRouter><RecordAccessGrants /></MemoryRouter>)
         expect(await screen.findByRole('alert')).toHaveTextContent('Daftar belum dapat diambil')
         expect(screen.queryByText(/Belum ada permohonan/)).not.toBeInTheDocument()
         expect(mocks.review).not.toHaveBeenCalled()

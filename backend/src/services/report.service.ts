@@ -14,6 +14,7 @@ import {
 import { eq, and, desc, sql, gte, lte, or, isNull, inArray } from 'drizzle-orm';
 import { klasifikasiInSql } from './access/visibility-spec';
 import { archiveLendingService } from './archive-lending.service';
+import { periodeLaporanArsip, periodeLaporanSurat } from './laporan-periode';
 import {
     archiveRuleAssignmentService,
     CURRENT_APPRAISAL_CASE_JOIN,
@@ -133,14 +134,16 @@ class ReportService {
             this.incomingClassificationCondition(securityClassifications),
         ];
 
-        if (tanggalDari) {
-            conditions.push(gte(suratMasuk.tanggalSurat, tanggalDari));
+        // Aturan periode dipakai bersama oleh ekspor Laporan (laporan-periode.ts).
+        const periode = periodeLaporanSurat({ year, tanggalDari, tanggalSampai });
+        if (periode.tanggalDari) {
+            conditions.push(gte(suratMasuk.tanggalSurat, periode.tanggalDari));
         }
-        if (tanggalSampai) {
-            conditions.push(lte(suratMasuk.tanggalSurat, tanggalSampai));
+        if (periode.tanggalSampai) {
+            conditions.push(lte(suratMasuk.tanggalSurat, periode.tanggalSampai));
         }
-        if (year && !tanggalDari && !tanggalSampai) {
-            conditions.push(eq(suratMasuk.tahun, year));
+        if (periode.tahun) {
+            conditions.push(eq(suratMasuk.tahun, periode.tahun));
         }
 
         const countResult = await db
@@ -240,14 +243,16 @@ class ReportService {
             this.outgoingClassificationCondition(securityClassifications),
         ];
 
-        if (tanggalDari) {
-            conditions.push(gte(suratKeluar.tanggalSurat, tanggalDari));
+        // Aturan periode dipakai bersama oleh ekspor Laporan (laporan-periode.ts).
+        const periode = periodeLaporanSurat({ year, tanggalDari, tanggalSampai });
+        if (periode.tanggalDari) {
+            conditions.push(gte(suratKeluar.tanggalSurat, periode.tanggalDari));
         }
-        if (tanggalSampai) {
-            conditions.push(lte(suratKeluar.tanggalSurat, tanggalSampai));
+        if (periode.tanggalSampai) {
+            conditions.push(lte(suratKeluar.tanggalSurat, periode.tanggalSampai));
         }
-        if (year && !tanggalDari && !tanggalSampai) {
-            conditions.push(eq(suratKeluar.tahun, year));
+        if (periode.tahun) {
+            conditions.push(eq(suratKeluar.tahun, periode.tahun));
         }
 
         const countResult = await db
@@ -363,8 +368,9 @@ class ReportService {
             conditions.push(eq(arsip.mediaType, mediaType));
         }
 
-        if (year) {
-            conditions.push(eq(arsip.tahun, year));
+        const periode = periodeLaporanArsip({ year });
+        if (periode.tahun) {
+            conditions.push(eq(arsip.tahun, periode.tahun));
         }
 
         const rows = await db

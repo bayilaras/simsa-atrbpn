@@ -7,6 +7,7 @@ import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import storageLocationService from '@/services/storage-location.service'
+import { rincianArsipLokasi, tautanArsipLokasi } from '@/components/arsip/lokasi-simpan'
 
 const levelLabels = { gedung: 'Gedung', ruang: 'Ruang', rak: 'Rak', box: 'Boks' }
 const unavailable = 'Lokasi tidak tersedia atau Anda tidak memiliki akses.'
@@ -71,9 +72,24 @@ export default function StorageLocationDetail() {
                             ['Kode lokasi', location.code], ['Jenis lokasi', levelLabels[location.level] || location.level],
                             ['ID lokasi', location.id], ['Unit kerja', location.unitKerjaId],
                             ['Keterangan', location.description || '—'], ['Kapasitas', location.capacity ?? 'Tidak ditentukan'],
-                            ['Jumlah arsip', location.currentCount ?? 0],
+                            ['Jumlah arsip (termasuk sub-lokasi)', [location.arsipCount ?? location.currentCount ?? 0, rincianArsipLokasi(location)].filter(bagian => bagian !== '').join(': ')],
                         ].map(([label, value]) => <div key={label}><dt className="text-sm text-muted-foreground">{label}</dt><dd className="mt-1 break-words font-medium">{value}</dd></div>)}
                     </dl>
+                    {/* Daftar arsip tampil per jenis: satu tautan per jenis bila keduanya ada. */}
+                    {location.arsipMasukCount > 0 && location.arsipKeluarCount > 0 ? (
+                        <div className="mt-5 flex flex-wrap gap-2">
+                            <Button asChild variant="outline">
+                                <Link to={tautanArsipLokasi(location, unitKerjaId, 'masuk')}>Lihat arsip surat masuk ({location.arsipMasukCount})</Link>
+                            </Button>
+                            <Button asChild variant="outline">
+                                <Link to={tautanArsipLokasi(location, unitKerjaId, 'keluar')}>Lihat arsip surat keluar ({location.arsipKeluarCount})</Link>
+                            </Button>
+                        </div>
+                    ) : (
+                        <Button asChild variant="outline" className="mt-5">
+                            <Link to={tautanArsipLokasi(location, unitKerjaId)}>Lihat arsip di lokasi ini</Link>
+                        </Button>
+                    )}
                 </CardContent></Card>
             )}
         </section>

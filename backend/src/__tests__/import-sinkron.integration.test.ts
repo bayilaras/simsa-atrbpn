@@ -165,6 +165,21 @@ describe('sinkron surat keluar', () => {
         expect(await keluarRow('40/UND-600.BP.01.01/VI/2026')).toMatchObject({
             tanggal_surat: '2026-06-11', naskah_dinas: 'Undangan', sifat_surat: 'biasa', link_dokumen: link(1) });
     });
+
+    it('stores a day-first date as written and leaves the letter alone when the date cannot be read', async () => {
+        const rows = [keluarHeader,
+            keluar(1, '40/UND-600.BP.01.01/VI/2026', '06/13/2026', 'Perihal dari baris yang ditolak'),
+            keluar(2, '41/UND/VI/2026', '05.06.26', 'Perihal tetap'),
+            keluar(8, '48/UND/VI/2026', '03/06/2026 23:30', 'Surat baru')];
+        const result = await importer.importRows('surat-keluar', rows, 'dir_bppt', audit, {}, undefined, sinkron);
+        expect(result.rows?.map(row => row.status)).toEqual(['invalid', 'updated', 'imported']);
+        expect(result.rows?.[0].reason).toContain('Tanggal "06/13/2026" tampaknya ditulis dengan bulan lebih dulu');
+        expect(result.rows?.[1].changes).toEqual([{ field: 'tanggalSurat', label: 'Tanggal surat', before: '2026-06-11', after: '2026-06-05' }]);
+        expect(await keluarRow('40/UND-600.BP.01.01/VI/2026')).toMatchObject({ tanggal_surat: '2026-06-10', perihal: 'Undangan rapat koordinasi' });
+        // 5 June and 3 June, not 6 May and 6 March, and not moved a day by the time.
+        expect((await keluarRow('41/UND/VI/2026')).tanggal_surat).toBe('2026-06-05');
+        expect((await keluarRow('48/UND/VI/2026')).tanggal_surat).toBe('2026-06-03');
+    });
 });
 
 describe('sinkron surat masuk', () => {

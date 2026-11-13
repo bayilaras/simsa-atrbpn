@@ -9,13 +9,13 @@ Setelah berhasil login, halaman pertama yang kamu lihat adalah **Dashboard**. In
 :::tip Tampilan Dashboard
 Dashboard SIMSA terdiri dari beberapa bagian utama (dari atas ke bawah):
 
-1. **🎨 Hero Section** — Area gradien biru di bagian atas, menampilkan salam, tanggal, dan unit kerja. Super Admin bisa memilih unit kerja melalui dropdown.
-2. **📊 Kartu Statistik** — 6 kartu berisi angka ringkasan: Surat Masuk, Surat Keluar, Total Arsip, Arsip Masuk, Arsip Keluar, dan Segera Musnah.
+1. **👋 Bagian Salam** — Bagian paling atas, menampilkan salam, tanggal, dan unit kerja. Super Admin bisa memilih unit kerja melalui dropdown.
+2. **📊 Kartu Statistik** — 6 kartu berisi angka ringkasan: Surat Masuk, Surat Keluar, Total Arsip, Arsip Masuk, Arsip Keluar, dan Perlu Telaah Retensi.
 3. **📈 Grafik Trend** — Grafik garis membandingkan volume surat masuk & keluar selama 12 bulan terakhir.
 4. **📊 Perbandingan Unit Kerja** — Grafik batang horizontal menampilkan volume surat per unit kerja.
-5. **⚡ Aksi Cepat** — 4 tombol shortcut: Surat Masuk, Surat Keluar, Laporan, Unggah Massal.
-6. **⚠️ Masa Retensi** — Daftar arsip yang mendekati batas musnah (🔴 kritis, 🟡 peringatan, 🔵 informasi).
-7. **📋 Aktivitas Terbaru** — 8 surat terakhir yang diinput ke sistem.
+5. **⚡ Tindakan Utama** — Deretan tombol di bawah salam: Catat Surat Masuk, Catat Surat Keluar, Buat Surat Inisiatif, Cari Arsip, Laporan, dan Unggah Massal.
+6. **⚠️ Masa Retensi** — Daftar arsip yang mendekati batas retensi dalam 90 hari (🔴 kritis, 🟡 peringatan, 🔵 informasi).
+7. **📋 Aktivitas Terbaru** — Surat masuk dan keluar terbaru yang dicatat ke sistem.
 8. **🍩 Status Siklus Arsip** *(baru v1.1)* — Donut chart distribusi arsip: Aktif, Inaktif, Kadaluarsa, Belum Ditentukan.
 9. **💿 Jenis Media Arsip** *(baru v1.1)* — Progress bar distribusi per jenis media (kertas, foto, video, audio, elektronik).
 10. **📖 Peminjaman Arsip** *(baru v1.1)* — Jumlah arsip dipinjam dan yang terlambat dikembalikan.
@@ -28,10 +28,10 @@ Dashboard SIMSA terdiri dari beberapa bagian utama (dari atas ke bawah):
 
 ## Penjelasan Komponen
 
-### 1. Hero Section
+### 1. Bagian Salam
 
-Bagian paling atas dengan latar **gradien biru**:
-- Menampilkan **salam** dengan nama kamu
+Bagian paling atas halaman:
+- Menampilkan **salam** "Halo, [nama kamu]"
 - Menampilkan **tanggal hari ini**
 - Menampilkan **unit kerja** kamu
 - Untuk **Super Admin**: ada dropdown untuk memilih unit kerja yang datanya ingin dilihat
@@ -47,7 +47,7 @@ Baris kartu yang menampilkan angka-angka ringkasan:
 | **Total Arsip** | Jumlah total arsip |
 | **Arsip Masuk** | Jumlah arsip dari surat masuk |
 | **Arsip Keluar** | Jumlah arsip dari surat keluar |
-| **Segera Musnah** | Arsip yang ≤ 15 hari menuju batas musnah |
+| **Perlu Telaah Retensi** | Arsip yang ≤ 15 hari menuju batas retensi dan perlu ditelaah. Angka ini bukan keputusan pemusnahan |
 
 ### 3. Analisis Trend Surat
 
@@ -57,32 +57,38 @@ Baris kartu yang menampilkan angka-angka ringkasan:
 
 **Grafik batang horizontal** yang menampilkan volume surat per unit kerja bulan ini.
 
-### 5. Aksi Cepat
+### 5. Tindakan Utama
 
-4 tombol shortcut untuk akses cepat:
+Deretan tombol di bawah salam untuk akses cepat:
 
 | Tombol | Fungsi |
 |--------|--------|
-| 📨 Surat Masuk | Langsung ke form tambah surat masuk |
-| 📤 Surat Keluar | Langsung ke form tambah surat keluar |
+| 📨 Catat Surat Masuk | Langsung ke form tambah surat masuk (admin) |
+| 📤 Catat Surat Keluar | Langsung ke form tambah surat keluar (admin) |
+| ➕ Buat Surat Inisiatif | Langsung ke form surat keluar tanpa surat masuk induk (admin) |
+| 🗂️ Cari Arsip | Langsung ke daftar arsip |
 | 📊 Laporan | Langsung ke halaman laporan |
 | 📁 Unggah Massal | Langsung ke halaman Unggah Massal & OCR. Hanya muncul bila modul Unggah Massal & OCR diaktifkan operator dan unggah file tersedia |
 
+Pengguna yang hanya dapat membaca melihat **Lihat Surat Masuk** dan **Lihat Surat Keluar** sebagai pengganti tombol catat.
+
+Di bawah deretan tombol ini ada bagian **Perlu ditindaklanjuti**. Bagi admin, bagian ini memuat baris *N surat keluar menunggu keputusan Anda* dengan tombol **Tinjau surat yang menunggu** bila ada surat keluar yang diajukan kepada kamu sebagai penyetuju, serta pengingat peminjaman yang terlambat.
+
 ### 6. Masa Retensi
 
-Daftar arsip yang mendekati batas waktu musnah (dalam 90 hari):
+Daftar arsip yang mendekati batas retensi (dalam 90 hari). Daftar ini adalah pengingat untuk menelaah, bukan keputusan pemusnahan:
 
 | Warna | Urgency | Keterangan |
 |-------|---------|------------|
-| 🔴 Merah | Kritis | ≤ 15 hari sebelum musnah |
-| 🟡 Kuning | Peringatan | 16-30 hari sebelum musnah |
-| 🔵 Biru | Informasi | 31-90 hari sebelum musnah |
+| 🔴 Merah | Kritis | ≤ 15 hari sebelum batas retensi |
+| 🟡 Kuning | Peringatan | 16-30 hari sebelum batas retensi |
+| 🔵 Biru | Informasi | 31-90 hari sebelum batas retensi |
 
 Klik arsip untuk langsung ke halaman detail arsip tersebut.
 
 ### 7. Aktivitas Terbaru
 
-Menampilkan **8 surat terakhir** (masuk dan keluar) yang diinput ke sistem. Klik untuk lihat detailnya.
+Menampilkan surat masuk dan surat keluar terbaru yang dicatat ke sistem. Klik untuk lihat detailnya.
 
 ---
 
@@ -116,7 +122,7 @@ Status dihitung otomatis dari **tanggal arsip** dan **jadwal retensi aktif/inakt
 ### 10. Peminjaman Arsip
 
 Menampilkan **2 angka penting**:
-- **Sedang Dipinjam** — jumlah arsip yang sedang dalam status borrowed
+- **Sedang Dipinjam** — jumlah arsip yang sedang dipinjam
 - **Terlambat Dikembalikan** — jumlah arsip yang melewati batas tanggal pengembalian (ditampilkan merah jika ada)
 
 ### 11. Pipeline Penyusutan Arsip
@@ -133,7 +139,7 @@ Widget ini hanya tampil bila modul Penyusutan diaktifkan operator. Selama modul 
 
 ### 12. Kapasitas Penyimpanan Fisik
 
-**Progress bar** menampilkan utilisasi ruang arsip per gedung:
+**Progress bar** menampilkan utilisasi ruang arsip per gedung. Isi boks dihitung dari arsip yang benar-benar ditautkan ke lokasi simpannya:
 
 | Tingkat Pengisian | Warna | Keterangan |
 |-------------------|-------|------------|
@@ -172,7 +178,7 @@ Tidak perlu refresh browser secara manual!
 
 ## Tab Pengawasan (Super Admin)
 
-Jika kamu **Super Admin**, ada tab tambahan **"Pengawasan"** yang menampilkan dashboard monitoring khusus untuk mengawasi aktivitas seluruh unit kerja.
+Dashboard memiliki tab **Ringkasan**. Jika kamu **Super Admin**, ada tab tambahan **"Pengawasan"** yang menampilkan ringkasan khusus untuk mengawasi aktivitas seluruh unit kerja.
 
 ---
 

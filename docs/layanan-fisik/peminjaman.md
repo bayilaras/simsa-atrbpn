@@ -56,6 +56,8 @@ Klik **"Simpan Peminjaman"**. Peminjaman langsung tercatat dengan status **Dipin
 
 Peminjaman yang sudah dikembalikan tampil di tab **Riwayat**.
 
+Selama arsip atau boksnya masih dipinjam, lokasi simpan arsip tidak dapat diubah, dan arsip lain tidak dapat ditautkan ke boks yang sedang dipinjam. Catat pengembaliannya terlebih dahulu.
+
 ---
 
 ## Status Peminjaman

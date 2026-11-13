@@ -37,8 +37,10 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
     },
     'approval.routes.ts': {
         'GET /pending': proyeksi('approvalService.getPending'),
-        'GET /approvers/:suratId': checkRead('approvalService.listEligibleApprovers'),
+        'GET /approvers/:suratId': checkRead('approvalService.getSubmissionContext'),
         'POST /submit': check('approvalService.submit'),
+        'POST /submit-bulk': check('approvalService.submitMany'),
+        'POST /approve-bulk': check('approvalService.approveMany'),
         'POST /approve': check('approvalService.approve'),
         'POST /reject': check('approvalService.reject'),
         'GET /history/:suratId': checkRead('approvalService.getHistory'),
@@ -242,6 +244,10 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'POST /storage-latency': 'bukan-rekaman',
         'GET /status': 'bukan-rekaman',
         'GET /metrics': 'bukan-rekaman',
+        // Super Admin saja: nama berkas dan status pindai, tanpa isi atau rujukan surat.
+        'GET /scan-failures': 'bukan-rekaman',
+        'POST /scan-failures/requeue': 'bukan-rekaman',
+        'POST /scan-failures/:attachmentId/requeue': 'bukan-rekaman',
     },
     'penyusutan.routes.ts': {
         'GET /print/daftar-arsip-aktif': proyeksi('printTemplateService.generateDaftarArsipAktif'),

@@ -8,7 +8,7 @@ import {
     userPreferences,
     users,
 } from '../db/schema/index.js';
-import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors.js';
+import { AppError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors.js';
 import {
     scopedRecordByIdWhere,
     type RecordUnitScope,
@@ -19,6 +19,8 @@ import { emailService } from './email.service.js';
 import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-lock.js';
 import { denganRetryDeadlock } from '../utils/deadlock-retry.js';
 import { afterSuratKeluarChanged } from './rangkaian/tindak-lanjut.hook.js';
+import auditLogService from './audit-log.service.js';
+import { recordAccessService, type ReadExecutor } from './record-access.service.js';
 
 const log = createLogger('ApprovalService');
 
@@ -50,6 +52,22 @@ export interface ApprovalActor {
     id: string;
     role: string;
     unitKerjaId: string | null;
+    /** Hanya untuk jejak audit; tidak pernah dipakai untuk keputusan akses. */
+    email?: string | null;
+    ipAddress?: string;
+}
+
+export const BATAS_PERSETUJUAN_MASSAL = 100;
+
+export interface HasilPersetujuanMassal {
+    suratId: string;
+    berhasil: boolean;
+    pesan?: string;
+}
+
+interface PengajuanAtasNama {
+    pembuatId: string;
+    namaPembuat: string | null;
 }
 
 function effectiveActorUnit(actor: ApprovalActor): string | null {
@@ -140,8 +158,85 @@ function recordScopeForFreshActor(actor: ApprovalActor): RecordUnitScope {
     return actor.role === 'super_admin' ? null : (effectiveActorUnit(actor) || '');
 }
 
+/**
+ * Pembuat surat mengajukan suratnya sendiri (hasil null). Orang lain hanya
+ * boleh mengajukan atas nama pembuat bila pembuat sudah nonaktif atau tidak
+ * lagi bertugas di unit kerja surat, dan pengaju sendiri boleh mengubah surat
+ * itu (syarat yang sama dengan rute ubah surat keluar). Mandat pengaju (administrator unit surat atau super admin)
+ * diperiksa pemanggil lewat assertSubmitterMandate.
+ */
+async function resolvePengajuanAtasNama(
+    executor: Pick<typeof db, 'select'>,
+    surat: { id: string; unitKerjaId: string; createdBy: string | null },
+    actor: ApprovalActor,
+    pesanDitolak: string,
+): Promise<PengajuanAtasNama | null> {
+    if (surat.createdBy === actor.id) return null;
+    if (!surat.createdBy) throw new ForbiddenError(pesanDitolak);
+
+    const [pembuat] = await executor
+        .select({
+            id: users.id,
+            name: users.name,
+            role: users.role,
+            unitKerjaId: users.unitKerjaId,
+            isActive: users.isActive,
+        })
+        .from(users)
+        .where(eq(users.id, surat.createdBy))
+        .limit(1);
+    if (!pembuat) throw new ForbiddenError(pesanDitolak);
+
+    const pembuatMasihBertugas = pembuat.isActive === true
+        && (pembuat.role === 'super_admin' || effectiveActorUnit(pembuat) === surat.unitKerjaId);
+    if (pembuatMasihBertugas) throw new ForbiddenError(pesanDitolak);
+
+    // Plafon kelas keamanan dan grant tetap berlaku bagi pengaju pengganti:
+    // hak baca saja tidak cukup untuk mengubah status surat.
+    const akses = await recordAccessService.check(actor, 'surat_keluar', surat.id, executor);
+    if (!akses.allowed || !akses.mutable) throw new ForbiddenError(pesanDitolak);
+
+    return { pembuatId: pembuat.id, namaPembuat: pembuat.name ?? null };
+}
+
+export const PESAN_PERLU_AKSES_UNTUK_MEMUTUS = 'Anda belum dapat membaca surat ini. Minta persetujuan akses lebih dulu; surat dapat disetujui atau ditolak setelah dapat dibaca.';
+
+/**
+ * Penyetuju memutus surat yang dapat ia baca dengan aturan yang sama dengan
+ * halaman detail (plafon kelas dan grant untuk kelas terkendali). Tanpa ini,
+ * persetujuan massal dapat memutus surat yang isinya tidak boleh ia buka.
+ */
+async function assertPenyetujuDapatMembaca(
+    executor: ReadExecutor,
+    actor: { id: string; role: string; unitKerjaId: string | null },
+    suratId: string,
+): Promise<void> {
+    const akses = await recordAccessService.checkRead(actor, 'surat_keluar', suratId, executor);
+    if (!akses.exists || !akses.allowed || akses.masked) {
+        throw new ForbiddenError(PESAN_PERLU_AKSES_UNTUK_MEMUTUS);
+    }
+}
+
+function pesanGagalMassal(error: unknown): string {
+    if (error instanceof AppError) return error.message;
+    log.error({ err: error }, 'Bulk approval item failed unexpectedly');
+    return 'Surat tidak dapat diproses. Coba lagi.';
+}
+
 export class ApprovalService {
     async listEligibleApprovers(
+        suratId: string,
+        actor: ApprovalActor,
+        unitScope: RecordUnitScope,
+    ) {
+        return (await this.getSubmissionContext(suratId, actor, unitScope)).approvers;
+    }
+
+    /**
+     * Penyetuju yang dapat dipilih, beserta nama pembuat bila pengajuan ini
+     * dilakukan atas nama pembuat yang sudah tidak bertugas.
+     */
+    async getSubmissionContext(
         suratId: string,
         actor: ApprovalActor,
         unitScope: RecordUnitScope,
@@ -164,9 +259,9 @@ export class ApprovalService {
 
         if (!surat) throw new NotFoundError('Surat keluar');
         assertSubmitterMandate(actor, surat.unitKerjaId);
-        if (surat.createdBy !== actor.id) {
-            throw new ForbiddenError('Hanya pembuat surat yang dapat memilih penyetuju.');
-        }
+        const atasNama = await resolvePengajuanAtasNama(
+            db, surat, actor, 'Hanya pembuat surat yang dapat memilih penyetuju.',
+        );
         if (!SUBMITTABLE_SURAT_STATES.includes(
             surat.approvalStatus as typeof SUBMITTABLE_SURAT_STATES[number],
         )) {
@@ -191,8 +286,37 @@ export class ApprovalService {
             ))
             .orderBy(users.name);
 
-        return candidates.filter(candidate => candidate.id !== actor.id
-            && (candidate.role !== 'admin_unit' || candidate.unitKerjaId === surat.unitKerjaId));
+        return {
+            approvers: candidates.filter(candidate => candidate.id !== actor.id
+                && (candidate.role !== 'admin_unit' || candidate.unitKerjaId === surat.unitKerjaId)),
+            atasNamaPembuat: atasNama ? (atasNama.namaPembuat || 'pembuat surat') : null,
+        };
+    }
+
+    /**
+     * Untuk tampilan detail: nama pembuat bila pengguna ini boleh mengajukan
+     * atas nama pembuat, selain itu null. Penolakan akses menghasilkan null.
+     */
+    async pengajuanAtasNamaUntuk(
+        surat: { id: string; unitKerjaId: string; createdBy: string | null; approvalStatus: string | null },
+        actor: ApprovalActor,
+    ): Promise<{ namaPembuat: string } | null> {
+        if (!surat.createdBy || surat.createdBy === actor.id) return null;
+        if (!SUBMITTABLE_SURAT_STATES.includes(
+            (surat.approvalStatus || 'draft') as typeof SUBMITTABLE_SURAT_STATES[number],
+        )) return null;
+        try {
+            assertSubmitterMandate(actor, surat.unitKerjaId);
+            const atasNama = await resolvePengajuanAtasNama(db, surat, actor, 'Tidak berwenang.');
+            return atasNama ? { namaPembuat: atasNama.namaPembuat || 'pembuat surat' } : null;
+        } catch (error) {
+            // Petunjuk tampilan saja; kegagalan di sini tidak boleh
+            // menggagalkan halaman detail. Rute pengajuan tetap memeriksa ulang.
+            if (!(error instanceof AppError)) {
+                log.warn({ err: error, suratId: surat.id }, 'On-behalf submission hint unavailable');
+            }
+            return null;
+        }
     }
 
     async getPending(actor: ApprovalActor) {
@@ -234,6 +358,7 @@ export class ApprovalService {
         nextApproverId: string,
         _unitScope: RecordUnitScope,
         notes?: string,
+        options: { tanpaEmail?: boolean } = {},
     ) {
         if (nextApproverId === actor.id) {
             throw new ValidationError('Pembuat surat tidak boleh menjadi penyetuju suratnya sendiri.');
@@ -261,9 +386,11 @@ export class ApprovalService {
             if (!surat) throw new NotFoundError('Surat keluar');
             assertSubmitterMandate(freshActor, surat.unitKerjaId);
 
-            if (surat.createdBy !== freshActor.id) {
-                throw new ForbiddenError('Hanya pembuat surat yang dapat mengajukan persetujuan.');
-            }
+            // Mandat pengguna terkunci bersama (lockAuthorizationMandatesShared),
+            // jadi status pembuat tidak berubah selama transaksi ini.
+            const atasNama = await resolvePengajuanAtasNama(
+                tx, surat, freshActor, 'Hanya pembuat surat yang dapat mengajukan persetujuan.',
+            );
             if (!SUBMITTABLE_SURAT_STATES.includes(surat.approvalStatus as typeof SUBMITTABLE_SURAT_STATES[number])) {
                 throw new ConflictError('Surat tidak berada pada status yang dapat diajukan.');
             }
@@ -334,7 +461,9 @@ export class ApprovalService {
                 requestId: request.id,
                 userId: freshActor.id,
                 action: 'SUBMIT',
-                notes: notes || 'Diserahkan ke penyetuju',
+                notes: atasNama
+                    ? `Diajukan atas nama pembuat surat (${atasNama.namaPembuat || 'tanpa nama'}).${notes ? ` ${notes}` : ''}`
+                    : notes || 'Diserahkan ke penyetuju',
             });
 
             const [updatedSurat] = await tx
@@ -355,8 +484,25 @@ export class ApprovalService {
 
             if (!updatedSurat) throw new ConflictError('Status surat telah berubah.');
 
+            await auditLogService.logActionOrThrow({
+                userId: freshActor.id,
+                userEmail: actor.email ?? undefined,
+                ipAddress: actor.ipAddress,
+                action: 'status_change',
+                entityType: 'surat_keluar',
+                entityId: suratId,
+                changes: {
+                    before: { approvalStatus: surat.approvalStatus },
+                    after: { approvalStatus: 'pending', currentApproverId: nextApproverId },
+                    tindakan: 'ajukan_persetujuan',
+                    ...(atasNama ? { atasNamaPembuat: atasNama.pembuatId } : {}),
+                },
+            }, tx);
+
             return { request, notifyUserId: nextApproverId };
         });
+
+        if (options.tanpaEmail) return outcome.request;
 
         // Await outside the database transaction so serverless runtimes cannot
         // terminate a fire-and-forget SMTP promise. Delivery remains best
@@ -407,6 +553,7 @@ export class ApprovalService {
             if (surat.approvalStatus !== 'pending' || surat.currentApproverId !== freshActor.id) {
                 throw new ConflictError('Surat tidak sedang menunggu persetujuan pengguna ini.');
             }
+            await assertPenyetujuDapatMembaca(tx, freshActor, surat.id);
 
             const [request] = await tx
                 .select()
@@ -421,7 +568,9 @@ export class ApprovalService {
                 .for('update');
 
             if (!request) throw new ConflictError('Alur persetujuan aktif tidak ditemukan.');
-            if (!request.requesterId || request.requesterId === freshActor.id) {
+            // Pengaju bisa berbeda dari pembuat (pengajuan atas nama); keduanya
+            // tidak boleh memutus surat itu.
+            if (!request.requesterId || request.requesterId === freshActor.id || surat.createdBy === freshActor.id) {
                 throw new ForbiddenError('Pembuat/pengaju surat tidak boleh menyetujui suratnya sendiri.');
             }
 
@@ -442,8 +591,8 @@ export class ApprovalService {
 
             if (nextApproverId) {
                 assertMandatedApprover(nextApprover, surat.unitKerjaId);
-                if (nextApproverId === request.requesterId) {
-                    throw new ValidationError('Penyetuju berikutnya harus berbeda dari pengaju dan penyetuju saat ini.');
+                if (nextApproverId === request.requesterId || nextApproverId === surat.createdBy) {
+                    throw new ValidationError('Penyetuju berikutnya harus berbeda dari pembuat, pengaju, dan penyetuju saat ini.');
                 }
             }
 
@@ -526,6 +675,22 @@ export class ApprovalService {
                 notes,
             });
 
+            await auditLogService.logActionOrThrow({
+                userId: freshActor.id,
+                userEmail: actor.email ?? undefined,
+                ipAddress: actor.ipAddress,
+                action: 'status_change',
+                entityType: 'surat_keluar',
+                entityId: suratId,
+                changes: {
+                    before: { approvalStatus: 'pending', currentApproverId: freshActor.id },
+                    after: nextApproverId
+                        ? { approvalStatus: 'pending', currentApproverId: nextApproverId }
+                        : { approvalStatus: 'approved', currentApproverId: null },
+                    tindakan: 'setujui',
+                },
+            }, tx);
+
             return { notifyUserId, requesterId: request.requesterId };
         }));
 
@@ -566,6 +731,7 @@ export class ApprovalService {
             if (surat.approvalStatus !== 'pending' || surat.currentApproverId !== freshActor.id) {
                 throw new ConflictError('Surat tidak sedang menunggu persetujuan pengguna ini.');
             }
+            await assertPenyetujuDapatMembaca(tx, freshActor, surat.id);
 
             const [request] = await tx
                 .select()
@@ -646,8 +812,65 @@ export class ApprovalService {
                 notes,
             });
 
+            await auditLogService.logActionOrThrow({
+                userId: freshActor.id,
+                userEmail: actor.email ?? undefined,
+                ipAddress: actor.ipAddress,
+                action: 'status_change',
+                entityType: 'surat_keluar',
+                entityId: suratId,
+                changes: {
+                    before: { approvalStatus: 'pending', currentApproverId: freshActor.id },
+                    after: { approvalStatus: 'rejected', currentApproverId: null },
+                    tindakan: 'tolak',
+                },
+            }, tx);
+
             return { success: true };
         }));
+    }
+
+    /**
+     * Pengajuan beberapa surat sekaligus. Tiap surat melewati submit() yang
+     * sama dalam transaksinya sendiri; kegagalan satu surat tidak membatalkan
+     * yang lain. Email per surat tidak dikirim.
+     */
+    async submitMany(
+        suratIds: string[],
+        actor: ApprovalActor,
+        nextApproverId: string,
+        unitScope: RecordUnitScope,
+        notes?: string,
+    ): Promise<HasilPersetujuanMassal[]> {
+        const hasil: HasilPersetujuanMassal[] = [];
+        for (const suratId of [...new Set(suratIds)].slice(0, BATAS_PERSETUJUAN_MASSAL)) {
+            try {
+                await this.submit(suratId, actor, nextApproverId, unitScope, notes, { tanpaEmail: true });
+                hasil.push({ suratId, berhasil: true });
+            } catch (error) {
+                hasil.push({ suratId, berhasil: false, pesan: pesanGagalMassal(error) });
+            }
+        }
+        return hasil;
+    }
+
+    /** Persetujuan final beberapa surat sekaligus lewat approve() yang sama. */
+    async approveMany(
+        suratIds: string[],
+        actor: ApprovalActor,
+        unitScope: RecordUnitScope,
+        notes?: string,
+    ): Promise<HasilPersetujuanMassal[]> {
+        const hasil: HasilPersetujuanMassal[] = [];
+        for (const suratId of [...new Set(suratIds)].slice(0, BATAS_PERSETUJUAN_MASSAL)) {
+            try {
+                await this.approve(suratId, actor, unitScope, notes);
+                hasil.push({ suratId, berhasil: true });
+            } catch (error) {
+                hasil.push({ suratId, berhasil: false, pesan: pesanGagalMassal(error) });
+            }
+        }
+        return hasil;
     }
 
     async getHistory(suratId: string, unitScope: RecordUnitScope) {

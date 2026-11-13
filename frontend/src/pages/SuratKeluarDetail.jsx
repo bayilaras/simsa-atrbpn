@@ -36,10 +36,13 @@ import { FilePreviewSection } from '@/components/surat-masuk/FilePreviewSection'
 import { format, formatDistanceToNow } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
 import { useAuth } from '@/context/AuthContext'
+import { PerluPersetujuanAkses } from '@/components/PerluPersetujuanAkses'
+import { rekamanPerluPersetujuan } from '@/lib/akses-rekaman'
 import { useAppConfig } from '@/context/app-config-context'
 import { AlurSuratPanel } from '@/components/surat/AlurSuratPanel'
 import { TindakLanjutMenu } from '@/components/surat/TindakLanjutMenu'
 import { TautkanDialog } from '@/components/surat/AlurSuratActions'
+import { KartuTunjukSilang } from '@/components/tunjuk-silang/KartuTunjukSilang'
 
 export default function SuratKeluarDetail() {
     const { id } = useParams()
@@ -52,6 +55,7 @@ export default function SuratKeluarDetail() {
     const aksesMelalui = surat?.aksesMelalui ?? 'owner'
     const isAdmin = Boolean(surat && aksesMelalui === 'owner' && canWrite(surat.unitKerjaId))
     const [loading, setLoading] = useState(true)
+    const [perluAkses, setPerluAkses] = useState(null)
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
     const [tautkanOpen, setTautkanOpen] = useState(false)
     const [approvalHistory, setApprovalHistory] = useState([])
@@ -79,8 +83,18 @@ export default function SuratKeluarDetail() {
         try {
             const data = await suratKeluarService.getById(id)
             setSurat(data)
+            setPerluAkses(null)
             termuatRef.current = true
         } catch (error) {
+            const perlu = rekamanPerluPersetujuan(error, 'surat_keluar', id)
+            if (perlu) {
+                setSurat(null)
+                setPerluAkses(perlu)
+                termuatRef.current = false
+                return
+            }
+            // Galat lain: jangan sisakan keadaan persetujuan milik surat sebelumnya.
+            setPerluAkses(null)
             console.error('Error fetching surat:', error)
             toast({
                 title: 'Error',
@@ -108,7 +122,7 @@ export default function SuratKeluarDetail() {
             const historyPromise = approvalService.getHistory(surat.id)
             const approverPromise = (
                 ['draft', 'rejected'].includes(surat.approvalStatus)
-                && surat.createdBy === user?.id
+                && (surat.createdBy === user?.id || Boolean(surat.pengajuanAtasNama))
             )
                 ? approvalService.getEligibleApprovers(surat.id)
                 : Promise.resolve([])
@@ -123,7 +137,7 @@ export default function SuratKeluarDetail() {
 
         loadApproval()
         return () => { cancelled = true }
-    }, [isAdmin, surat?.id, surat?.approvalStatus, surat?.createdBy, user?.id])
+    }, [isAdmin, surat?.id, surat?.approvalStatus, surat?.createdBy, surat?.pengajuanAtasNama, user?.id])
 
     const formatDate = (dateString) => {
         if (!dateString) return '-'
@@ -238,6 +252,10 @@ export default function SuratKeluarDetail() {
         )
     }
 
+    if (perluAkses) {
+        return <PerluPersetujuanAkses rekaman={perluAkses} daftarPath="/surat/keluar" daftarLabel="Kembali ke Daftar Surat" />
+    }
+
     if (!surat) {
         return (
             <div className="space-y-6">
@@ -277,7 +295,12 @@ export default function SuratKeluarDetail() {
     const bolehArsip = Array.isArray(aksi) ? aksi.includes('arsipkan') : isAdmin
     const canEdit = bolehEdit && !surat.isArchived && ['draft', 'rejected'].includes(approvalStatus)
     const canArchive = bolehArsip && !surat.isArchived && approvalStatus === 'approved'
-    const canSubmitApproval = canEdit && surat.createdBy === user?.id
+    // Pembuat sudah tidak bertugas: server menandai siapa yang boleh mengajukan
+    // atas namanya (pengajuanAtasNama) dan memeriksa ulang saat pengajuan.
+    const namaPembuatDigantikan = isAdmin && !surat.isArchived && ['draft', 'rejected'].includes(approvalStatus)
+        ? surat.pengajuanAtasNama?.namaPembuat || null
+        : null
+    const canSubmitApproval = (canEdit && surat.createdBy === user?.id) || Boolean(namaPembuatDigantikan)
     const isCurrentApprover = isAdmin
         && approvalStatus === 'pending'
         && surat.currentApproverId === user?.id
@@ -556,6 +579,7 @@ export default function SuratKeluarDetail() {
                     </Card>
 
                     <FilePreviewSection surat={surat} entityType="surat_keluar" />
+                    <KartuTunjukSilang tipe="surat_keluar" id={surat.id} />
                 </div>
 
                 {/* Sidebar */}
@@ -682,6 +706,11 @@ export default function SuratKeluarDetail() {
                                         <Send className="mr-2 h-4 w-4" />
                                         Ajukan Persetujuan
                                     </Button>
+                                )}
+                                {namaPembuatDigantikan && (
+                                    <p className="text-xs text-muted-foreground">
+                                        Pembuat surat ({namaPembuatDigantikan}) sudah tidak aktif atau tidak lagi bertugas di unit ini. Anda mengajukan atas nama pembuat.
+                                    </p>
                                 )}
                                 {canSubmitApproval && approvers.length === 0 && (
                                     <p className="text-xs text-amber-700 dark:text-amber-300">
