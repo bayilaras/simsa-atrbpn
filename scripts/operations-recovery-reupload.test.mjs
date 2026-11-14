@@ -10,7 +10,7 @@ import { seal, sha256, documentReferences, backupDocuments } from './operations-
 import { extractDelivery } from './operations-recovery-extract.mjs';
 import {
   AUDIT_ACTOR, GUARD_TRIGGERS, blobPathname, buildReuploadPlan, describeReuploadError, locatorParts, parseArguments, parseCsv,
-  parseDocumentList, planCode, readRecoveredDocuments, restoreDatabaseConfig, runReupload, uploadPlannedDocuments, vercelBlobClient,
+  parseDocumentList, planCode, readRecoveredDocuments, restoreDatabaseConfig, runReupload, summaryLines, uploadPlannedDocuments, vercelBlobClient,
 } from './operations-recovery-reupload.mjs';
 
 const OLD_HOST = 'lamastore1234.private.blob.vercel-storage.com', NEW_HOST = 'barustore5678.private.blob.vercel-storage.com';
@@ -43,6 +43,24 @@ async function openedBackup({ attachments = [], ruleSets = [], objects }) {
   const output = join(root, 'hasil');
   await extractDelivery({ directory, output, passphrase });
   return output;
+}
+
+/**
+ * Add one document to an opened backup the way the extract tool writes it
+ * (file, CRLF row in DAFTAR-DOKUMEN.csv, hashes in MANIFEST.sha256). Used for
+ * a row id that is not a file_attachments row, e.g. an autentikasi PDF.
+ */
+async function addToOpenedBackup(folder, { kind, id, name, bytes }) {
+  const file = `dokumen/${kind}/${id}/${name}`;
+  await mkdir(join(folder, 'dokumen', kind, id), { recursive: true });
+  await writeFile(join(folder, ...file.split('/')), bytes);
+  const list = (await readFile(join(folder, 'DAFTAR-DOKUMEN.csv'), 'utf8'))
+    + [kind, kind, id, id, name, bytes.length, sha256(bytes), file].join(',') + '\r\n';
+  await writeFile(join(folder, 'DAFTAR-DOKUMEN.csv'), list, 'utf8');
+  const manifest = (await readFile(join(folder, 'MANIFEST.sha256'), 'utf8')).split('\n').filter(Boolean)
+    .map(line => line.endsWith('  DAFTAR-DOKUMEN.csv') ? `${sha256(Buffer.from(list, 'utf8'))}  DAFTAR-DOKUMEN.csv` : line);
+  await writeFile(join(folder, 'MANIFEST.sha256'), [...manifest, `${sha256(bytes)}  ${file}`].join('\n') + '\n');
+  return file;
 }
 
 const attachmentRow = (url, bytes, extra = {}) => ({ id: randomUUID(), entity_type: 'surat_masuk', entity_id: randomUUID(), file_name: 'Surat.pdf',
@@ -152,6 +170,11 @@ test('the plan rewrites every reference of a backed-up document, reports the res
   assert.deepEqual(plan.missingCopies.map(row => row.table), ['autentikasi']);
   assert.deepEqual([plan.sameStore, plan.targetOnly], [0, 1]);
   assert.deepEqual(plan.unmatchedRows, [{ kind: 'attachment', id: other }]);
+  // The folder count includes the document without a database row.
+  assert.deepEqual(plan.folder, { files: 2, bytes: 18 });
+  const lines = summaryLines(plan, { mode: 'dry_run', reportPath: 'X:\\laporan.json' }).join('\n');
+  assert.match(lines, /Dokumen di folder backup: 2 berkas/);
+  assert.match(lines, /Dokumen yang dapat dipulihkan \(punya baris database\): 1 berkas/);
   assert.deepEqual(plan.transient, [{ table: 'client_blob_uploads', column: 'blob_url', count: 1 }]);
   assert.equal(plan.canApply, true);
   assert.match(plan.code, /^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/);
@@ -297,8 +320,21 @@ async function migratedDatabase() {
   return { name, url: target.toString(), admin, Client };
 }
 
+/** The fixture creates databases, NOLOGIN roles and per-database role settings. */
+async function superuserAvailable() {
+  const { Client } = requireBackend('pg');
+  const client = new Client({ connectionString: isolatedTarget().toString() });
+  await client.connect();
+  try { return (await client.query('SELECT rolsuper FROM pg_roles WHERE rolname = current_user')).rows[0]?.rolsuper === true; }
+  finally { await client.end(); }
+}
+
 test('end to end on PostgreSQL: dry run changes nothing, apply re-uploads and rewrites every locator atomically with audit, guards stay on',
-  { skip: !process.env.TEST_POSTGRES_URL && 'TEST_POSTGRES_URL is not set' }, async () => {
+  { skip: !process.env.TEST_POSTGRES_URL && 'TEST_POSTGRES_URL is not set' }, async t => {
+    if (!await superuserAvailable()) {
+      t.skip('the TEST_POSTGRES_URL role is not a superuser; this test must create a database, NOLOGIN policy roles and a per-database role setting');
+      return;
+    }
     const db = await migratedDatabase();
     const query = async (text, params = []) => {
       const client = new db.Client({ connectionString: db.url }); await client.connect();
@@ -314,9 +350,11 @@ test('end to end on PostgreSQL: dry run changes nothing, apply re-uploads and re
       const ruleId = randomUUID();
       const urlR = put('r', blobUrl(OLD_HOST, 'regulatory-sources', ruleId, 'Peraturan Uji-Rr22.pdf'));
       const urlLost = blobUrl(OLD_HOST, 'autentikasi', 'BA Autentikasi-Au33.pdf');
+      const urlAu = blobUrl(OLD_HOST, 'autentikasi', 'BA Autentikasi Dua-Au44.pdf');
+      bodies.au = pdf('au');
       const urlNew = blobUrl(NEW_HOST, 'surat-masuk', 'setelah pemulihan-Nn44.pdf');
       const user = randomUUID(), sm1 = randomUUID(), sm2 = randomUUID(), sk1 = randomUUID();
-      const ids = { a: randomUUID(), b: randomUUID(), c: randomUUID(), d: randomUUID(), e: randomUUID(), au: randomUUID() };
+      const ids = { a: randomUUID(), b: randomUUID(), c: randomUUID(), d: randomUUID(), e: randomUUID(), au: randomUUID(), au2: randomUUID() };
       // Fixture rows, written before the session role is pinned to the schema owner.
       await query(`INSERT INTO unit_kerja (id, name, unit_type) VALUES ('uji_pulih', 'Unit Uji Pemulihan', 'bagian')`);
       await query(`INSERT INTO users (id, email, name, role, unit_kerja_id, is_active) VALUES ($1, 'pulih@example.test', 'Uji Pulih', 'super_admin', NULL, true)`, [user]);
@@ -348,19 +386,23 @@ test('end to end on PostgreSQL: dry run changes nothing, apply re-uploads and re
       const lostBytes = pdf('lost');
       await query(`INSERT INTO autentikasi (id, nomor_berita_acara, tanggal_autentikasi, kegiatan, jumlah_arsip, file_lampiran, file_lampiran_sha256, file_lampiran_size_bytes)
         VALUES ($1, 'BA-UJI/1', DATE '2026-11-13', 'Alih media uji', 1, $2, $3, $4)`, [ids.au, urlLost, sha256(lostBytes), lostBytes.length]);
+      await query(`INSERT INTO autentikasi (id, nomor_berita_acara, tanggal_autentikasi, kegiatan, jumlah_arsip, file_lampiran, file_lampiran_sha256, file_lampiran_size_bytes)
+        VALUES ($1, 'BA-UJI/2', DATE '2026-11-13', 'Alih media uji kedua', 1, $2, $3, $4)`, [ids.au2, urlAu, sha256(bodies.au), bodies.au.length]);
       await query(`INSERT INTO client_blob_uploads (blob_url, pathname, purpose, uploaded_by, status, expires_at)
         VALUES ($1, 'surat-masuk/batal.pdf', 'surat_masuk', $2, 'pending', now() + interval '1 day')`, [blobUrl(OLD_HOST, 'surat-masuk', 'batal-Pp55.pdf'), user]);
       // Production sessions of the migration login run as the schema owner.
       await query(`ALTER ROLE ${decodeURIComponent(new URL(db.url).username)} IN DATABASE ${db.name} SET role TO 'simsa_migrator'`);
       assert.deepEqual(await query('SELECT current_user AS actor'), [{ actor: 'simsa_migrator' }]);
 
-      // The backup holds A, B, C, R and E (E's row was deleted after the snapshot); not the autentikasi PDF.
+      // The backup holds A, B, C, R and E (E's row was deleted after the snapshot), plus the second
+      // autentikasi PDF listed by its autentikasi row id; the first autentikasi PDF has no copy.
       const backupRow = (id, type, url, bytes) => ({ id, entity_type: type, entity_id: randomUUID(), file_name: 'berkas.pdf', file_url: url,
         sha256: sha256(bytes), size_bytes: String(bytes.length), storage_access: 'private' });
       const folder = await openedBackup({ objects,
         attachments: [backupRow(ids.a, 'surat_masuk', urlA, bodies.a), backupRow(ids.b, 'surat_keluar', urlB, bodies.b),
           backupRow(ids.c, 'arsip', urlC, bodies.c), backupRow(ids.e, 'surat_masuk', urlE, bodies.e)],
         ruleSets: [{ id: ruleId, source_document_blob_url: urlR, source_document_sha256: sha256(bodies.r), source_document_size_bytes: bodies.r.length }] });
+      await addToOpenedBackup(folder, { kind: 'autentikasi', id: ids.au2, name: 'BA Autentikasi Dua.pdf', bytes: bodies.au });
       const environment = { SIMSA_RESTORE_DATABASE_URL: db.url, SIMSA_PRIVATE_BLOB_READ_WRITE_TOKEN: NEW_TOKEN };
       const locators = () => query(`SELECT 'fa:' || id AS key, file_url AS value FROM file_attachments UNION ALL SELECT 'sm:' || id, file_path FROM surat_masuk
         UNION ALL SELECT 'sk:' || id, file_path FROM surat_keluar UNION ALL SELECT 'rr:' || id, source_document_blob_url FROM regulatory_rule_sets WHERE id = '${ruleId}'
@@ -376,9 +418,11 @@ test('end to end on PostgreSQL: dry run changes nothing, apply re-uploads and re
       const store = fakeBlobStore();
       const dry = await runReupload({ folder, environment, blob: store.client });
       assert.equal(dry.mode, 'dry_run');
-      assert.equal(dry.plan.documents.length, 4);
-      assert.deepEqual(dry.plan.rewrites.map(rewrite => `${rewrite.table}.${rewrite.column}`), ['file_attachments.file_url', 'file_attachments.file_url',
-        'file_attachments.file_url', 'regulatory_rule_sets.source_document_blob_url', 'surat_keluar.file_path', 'surat_masuk.file_path']);
+      assert.equal(dry.plan.documents.length, 5);
+      assert.deepEqual(dry.plan.folder.files, 6);
+      assert.deepEqual(dry.plan.rewrites.map(rewrite => `${rewrite.table}.${rewrite.column}`), ['autentikasi.file_lampiran', 'file_attachments.file_url',
+        'file_attachments.file_url', 'file_attachments.file_url', 'regulatory_rule_sets.source_document_blob_url', 'surat_keluar.file_path', 'surat_masuk.file_path']);
+      assert.equal(dry.plan.rewrites[0].id, ids.au2);
       assert.deepEqual(dry.plan.missingCopies, [{ table: 'autentikasi', column: 'file_lampiran', id: ids.au }]);
       assert.deepEqual([dry.plan.sameStore, dry.plan.targetOnly, dry.plan.unmatchedRows.length, dry.plan.transient.length, dry.plan.canApply], [0, 2, 1, 1, true]);
       assert.deepEqual(store.calls, []);
@@ -386,6 +430,8 @@ test('end to end on PostgreSQL: dry run changes nothing, apply re-uploads and re
       assert.equal(await auditCount(), 0);
       const dryLines = dry.lines.join('\n');
       assert.ok(dryLines.includes(dry.plan.code) && !dryLines.includes('Undangan') && !dryLines.includes('surat-masuk/'));
+      assert.match(dryLines, /Dokumen di folder backup: 6 berkas/);
+      assert.match(dryLines, /Dokumen yang dapat dipulihkan \(punya baris database\): 5 berkas/);
       const plannedReport = JSON.parse(await readFile(dry.reportPath, 'utf8'));
       assert.equal(plannedReport.plan.code, dry.plan.code);
 
@@ -404,7 +450,7 @@ test('end to end on PostgreSQL: dry run changes nothing, apply re-uploads and re
       assert.deepEqual(await locators(), before);
       // The report keeps the objects stored before the conflict.
       const conflictReport = JSON.parse(await readFile(conflict.reportPath, 'utf8'));
-      assert.deepEqual([conflictReport.failureCode, conflictReport.uploads.length], ['BLOB_OBJECT_CONFLICT', 3]);
+      assert.deepEqual([conflictReport.failureCode, conflictReport.uploads.length], ['BLOB_OBJECT_CONFLICT', 4]);
 
       const unreachable = new URL(db.url); unreachable.pathname = '/simsa_tidak_ada_pulih';
       const refused = await runReupload({ folder, environment: { ...environment, SIMSA_RESTORE_DATABASE_URL: unreachable.toString() } }).catch(error => error);
@@ -421,12 +467,38 @@ test('end to end on PostgreSQL: dry run changes nothing, apply re-uploads and re
       assert.equal(await auditCount(), 0);
       await query('DROP TRIGGER uji_tolak_file_path ON surat_keluar; DROP FUNCTION uji_tolak_file_path()');
 
-      // 5. Apply: the objects uploaded by the failed attempt are verified and reused.
-      const applied = await runReupload({ folder, environment, blob: store.client, apply: true, confirm: dry.plan.code });
+      // 5. A locator that changes after the plan code was accepted (here: while the
+      // documents upload) is never overwritten: everything rolls back.
+      const changingDuringUpload = mutate => {
+        let done = false;
+        return { ...store.client, async head(url) { if (!done) { done = true; await mutate(); } return store.client.head(url); } };
+      };
+      //    a) a planned row no longer holds the planned value (compare-and-set fails);
+      const changed = await runReupload({ folder, environment, apply: true, confirm: dry.plan.code,
+        blob: changingDuringUpload(() => query('UPDATE surat_keluar SET file_path = $2 WHERE id = $1', [sk1, `blob:${urlB}`])) }).catch(error => error);
+      assert.equal(changed.safeCode, 'LOCATOR_CHANGED_SINCE_PLAN');
+      assert.deepEqual(await locators(), before.map(row => row.key === `sk:${sk1}` ? { ...row, value: `blob:${urlB}` } : row));
+      await query('UPDATE surat_keluar SET file_path = $2 WHERE id = $1', [sk1, urlB]);
+      //    b) a new row starts pointing at a document that is being moved.
+      const sm3 = randomUUID();
+      const added = await runReupload({ folder, environment, apply: true, confirm: dry.plan.code,
+        blob: changingDuringUpload(() => surat('surat_masuk', sm3, 'PULIH-3/2026', urlC, 3)) }).catch(error => error);
+      assert.equal(added.safeCode, 'LOCATOR_CHANGED_SINCE_PLAN');
+      assert.deepEqual((await locators()).filter(row => row.key !== `sm:${sm3}`), before);
+      await query('DELETE FROM surat_masuk WHERE id = $1', [sm3]);
+      assert.deepEqual([await auditCount(), await guards()], [0, guardsBefore]);
+
+      // 6. Apply: the objects uploaded by the failed attempts are verified and reused.
+      // Writing the report fails after the commit: the run still ends as a success, with a warning.
+      const applied = await runReupload({ folder, environment, blob: store.client, apply: true, confirm: dry.plan.code,
+        saveReport: async () => { throw Object.assign(new Error('ENOSPC: no space left'), { code: 'ENOSPC' }); } });
       assert.equal(applied.mode, 'apply');
-      assert.deepEqual(applied.uploads.map(upload => upload.status), ['reused', 'reused', 'reused', 'reused']);
-      assert.equal(store.objects.size, 4);
-      for (const [key, url] of [['a', urlA], ['b', urlB], ['c', urlC], ['r', urlR]])
+      assert.equal(applied.reportPath, null);
+      assert.match(applied.lines.join('\n'), /PERHATIAN: perubahan sudah tersimpan, tetapi laporan rinci tidak dapat ditulis/);
+      assert.match(applied.lines[0], /SELESAI/);
+      assert.deepEqual(applied.uploads.map(upload => upload.status), ['reused', 'reused', 'reused', 'reused', 'reused']);
+      assert.equal(store.objects.size, 5);
+      for (const [key, url] of [['a', urlA], ['b', urlB], ['c', urlC], ['r', urlR], ['au', urlAu]])
         assert.deepEqual(store.objects.get(url.replace(OLD_HOST, NEW_HOST)).bytes, bodies[key]);
       const after = Object.fromEntries((await locators()).map(row => [row.key, row.value]));
       const moved = url => url.replace(OLD_HOST, NEW_HOST);
@@ -437,6 +509,7 @@ test('end to end on PostgreSQL: dry run changes nothing, apply re-uploads and re
       assert.equal(after[`fa:${ids.c}`], moved(urlC));
       assert.equal(after[`rr:${ruleId}`], moved(urlR));
       assert.equal(after[`au:${ids.au}`], urlLost);
+      assert.equal(after[`au:${ids.au2}`], moved(urlAu));
       assert.equal(after[`sm:${sm2}`], `blob:${urlNew}`);
       assert.equal(after[`fa:${ids.d}`], urlNew);
       assert.ok(Object.entries(after).filter(([key]) => key.startsWith('cb:')).every(([, value]) => value.includes(OLD_HOST)));
@@ -444,8 +517,9 @@ test('end to end on PostgreSQL: dry run changes nothing, apply re-uploads and re
       assert.deepEqual(await query('SELECT status FROM regulatory_rule_sets WHERE id = $1', [ruleId]), [{ status: 'submitted' }]);
 
       const audit = await query('SELECT entity_type, entity_id::text AS id, action, user_id, changes FROM audit_log WHERE user_email = $1 ORDER BY entity_type, entity_id', [AUDIT_ACTOR]);
-      assert.equal(audit.length, 6);
-      assert.deepEqual([...new Set(audit.map(row => row.entity_type))].sort(), ['file_attachment', 'regulatory_rule_set', 'surat_keluar', 'surat_masuk']);
+      assert.equal(audit.length, 7);
+      assert.deepEqual([...new Set(audit.map(row => row.entity_type))].sort(), ['autentikasi', 'file_attachment', 'regulatory_rule_set', 'surat_keluar', 'surat_masuk']);
+      assert.deepEqual(audit.find(row => row.entity_type === 'autentikasi').changes.fields, ['fileLampiran']);
       assert.ok(audit.every(row => row.action === 'update' && row.user_id === null && row.changes.planCode === dry.plan.code
         && row.changes.before.storeHost === OLD_HOST && row.changes.after.storeHost === NEW_HOST && /^[a-f0-9]{64}$/.test(row.changes.objectSha256)));
       const auditText = JSON.stringify(audit);
@@ -455,11 +529,11 @@ test('end to end on PostgreSQL: dry run changes nothing, apply re-uploads and re
       await assert.rejects(query('UPDATE regulatory_rule_sets SET source_document_blob_url = $2 WHERE id = $1', [ruleId, urlR]), /immutable/);
       await assert.rejects(query('UPDATE file_attachments SET file_url = $2 WHERE id = $1', [ids.c, urlC]), /immutable/);
 
-      // 6. Running again changes nothing: every locator is already on the target store.
+      // 7. Running again changes nothing: every locator is already on the target store.
       const again = await runReupload({ folder, environment, blob: store.client });
-      assert.deepEqual([again.plan.rewrites.length, again.plan.sameStore, again.plan.targetOnly, again.plan.missingCopies.length], [0, 6, 2, 1]);
+      assert.deepEqual([again.plan.rewrites.length, again.plan.sameStore, again.plan.targetOnly, again.plan.missingCopies.length], [0, 7, 2, 1]);
       const repeat = await runReupload({ folder, environment, blob: store.client, apply: true, confirm: again.plan.code });
-      assert.deepEqual([repeat.applied.rewritten, store.calls.filter(call => call === 'put').length, await auditCount()], [0, 4, 6]);
+      assert.deepEqual([repeat.applied.rewritten, store.calls.filter(call => call === 'put').length, await auditCount()], [0, 5, 7]);
       assert.ok((await readdir(folder)).filter(name => name.startsWith('LAPORAN-UNGGAH-ULANG-')).length >= 4);
     } finally {
       await db.admin.query(`DROP DATABASE IF EXISTS ${db.name} WITH (FORCE)`).catch(() => {});

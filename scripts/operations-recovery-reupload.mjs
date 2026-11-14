@@ -306,7 +306,11 @@ export function buildReuploadPlan({ documents, snapshot, targetHost, database })
   rewrites.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
   const rewriteTables = [...new Set(rewrites.map(rewrite => rewrite.table))];
   const canApply = rewrites.length === 0 || (snapshot.auditInsert && rewriteTables.every(table => snapshot.ownedTables.has(table)));
-  return { schemaVersion: 1, database, targetHost, documents: sortedDocuments, rewrites, sameStore, targetOnly, missingCopies, unmatchedRows,
+  // Everything in the opened backup (one file per stored object), whether or
+  // not the database still has a row for it.
+  const folderFiles = new Map(documents.rows.map(row => [row.file, row.sizeBytes]));
+  const folder = { files: folderFiles.size, bytes: [...folderFiles.values()].reduce((sum, size) => sum + size, 0) };
+  return { schemaVersion: 1, database, targetHost, folder, documents: sortedDocuments, rewrites, sameStore, targetOnly, missingCopies, unmatchedRows,
     transient, problems, canApply, locatorColumns: snapshot.locatorColumns,
     code: planCode({ database, targetHost, documents: sortedDocuments, rewrites }) };
 }
@@ -451,7 +455,8 @@ export function summaryLines(plan, { mode, reportPath, uploads, applied }) {
     mode === 'apply' ? 'Pemulihan dokumen ke penyimpanan baru: SELESAI.' : 'Rencana pemulihan dokumen (uji kering; tidak ada yang diubah).',
     `Database            : ${plan.database.host}:${plan.database.port}/${plan.database.database} sebagai ${plan.database.actor}`,
     `Store tujuan        : ${plan.targetHost}`,
-    `Dokumen di backup   : ${plan.documents.length} berkas, ${mb(bytes)}; semua hash cocok dengan MANIFEST.sha256`,
+    `Dokumen di folder backup: ${plan.folder.files} berkas, ${mb(plan.folder.bytes)}; semua hash cocok dengan MANIFEST.sha256`,
+    `Dokumen yang dapat dipulihkan (punya baris database): ${plan.documents.length} berkas, ${mb(bytes)}`,
     `Lokasi yang diubah  : ${columns(plan.rewrites)}`,
     `Lokasi dokumen backup yang sudah menunjuk store tujuan: ${plan.sameStore}`,
   ];
@@ -462,7 +467,8 @@ export function summaryLines(plan, { mode, reportPath, uploads, applied }) {
   if (uploads) lines.push(`Unggahan           : ${uploads.filter(upload => upload.status === 'uploaded').length} diunggah, ${uploads.filter(upload => upload.status === 'reused').length} sudah ada dan identik; semua dibaca ulang dan hash cocok`);
   if (applied) lines.push(`Database           : ${applied.rewritten} lokasi ditulis ulang, ${applied.auditEntries} catatan audit (${AUDIT_ACTOR})`);
   if (!plan.canApply && mode !== 'apply') lines.push('PERHATIAN: login database ini tidak dapat menerapkan rencana. Jalankan --apply dengan login migrasi (pemilik tabel).');
-  lines.push(`Laporan rinci       : ${reportPath}`);
+  if (reportPath) lines.push(`Laporan rinci       : ${reportPath}`);
+  else lines.push(`PERHATIAN: perubahan sudah tersimpan, tetapi laporan rinci tidak dapat ditulis ke folder dokumen. Simpan ringkasan ini; jejak perubahan ada di Audit Log atas nama ${AUDIT_ACTOR}.`);
   if (mode !== 'apply') lines.push(`Kode rencana        : ${plan.code}`, `Untuk menerapkan    : jalankan ulang dengan --apply --confirm ${plan.code}`);
   return lines;
 }
@@ -480,7 +486,7 @@ async function writeReport(folder, report, now) {
  * are injectable; tests use a fake store and a local PostgreSQL only.
  */
 export async function runReupload({ folder, environment = process.env, apply = false, confirm, blob, connect = connectRestoredDatabase,
-  now = () => new Date(), repositoryRoot } = {}) {
+  now = () => new Date(), repositoryRoot, saveReport = writeReport } = {}) {
   const { token, hostname: targetHost } = privateBlobConfiguration(environment);
   const documents = await readRecoveredDocuments(folder, repositoryRoot);
   const config = restoreDatabaseConfig(environment.SIMSA_RESTORE_DATABASE_URL, { readOnly: !apply });
@@ -495,8 +501,9 @@ export async function runReupload({ folder, environment = process.env, apply = f
     report.plan = plan;
     check(plan.problems.length === 0, 'PLAN_HAS_PROBLEMS');
     if (!apply) {
+      // The operator reviews the plan from this report, so failing to write it fails the dry run.
       report.finishedAt = now().toISOString();
-      const reportPath = await writeReport(folder, report, now());
+      const reportPath = await saveReport(folder, report, now());
       return { mode: 'dry_run', plan, reportPath, lines: summaryLines(plan, { mode: 'dry_run', reportPath }) };
     }
     check(confirm === plan.code, 'PLAN_CODE_MISMATCH');
@@ -504,8 +511,10 @@ export async function runReupload({ folder, environment = process.env, apply = f
     report.uploads = [];
     await uploadPlannedDocuments({ plan, folder, blob: blob ?? vercelBlobClient(token), results: report.uploads });
     report.applied = await applyLocatorRewrites(client, { plan, uploads: report.uploads });
+    // Committed: from here a failure to write the report is a warning, never "Gagal".
     report.finishedAt = now().toISOString();
-    const reportPath = await writeReport(folder, report, now());
+    let reportPath = null;
+    try { reportPath = await saveReport(folder, report, now()); } catch { /* reported in the summary */ }
     return { mode: 'apply', plan, uploads: report.uploads, applied: report.applied, reportPath,
       lines: summaryLines(plan, { mode: 'apply', reportPath, uploads: report.uploads, applied: report.applied }) };
   } catch (error) {
@@ -514,7 +523,7 @@ export async function runReupload({ folder, environment = process.env, apply = f
     if (report.plan) {
       report.failureCode = error?.safeCode || (sqlState(error) ? `SQLSTATE_${sqlState(error)}` : 'REUPLOAD_FAILED');
       report.finishedAt = now().toISOString();
-      try { error.reportPath = await writeReport(folder, report, now()); } catch { /* the original failure is more important */ }
+      try { error.reportPath = await saveReport(folder, report, now()); } catch { /* the original failure is more important */ }
     }
     throw error;
   } finally {
