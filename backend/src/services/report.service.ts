@@ -15,7 +15,7 @@ import { eq, and, desc, sql, gte, lte, or, isNull, inArray } from 'drizzle-orm';
 import { klasifikasiInSql } from './access/visibility-spec';
 import { archiveLendingService } from './archive-lending.service';
 import { periodeLaporanArsip, periodeLaporanSurat } from './laporan-periode';
-import { jakartaDate } from '../utils/jakarta-date.js';
+import { jakartaDate, jakartaYearMonth } from '../utils/jakarta-date.js';
 import {
     archiveRuleAssignmentService,
     CURRENT_APPRAISAL_CASE_JOIN,
@@ -194,7 +194,7 @@ class ReportService {
         year?: number,
         securityClassifications?: string[] | null,
     ) {
-        const currentYear = year || new Date().getFullYear();
+        const currentYear = year || jakartaYearMonth().year;
         const conditions = [
             eq(suratMasuk.unitKerjaId, unitKerjaId),
             eq(suratMasuk.tahun, currentYear),
@@ -300,7 +300,7 @@ class ReportService {
         year?: number,
         securityClassifications?: string[] | null,
     ) {
-        const currentYear = year || new Date().getFullYear();
+        const currentYear = year || jakartaYearMonth().year;
         const conditions = [
             eq(suratKeluar.unitKerjaId, unitKerjaId),
             eq(suratKeluar.tahun, currentYear),
@@ -348,9 +348,9 @@ class ReportService {
             this.arsipClassificationCondition(securityClassifications),
         ];
 
-        const now = new Date();
-        const futureDate = new Date();
-        futureDate.setDate(now.getDate() + daysAhead);
+        // Hari ini dan batas ke depan menurut kalender WIB, bukan jam server.
+        const todayIso = jakartaDate();
+        const futureIso = new Date(Date.parse(`${todayIso}T00:00:00.000Z`) + daysAhead * 86_400_000).toISOString().slice(0, 10);
 
         if (type === 'destroyed') {
             // An executed status is shared by pemindahan, penyerahan permanen,
@@ -421,8 +421,6 @@ class ReportService {
             .where(and(...conditions))
             .orderBy(desc(arsip.createdAt), desc(arsip.id));
 
-        const todayIso = now.toISOString().slice(0, 10);
-        const futureIso = futureDate.toISOString().slice(0, 10);
         const canonicalRows = rows.flatMap((row) => {
             const evaluation = this.evaluateArchiveRetention(row);
             const expiry = evaluation.dates.tanggalKadaluarsa;
@@ -517,9 +515,6 @@ class ReportService {
             conditions.push(eq(arsip.tahun, year));
         }
 
-        const now = new Date();
-        const next30Days = new Date();
-        next30Days.setDate(now.getDate() + 30);
 
         const stats = await db
             .select({
@@ -672,7 +667,7 @@ class ReportService {
             .where(readable());
 
         // Recent lending activity by month
-        const currentYear = new Date().getFullYear();
+        const currentYear = jakartaYearMonth().year;
         const monthlyLending = await db
             .select({
                 month: sql<number>`extract(month from ${archiveLending.borrowDate})::int`,
@@ -701,7 +696,7 @@ class ReportService {
         year?: number,
         securityClassifications?: string[] | null,
     ) {
-        const currentYear = year || new Date().getFullYear();
+        const currentYear = year || jakartaYearMonth().year;
 
         const suratMasukStats = await this.getSuratMasukStats(unitKerjaId, currentYear, securityClassifications);
         const suratKeluarStats = await this.getSuratKeluarStats(unitKerjaId, currentYear, securityClassifications);
