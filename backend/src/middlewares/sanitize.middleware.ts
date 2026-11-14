@@ -1,13 +1,17 @@
 import { Request, Response, NextFunction } from 'express';
+import { NAMA_ELEMEN_MARKUP } from '../constants/nama-elemen-markup.js';
 
 /**
  * Input Sanitization Middleware
  *
- * Membuang markup HTML dari setiap nilai teks di req.body. Yang dibuang hanya
- * markup sungguhan: tag yang namanya berawal huruf lalu diikuti spasi, '/' atau
- * '>' (mis. <b>, </div>, <img src=x ...>), elemen script/style beserta isinya,
- * dan komentar HTML. Teks biasa yang memuat '<' dan '>' (perbandingan "a < b",
- * alamat surel "Budi <budi@contoh.go.id>", panah "->") disimpan apa adanya.
+ * Membuang markup dari setiap nilai teks di req.body. Yang dibuang hanya markup
+ * sungguhan: tag elemen HTML, SVG, atau MathML yang dikenal (huruf besar/kecil
+ * sama saja) atau elemen kustom (huruf kecil dengan tanda hubung, mis. x-foo),
+ * yang namanya diikuti spasi, '/' atau '>' (mis. <b>, </div>, <img src=x ...>);
+ * elemen script/style beserta isinya; dan komentar HTML. Teks lain yang memuat
+ * '<' dan '>' disimpan apa adanya: perbandingan "a < b", alamat surel
+ * "Budi <budi@contoh.go.id>", panah "->", isian seperti "<nama>" atau
+ * "Undangan <Rapat Koordinasi>".
  *
  * Penyaring ini bukan pengaman tampilan: setiap keluaran HTML di luar React
  * wajib meloloskan teks (backend utils/escape-html.ts, frontend lib/escape-html.js).
@@ -55,10 +59,18 @@ function isHtmlSpace(code: number): boolean {
 interface HtmlTag { end: number; name: string; closing: boolean }
 
 /**
- * Tag HTML yang dimulai di `start` (posisi '<'), atau null bila bukan tag.
- * Nilai atribut berkutip (kutip tepat setelah '=') boleh memuat '>'. Pemindaian
- * berhenti di '<' berikutnya, sehingga satu putaran tetap linear terhadap
- * panjang teks.
+ * Nama elemen kustom menurut standar HTML: diawali huruf kecil, memuat tanda
+ * hubung, tanpa huruf kapital (mis. x-foo). Kata seperti "e-Office" tetap teks.
+ */
+function isCustomElementName(name: string): boolean {
+    return name.includes('-') && /^[a-z][a-z0-9-]*$/.test(name);
+}
+
+/**
+ * Tag yang dimulai di `start` (posisi '<'), atau null bila bukan tag elemen yang
+ * dikenal. Nilai atribut berkutip (kutip tepat setelah '=') boleh memuat '>'.
+ * Pemindaian berhenti di '<' berikutnya, sehingga satu putaran tetap linear
+ * terhadap panjang teks.
  */
 function readTag(text: string, start: number): HtmlTag | null {
     let position = start + 1;
@@ -67,7 +79,9 @@ function readTag(text: string, start: number): HtmlTag | null {
     const nameStart = position;
     if (!isAsciiLetter(text.charCodeAt(position))) return null;
     while (isTagNameChar(text.charCodeAt(position))) position += 1;
-    const name = text.slice(nameStart, position).toLowerCase();
+    const writtenName = text.slice(nameStart, position);
+    const name = writtenName.toLowerCase();
+    if (!NAMA_ELEMEN_MARKUP.has(name) && !isCustomElementName(writtenName)) return null;
     const afterName = text.charCodeAt(position);
     if (!isHtmlSpace(afterName) && afterName !== SLASH && afterName !== GREATER_THAN) return null;
     let afterEquals = false;

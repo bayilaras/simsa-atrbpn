@@ -44,6 +44,13 @@ describe('penyaring hanya membuang markup HTML', () => {
         'Rp <5 juta',
         '<http://contoh.go.id/surat>',
         '<!DOCTYPE html>',
+        // Kata yang bukan nama elemen HTML/SVG/MathML adalah teks biasa.
+        'Undangan <Rapat Koordinasi>',
+        '<nama>',
+        '<Lampiran 1>',
+        '<<RAHASIA>>',
+        // Elemen kustom ditulis huruf kecil; kata berhuruf kapital tetap teks.
+        'Aplikasi <e-Office>',
     ];
 
     it.each(teksBiasa)('teks %j disimpan persis', (teks) => {
@@ -66,7 +73,12 @@ describe('penyaring hanya membuang markup HTML', () => {
         ['baris<br/>berikut</div>', 'barisberikut'],
         ['<img alt=">" src=x onerror=alert(1)>tetap', 'tetap'],
         ['<script>tanpa penutup', 'tanpa penutup'],
+        ['<svg onload=alert(1)>', ''],
+        ['<x-foo onclick=a>', ''],
+        ['<IFRAME src=x>', ''],
+        ['<math><mi>x</mi></math>', 'x'],
         // Tag yang baru terbentuk setelah tag lain dibuang ikut dibuang.
+        ['<scr<b>ipt>alert(1)</script>', 'alert(1)'],
         ['<scr<b>ipt>alert(1)</scr</b>ipt>', ''],
         ['<<b>img src=x onerror=alert(1)>', ''],
     ])('markup %j dibuang menjadi %j', (masukan, hasil) => {
