@@ -64,3 +64,41 @@ export function klasifikasiSuratKeluar(item: KlasifikasiSurat): { jenis: string;
     }
     return { jenis: '', kode: '', nama: '' };
 }
+
+// Cermin MEDIA_OPTIONS pada formulir arsip.
+const MEDIA_ARSIP = new Map([
+    ['kertas', 'Kertas'],
+    ['foto', 'Foto'],
+    ['video', 'Video'],
+    ['audio', 'Audio'],
+    ['elektronik', 'Elektronik'],
+    ['lainnya', 'Lainnya'],
+]);
+
+/** Media arsip seperti tersimpan pada data arsip. */
+export function labelMediaArsip(nilai: string | null | undefined): string {
+    const teks = nilai?.trim() ?? '';
+    return teks ? MEDIA_ARSIP.get(kunci(teks)) ?? teks : '';
+}
+
+// Cermin frontend/src/pages/ArsipVital/constants.js.
+const KATEGORI_ARSIP_VITAL = new Map([
+    ['aset', 'Aset Negara (Sertipikat, BPKB, Gedung)'],
+    ['hukum', 'Hukum (Perjanjian, Hak Paten, Perkara)'],
+    ['personal', 'Personal File'],
+    ['keuangan', 'Keuangan & Fiskal'],
+    ['kebijakan', 'Kebijakan Strategis'],
+]);
+const STATUS_PROTEKSI = new Map([
+    ['terlindungi', 'Terlindungi'],
+    ['perlu_review', 'Perlu Review'],
+    ['belum_diproteksi', 'Belum Diproteksi'],
+]);
+
+const labelDari = (peta: Map<string, string>) => (nilai: string | null | undefined): string => {
+    const teks = nilai?.trim() ?? '';
+    return teks ? peta.get(teks) ?? teks : '';
+};
+
+export const labelKategoriArsipVital = labelDari(KATEGORI_ARSIP_VITAL);
+export const labelStatusProteksi = labelDari(STATUS_PROTEKSI);

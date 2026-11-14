@@ -176,7 +176,10 @@ export default function ArsipVital() {
                 toast({ title: 'Unit kerja wajib dipilih', variant: 'destructive' })
                 return
             }
-            const blob = await arsipVitalService.printDaftar(unitKerjaId)
+            // Daftar tercetak mengikuti filter tabel yang sedang tampil.
+            const blob = await arsipVitalService.printDaftar(unitKerjaId, {
+                search: debouncedSearch, kategoriVital: filterKategori, statusProteksi: filterStatus,
+            })
             const url = window.URL.createObjectURL(blob)
             const link = document.createElement('a')
             link.href = url
