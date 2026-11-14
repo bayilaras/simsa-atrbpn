@@ -22,7 +22,7 @@ function tampil(props = {}) {
 }
 
 async function isiPic() {
-    fireEvent.change(screen.getByLabelText(/^Person In Charge/), { target: { value: 'Petugas Arsip' } })
+    fireEvent.change(screen.getByLabelText(/^Penanggung Jawab/), { target: { value: 'Petugas Arsip' } })
     fireEvent.change(screen.getAllByLabelText(/^No\. Filing Cabinet/)[0], { target: { value: 'FC-07' } })
     await waitFor(() => expect(bacaDrafIsian(KUNCI)?.data.formData.personInCharge).toBe('Petugas Arsip'), { timeout: 3000 })
 }
@@ -38,7 +38,7 @@ describe('draf dialog Arsipkan Surat', () => {
         tampil()
         const dialog = await screen.findByRole('alertdialog', { name: 'Pulihkan isian yang belum disimpan?' })
         fireEvent.click(within(dialog).getByRole('button', { name: 'Pulihkan isian' }))
-        await waitFor(() => expect(screen.getByLabelText(/^Person In Charge/)).toHaveValue('Petugas Arsip'))
+        await waitFor(() => expect(screen.getByLabelText(/^Penanggung Jawab/)).toHaveValue('Petugas Arsip'))
         expect(screen.getAllByLabelText(/^No\. Filing Cabinet/)[0]).toHaveValue('FC-07')
     })
 

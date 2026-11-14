@@ -27,7 +27,7 @@ describe('label dialog Arsipkan Surat', () => {
         expect(screen.getByLabelText(/^Uraian Informasi Berkas/)).toHaveValue('Arsip surat')
         expect(screen.getByLabelText(/^Kurun Waktu\*?$/)).toHaveAttribute('type', 'date')
         expect(screen.getByLabelText('Kurun Waktu sampai tanggal')).toHaveAttribute('type', 'date')
-        expect(screen.getByLabelText(/^Person In Charge/)).toHaveAccessibleDescription('Nama yang bertanggung jawab atas pengarsipan')
+        expect(screen.getByLabelText(/^Penanggung Jawab/)).toHaveAccessibleDescription('Nama yang bertanggung jawab atas pengarsipan')
         expect(screen.getByLabelText(/^Keterangan Tambahan/).tagName).toBe('TEXTAREA')
         expect(screen.getByLabelText(/^Klasifikasi Arsip & Jadwal Retensi/)).toHaveTextContent('Pilih klasifikasi')
     })
