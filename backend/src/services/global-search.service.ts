@@ -39,6 +39,8 @@ export interface GlobalSearchResponse {
         page: number;
         limit: number;
         total: number;
+        /** Masih ada hasil sesudah halaman ini dalam jangkauan MAX_SCAN. */
+        hasMore: boolean;
     };
 }
 
@@ -46,6 +48,9 @@ interface ModuleSearchResult {
     items: GlobalSearchResult[];
     total: number;
 }
+
+// Pengikat urutan untuk hasil berwaktu input sama dari modul berbeda.
+const URUTAN_JENIS: Record<GlobalSearchResult['type'], number> = { surat_masuk: 0, surat_keluar: 1, arsip: 2, dosir: 3 };
 
 class GlobalSearchService {
     private readonly DEFAULT_LIMIT = 20;
@@ -134,14 +139,19 @@ class GlobalSearchService {
 
         await Promise.all(searchPromises);
 
-        // Sort by relevance (most recent first for now)
-        results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        // Waktu input terbaru lebih dulu; jenis dan id sebagai pengikat agar
+        // halaman berikutnya tidak mengulang atau melewatkan hasil.
+        results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            || URUTAN_JENIS[a.type] - URUTAN_JENIS[b.type]
+            || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
 
         counts.total = counts.surat_masuk + counts.surat_keluar + counts.arsip + counts.dosir;
 
-        // Paginate
+        // Paginate. Tiap modul menyumbang paling banyak MAX_SCAN baris, jadi
+        // hanya MAX_SCAN hasil teratas gabungan yang pasti terurut benar.
         const offset = (effectivePage - 1) * effectiveLimit;
-        const paginatedResults = results.slice(offset, offset + effectiveLimit);
+        const akhir = Math.min(offset + effectiveLimit, this.MAX_SCAN);
+        const paginatedResults = offset < akhir ? results.slice(offset, akhir) : [];
 
         return {
             results: paginatedResults,
@@ -149,7 +159,8 @@ class GlobalSearchService {
             pagination: {
                 page: effectivePage,
                 limit: effectiveLimit,
-                total: counts.total
+                total: counts.total,
+                hasMore: offset + paginatedResults.length < Math.min(counts.total, this.MAX_SCAN),
             }
         };
     }
@@ -242,7 +253,7 @@ class GlobalSearchService {
                 .select()
                 .from(suratMasuk)
                 .where(whereClause)
-                .orderBy(desc(suratMasuk.createdAt))
+                .orderBy(desc(suratMasuk.createdAt), desc(suratMasuk.id))
                 .limit(fetchLimit),
         ]);
 
@@ -323,7 +334,7 @@ class GlobalSearchService {
                 .select()
                 .from(suratKeluar)
                 .where(whereClause)
-                .orderBy(desc(suratKeluar.createdAt))
+                .orderBy(desc(suratKeluar.createdAt), desc(suratKeluar.id))
                 .limit(fetchLimit),
         ]);
 
@@ -384,7 +395,7 @@ class GlobalSearchService {
                 .select()
                 .from(arsip)
                 .where(whereClause)
-                .orderBy(desc(arsip.createdAt))
+                .orderBy(desc(arsip.createdAt), desc(arsip.id))
                 .limit(fetchLimit),
         ]);
 
@@ -440,7 +451,7 @@ class GlobalSearchService {
                 .select()
                 .from(dosir)
                 .where(whereClause)
-                .orderBy(desc(dosir.createdAt))
+                .orderBy(desc(dosir.createdAt), desc(dosir.id))
                 .limit(fetchLimit),
         ]);
 
@@ -495,7 +506,7 @@ class GlobalSearchService {
         return {
             results: [],
             counts: { surat_masuk: 0, surat_keluar: 0, arsip: 0, dosir: 0, total: 0 },
-            pagination: { page: 1, limit: 20, total: 0 }
+            pagination: { page: 1, limit: 20, total: 0, hasMore: false }
         };
     }
 }
