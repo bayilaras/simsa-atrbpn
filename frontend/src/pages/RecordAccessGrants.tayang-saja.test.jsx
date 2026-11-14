@@ -25,7 +25,7 @@ vi.mock('@/components/ui/tabs', () => ({
     TabsContent: ({ children }) => <div>{children}</div>,
 }))
 
-const CATATAN = 'Tayang saja menyembunyikan tombol unduh, cetak, dan buka di tab baru. Isi berkas tetap tampil di layar peminta.'
+const CATATAN = 'Tayang saja hanya menyembunyikan tombol unduh, cetak, dan buka di tab baru. Isi berkas tetap tampil di layar peminta dan dapat disalin; setiap penayangan tercatat di Audit Log.'
 const halaman = { page: 1, limit: 20, totalPages: 1 }
 const izin = (id, accessMode) => ({
     id, accessMode, status: 'pending', entityType: 'surat_masuk', entityId: `30000000-0000-4000-8000-00000000000${id}`,

@@ -41,7 +41,7 @@ const STATUS = {
 
 const ENTITY_LABEL = LABEL_JENIS_REKAMAN;
 // Mode tayang membatasi tombol di penampil berkas; isi berkas tetap terkirim ke layar peminta.
-const CATATAN_TAYANG_SAJA = 'Tayang saja menyembunyikan tombol unduh, cetak, dan buka di tab baru. Isi berkas tetap tampil di layar peminta.';
+const CATATAN_TAYANG_SAJA = 'Tayang saja hanya menyembunyikan tombol unduh, cetak, dan buka di tab baru. Isi berkas tetap tampil di layar peminta dan dapat disalin; setiap penayangan tercatat di Audit Log.';
 const FORM_KOSONG = { entityType: 'arsip', entityId: '', purpose: '', accessMode: 'view' };
 
 function formatDate(value) {
