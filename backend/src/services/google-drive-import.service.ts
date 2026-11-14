@@ -138,7 +138,8 @@ const IDENTITY_LABELS: Record<string, string> = {
     link: 'Tanggal, perihal, dan tautan dokumen',
 };
 function sameAsEarlierRow(key: SuratImportIdentityKey, row: number): string {
-    return `${IDENTITY_LABELS[key.by] ?? 'Identitas impor'} sama dengan baris data ke-${row} pada sumber ini.`;
+    const label = key.by === 'nomor' && key.pengirim ? 'Nomor surat, tahun, dan pengirim' : IDENTITY_LABELS[key.by];
+    return `${label ?? 'Identitas impor'} sama dengan baris data ke-${row} pada sumber ini.`;
 }
 
 export class GoogleDriveImportService {

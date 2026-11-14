@@ -241,7 +241,6 @@ export const migrationService = {
             if (!perihal) throw new ValidationError('Perihal wajib diisi.');
             const numbered = Boolean(nomorSurat && nomorSurat !== '-');
             if (!numbered && !dari) throw new ValidationError('Nomor surat kosong memerlukan tanggal, perihal, dan pengirim untuk identitas impor yang stabil.');
-            const identity = numbered ? [unitKerjaId, year, nomorSurat] : [unitKerjaId, date, perihal, dari];
             const record = {
                 unitKerjaId, noUrut: parseInt(row['No'] || '0') || position, tahun: year,
                 jenisSurat: row['Jenis Surat'] || 'Surat Dinas', sifatSurat,
@@ -249,9 +248,12 @@ export const migrationService = {
                 status: row['Status'] || 'belum_dibalas', disposisi: row['Disposisi'] ? [row['Disposisi']] : [],
                 createdBy: auditContext.userId,
             };
+            // Rows of one file are told apart as the canonical create tells them
+            // apart: a numbered letter by its number, year, and sender.
+            const key = suratMasukService.importIdentityKey(record);
             return {
-                identity: JSON.stringify(identity),
-                key: suratMasukService.importIdentityKey(record),
+                identity: JSON.stringify(key),
+                key,
                 create: () => suratMasukService.createImported(record, auditContext),
             };
         }, options, keys => suratMasukService.existingImportIdentities(keys));

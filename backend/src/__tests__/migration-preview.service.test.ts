@@ -79,6 +79,17 @@ describe('CSV date fidelity and mutation-free preview', () => {
         expect(mocks.masuk).not.toHaveBeenCalled();
     });
 
+    it('tells numbered incoming letters apart by their sender, inside the file and in the lookup', async () => {
+        const result = await migrationService.importSuratMasuk([
+            'Nomor Surat,Tanggal Surat,Perihal,Dari',
+            'SM-1,2026-09-11,Permohonan A,Instansi A',
+            'SM-1,2026-09-12,Permohonan B,Instansi B',
+            'SM-1,2026-09-13,Permohonan A lagi,INSTANSI  A',
+        ].join('\n'), 'unit-a', actor, { dryRun: true });
+        expect(result.rows.map(row => row.status)).toEqual(['valid', 'valid', 'duplicate']);
+        expect(mocks.existing.mock.calls[0][0].map((key: { pengirim?: string }) => key.pengirim)).toEqual(['instansi a', 'instansi b', 'instansi a']);
+    });
+
     it.each(['', '-'])('imports an unnumbered outgoing letter (%s) through automatic numbering', async number => {
         const source = csv('Nomor Surat,Tanggal Surat,Perihal,Dari,Kepada', number, '2026-09-11');
         const result = await migrationService.importSuratKeluar(source, 'unit-a', actor);

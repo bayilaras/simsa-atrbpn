@@ -14,9 +14,38 @@ export function assertImportConnected(options?: SuratImportOptions): void {
 
 /** The exact values an imported letter is recognised by (see suratImportIdentityKey). */
 export type SuratImportIdentityKey =
-    | { by: 'nomor'; unitKerjaId: string; tahun: number; nomorSurat: string }
+    | { by: 'nomor'; unitKerjaId: string; tahun: number; nomorSurat: string;
+        /** A surat masuk row that names its sender: the sender as importSender reads it. */
+        pengirim?: string }
     | { by: 'counterpart'; unitKerjaId: string; tanggalSurat: string; perihal: string; counterpart: string }
     | { by: 'link'; unitKerjaId: string; tanggalSurat: string; perihal: string; linkDokumen: string };
+
+/**
+ * The sender of a numbered surat masuk as imports compare it: spaces
+ * collapsed, trimmed, letter case ignored. senderSql reads a recorded sender
+ * the same way.
+ */
+export function importSender(value: string | null | undefined): string {
+    return (value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+// Whitespace as JavaScript's \s reads it, non-breaking spaces from copied text
+// included, named here so that the database locale cannot change it.
+const SPACE_RUN = '[\\s\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]+';
+
+/** importSender in SQL. Both sides of a comparison go through it, so they always read a sender alike. */
+function senderSql(value: SQL | AnyColumn): SQL {
+    return sql`lower(btrim(regexp_replace(coalesce(${value}, ''), ${SPACE_RUN}, ' ', 'g')))`;
+}
+
+/**
+ * Another sender makes another letter. A sender missing on either side tells
+ * nothing apart, so then the number and year decide alone, as they did before
+ * senders were compared.
+ */
+function sameSenderSql(source: SQL): SQL {
+    return sql`(${source} = '' OR ${senderSql(suratMasuk.dari)} = '' OR ${senderSql(suratMasuk.dari)} = ${senderSql(source)})`;
+}
 
 /** Validate and build the identity before writing. */
 export function suratImportIdentityKey(
@@ -35,7 +64,12 @@ export function suratImportIdentityKey(
     const number = data.nomorSurat?.trim();
     // Intentionally include soft-deleted rows: retrying an import never restores
     // or recreates a deleted record. Restoration uses its existing audited flow.
-    if (number && number !== '-') return { by: 'nomor', unitKerjaId: data.unitKerjaId, tahun: data.tahun, nomorSurat: number };
+    if (number && number !== '-') {
+        // Senders number their letters independently: the same number and year
+        // from two senders are two incoming letters.
+        const pengirim = type === 'masuk' ? importSender(data.dari) : '';
+        return { by: 'nomor', unitKerjaId: data.unitKerjaId, tahun: data.tahun, nomorSurat: number, ...(pengirim ? { pengirim } : {}) };
+    }
     const counterpart = type === 'masuk' ? data.dari : data.kepada;
     // Registers without a recipient column still link each document; that link
     // tells apart same-day letters with the same subject.
@@ -50,7 +84,8 @@ export function suratImportIdentityKey(
 /** Execute this lookup under the canonical unit-template lock. */
 export function suratImportIdentityWhere(type: 'masuk' | 'keluar', key: SuratImportIdentityKey): SQL {
     const table = type === 'masuk' ? suratMasuk : suratKeluar;
-    if (key.by === 'nomor') return and(eq(table.unitKerjaId, key.unitKerjaId), eq(table.tahun, key.tahun), eq(table.nomorSurat, key.nomorSurat))!;
+    if (key.by === 'nomor') return and(eq(table.unitKerjaId, key.unitKerjaId), eq(table.tahun, key.tahun), eq(table.nomorSurat, key.nomorSurat),
+        type === 'masuk' && key.pengirim ? sameSenderSql(sql`${key.pengirim}::text`) : undefined)!;
     return and(eq(table.unitKerjaId, key.unitKerjaId), eq(table.tanggalSurat, key.tanggalSurat), eq(table.perihal, key.perihal),
         key.by === 'link' ? eq(suratKeluar.linkDokumen, key.linkDokumen)
             : type === 'masuk' ? eq(suratMasuk.dari, key.counterpart) : eq(suratKeluar.kepada, key.counterpart))!;
@@ -80,12 +115,14 @@ type IdentityExecutor = { execute: (query: SQL) => PromiseLike<{ rows: Record<st
  */
 function identityProbes(type: 'masuk' | 'keluar', keys: SuratImportIdentityKey[], select: (probe: SQL, matches: SQL) => SQL): SQL[] {
     const table = type === 'masuk' ? suratMasuk : suratKeluar;
-    const numbered = keys.flatMap((key, index) => key.by === 'nomor' ? [sql`(${index}::int, ${key.unitKerjaId}::text, ${key.tahun}::int, ${key.nomorSurat}::text)`] : []);
+    const numbered = keys.flatMap((key, index) => key.by === 'nomor'
+        ? [sql`(${index}::int, ${key.unitKerjaId}::text, ${key.tahun}::int, ${key.nomorSurat}::text, ${key.pengirim ?? ''}::text)`] : []);
     const dated = (by: 'counterpart' | 'link') => keys.flatMap((key, index) => key.by === by
         ? [sql`(${index}::int, ${key.unitKerjaId}::text, ${key.tanggalSurat}::date, ${key.perihal}::text, ${key.by === 'link' ? key.linkDokumen : key.counterpart}::text)`] : []);
     const branches: SQL[] = [];
-    if (numbered.length) branches.push(select(sql`(VALUES ${sql.join(numbered, sql`, `)}) AS probe(i, unit, tahun, nomor)`,
-        sql`${table.unitKerjaId} = probe.unit AND ${table.tahun} = probe.tahun AND ${table.nomorSurat} = probe.nomor`));
+    if (numbered.length) branches.push(select(sql`(VALUES ${sql.join(numbered, sql`, `)}) AS probe(i, unit, tahun, nomor, pengirim)`,
+        and(sql`${table.unitKerjaId} = probe.unit AND ${table.tahun} = probe.tahun AND ${table.nomorSurat} = probe.nomor`,
+            type === 'masuk' ? sameSenderSql(sql`probe.pengirim`) : undefined)!));
     for (const [by, column] of [['counterpart', type === 'masuk' ? suratMasuk.dari : suratKeluar.kepada], ['link', suratKeluar.linkDokumen]] as const) {
         const values = dated(by);
         if (values.length) branches.push(select(sql`(VALUES ${sql.join(values, sql`, `)}) AS probe(i, unit, tanggal, perihal, pembeda)`,

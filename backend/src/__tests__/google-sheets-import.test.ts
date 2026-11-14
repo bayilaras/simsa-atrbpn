@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { resolveSheetMapping } from '../services/google-sheets-import-mapping.js';
-import { DuplicateSuratImportError, suratImportIdentity } from '../services/surat-import-identity.js';
+import { DuplicateSuratImportError, suratImportIdentity, suratImportIdentityKey } from '../services/surat-import-identity.js';
 
 // The bulk lookup is advisory; by default it finds nothing so every row reaches the canonical create.
 const mocks = vi.hoisted(() => ({ incoming: vi.fn(), outgoing: vi.fn(), existing: vi.fn(),
@@ -299,6 +299,34 @@ describe('resumable import within a time budget', () => {
         const result = await run(outgoingRows(5));
         expect(result).toMatchObject({ importedRows: 5, totalRows: 5 });
         for (const field of ['startRow', 'nextRow', 'prefixHash']) expect(result).not.toHaveProperty(field);
+    });
+});
+
+describe('import identity of a numbered incoming letter', () => {
+    const base = { unitKerjaId: 'unit-a', tahun: 2026, nomorSurat: '001/2026', tanggalSurat: '2026-03-02', perihal: 'Permohonan' };
+    const key = (type: 'masuk' | 'keluar', extra: { dari?: string; kepada?: string }) => suratImportIdentityKey(type, { ...base, ...extra });
+
+    it('includes the sender, read with spaces collapsed and letter case ignored', () => {
+        expect(key('masuk', { dari: '  Kantor  Pertanahan Kota  ' }))
+            .toEqual({ by: 'nomor', unitKerjaId: 'unit-a', tahun: 2026, nomorSurat: '001/2026', pengirim: 'kantor pertanahan kota' });
+        expect(key('masuk', { dari: 'KANTOR PERTANAHAN KOTA' })).toEqual(key('masuk', { dari: 'Kantor Pertanahan Kota' }));
+        expect(key('masuk', { dari: 'Instansi B' })).not.toEqual(key('masuk', { dari: 'Instansi A' }));
+    });
+
+    it('leaves the sender out when the row names none, and for every outgoing letter', () => {
+        expect(key('masuk', { dari: ' ' })).toEqual({ by: 'nomor', unitKerjaId: 'unit-a', tahun: 2026, nomorSurat: '001/2026' });
+        expect(key('keluar', { dari: 'Instansi A', kepada: 'Instansi B' })).toEqual({ by: 'nomor', unitKerjaId: 'unit-a', tahun: 2026, nomorSurat: '001/2026' });
+    });
+
+    it('compares the recorded sender in SQL only for an incoming letter that names one', () => {
+        const query = (type: 'masuk' | 'keluar', extra: { dari?: string; kepada?: string }) =>
+            new PgDialect().sqlToQuery(suratImportIdentity(type, { ...base, ...extra }));
+        const masuk = query('masuk', { dari: 'Instansi A' });
+        expect(masuk.sql).toContain('"dari"');
+        expect(masuk.sql).toContain('regexp_replace');
+        expect(masuk.params).toContain('instansi a');
+        expect(query('masuk', { dari: '' }).sql).not.toContain('regexp_replace');
+        expect(query('keluar', { kepada: 'Instansi A' }).sql).not.toContain('regexp_replace');
     });
 });
 
