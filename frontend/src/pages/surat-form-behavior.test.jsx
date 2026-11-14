@@ -137,7 +137,7 @@ describe.each(pages)('form surat $kind', page => {
         expect(screen.getByRole('alert')).toHaveFocus();
         expect(fixtures[page.kind].update).not.toHaveBeenCalled();
         fireEvent.click(trigger);
-        fireEvent.click(await screen.findByRole('button', { name: 'Nota Dinas', exact: true }));
+        fireEvent.click(await screen.findByRole('option', { name: 'Nota Dinas', exact: true }));
         expect(trigger).not.toHaveAttribute('aria-invalid', 'true');
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
