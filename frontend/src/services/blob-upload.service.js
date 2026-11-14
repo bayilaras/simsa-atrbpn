@@ -8,7 +8,14 @@ import { STORAGE_PROVIDER } from '../lib/cloud-provider-config';
 import { api } from './api';
 import { archiveUploadError, regulatorySourceUploadError } from '../lib/archive-upload';
 
-const BLOB_UPLOAD_TIMEOUT_MS = 2 * 60 * 1000;
+// Business PDFs (at most 10 MiB) get a deadline that follows the file size:
+// one minute for the token and confirmation plus the transfer at an assumed
+// slow 32 KiB/s, kept between two and ten minutes. A 10 MiB PDF gets about
+// six and a half minutes instead of a flat two.
+const BLOB_UPLOAD_MIN_TIMEOUT_MS = 2 * 60 * 1000;
+const BLOB_UPLOAD_MAX_TIMEOUT_MS = 10 * 60 * 1000;
+const BLOB_UPLOAD_BASE_MS = 60 * 1000;
+const BLOB_UPLOAD_SLOW_BYTES_PER_SECOND = 32 * 1024;
 const REGULATORY_BLOB_UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
 const BLOB_CONFIRMATION_TIMEOUT_MS = 30 * 1000;
 const RULE_SET_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -36,6 +43,23 @@ function directUploadError(file, options = {}) {
     if (galat) return galat;
     const nama = file?.name || '';
     return nama.includes('..') || nama.includes('\\') ? PESAN_NAMA_BERKAS_TIDAK_DIDUKUNG : null;
+}
+
+export function businessUploadTimeoutMs(sizeBytes) {
+    const size = Number.isFinite(sizeBytes) && sizeBytes > 0 ? sizeBytes : 0;
+    const estimate = BLOB_UPLOAD_BASE_MS + Math.ceil(size / BLOB_UPLOAD_SLOW_BYTES_PER_SECOND) * 1000;
+    return Math.min(BLOB_UPLOAD_MAX_TIMEOUT_MS, Math.max(BLOB_UPLOAD_MIN_TIMEOUT_MS, estimate));
+}
+
+const PESAN_UNGGAH_LEWAT_WAKTU = 'Unggah berkas melewati batas waktu. Periksa koneksi internet, lalu coba unggah kembali.';
+// Only business PDFs (at most 10 MiB) carry the advice to make the file smaller.
+const SARAN_KECILKAN_PDF = ' Bila berkas PDF berukuran besar, kecilkan ukurannya terlebih dahulu (misalnya dengan fitur kompres PDF), lalu unggah kembali.';
+
+function uploadTimeoutError(regulatorySource = false) {
+    return Object.assign(
+        new Error(regulatorySource ? PESAN_UNGGAH_LEWAT_WAKTU : PESAN_UNGGAH_LEWAT_WAKTU + SARAN_KECILKAN_PDF),
+        { code: 'UPLOAD_TIMEOUT' },
+    );
 }
 
 function abortError() {
@@ -70,8 +94,7 @@ async function withUploadDeadline(operation, { signal, timeoutMs, getTimeoutErro
     };
     globalThis.document?.addEventListener('securitypolicyviolation', onPolicyViolation);
     const timer = setTimeout(() => {
-        const error = getTimeoutError ? getTimeoutError()
-            : Object.assign(new Error('Unggah berkas melewati batas waktu. Periksa koneksi internet, lalu coba unggah kembali.'), { code: 'UPLOAD_TIMEOUT' });
+        const error = getTimeoutError ? getTimeoutError() : uploadTimeoutError(true);
         stop(error);
     }, timeoutMs);
     try {
@@ -160,7 +183,7 @@ async function uploadFileToVercelBlob(file, { folder = 'uploads', purpose, ruleS
     const clientPayload = regulatorySource
         ? JSON.stringify({ purpose: 'regulatory-source', ruleSetId: ruleSetId.toLowerCase() })
         : undefined;
-    const timeoutMs = regulatorySource ? REGULATORY_BLOB_UPLOAD_TIMEOUT_MS : BLOB_UPLOAD_TIMEOUT_MS;
+    const timeoutMs = regulatorySource ? REGULATORY_BLOB_UPLOAD_TIMEOUT_MS : businessUploadTimeoutMs(file.size);
     const deadline = Date.now() + timeoutMs;
     let waitingForConfirmation = false;
     const blob = await withUploadDeadline(async (uploadSignal) => {
@@ -201,8 +224,7 @@ async function uploadFileToVercelBlob(file, { folder = 'uploads', purpose, ruleS
         }
     }, {
         signal, timeoutMs,
-        getTimeoutError: () => waitingForConfirmation ? uploadConfirmationTimeout()
-            : Object.assign(new Error('Unggah berkas melewati batas waktu. Periksa koneksi internet, lalu coba unggah kembali.'), { code: 'UPLOAD_TIMEOUT' }),
+        getTimeoutError: () => waitingForConfirmation ? uploadConfirmationTimeout() : uploadTimeoutError(regulatorySource),
     });
 
     return {
