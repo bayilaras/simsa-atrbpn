@@ -178,7 +178,7 @@ Lakukan berurutan. Layanan baru dinyatakan pulih setelah semua langkah lulus.
 1. `node scripts/ops/release-smoke.mjs backend https://simsa-backend.vercel.app` dan `node scripts/ops/release-smoke.mjs frontend https://simsa-frontend.vercel.app` lulus.
 2. Jalankan workflow backup (`operations-recovery.yml`) secara manual dan pastikan hijau. Run ini membuktikan kredensial backup yang baru dan menulis status backup ke store yang berlaku.
 3. Jalankan workflow integritas (`operations-fixity.yml`) secara manual dan pastikan hijau.
-4. Jalankan Operations Monitor secara manual dan pastikan hijau. Run ini juga membangunkan pemindai.
+4. Jalankan Operations Monitor secara manual dan pastikan hijau. Run ini juga meminta backend membangunkan pemindai, yang perlu memperbarui verifikasinya pada deployment baru.
 5. Super Admin masuk dan membuka **Administrasi → Monitoring Operasional**. Semua kartu harus **Sehat**.
 6. Buka satu PDF dari setiap jenis yang ada: surat masuk, surat keluar, lampiran arsip, dan sumber klasifikasi atau JRA. Pratinjau dan unduhan harus berhasil.
 7. Cocokkan jumlah dokumen di ringkasan alat dengan `BACA-SAYA.txt`. Jumlah catatan audit `system:operations-recovery-reupload` di menu **Audit Log** harus sama dengan jumlah lokasi yang ditulis ulang.
