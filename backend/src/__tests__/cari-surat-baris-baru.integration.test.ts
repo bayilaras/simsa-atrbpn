@@ -2,7 +2,7 @@ import type { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as schema from '../db/schema';
-import { SURAT, bootRangkaianDatabase, seedRangkaianFixture } from './helpers/rangkaian-pglite';
+import { ARSIP_TERBATAS, SURAT, bootRangkaianDatabase, seedRangkaianFixture } from './helpers/rangkaian-pglite';
 
 // Perihal multi-baris tersimpan dengan baris baru; pencarian daftar dengan frasa
 // satu baris tetap harus menemukannya, tanpa mengubah penyaringan unit/kelas.
@@ -12,12 +12,14 @@ vi.mock('../config/database', () => ({ get db() { return holder.db; } }));
 let database: PGlite;
 let masuk: typeof import('../services/surat-masuk.service').suratMasukService;
 let keluar: typeof import('../services/surat-keluar.service').suratKeluarService;
+let arsipService: typeof import('../services/arsip.service').arsipService;
 
 beforeAll(async () => {
     database = await bootRangkaianDatabase();
     holder.db = drizzle(database, { schema });
     masuk = (await import('../services/surat-masuk.service')).suratMasukService;
     keluar = (await import('../services/surat-keluar.service')).suratKeluarService;
+    arsipService = (await import('../services/arsip.service')).arsipService;
 }, 90_000);
 afterAll(async () => { await database?.close(); });
 beforeEach(async () => {
@@ -42,6 +44,15 @@ describe('pencarian daftar surat melintasi baris baru', () => {
         expect(await idMasuk('pertanahan')).toContain(SURAT.smBiasa);
         expect(await idMasuk('pertanahan data')).not.toContain(SURAT.smBiasa);
         expect(await idKeluar('lanjut data')).not.toContain(SURAT.skBpptBiasa);
+    });
+
+    it('daftar arsip menemukan uraian berkas multi-baris dengan frasa satu baris', async () => {
+        await database.query('UPDATE arsip SET uraian_berkas = $2 WHERE id = $1', [ARSIP_TERBATAS, 'Berkas pengadaan\ntanah  tahap II']);
+        const cari = async (search: string, unitKerjaId = 'sesditjen') =>
+            (await arsipService.findAll({ unitKerjaId, search, securityClassifications: null } as any)).data.map((row: any) => row.id);
+        expect(await cari('pengadaan tanah tahap')).toContain(ARSIP_TERBATAS);
+        expect(await cari('tanah pengadaan')).not.toContain(ARSIP_TERBATAS);
+        expect(await cari('pengadaan tanah', 'dir_bppt')).not.toContain(ARSIP_TERBATAS);
     });
 
     it('cakupan unit tidak berubah', async () => {

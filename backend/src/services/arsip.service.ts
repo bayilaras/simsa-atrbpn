@@ -17,7 +17,8 @@ import {
     type StorageLocation,
     archiveLending,
 } from '../db/schema';
-import { eq, and, desc, sql, ilike, or, isNotNull, isNull, ne, inArray, getTableColumns, type SQL } from 'drizzle-orm';
+import { eq, and, desc, sql, or, isNotNull, isNull, ne, inArray, getTableColumns, type SQL } from 'drizzle-orm';
+import { cocokTeksCari } from '../utils/cari-teks.js';
 import { AppError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors';
 import {
     PESAN_BOKS_TUJUAN_SEDANG_DIPINJAM,
@@ -409,10 +410,10 @@ export class ArsipService {
         if (search) {
             conditions.push(
                 or(
-                    ilike(arsip.nomorBerkas, `%${search}%`),
-                    ilike(arsip.uraianBerkas, `%${search}%`),
-                    ilike(arsip.nomorSuratOriginal, `%${search}%`),
-                    ilike(arsip.perihalOriginal, `%${search}%`)
+                    cocokTeksCari(arsip.nomorBerkas, search),
+                    cocokTeksCari(arsip.uraianBerkas, search),
+                    cocokTeksCari(arsip.nomorSuratOriginal, search),
+                    cocokTeksCari(arsip.perihalOriginal, search)
                 )!
             );
         }
