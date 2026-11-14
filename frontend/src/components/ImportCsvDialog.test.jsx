@@ -123,6 +123,7 @@ describe('CSV preview before import', () => {
         await openWithFile()
         expect(screen.getByText(/Pemisah kolom boleh koma, titik koma, atau tab dan dibaca dari baris judul/)).toBeInTheDocument()
         expect(screen.getByText(/urutan hari, bulan, tahun, misalnya 03\/11\/2026, 3-11-2026, atau 3 November 2026/)).toBeInTheDocument()
+        expect(screen.getByText(/atau bertahun di luar 1920 sampai 2199, ditolak/)).toBeInTheDocument()
         fireEvent.click(screen.getByRole('button', { name: 'Pratinjau' }))
         expect(await screen.findByText(message)).toBeInTheDocument()
         expect(screen.getByRole('button', { name: 'Impor data valid' })).toBeDisabled()
