@@ -100,7 +100,7 @@ export function createAuthService({
             prefetchedSession = null;
             try {
                 const result = await legacyClient.signUp.email({ email, password, name });
-                if (result.error) throw new Error(result.error.message || 'Sign up failed');
+                if (result.error) throw new Error(result.error.message || 'Pendaftaran akun gagal. Silakan coba lagi.');
                 return result;
             } catch (error) {
                 console.error('Sign up failed:', error);

@@ -66,7 +66,7 @@ export function DistributeDialog({ open, onOpenChange, suratData, sourceUnitId, 
             onSuccess?.()
         } catch (error) {
             console.error('Error distributing:', error)
-            toast({ title: 'Error', description: pesanGalat(error, 'Gagal mendisposisikan surat'), variant: 'destructive' })
+            toast({ title: 'Gagal', description: pesanGalat(error, 'Gagal mendisposisikan surat'), variant: 'destructive' })
         } finally {
             setLoading(false)
         }

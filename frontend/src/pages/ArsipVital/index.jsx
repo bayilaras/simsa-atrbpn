@@ -189,7 +189,7 @@ export default function ArsipVital() {
             link.parentNode.removeChild(link)
             window.URL.revokeObjectURL(url)
         } catch {
-            toast({ title: 'Error', description: 'Gagal mencetak daftar arsip vital', variant: 'destructive' })
+            toast({ title: 'Gagal', description: 'Gagal mencetak daftar arsip vital', variant: 'destructive' })
         }
     }
 

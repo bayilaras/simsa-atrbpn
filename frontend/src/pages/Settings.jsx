@@ -137,7 +137,7 @@ export default function Settings() {
         } catch (error) {
             console.error('Profile update error:', error);
             toast({
-                title: 'Error',
+                title: 'Gagal',
                 description: error?.message || 'Gagal memperbarui profil. Silakan coba lagi.',
                 variant: 'destructive',
             });
@@ -174,7 +174,7 @@ export default function Settings() {
             loadTabData();
         } catch (error) {
             toast({
-                title: 'Error',
+                title: 'Gagal',
                 description: error?.message || 'Gagal memperbarui unit kerja',
                 variant: 'destructive',
             });
@@ -201,7 +201,7 @@ export default function Settings() {
             });
         } catch (error) {
             toast({
-                title: 'Error',
+                title: 'Gagal',
                 description: error?.message || 'Gagal memperbarui template',
                 variant: 'destructive',
             });
@@ -219,7 +219,7 @@ export default function Settings() {
             toast({ title: 'Berhasil', description: 'Preferensi pengguna berhasil disimpan' });
         } catch (error) {
             toast({
-                title: 'Error',
+                title: 'Gagal',
                 description: error?.message || 'Gagal menyimpan preferensi',
                 variant: 'destructive',
             });

@@ -97,7 +97,7 @@ export default function SuratKeluarDetail() {
             setPerluAkses(null)
             console.error('Error fetching surat:', error)
             toast({
-                title: 'Error',
+                title: 'Gagal',
                 description: 'Gagal memuat data surat',
                 variant: 'destructive',
             })
@@ -168,7 +168,7 @@ export default function SuratKeluarDetail() {
             setAlurVersi((v) => v + 1)
         } catch (error) {
             toast({
-                title: 'Error',
+                title: 'Gagal',
                 description: error.message || 'Gagal mengarsipkan surat',
                 variant: 'destructive',
             })

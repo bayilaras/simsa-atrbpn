@@ -48,7 +48,7 @@ export default function AutentikasiCreate() {
         } catch (error) {
             console.error(error);
             toast({
-                title: "Error",
+                title: "Gagal",
                 description: "Gagal memuat daftar arsip",
                 variant: "destructive"
             });
@@ -106,7 +106,7 @@ export default function AutentikasiCreate() {
         } catch (error) {
             console.error(error);
             toast({
-                title: "Error",
+                title: "Gagal",
                 description: error.response?.data?.message || "Gagal membuat autentikasi",
                 variant: "destructive"
             });

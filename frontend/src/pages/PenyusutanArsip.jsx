@@ -112,7 +112,7 @@ export default function PenyusutanArsip() {
             setSelectedBatch(result)
             setRecoveryReason('')
         } catch (err) {
-            toast({ title: 'Error', description: err.message || 'Gagal memuat detail batch', variant: 'destructive' })
+            toast({ title: 'Gagal', description: err.message || 'Gagal memuat detail batch', variant: 'destructive' })
         }
     }
 
@@ -140,7 +140,7 @@ export default function PenyusutanArsip() {
             loadBatches()
             loadCandidates()
         } catch (err) {
-            toast({ title: 'Error', description: err.message || 'Gagal membuat usulan', variant: 'destructive' })
+            toast({ title: 'Gagal', description: err.message || 'Gagal membuat usulan', variant: 'destructive' })
         } finally {
             setCreating(false)
         }
@@ -157,7 +157,7 @@ export default function PenyusutanArsip() {
             loadBatches()
             if (selectedBatch?.id === id) loadBatchDetail(id)
         } catch (err) {
-            toast({ title: 'Error', description: err.message || 'Gagal mengubah status', variant: 'destructive' })
+            toast({ title: 'Gagal', description: err.message || 'Gagal mengubah status', variant: 'destructive' })
         } finally { setAdvancing(false) }
     }
 
@@ -183,7 +183,7 @@ export default function PenyusutanArsip() {
             loadBatches()
             loadCandidates()
         } catch (err) {
-            toast({ title: 'Error', description: err.message || 'Gagal menghapus', variant: 'destructive' })
+            toast({ title: 'Gagal', description: err.message || 'Gagal menghapus', variant: 'destructive' })
         }
     }
 

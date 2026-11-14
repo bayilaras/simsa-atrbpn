@@ -193,7 +193,7 @@ export function ArchiveLifecycleWidget({ className = "", unitKerjaId, perluPilih
                                                 </p>
                                             </div>
                                             <Badge variant="outline" className="text-xs">
-                                                {item.hasilAkhir || 'N/A'}
+                                                {item.hasilAkhir || '-'}
                                             </Badge>
                                         </div>
                                     ))}
