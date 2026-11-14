@@ -3,7 +3,7 @@ import { uploadFileToBlob } from './blob-upload.service';
 
 export const suratKeluarService = {
     // List surat keluar with pagination and filters
-    async getAll({ unitKerjaId, tahun, naskahDinas, search, persetujuan, tanggalDari, tanggalSampai, page = 1, limit = 20 } = {}) {
+    async getAll({ unitKerjaId, tahun, naskahDinas, search, persetujuan, tanggalDari, tanggalSampai, urutan, page = 1, limit = 20 } = {}) {
         const response = await api.get('/api/surat-keluar', {
             unitKerjaId,
             tahun,
@@ -12,6 +12,7 @@ export const suratKeluarService = {
             persetujuan,
             tanggalDari,
             tanggalSampai,
+            urutan,
             page,
             limit,
         });
@@ -96,9 +97,9 @@ export const suratKeluarService = {
         return response.data;
     },
 
-    // Delete surat keluar
-    async delete(id) {
-        await api.delete(`/api/surat-keluar/${id}`);
+    // Delete surat keluar; alasan dicatat di audit dan tampil di daftar Surat Terhapus
+    async delete(id, { alasan } = {}) {
+        await api.delete(`/api/surat-keluar/${id}`, alasan ? { alasan } : undefined);
     },
 
     // Archive surat keluar (creates arsip record with full metadata)

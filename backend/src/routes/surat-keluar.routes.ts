@@ -13,6 +13,7 @@ import {
     querySuratKeluarSchema,
     nextSuratNumberQuerySchema,
     archiveRegistrationSchema,
+    hapusSuratSchema,
 } from '../validators/schemas';
 import { createLogger } from '../utils/logger';
 import { blobStorageService } from '../services/blob-storage.service';
@@ -28,7 +29,7 @@ import {
     normalizeSecurityClassification,
     recordAccessService,
 } from '../services/record-access.service.js';
-import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_LOKASI_SIMPAN_TIDAK_SESUAI } from '../constants/pesan-akses.js';
+import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_LOKASI_SIMPAN_TIDAK_SESUAI, PESAN_SURAT_HAPUS_TIDAK_DITEMUKAN } from '../constants/pesan-akses.js';
 import auditLogService from '../services/audit-log.service.js';
 import { suratAksiPayload } from '../services/rangkaian/aksi.js';
 import { badanPerluPersetujuan, rekamanPerluPersetujuan } from '../services/access/perlu-persetujuan.js';
@@ -93,7 +94,7 @@ router.get('/', validateQuery(querySuratKeluarSchema), async (req: AuthRequest, 
     try {
         // Use validated query from res.locals (set by validateQuery middleware)
         const validatedQuery = res.locals.validatedQuery || {};
-        const { tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif, search, persetujuan, page, limit } = validatedQuery;
+        const { tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif, search, persetujuan, urutan, page, limit } = validatedQuery;
 
         // Resolve unitKerjaId based on user's role (enforces unit kerja isolation)
         const unitKerjaId = resolveListUnitKerjaId(req, validatedQuery.unitKerjaId);
@@ -108,6 +109,7 @@ router.get('/', validateQuery(querySuratKeluarSchema), async (req: AuthRequest, 
             klasifikasiSubstantif,
             search,
             persetujuan,
+            urutan,
             page,
             limit,
             securityClassifications: allowedSecurityClassifications(req.user),
@@ -494,11 +496,11 @@ router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthR
         const unitScope = resolveRecordUnitScope(req);
         const existing = await suratKeluarService.findById(id, unitScope);
         if (!existing) {
-            return res.status(404).json({ error: 'Surat keluar not found' });
+            return res.status(404).json({ error: 'Surat keluar not found', message: PESAN_SURAT_HAPUS_TIDAK_DITEMUKAN });
         }
         const access = await recordAccessService.check(req.user, 'surat_keluar', id);
         if (!access.exists || !access.mutable) {
-            return res.status(404).json({ error: 'Surat keluar not found' });
+            return res.status(404).json({ error: 'Surat keluar not found', message: PESAN_SURAT_HAPUS_TIDAK_DITEMUKAN });
         }
         if (existing.isArchived) {
             return res.status(409).json({
@@ -510,14 +512,19 @@ router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthR
                 error: 'Surat yang sedang atau telah disetujui tidak dapat dihapus.',
             });
         }
+        // Alasan dicatat di audit hapus dan tampil di daftar Surat Terhapus.
+        const badan = hapusSuratSchema.safeParse(req.body ?? {});
+        if (!badan.success) {
+            return sendValidationFailure(res, badan.error.issues);
+        }
         const result = await suratKeluarService.delete(id, req.user?.id, unitScope, {
             userId: req.user?.id,
             userEmail: req.user?.email,
             ipAddress: req.ip,
-        });
+        }, { alasan: badan.data.alasan });
 
         if (!result) {
-            return res.status(404).json({ error: 'Surat keluar not found' });
+            return res.status(404).json({ error: 'Surat keluar not found', message: PESAN_SURAT_HAPUS_TIDAK_DITEMUKAN });
         }
 
         res.json({ success: true, message: 'Surat keluar deleted successfully' });

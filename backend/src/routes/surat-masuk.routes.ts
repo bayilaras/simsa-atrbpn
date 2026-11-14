@@ -28,7 +28,7 @@ import {
     normalizeSecurityClassification,
     recordAccessService,
 } from '../services/record-access.service.js';
-import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_LOKASI_SIMPAN_TIDAK_SESUAI, PESAN_SIFAT_TIDAK_DIKENAL } from '../constants/pesan-akses.js';
+import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_LOKASI_SIMPAN_TIDAK_SESUAI, PESAN_SIFAT_TIDAK_DIKENAL, PESAN_SURAT_HAPUS_TIDAK_DITEMUKAN } from '../constants/pesan-akses.js';
 import { rankKelas } from '../services/access/visibility-spec.js';
 import { badanPerluPersetujuan, rekamanPerluPersetujuan } from '../services/access/perlu-persetujuan.js';
 import { berkasHanyaTayang } from '../services/access/berkas-akses.js';
@@ -87,7 +87,7 @@ router.get('/', validateQuery(querySuratMasukSchema), async (req: AuthRequest, r
     try {
         // Use validated query from res.locals (set by validateQuery middleware)
         const validatedQuery = res.locals.validatedQuery || {};
-        const { tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, search, page, limit } = validatedQuery;
+        const { tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, disposisiUnitId, search, urutan, page, limit } = validatedQuery;
 
         // Resolve unitKerjaId based on user's role (enforces unit kerja isolation)
         const unitKerjaId = resolveListUnitKerjaId(req, validatedQuery.unitKerjaId);
@@ -101,7 +101,9 @@ router.get('/', validateQuery(querySuratMasukSchema), async (req: AuthRequest, r
             sifatSurat,
             status,
             disposisi,
+            disposisiUnitId,
             search,
+            urutan,
             page,
             limit,
             securityClassifications: allowedSecurityClassifications(req.user),
@@ -505,11 +507,11 @@ router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthR
         const unitScope = resolveRecordUnitScope(req);
         const existing = await suratMasukService.findById(id, unitScope);
         if (!existing) {
-            return res.status(404).json({ error: 'Surat masuk not found' });
+            return res.status(404).json({ error: 'Surat masuk not found', message: PESAN_SURAT_HAPUS_TIDAK_DITEMUKAN });
         }
         const access = await recordAccessService.check(req.user, 'surat_masuk', id);
         if (!access.exists || !access.mutable) {
-            return res.status(404).json({ error: 'Surat masuk not found' });
+            return res.status(404).json({ error: 'Surat masuk not found', message: PESAN_SURAT_HAPUS_TIDAK_DITEMUKAN });
         }
         if (existing.isArchived) {
             return res.status(409).json({
@@ -525,7 +527,7 @@ router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthR
         }, { alasan });
 
         if (!result) {
-            return res.status(404).json({ error: 'Surat masuk not found' });
+            return res.status(404).json({ error: 'Surat masuk not found', message: PESAN_SURAT_HAPUS_TIDAK_DITEMUKAN });
         }
 
         res.json({ success: true, message: 'Surat masuk deleted successfully' });

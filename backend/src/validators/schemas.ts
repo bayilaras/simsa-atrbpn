@@ -7,6 +7,7 @@ import {
 } from '../utils/notification-id.js';
 import { jakartaDate } from '../utils/jakarta-date.js';
 import { KATEGORI_PERLU_DILENGKAPI } from '../services/perlu-dilengkapi.constants.js';
+import { URUTAN_DAFTAR_SURAT } from '../services/urutan-daftar-surat.constants.js';
 
 // Common schemas
 export const uuidSchema = z.string().uuid('Invalid UUID format');
@@ -102,6 +103,8 @@ function parseJsonObjectString(value: unknown) {
 
 const alasanText = z.string('Alasan wajib diisi').trim().min(10, 'Alasan minimal 10 karakter').max(2000, 'Alasan maksimal 2000 karakter');
 export const alasanSchema = z.object({ alasan: alasanText }).strict();
+/** Badan DELETE surat: alasan boleh kosong untuk klien lama; bila dikirim, aturannya sama dengan alasan lain. */
+export const hapusSuratSchema = z.object({ alasan: alasanText.optional() });
 
 const batasWaktuSchema = dateSchema.refine((value) => value >= jakartaDate(), 'Batas waktu tidak boleh sebelum hari ini');
 
@@ -213,7 +216,16 @@ export const querySuratMasukSchema = paginationSchema.extend({
         'biasa', 'segera', 'sangat_segera', 'terbatas', 'rahasia', 'sangat_rahasia', 'undangan', 'penting',
     ]).optional(),
     status: z.enum(['pending', 'diproses', 'selesai', 'arsip', 'belum_dibalas', 'sudah_dibalas']).optional(),
+    // Label disposisi tanpa unit (mis. label Kabag); unit tujuan lewat disposisiUnitId.
     disposisi: z.string().max(100).optional(),
+    disposisiUnitId: z.string().trim().min(1).max(50).optional(),
+    search: z.string().max(255).optional(),
+    urutan: z.enum(URUTAN_DAFTAR_SURAT).optional(),
+});
+
+/** Daftar Surat Terhapus (Super Admin). */
+export const querySuratTerhapusSchema = paginationSchema.extend({
+    unitKerjaId: z.string().trim().min(1).max(50).optional(),
     search: z.string().max(255).optional(),
 });
 
@@ -310,6 +322,7 @@ export const querySuratKeluarSchema = paginationSchema.extend({
     /** Penyaring kerja persetujuan; hanya mempersempit daftar yang sudah boleh dibaca. */
     persetujuan: z.enum(['menunggu_saya', 'draft_saya']).optional(),
     search: z.string().max(255).optional(),
+    urutan: z.enum(URUTAN_DAFTAR_SURAT).optional(),
 });
 
 // Arsip schemas

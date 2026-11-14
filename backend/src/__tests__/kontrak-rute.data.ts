@@ -443,6 +443,10 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'GET /:id/balasan': checkRead('recordAccessService.check'),
         'GET /:id/with-links': checkRead('recordAccessService.check'),
     },
+    'surat-terhapus.routes.ts': {
+        'GET /:jenis': proyeksi('suratTerhapusService.daftar'),
+        'POST /:jenis/:id/pulihkan': check('suratTerhapusService.pulihkan'),
+    },
     'tunjuk-silang.routes.ts': {
         'GET /': proyeksi('tunjukSilangService.findAll'),
         'GET /stats': proyeksi('tunjukSilangService.getStats'),

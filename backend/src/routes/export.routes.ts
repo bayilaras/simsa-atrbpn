@@ -10,6 +10,7 @@ import { createLogger } from '../utils/logger';
 import { allowedSecurityClassifications } from '../services/record-access.service.js';
 import { auditExport } from '../services/export-audit';
 import { jakartaDate } from '../utils/jakarta-date.js';
+import { urutanDaftarSuratDari } from '../services/urutan-daftar-surat';
 
 const log = createLogger('ExportRoutes');
 
@@ -17,6 +18,11 @@ const PESAN_GAGAL_EXCEL = 'Gagal mengekspor ke Excel. Silakan coba lagi.';
 const PESAN_GAGAL_PDF = 'Gagal mengekspor ke PDF. Silakan coba lagi.';
 
 const router = Router();
+
+/** Parameter teks pendek yang sama batasnya dengan validasi daftar; selain itu diabaikan. */
+function teksSingkat(value: unknown, maks = 50): string | undefined {
+    return typeof value === 'string' && value.trim() && value.length <= maks ? value.trim() : undefined;
+}
 
 // Apply rate limiting to all export routes
 router.use(exportLimiter);
@@ -30,7 +36,7 @@ router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
         // only super_admin/auditor may target another unit (or all units) via query param.
         const unitKerjaId = resolveUnitKerjaId(req) || undefined;
-        const { search, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi } = req.query;
+        const { search, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, disposisiUnitId } = req.query;
 
         const filters = {
             search: typeof search === 'string' ? search : undefined,
@@ -42,6 +48,8 @@ router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
             sifatSurat: sifatSurat as string,
             status: status as string,
             disposisi: disposisi as string,
+            disposisiUnitId: teksSingkat(disposisiUnitId),
+            urutan: urutanDaftarSuratDari(req.query.urutan),
             securityClassifications: allowedSecurityClassifications(req.user),
         };
 
@@ -66,7 +74,7 @@ router.get('/surat-masuk/pdf', async (req: AuthRequest, res: Response) => {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
         // only super_admin/auditor may target another unit (or all units) via query param.
         const unitKerjaId = resolveUnitKerjaId(req) || undefined;
-        const { search, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi } = req.query;
+        const { search, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, disposisiUnitId } = req.query;
 
         const filters = {
             search: typeof search === 'string' ? search : undefined,
@@ -78,6 +86,8 @@ router.get('/surat-masuk/pdf', async (req: AuthRequest, res: Response) => {
             sifatSurat: sifatSurat as string,
             status: status as string,
             disposisi: disposisi as string,
+            disposisiUnitId: teksSingkat(disposisiUnitId),
+            urutan: urutanDaftarSuratDari(req.query.urutan),
             securityClassifications: allowedSecurityClassifications(req.user),
         };
 
@@ -115,6 +125,7 @@ router.get('/surat-keluar/excel', async (req: AuthRequest, res: Response) => {
             naskahDinas: naskahDinas as string,
             klasifikasiFasilitatif: klasifikasiFasilitatif as string,
             klasifikasiSubstantif: klasifikasiSubstantif as string,
+            urutan: urutanDaftarSuratDari(req.query.urutan),
             securityClassifications: allowedSecurityClassifications(req.user),
         };
 
@@ -150,6 +161,7 @@ router.get('/surat-keluar/pdf', async (req: AuthRequest, res: Response) => {
             naskahDinas: naskahDinas as string,
             klasifikasiFasilitatif: klasifikasiFasilitatif as string,
             klasifikasiSubstantif: klasifikasiSubstantif as string,
+            urutan: urutanDaftarSuratDari(req.query.urutan),
             securityClassifications: allowedSecurityClassifications(req.user),
         };
 

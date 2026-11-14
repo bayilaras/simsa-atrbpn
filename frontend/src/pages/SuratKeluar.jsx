@@ -8,11 +8,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ExportButton } from '@/components/ExportButton';
 import { canExportReports } from '@/lib/provisioning-access';
 import { sifatSuratKeluarLabel } from '@/lib/sifat-surat-keluar';
+import { JENIS_NASKAH_DINAS } from '@/lib/jenis-naskah';
+import { pesanGalat } from '@/lib/pesan-galat';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DaftarSuratTerhapus } from '@/components/surat/DaftarSuratTerhapus';
+import { PILIHAN_URUTAN_SURAT, URUTAN_BAWAAN, parameterUrutan } from '@/lib/urutan-daftar-surat';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
 import ImportFileDialog from '@/components/ImportFileDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
@@ -118,11 +125,15 @@ export default function SuratKeluar() {
     const [naskahDinas, setNaskahDinas] = useState('all');
     const [tanggalDari, setTanggalDari] = useState(null);
     const [tanggalSampai, setTanggalSampai] = useState(null);
+    const [urutan, setUrutan] = useState(URUTAN_BAWAAN);
 
     // Dialog states
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [selectedSurat, setSelectedSurat] = useState(null);
+    const [alasanHapus, setAlasanHapus] = useState('');
+    // Super Admin: 'daftar' atau 'terhapus' (surat yang dihapus dan dapat dipulihkan).
+    const [tampilan, setTampilan] = useState('daftar');
 
     // Load unit kerja list for super admin
     useEffect(() => {
@@ -137,6 +148,8 @@ export default function SuratKeluar() {
     const resolvedUnitKerjaId = isSuperAdmin
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
         : (resolveEffectiveUnitKerjaId(user) || undefined);
+    // Pada tampilan semua unit, Super Admin perlu tahu unit pemilik tiap baris.
+    const tampilkanKolomUnit = isSuperAdmin && !resolvedUnitKerjaId;
     const statsScope = JSON.stringify([user?.id, user?.role, resolvedUnitKerjaId]);
     const statsLoading = statsSnapshot.scope !== statsScope || statsSnapshot.status === 'loading';
     const stats = !statsLoading && statsSnapshot.status === 'success' ? statsSnapshot.data : null;
@@ -161,6 +174,7 @@ export default function SuratKeluar() {
                 persetujuan: saringPersetujuan !== 'all' ? saringPersetujuan : undefined,
                 tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
                 tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
+                urutan: parameterUrutan(urutan),
             };
 
             const response = await suratKeluarService.getAll(params);
@@ -194,7 +208,7 @@ export default function SuratKeluar() {
         } finally {
             if (seq === fetchSeqRef.current && !changingPage) setLoading(false);
         }
-    }, [pagination.page, pagination.limit, debouncedSearchTerm, resolvedUnitKerjaId, tahun, naskahDinas, saringPersetujuan, tanggalDari, tanggalSampai, toast]);
+    }, [pagination.page, pagination.limit, debouncedSearchTerm, resolvedUnitKerjaId, tahun, naskahDinas, saringPersetujuan, tanggalDari, tanggalSampai, urutan, toast]);
 
     // Fetch stats from API
     const fetchStats = useCallback(async () => {
@@ -300,7 +314,7 @@ export default function SuratKeluar() {
         return next;
     });
     const togglePilihSemua = (pilih) => setSelectedIds(pilih ? new Set(barisBisaDipilih.map(row => row.id)) : new Set());
-    const jumlahKolom = isAdmin ? 7 : 6;
+    const jumlahKolom = (isAdmin ? 7 : 6) + (tampilkanKolomUnit ? 1 : 0);
 
     // Applying a filter must restart from the first page
     const applyFilter = (setter) => (value) => {
@@ -351,7 +365,7 @@ export default function SuratKeluar() {
 
     const handleDelete = async () => {
         try {
-            await suratKeluarService.delete(selectedSurat.id);
+            await suratKeluarService.delete(selectedSurat.id, { alasan: alasanHapus.trim() });
             toast({
                 title: 'Berhasil Dihapus',
                 description: `Surat ${selectedSurat.nomorSurat} telah dihapus`,
@@ -361,7 +375,7 @@ export default function SuratKeluar() {
         } catch (error) {
             toast({
                 title: 'Error',
-                description: error.message || 'Gagal menghapus surat',
+                description: pesanGalat(error, 'Gagal menghapus surat'),
                 variant: 'destructive',
             });
         }
@@ -436,6 +450,7 @@ export default function SuratKeluar() {
                                 naskahDinas: naskahDinas !== 'all' ? naskahDinas : undefined,
                                 tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
                                 tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
+                                urutan: parameterUrutan(urutan),
                             }}
                         />
                     )}
@@ -544,8 +559,20 @@ export default function SuratKeluar() {
                 </div>
             )}
 
+            {isSuperAdmin && (
+                <Tabs value={tampilan} onValueChange={setTampilan}>
+                    <TabsList>
+                        <TabsTrigger value="daftar">Daftar Surat</TabsTrigger>
+                        <TabsTrigger value="terhapus">Surat Terhapus</TabsTrigger>
+                    </TabsList>
+                </Tabs>
+            )}
+            {isSuperAdmin && tampilan === 'terhapus' && (
+                <DaftarSuratTerhapus jenis="keluar" unitKerjaId={resolvedUnitKerjaId} onDipulihkan={refreshAll} />
+            )}
+
             {/* Main Content Area */}
-            <Card className="shadow-sm border-border/60">
+            <Card className={`shadow-sm border-border/60 ${tampilan === 'terhapus' ? 'hidden' : ''}`}>
                 <CardHeader className="pb-4">
                     <div className="flex flex-col space-y-4">
                         {/* Search & Filter Controls */}
@@ -562,6 +589,19 @@ export default function SuratKeluar() {
                                         onChange={(e) => setSearchTerm(e.target.value)}
                                     />
                                 </div>
+                            </div>
+                            <div className="w-full space-y-1.5 md:w-[220px]">
+                                <label htmlFor="surat-keluar-urutan" className="text-sm font-medium">Urutkan</label>
+                                <Select value={urutan} onValueChange={applyFilter(setUrutan)}>
+                                    <SelectTrigger id="surat-keluar-urutan" className="h-9 bg-background">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {PILIHAN_URUTAN_SURAT.map(pilihan => (
+                                            <SelectItem key={pilihan.value} value={pilihan.value}>{pilihan.label}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
                             <Collapsible open={isAdvancedOpen} onOpenChange={setIsAdvancedOpen} className="flex-none">
                                 <CollapsibleTrigger asChild>
@@ -610,16 +650,7 @@ export default function SuratKeluar() {
                                         <SearchableSelect
                                             id="surat-keluar-jenis"
                                             ariaLabel="Naskah Dinas"
-                                            options={[
-                                                { value: 'all', label: 'Semua Naskah' },
-                                                'Keputusan', 'Surat Tugas', 'Surat Perintah', 'Nota Dinas', 'Memorandum',
-                                                'Surat Dinas', 'Surat Undangan', 'Surat Perjanjian/MoU', 'Surat Kuasa',
-                                                'Berita Acara', 'Surat Keterangan', 'Surat Pengantar', 'Pemberitahuan',
-                                                'Pengumuman', 'Laporan', 'Telaahan Staf', 'Piagam', 'Umum',
-                                                'Naskah Dinas Arahan', 'Naskah Dinas Korespondensi', 'Naskah Dinas Khusus',
-                                                'Peraturan', 'Pedoman', 'Petunjuk Pelaksanaan', 'Instruksi',
-                                                'Surat Edaran', 'Pengaduan'
-                                            ]}
+                                            options={[{ value: 'all', label: 'Semua Naskah' }, ...JENIS_NASKAH_DINAS]}
                                             value={naskahDinas}
                                             onValueChange={applyFilter(setNaskahDinas)}
                                             placeholder="Pilih Naskah"
@@ -716,6 +747,7 @@ export default function SuratKeluar() {
                                         <TableHead className="w-[50px] text-center">No.</TableHead>
                                         <TableHead className="w-[120px]">Tanggal</TableHead>
                                         <TableHead className="w-[160px]">Nomor Surat</TableHead>
+                                        {tampilkanKolomUnit && <TableHead className="w-[180px]">Unit Kerja</TableHead>}
                                         <TableHead>Perihal & Tujuan</TableHead>
                                         <TableHead className="w-[180px]">Status</TableHead>
                                         <TableHead className="w-[100px] text-right">Aksi</TableHead>
@@ -763,6 +795,9 @@ export default function SuratKeluar() {
                                                         {row.nomorSurat}
                                                     </span>
                                                 </TableCell>
+                                                {tampilkanKolomUnit && (
+                                                    <TableCell data-label="Unit Kerja" className="text-sm">{row.unitKerjaNama || '-'}</TableCell>
+                                                )}
                                                 <TableCell data-label="Perihal">
                                                     <div className="flex flex-col gap-1 max-w-[400px]">
                                                         <span className="font-semibold line-clamp-1 group-hover:text-primary transition-colors">{row.perihal}</span>
@@ -933,18 +968,32 @@ export default function SuratKeluar() {
             />
 
             {/* Delete Confirmation Dialog */}
-            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+            <AlertDialog open={deleteDialogOpen} onOpenChange={(open) => { setDeleteDialogOpen(open); if (!open) setAlasanHapus(''); }}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle>Hapus Surat Keluar?</AlertDialogTitle>
                         <AlertDialogDescription>
                             Apakah Anda yakin ingin menghapus surat <strong>{selectedSurat?.nomorSurat}</strong>?
-                            Tindakan ini tidak dapat dibatalkan.
+                            Surat akan hilang dari semua daftar. Hanya Super Admin yang dapat memulihkannya.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
+                    <div className="space-y-1">
+                        <Label htmlFor="alasan-hapus-surat-keluar">Alasan penghapusan <span className="text-destructive">*</span></Label>
+                        <Textarea
+                            id="alasan-hapus-surat-keluar"
+                            value={alasanHapus}
+                            onChange={(event) => setAlasanHapus(event.target.value)}
+                            placeholder="Jelaskan alasan penghapusan surat ini (minimal 10 karakter)..."
+                            rows={3}
+                        />
+                    </div>
                     <AlertDialogFooter>
                         <AlertDialogCancel>Batal</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                        <AlertDialogAction
+                            onClick={handleDelete}
+                            disabled={alasanHapus.trim().length < 10}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
                             Hapus
                         </AlertDialogAction>
                     </AlertDialogFooter>

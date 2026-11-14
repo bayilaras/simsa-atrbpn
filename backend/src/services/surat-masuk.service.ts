@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { suratMasuk, NewSuratMasuk, SuratMasuk } from '../db/schema';
-import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull } from 'drizzle-orm';
+import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull, getTableColumns } from 'drizzle-orm';
 import { ConflictError, DatabaseError } from '../utils/errors';
 import { denganRetryDeadlock } from '../utils/deadlock-retry.js';
 import { createLogger } from '../utils/logger';
@@ -33,6 +33,9 @@ import { afterSuratMasukInsert, afterSuratMasukMutation, guardSuratMasukMutation
 import type { DisposisiRoutingInput } from '../validators/schemas.js';
 import type { RecordUser } from './record-access.service.js';
 import { klasifikasiInSql, sifatKunciSql } from './access/visibility-spec.js';
+import { disposisiKeUnitSql, disposisiLabelSql } from './disposisi-filter.js';
+import { urutanDaftarSuratSql } from './urutan-daftar-surat.js';
+import type { UrutanDaftarSurat } from './urutan-daftar-surat.constants.js';
 
 export type CreateSuratMasukInput = Omit<NewSuratMasuk, 'disposisi'> & {
     disposisi?: string[] | DisposisiRoutingInput | null;
@@ -48,8 +51,12 @@ export interface SuratMasukFilters {
     jenisSurat?: string;
     sifatSurat?: string;
     status?: string;
+    /** Label disposisi tanpa unit (mis. label Kabag). */
     disposisi?: string;
+    /** Unit tujuan disposisi; lihat disposisiKeUnitSql. */
+    disposisiUnitId?: string;
     search?: string;
+    urutan?: UrutanDaftarSurat;
     page?: number;
     limit?: number;
     /** null means all classes (super_admin); [] fails closed. */
@@ -64,7 +71,7 @@ function securityClassificationCondition(classes: string[] | null | undefined) {
 
 export class SuratMasukService {
     async findAll(filters: SuratMasukFilters) {
-        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, search, page = 1, limit = 20, securityClassifications } = filters;
+        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, disposisiUnitId, search, urutan, page = 1, limit = 20, securityClassifications } = filters;
         const offset = (page - 1) * limit;
 
         // Build where conditions
@@ -100,7 +107,10 @@ export class SuratMasukService {
             conditions.push(eq(suratMasuk.status, status));
         }
         if (disposisi) {
-            conditions.push(sql`${suratMasuk.disposisi} @> ARRAY[${disposisi}]`);
+            conditions.push(disposisiLabelSql(disposisi));
+        }
+        if (disposisiUnitId) {
+            conditions.push(disposisiKeUnitSql(disposisiUnitId));
         }
 
         // Search across multiple fields using ILIKE (case-insensitive)
@@ -123,12 +133,16 @@ export class SuratMasukService {
 
         const count = countResult?.[0]?.count ?? 0;
 
-        // Get data
+        // Get data; nama unit pemilik untuk kolom Unit Kerja pada tampilan semua unit.
         const data = await db
-            .select()
+            .select({
+                ...getTableColumns(suratMasuk),
+                // Rujukan baris luar ditulis lengkap: kolom di sql pilihan satu tabel ditulis Drizzle tanpa nama tabel.
+                unitKerjaNama: sql<string | null>`(SELECT uk.name FROM unit_kerja uk WHERE uk.id = surat_masuk.unit_kerja_id)`,
+            })
             .from(suratMasuk)
             .where(and(...conditions))
-            .orderBy(desc(suratMasuk.createdAt), desc(suratMasuk.id))
+            .orderBy(...urutanDaftarSuratSql(suratMasuk, urutan))
             .limit(limit)
             .offset(offset);
 
