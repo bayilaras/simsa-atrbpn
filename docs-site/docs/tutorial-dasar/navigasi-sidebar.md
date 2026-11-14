@@ -92,6 +92,13 @@ Akun lama Admin Dirjen dan Admin Sesditjen melihat menu yang sama dengan Admin U
 
 ---
 
+## Panduan dan Pengaturan
+
+- Tautan **📖 Panduan** di bagian bawah sidebar membuka **Panduan Pengguna SIMSA** di dalam aplikasi. Halaman itu memuat topik singkat untuk pekerjaan harian, kotak **Butuh bantuan lebih lanjut?**, dan tombol **Panduan lengkap** yang membuka situs panduan ini di tab baru.
+- **Pengaturan** juga dapat dibuka dari menu akun (avatar) di kanan atas header, untuk semua peran.
+
+---
+
 ## Indikator Menu Aktif
 
 - Menu yang sedang **aktif** (halaman yang sedang dibuka) akan ditandai dengan **highlight** berwarna.

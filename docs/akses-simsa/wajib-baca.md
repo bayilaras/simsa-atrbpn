@@ -44,6 +44,8 @@ Buka SIMSA melalui browser pada alamat berikut:
 https://simsa-frontend.vercel.app
 ```
 
+Gunakan Chrome atau Edge versi 111 ke atas, Firefox 128 ke atas, atau Safari 16.4 ke atas. Lihat [Browser yang Kompatibel](../tutorial-dasar/browser-kompatibel.md).
+
 ---
 
 ## 5️⃣ Belum Punya Akun?
@@ -53,6 +55,14 @@ SIMSA **tidak menyediakan pendaftaran publik**. Jika belum punya akun:
 1. Hubungi **Super Admin** di unit kerja kamu.
 2. Berikan nama lengkap, email, dan unit kerja kamu.
 3. Super Admin akan membuatkan akun dan mengatur role kamu.
+
+---
+
+## 6️⃣ Sesi Berakhir Otomatis
+
+- SIMSA keluar otomatis setelah **30 menit tanpa aktivitas**. Lima menit sebelumnya muncul peringatan; klik **Tetap Masuk** bila masih bekerja.
+- Isian formulir surat atau dialog **Arsipkan Surat** yang belum disimpan dapat dipulihkan setelah masuk kembali, asalkan tab peramban belum ditutup. Lihat [Sesi berakhir](login-email-password.md#sesi-berakhir).
+- Tetap simpan pekerjaan sebelum meninggalkan komputer, dan klik **Keluar** setelah selesai, terutama di komputer bersama.
 
 ---
 
