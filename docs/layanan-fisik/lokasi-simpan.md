@@ -65,7 +65,7 @@ Lokasi yang masih ditautkan arsip tidak dapat dihapus:
 
 ## QR Code dan Detail Lokasi
 
-Ikon **QR Code** pada baris lokasi menampilkan kode yang dapat diunduh lewat **Download QR Code** dan ditempel pada rak atau boks. Memindai kode itu membuka halaman detail lokasi.
+Ikon **QR Code** pada baris lokasi menampilkan kode yang dapat diunduh lewat **Unduh Kode QR** dan ditempel pada rak atau boks. Memindai kode itu membuka halaman detail lokasi.
 
 Halaman detail menampilkan kode, jenis lokasi, unit kerja, keterangan, kapasitas, dan **Jumlah arsip (termasuk sub-lokasi)**, misalnya *4: 3 arsip surat masuk, 1 arsip surat keluar*. Dari sini kamu dapat membuka daftar arsipnya: satu tombol **Lihat arsip di lokasi ini**, atau dua tombol terpisah untuk arsip surat masuk dan arsip surat keluar bila lokasi menyimpan keduanya.
 

@@ -27,7 +27,9 @@ Arsip vital adalah arsip yang **sangat penting** bagi kelangsungan organisasi. K
    - **Metode Proteksi & Backup** — metode proteksi, jadwal dan lokasi backup, tanggal penetapan, tanggal review berikutnya, dan penanggung jawab.
 5. Simpan penetapan.
 
-Tab **Monitoring Proteksi** menampilkan arsip vital yang perlu ditinjau ulang. Tombol **Cetak Daftar** mencetak daftar arsip vital.
+Tab **Monitoring Proteksi** menampilkan arsip vital yang perlu ditinjau ulang.
+
+Tombol **Cetak Daftar** mengunduh **Daftar Arsip Vital** (PDF) untuk unit kerja yang dipilih. Isinya mengikuti pencarian dan penyaring kategori serta status proteksi yang sedang dipakai di layar. Kepala daftar memuat nama unit kerja, tanggal cetak, dan penyaring yang dipakai; kolomnya No, No. Berkas, Kode Klas., Uraian Informasi, Kurun Waktu, Media, **Lokasi Cadangan**, dan **Kategori**. Bila hasilnya sangat banyak, daftar menyebut jumlah yang tercetak dan meminta Anda mempersempit penyaring. Daftar ini juga menjadi isi Formulir 27 (Daftar Arsip Vital) di halaman **Formulir**.
 
 | Status Proteksi | Keterangan |
 |-----------------|------------|
