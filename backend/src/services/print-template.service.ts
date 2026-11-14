@@ -2,9 +2,9 @@ import { AppError } from '../utils/errors';
 import { penyusutanService } from './penyusutan.service';
 import { NO_RECORD_UNIT_ACCESS, type RecordUnitScope } from '../utils/record-unit-scope';
 import { loadPdfKit } from '../utils/lazy-libraries.js';
-import { tanggalCetakWib } from '../utils/jakarta-date.js';
+import { tanggalCetakWib, tanggalPanjangWib } from '../utils/jakarta-date.js';
 import { namaUnitPengolah } from './export-unit-pengolah.js';
-import { labelKategoriArsipVital, labelMediaArsip, labelStatusProteksi } from './export-label.js';
+import { labelKategoriArsipTerjaga, labelKategoriArsipVital, labelMediaArsip, labelStatusProteksi } from './export-label.js';
 
 /** Filter tabel Arsip Vital di layar yang juga dipakai Cetak Daftar. */
 export interface FilterDaftarArsipVital {
@@ -918,8 +918,7 @@ class PrintTemplateService {
      * Format tanggal from batch data
      */
     private formatTanggal(batch: any): string {
-        return batch.tanggalPelaksanaan || batch.tanggalPersetujuan ||
-            new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+        return batch.tanggalPelaksanaan || batch.tanggalPersetujuan || tanggalPanjangWib();
     }
 
     /**
@@ -1165,6 +1164,7 @@ class PrintTemplateService {
             limit: 1000,
             securityClassifications,
         }));
+        const namaUnit = await namaUnitPengolah(unitKerjaId);
 
         const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
@@ -1174,8 +1174,8 @@ class PrintTemplateService {
         // Header
         this.addHeader(doc, 'DAFTAR ARSIP TERJAGA');
         doc.fontSize(this.FONT_SIZE.body)
-            .text(`Unit Kerja: ${unitKerjaId}`)
-            .text(`Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')}`);
+            .text(`Unit Kerja: ${namaUnit}`)
+            .text(`Tanggal Cetak: ${tanggalCetakWib()}`);
         doc.moveDown();
 
         // Table
@@ -1205,7 +1205,7 @@ class PrintTemplateService {
                 item.kurunWaktu || '-',
                 'ATR/BPN', // Default
                 'Baik',
-                item.kategoriTerjaga || '-'
+                labelKategoriArsipTerjaga(item.kategoriTerjaga) || '-'
             ];
             this.drawTableRow(doc, cols, values, y, this.MARGIN.left);
             y += 18;
