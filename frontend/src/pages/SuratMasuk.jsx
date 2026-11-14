@@ -14,6 +14,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ExportButton } from '@/components/ExportButton';
 import { canExportReports } from '@/lib/provisioning-access';
 import { kunciSifatSuratMasuk, labelSifatSuratMasuk } from '@/lib/sifat-surat-masuk';
+import { pesanGalat } from '@/lib/pesan-galat';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
 import ImportFileDialog from '@/components/ImportFileDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
@@ -308,7 +309,7 @@ export default function SuratMasuk() {
         } catch (error) {
             toast({
                 title: 'Error',
-                description: error.response?.data?.error || error.message || 'Gagal menghapus surat',
+                description: pesanGalat(error, 'Gagal menghapus surat'),
                 variant: 'destructive',
             });
         }
