@@ -89,6 +89,33 @@ describe('session prefetch at boot', () => {
     })
 })
 
+describe('extending the server session while the user is active', () => {
+    it.each([
+        [{ data: { user: { id: 'u-1' } }, error: null }, 'aktif'],
+        [{ data: null, error: null }, 'berakhir'],
+        [{ data: null, error: { status: 503, message: 'Service unavailable' } }, 'tidak-diketahui'],
+    ])('reads the session from the server and reports %o as %s', async (answer, status) => {
+        const getSession = vi.fn().mockResolvedValue(answer)
+        const service = createAuthService({ legacyClient: { getSession } })
+        await expect(service.refreshSession()).resolves.toBe(status)
+        expect(getSession).toHaveBeenCalledOnce()
+    })
+
+    it('does not treat a network failure as an ended session', async () => {
+        const getSession = vi.fn().mockRejectedValue(new Error('Network unavailable'))
+        const service = createAuthService({ legacyClient: { getSession } })
+        await expect(service.refreshSession()).resolves.toBe('tidak-diketahui')
+    })
+
+    it('never answers from the boot prefetch', async () => {
+        const getSession = vi.fn().mockResolvedValueOnce({ data: { user: { id: 'boot' } } }).mockResolvedValue({ data: null })
+        const service = createAuthService({ legacyClient: { getSession } })
+        service.prefetchSession()
+        await expect(service.refreshSession()).resolves.toBe('berakhir')
+        expect(getSession).toHaveBeenCalledTimes(2)
+    })
+})
+
 describe('own password management', () => {
     it('lists linked sign-in methods and treats a missing payload as none', async () => {
         const accounts = [{ providerId: 'credential' }, { providerId: 'google' }]

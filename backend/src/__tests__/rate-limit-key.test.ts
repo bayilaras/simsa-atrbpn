@@ -32,10 +32,15 @@ const sessions: Record<string, Record<string, unknown>> = {
     'token-pending': { id: 'pending-1', role: 'user', unitKerjaId: null, isActive: true },
 };
 
+// auth.api.getSession({ returnHeaders: true }) answers with the cookies it set.
+function sessionLookup(session: unknown) {
+    return { headers: new Headers(), response: session };
+}
+
 function sessionFromCookie({ headers }: { headers: Record<string, string> }) {
     const token = /better-auth\.session_token=([^;]+)/.exec(headers.cookie ?? '')?.[1];
     const user = token ? sessions[token] : undefined;
-    return Promise.resolve(user ? { user: { email: `${user.id}@example.go.id`, name: null, ...user } } : null);
+    return Promise.resolve(sessionLookup(user ? { user: { email: `${user.id}@example.go.id`, name: null, ...user } } : null));
 }
 
 function fakeRequest(overrides: Record<string, unknown> = {}): Request {
@@ -106,7 +111,7 @@ describe('principalRateLimitKey', () => {
         getSession.mockImplementation(sessionFromCookie);
         await expect(principalRateLimitKey(sessionRequest('token-staff-a'))).resolves.toBe('user:staff-a');
         const secure = fakeRequest({ headers: { cookie: 'csrf-token=abc; __Secure-better-auth.session_token=token-staff-b' } });
-        getSession.mockResolvedValueOnce({ user: sessions['token-staff-b'] });
+        getSession.mockResolvedValueOnce(sessionLookup({ user: sessions['token-staff-b'] }));
         await expect(principalRateLimitKey(secure)).resolves.toBe('user:staff-b');
     });
 
@@ -117,7 +122,7 @@ describe('principalRateLimitKey', () => {
         ['an admin_unit account with a blank unit', { role: 'admin_unit', unitKerjaId: '  ', isActive: true }],
         ['a deactivated account', { role: 'super_admin', unitKerjaId: null, isActive: false }],
     ])('keeps %s on the network quota', async (_label, fields) => {
-        getSession.mockResolvedValueOnce({ user: { id: 'session-user', email: 'x@example.go.id', ...fields } });
+        getSession.mockResolvedValueOnce(sessionLookup({ user: { id: 'session-user', email: 'x@example.go.id', ...fields } }));
         await expect(principalRateLimitKey(sessionRequest('any'))).resolves.toBe(`ip:${OFFICE_IP}`);
     });
 
@@ -129,7 +134,7 @@ describe('principalRateLimitKey', () => {
     });
 
     it('falls back to the network key for an unverifiable cookie or a failed lookup', async () => {
-        getSession.mockResolvedValueOnce(null);
+        getSession.mockResolvedValueOnce(sessionLookup(null));
         await expect(principalRateLimitKey(sessionRequest('forged'))).resolves.toBe(`ip:${OFFICE_IP}`);
         getSession.mockRejectedValueOnce(new Error('session store unavailable'));
         await expect(principalRateLimitKey(sessionRequest('token-staff-a'))).resolves.toBe(`ip:${OFFICE_IP}`);

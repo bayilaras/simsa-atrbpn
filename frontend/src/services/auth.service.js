@@ -52,6 +52,21 @@ export function createAuthService({
             return prefetched ?? readSession();
         },
 
+        /**
+         * Asks the server about the current session, which extends a session
+         * in use. Returns 'aktif', 'berakhir' when the server no longer accepts
+         * the session, or 'tidak-diketahui' when the server could not answer.
+         */
+        async refreshSession() {
+            try {
+                const result = await legacyClient.getSession();
+                if (result?.error) return 'tidak-diketahui';
+                return result?.data?.user ? 'aktif' : 'berakhir';
+            } catch {
+                return 'tidak-diketahui';
+            }
+        },
+
         async signInWithGoogle() {
             prefetchedSession = null;
             try {

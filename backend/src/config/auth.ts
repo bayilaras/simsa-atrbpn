@@ -41,12 +41,14 @@ function resolveBaseURL(): string {
     return (configured || 'http://localhost:3001').replace(/\/+$/, '');
 }
 
+type AuthHookContext = Parameters<Parameters<typeof createAuthMiddleware>[0]>[0];
+
 // This origin guard is an additional boundary around Better Auth's built-in
 // state-cookie, PKCE and CSRF protections.
 // A browser always sends Origin (or at least Referer) on a cross-site POST, so rejecting
 // untrusted origins blocks login/sign-out CSRF, while origin-less traffic (OAuth redirects,
 // server-to-server calls through the proxy) keeps working as before.
-const originGuard = createAuthMiddleware(async (ctx) => {
+async function guardOrigin(ctx: AuthHookContext) {
     const request = ctx.request;
     if (!request) return;
 
@@ -70,6 +72,21 @@ const originGuard = createAuthMiddleware(async (ctx) => {
     }) !== null)) {
         throw new APIError('FORBIDDEN', { code: 'ACCESS_PENDING', message: 'Akun hanya dapat melihat status akses atau keluar. Hubungi administrator.' });
     }
+}
+
+// Every session follows the idle limit in `session` below. With
+// rememberMe=false Better Auth would instead issue a fixed one-day session
+// that use never extends and idleness never shortens.
+function idleLimitedSignIn(ctx: AuthHookContext) {
+    const body: unknown = ctx.body;
+    if (ctx.path !== '/sign-in/email' || !body || typeof body !== 'object') return;
+    if ((body as { rememberMe?: unknown }).rememberMe !== false) return;
+    return { context: { body: { ...body, rememberMe: true } } };
+}
+
+const beforeAuthRequest = createAuthMiddleware(async (ctx) => {
+    await guardOrigin(ctx);
+    return idleLimitedSignIn(ctx);
 });
 
 export const auth = betterAuth({
@@ -135,9 +152,16 @@ export const auth = betterAuth({
             '/sign-in/social': { window: 10, max: 10 },
         },
     },
+    // Server-side idle limit, the same 30 minutes as the client's automatic
+    // logout. A session in use is extended once updateAge has passed since the
+    // last extension (each request through authMiddleware also renews the
+    // cookie); a session nobody uses, e.g. a browser closed without signing
+    // out, expires 30 minutes after it was last extended. The cookie cache
+    // stays off, so every check reads the session row and an expired or
+    // revoked session is refused at once.
     session: {
-        expiresIn: 60 * 60 * 24, // 24 hours — hardened for government document security
-        updateAge: 60 * 60 * 4,  // 4 hours — refresh session more frequently
+        expiresIn: 60 * 30,
+        updateAge: 60 * 5,
     },
     user: {
         validateUserInfo: async ({ user, source }) => {
@@ -176,7 +200,7 @@ export const auth = betterAuth({
         },
     },
     hooks: {
-        before: originGuard,
+        before: beforeAuthRequest,
     },
     databaseHooks: {
         user: {

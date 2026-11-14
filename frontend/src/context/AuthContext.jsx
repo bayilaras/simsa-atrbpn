@@ -3,6 +3,13 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { authService } from '../services/auth.service';
 import { clearOfflineStorage } from '../lib/offline-storage';
 import { normalizeAuthenticatedUserUnitScope } from '../lib/unit-kerja-scope';
+import {
+    catatKontakServer,
+    lamaTanpaKontak,
+    PERPANJANG_SESI_SETELAH_MS,
+    PESAN_SESI_BERAKHIR,
+    sesiBerakhirKarenaTidakAktif,
+} from '../lib/sesi-masuk';
 
 const AuthContext = createContext(null);
 
@@ -18,12 +25,35 @@ export function AuthProvider({ children }) {
     const [idleWarning, setIdleWarning] = useState(false);
     const [signingOut, setSigningOut] = useState(false);
     const [logoutError, setLogoutError] = useState(null);
+    // Why the previous session ended, shown on the login page.
+    const [sessionNotice, setSessionNotice] = useState(null);
     const signingOutRef = useRef(false);
     const authEpochRef = useRef(0);
 
     const idleTimerRef = useRef(null);
     const warningTimerRef = useRef(null);
     const lastActivityRef = useRef(Date.now());
+    const sessionRefreshRef = useRef(false);
+
+    // The server ends a session it has not seen for 30 minutes. Activity
+    // without API requests (reading a document) still counts, so it asks the
+    // server about the session once the last answer is older than the
+    // server's extension interval.
+    const keepServerSessionAlive = useCallback(() => {
+        if (sessionRefreshRef.current || signingOutRef.current) return;
+        if (lamaTanpaKontak() < PERPANJANG_SESI_SETELAH_MS) return;
+        sessionRefreshRef.current = true;
+        const idle = sesiBerakhirKarenaTidakAktif();
+        authService.refreshSession()
+            .then(status => {
+                if (status === 'aktif') catatKontakServer();
+                else if (status === 'berakhir' && !signingOutRef.current) {
+                    if (idle) setSessionNotice(PESAN_SESI_BERAKHIR);
+                    signOut();
+                }
+            })
+            .finally(() => { sessionRefreshRef.current = false; });
+    }, []);
 
     // Reset idle timers when user activity is detected
     const resetIdleTimer = useCallback(() => {
@@ -48,9 +78,12 @@ export function AuthProvider({ children }) {
         idleTimerRef.current = setTimeout(() => {
             console.warn('[Auth] Session idle timeout — auto logout');
             setIdleWarning(false);
+            setSessionNotice(PESAN_SESI_BERAKHIR);
             signOut();
         }, IDLE_TIMEOUT_MS);
-    }, []);
+
+        keepServerSessionAlive();
+    }, [keepServerSessionAlive]);
 
     // Setup and cleanup idle tracking
     useEffect(() => {
@@ -86,6 +119,7 @@ export function AuthProvider({ children }) {
             if (!isCurrent()) return;
 
             if (session?.user) {
+                catatKontakServer();
                 setUser(normalizeAuthenticatedUserUnitScope(session.user));
             } else {
                 await clearOfflineStorage();
@@ -106,6 +140,7 @@ export function AuthProvider({ children }) {
             setLoading(true);
             setError(null);
             setLogoutError(null);
+            setSessionNotice(null);
             // Better Auth answers with a redirect to Google; loading stays on
             // until the browser leaves the page.
             await authService.signInWithGoogle();
@@ -121,6 +156,7 @@ export function AuthProvider({ children }) {
             setLoading(true);
             setError(null);
             setLogoutError(null);
+            setSessionNotice(null);
             await authService.signInWithEmail(email, password);
             await checkAuth();
         } catch (err) {
@@ -202,6 +238,7 @@ export function AuthProvider({ children }) {
         idleWarning,
         signingOut,
         logoutError,
+        sessionNotice,
         signInWithGoogle,
         signInWithEmail,
         signUp,
