@@ -56,12 +56,22 @@ afterEach(() => {
     vi.restoreAllMocks();
 });
 
+const rekaman = { panggilan: [] as any[][], lanjutOtomatis: 0 };
 async function cetak(query: Record<string, string> = {}) {
     const asli = PDFDocument.prototype.text;
+    const asliLanjut = PDFDocument.prototype.continueOnNewPage;
     const teks: string[] = [];
+    rekaman.panggilan = [];
+    rekaman.lanjutOtomatis = 0;
     vi.spyOn(PDFDocument.prototype, 'text').mockImplementation(function (this: any, ...args: any[]) {
         teks.push(String(args[0]));
+        rekaman.panggilan.push(args);
         return asli.apply(this, args);
+    });
+    // pdfkit menyambung teks ke halaman baru sendiri bila sel melewati batas bawah.
+    vi.spyOn(PDFDocument.prototype, 'continueOnNewPage').mockImplementation(function (this: any, ...args: any[]) {
+        rekaman.lanjutOtomatis += 1;
+        return asliLanjut.apply(this, args);
     });
     const response = await request(app).get('/api/arsip-vital/print/daftar').query(query).responseType('blob').expect(200);
     expect((response.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
@@ -82,6 +92,11 @@ describe('Cetak Daftar Arsip Vital', () => {
         expect(teks).not.toContain('hukum');
         expect(teks.some(nilai => nilai.startsWith('Filter:'))).toBe(false);
         expect(teks).toContain('Tanggal Cetak: 14/11/2026');
+        // Isi kolom adalah lokasi cadangan dan kategori penetapan arsip vital.
+        expect(teks).toEqual(expect.arrayContaining(['Lokasi Cadangan', 'Kategori']));
+        expect(teks).not.toContain('Lokasi Simpan');
+        expect(teks).not.toContain('Ket.');
+        expect(teks.some(nilai => nilai.startsWith('Teks yang terlalu panjang'))).toBe(false);
         expect(teks).toContain('Jakarta, 14/11/2026');
     });
 
@@ -97,5 +112,24 @@ describe('Cetak Daftar Arsip Vital', () => {
         // Baris yang tercetak sama dengan tabel di layar untuk filter yang sama.
         const tabel = await request(app).get('/api/arsip-vital').query({ ...filter, limit: 100 }).expect(200);
         expect(tabel.body.data.map((row: any) => row.nomorBerkas).sort()).toEqual(harapan);
+    });
+    it('uraian 4.000 karakter dipotong di barisnya sendiri dengan catatan', async () => {
+        const uraianPanjang = 'Uraian arsip vital yang sangat panjang '.repeat(110).slice(0, 4000);
+        const id = '77000000-0000-4000-8000-000000000004';
+        await database.query(
+            `INSERT INTO arsip (id, unit_kerja_id, jenis_arsip, tahun, klasifikasi_keamanan, nomor_berkas, uraian_berkas, media_type)
+                VALUES ($1, 'dir_bppt', 'keluar', 2026, 'biasa', 'VITAL-PANJANG', $2, 'kertas')`, [id, uraianPanjang]);
+        await database.query(
+            `INSERT INTO arsip_vital (arsip_id, unit_kerja_id, kategori_vital, tingkat_kekritisan, status_proteksi)
+                VALUES ($1, 'dir_bppt', 'kebijakan', 'penting', 'terlindungi')`, [id]);
+
+        const teks = await cetak({ kategoriVital: 'kebijakan' });
+        expect(nomorBerkas(teks)).toEqual(['VITAL-PANJANG']);
+        expect(rekaman.lanjutOtomatis).toBe(0);
+        const [, , y, opsi] = rekaman.panggilan.find(([nilai]) => nilai === uraianPanjang)!;
+        expect(opsi.ellipsis).toBe(true);
+        // A4 lanskap dengan margin 50 pt.
+        expect(y + opsi.height).toBeLessThanOrEqual(595.28 - 50);
+        expect(teks).toContain('Teks yang terlalu panjang dipotong; isi lengkap ada pada detail arsip di aplikasi.');
     });
 });

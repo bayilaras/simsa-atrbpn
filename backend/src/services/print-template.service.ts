@@ -1093,8 +1093,9 @@ class PrintTemplateService {
             { header: 'Uraian Informasi', width: 170 },
             { header: 'Kurun Waktu', width: 70 },
             { header: 'Media', width: 60 },
-            { header: 'Lokasi Simpan', width: 80 },
-            { header: 'Ket.', width: 60 },
+            // Lokasi cadangan dan kategori dari penetapan arsip vital.
+            { header: 'Lokasi Cadangan', width: 80 },
+            { header: 'Kategori', width: 60 },
         ];
 
         let y = doc.y;
@@ -1103,6 +1104,10 @@ class PrintTemplateService {
 
         doc.font('Helvetica').fontSize(this.FONT_SIZE.small);
         const batasBawah = doc.page.height - doc.page.margins.bottom;
+        // Satu baris paling tinggi satu halaman (di bawah kepala tabel);
+        // sel yang lebih panjang dipotong dengan "…" dan diberi catatan.
+        const tinggiMaksimal = batasBawah - this.MARGIN.top - 20;
+        let adaDipotong = false;
         data.forEach((item, index) => {
             const values = [
                 String(index + 1),
@@ -1114,9 +1119,11 @@ class PrintTemplateService {
                 item.lokasiBackup || '-',
                 labelKategoriArsipVital(item.kategoriVital) || '-',
             ];
-            // Tinggi baris mengikuti isi sel tertinggi agar teks tidak terpotong.
-            const rowHeight = Math.max(18, Math.ceil(Math.max(...values.map((teks, i) =>
+            // Tinggi baris mengikuti isi sel tertinggi.
+            const tinggiIsi = Math.max(18, Math.ceil(Math.max(...values.map((teks, i) =>
                 doc.heightOfString(teks, { width: cols[i].width - 4 }))) + 8));
+            const rowHeight = Math.min(tinggiIsi, tinggiMaksimal);
+            adaDipotong = adaDipotong || tinggiIsi > tinggiMaksimal;
             if (y + rowHeight > batasBawah) {
                 doc.addPage();
                 y = this.MARGIN.top;
@@ -1133,6 +1140,12 @@ class PrintTemplateService {
         if (y + 150 > batasBawah) {
             doc.addPage();
             y = this.MARGIN.top - 30;
+        }
+        if (adaDipotong) {
+            doc.fontSize(this.FONT_SIZE.small).text(
+                'Teks yang terlalu panjang dipotong; isi lengkap ada pada detail arsip di aplikasi.',
+                this.MARGIN.left, y + 6, { width: 420 },
+            );
         }
         this.addSignature(doc, 'Pimpinan Unit Kearsipan', y + 30);
 
