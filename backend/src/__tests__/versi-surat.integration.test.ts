@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import * as schema from '../db/schema';
-import { createMigratedPglite, insertUser, resetRangkaianFixture, seedUnits, uid, type PenggunaUji } from './helpers/lacak-pglite';
+import { createMigratedPglite, insertRangkaian, insertUser, resetRangkaianFixture, seedUnits, uid, type PenggunaUji } from './helpers/lacak-pglite';
 
 // Suntingan surat dari formulir yang datanya sudah diubah orang lain sejak dimuat.
 
@@ -77,5 +77,36 @@ describe('suntingan dari formulir yang datanya sudah diubah orang lain', () => {
         await expect(suratKeluarService.update(surat.id, { tanggalSurat: '2027-01-04', expectedUpdatedAt: dimuat }, 'dir_bppt', undefined, audit))
             .rejects.toMatchObject({ statusCode: 409, code: 'DATA_SUDAH_BERUBAH' });
         expect(await nomor('surat_keluar', surat.id)).toMatchObject({ tahun: 2026, no_urut: 1 });
+    });
+});
+
+describe('perubahan status turunan tidak menolak suntingan yang terbuka', () => {
+    it('status surat masuk dihitung ulang rangkaian di antara muat dan simpan: suntingan tetap tersimpan', async () => {
+        const surat = await catatMasuk({ nomorSurat: 'EXT-9/2026' });
+        await mundurkanWaktuUbah('surat_masuk', surat.id);
+        const dimuat = versiDimuat((await suratMasukService.findById(surat.id, 'dir_bppt'))!);
+
+        // Rangkaian ditutup manual: status surat menjadi sudah_dibalas lewat hitung ulang.
+        const { id: rangkaianId } = await insertRangkaian(database, {
+            n: 3, kode: 'RS-2026-000003', tahun: 2026, pencatat: 'dir_bppt', judul: 'Permohonan data',
+            anggota: [{ jenis: 'surat_masuk', id: surat.id, peran: 'induk', unit: 'dir_bppt' }],
+        });
+        await database.query(`UPDATE rangkaian_surat SET selesai_manual = true, selesai_by = $2,
+            catatan_selesai = 'Selesai tanpa surat balasan.' WHERE id = $1`, [rangkaianId, admin.id]);
+        const { rangkaianService, aktor } = await import('../services/rangkaian/deps.js');
+        const [perubahan] = await holder.db.transaction((tx: any) => rangkaianService.recomputeSuratMasukStatus(tx, [surat.id], aktor(admin, audit)));
+        expect(perubahan).toMatchObject({ before: 'belum_dibalas', after: 'sudah_dibalas', changed: true });
+
+        await expect(suratMasukService.update(surat.id, { dari: 'Kanwil C', expectedUpdatedAt: dimuat }, 'dir_bppt', undefined, audit))
+            .resolves.toMatchObject({ dari: 'Kanwil C', status: 'sudah_dibalas' });
+    });
+
+    it('perubahan isian oleh pengguna lain tetap ditolak', async () => {
+        const surat = await catatMasuk({ nomorSurat: 'EXT-10/2026' });
+        await mundurkanWaktuUbah('surat_masuk', surat.id);
+        const dimuat = versiDimuat((await suratMasukService.findById(surat.id, 'dir_bppt'))!);
+        await suratMasukService.update(surat.id, { dari: 'Kanwil B' }, 'dir_bppt', undefined, audit);
+        await expect(suratMasukService.update(surat.id, { perihal: 'Koreksi saya', expectedUpdatedAt: dimuat }, 'dir_bppt', undefined, audit))
+            .rejects.toMatchObject({ statusCode: 409, code: 'DATA_SUDAH_BERUBAH' });
     });
 });

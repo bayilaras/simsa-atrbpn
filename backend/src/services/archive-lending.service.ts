@@ -259,11 +259,13 @@ export class ArchiveLendingService {
                 })
                 .returning();
 
-            // Update arsip lending status if per-arsip
+            // Update arsip lending status if per-arsip. Only the flag: updated_at is
+            // left alone so an open Ubah Metadata dialog is not rejected as stale;
+            // the lending row and its audit entry record the event.
             if (data.lendingType === 'arsip' && data.arsipId) {
                 await tx
                     .update(arsip)
-                    .set({ lendingStatus: 'borrowed', updatedAt: new Date() })
+                    .set({ lendingStatus: 'borrowed' })
                     .where(and(
                         eq(arsip.id, data.arsipId),
                         eq(arsip.unitKerjaId, unitKerjaId),
@@ -274,7 +276,7 @@ export class ArchiveLendingService {
             if (data.lendingType === 'box' && data.storageLocationId) {
                 await tx
                     .update(arsip)
-                    .set({ lendingStatus: 'borrowed', updatedAt: new Date() })
+                    .set({ lendingStatus: 'borrowed' })
                     .where(and(
                         eq(arsip.storageLocationId, data.storageLocationId),
                         eq(arsip.unitKerjaId, unitKerjaId),
@@ -352,7 +354,7 @@ export class ArchiveLendingService {
             if (lending.lendingType === 'arsip' && lending.arsipId) {
                 await tx
                     .update(arsip)
-                    .set({ lendingStatus: 'available', updatedAt: new Date() })
+                    .set({ lendingStatus: 'available' })
                     .where(and(
                         eq(arsip.id, lending.arsipId),
                         eq(arsip.unitKerjaId, unitKerjaId),
@@ -369,7 +371,7 @@ export class ArchiveLendingService {
             if (lending.lendingType === 'box' && lending.storageLocationId) {
                 await tx
                     .update(arsip)
-                    .set({ lendingStatus: 'available', updatedAt: new Date() })
+                    .set({ lendingStatus: 'available' })
                     .where(and(
                         eq(arsip.storageLocationId, lending.storageLocationId),
                         eq(arsip.unitKerjaId, unitKerjaId),

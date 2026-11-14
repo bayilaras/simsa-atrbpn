@@ -324,3 +324,38 @@ describe('Ubah Metadata dari dialog yang datanya sudah diubah orang lain', () =>
         expect(result?.keterangan).toBe('Deskripsi baru');
     });
 });
+
+describe('Ubah Metadata saat boks atau arsip dipinjam', () => {
+    const boxId = '24000000-0000-4000-8000-000000000001';
+    async function versiDimuat() {
+        const [row] = await holder.db.select({ updatedAt: schema.arsip.updatedAt }).from(schema.arsip);
+        return new Date(JSON.parse(JSON.stringify(row.updatedAt)));
+    }
+    async function dalamBoks() {
+        await database.exec(`INSERT INTO storage_locations (id, unit_kerja_id, code, name, level) VALUES ('${boxId}', 'ditjen', 'B-01', 'Boks 1', 'box');
+            UPDATE arsip SET storage_location_id = '${boxId}', updated_at = '2026-09-10 08:00:00.123456';`);
+    }
+
+    it.each(['box', 'arsip'] as const)('peminjaman dan pengembalian (%s) di antara buka dan simpan dialog tidak menolak suntingan', async jenis => {
+        await dalamBoks();
+        const dimuat = await versiDimuat();
+        const { archiveLendingService } = await import('../services/archive-lending.service');
+        const pinjam = await archiveLendingService.borrow({
+            lendingType: jenis, ...(jenis === 'box' ? { storageLocationId: boxId } : { arsipId: archiveId }),
+            borrowerId: userId, borrowerName: 'Peminjam', dueDate: '2026-09-20',
+        }, 'ditjen');
+        expect((await database.query<any>('SELECT lending_status FROM arsip')).rows[0].lending_status).toBe('borrowed');
+        await archiveLendingService.return(pinjam.id, 'ditjen');
+        const result = await service.update(archiveId, { keterangan: 'Deskripsi baru' }, { userId, userEmail: 'stale@example.test' },
+            { expectedUpdatedAt: dimuat });
+        expect(result?.keterangan).toBe('Deskripsi baru');
+    });
+
+    it('perubahan metadata oleh pengguna lain tetap ditolak', async () => {
+        await dalamBoks();
+        const dimuat = await versiDimuat();
+        await service.update(archiveId, { personInCharge: 'Petugas lain' }, { userId, userEmail: 'lain@example.test' });
+        await expect(service.update(archiveId, { keterangan: 'Deskripsi baru' }, { userId, userEmail: 'stale@example.test' },
+            { expectedUpdatedAt: dimuat })).rejects.toMatchObject({ statusCode: 409, code: 'DATA_SUDAH_BERUBAH' });
+    });
+});
