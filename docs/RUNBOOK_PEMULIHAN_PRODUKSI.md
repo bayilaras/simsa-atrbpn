@@ -2,7 +2,7 @@
 
 Runbook ini menghidupkan kembali SIMSA dari backup terenkripsi harian bila database Neon, store Blob privat, atau keduanya hilang atau rusak dan penyedia tidak dapat memulihkannya. Kondisi produksi yang berlaku ada di [kondisi produksi](KONDISI_PRODUKSI.md); cara membuat dan menguji backup ada di [cadangan dan pemulihan](OPERATIONS_RECOVERY.md).
 
-**Apa yang sudah terbukti dan apa yang belum.** Workflow backup harian membuktikan bahwa artefak dapat dibuka dan dipulihkan ke cluster PostgreSQL terpisah, dengan semua hash dokumen cocok. Pemulihan dump di bagian 4.3 sudah dilatih pada PostgreSQL 18 lokal dengan data sintetis (14 November 2026), dan alat unggah ulang dokumen di bagian 5 diuji terhadap PostgreSQL lokal dan store tiruan. Pemulihan ke project Neon baru dan store Blob baru **belum pernah dilatih dengan layanan sungguhan**. Latih sekali ke lingkungan terpisah, lalu isi [catatan waktu](#catatan-waktu).
+**Apa yang sudah terbukti dan apa yang belum.** Workflow backup harian membuktikan bahwa artefak dapat dibuka dan dipulihkan ke cluster PostgreSQL terpisah, dengan semua hash dokumen cocok. Bagian 4.2–4.4 sudah dilatih pada cluster PostgreSQL 18 lokal yang baru, tanpa peran SIMSA dan dengan pemilik database yang bukan superuser seperti project Neon baru, memakai data sintetis (14 November 2026; rinciannya di [catatan waktu](#catatan-waktu)). Alat unggah ulang dokumen di bagian 5 diuji terhadap PostgreSQL lokal dan store tiruan. Pemulihan ke project Neon baru dan store Blob baru **belum pernah dilatih dengan layanan sungguhan**. Latih sekali ke lingkungan terpisah, lalu isi [catatan waktu](#catatan-waktu).
 
 ## 1. Pilih jalur
 
@@ -102,14 +102,16 @@ Di `daftar-pulih.txt`, lima baris harus diawali `;`: `SCHEMA - drizzle`, `EXTENS
 
 ### 4.4 Login layanan, grant, dan pemeriksaan
 
+Jalankan persis dalam urutan ini:
+
 ```powershell
+node "--env-file=$neonEnv" scripts/neon-database.mjs migrate --apply     # wajib "applied":0; grant dibangun ulang
 node "--env-file=$neonEnv" scripts/neon-backup.mjs provision --apply     # login simsa_backup baru
 node "--env-file=$neonEnv" scripts/neon-worker.mjs provision --apply     # login simsa_worker baru
-node "--env-file=$neonEnv" scripts/neon-database.mjs migrate --apply     # wajib "applied":0
 node "--env-file=$neonEnv" scripts/neon-database.mjs verify-runtime
 ```
 
-`migrate --apply` memeriksa peran dan kepemilikan, mencocokkan journal hasil pemulihan dengan sumber rilis, lalu menerapkan seluruh grant. Hasil `"applied":0` berarti journal cocok. `verify-runtime` membuktikan login `simsa_api` dapat dipakai backend dengan hak terbatas.
+Dump dipulihkan tanpa grant (`--no-privileges`). `migrate --apply` memeriksa peran dan kepemilikan, mencocokkan journal hasil pemulihan dengan sumber rilis, lalu membangun ulang seluruh grant. Hasil `"applied":0` berarti journal cocok. Kedua perintah `provision` diakhiri pemeriksaan hak login barunya, jadi harus dijalankan **sesudah** `migrate`. Bila dijalankan lebih dulu, perintah itu gagal ("Worker permissions exceed the reviewed worker boundary or required grants are missing" atau "Backup permissions must be complete and read-only…") tanpa membuat login; jalankan `migrate --apply` lalu ulangi. `verify-runtime` membuktikan login `simsa_api` dapat dipakai backend dengan hak terbatas.
 
 Periksa juga beberapa data bersama Super Admin, misalnya surat terakhir yang tercatat sebelum waktu snapshot. Pemeriksaan sidik jari lengkap hanya ada pada uji pulih terisolasi (`operations-recovery.mjs restore-delivery`), bukan pada target Neon.
 
@@ -199,7 +201,7 @@ Kolom "Tercatat" berasal dari catatan di repositori. Kolom "Latihan" diisi pada 
 |---|---|---|
 | Backup harian penuh: snapshot, enkripsi, pengambilan dokumen, uji pulih terisolasi, dan publikasi status | 2 menit 27 detik (29 Oktober 2026) dan 2 menit 38 detik (31 Oktober 2026), menurut [laporan C60/C58](rilis/HASIL_RILIS_C60_C58_2026-10-29.md) dan [laporan C65/C61](rilis/HASIL_RILIS_C65_C61_2026-10-31.md) | |
 | Uji pulih database lokal dari arsip 560 KB | 31,6 detik (11 September 2026, [catatan riwayat](riwayat/HASIL_PENGUATAN_BACKEND_2026-09-11.md)) | |
-| Bagian 4.3 pada PostgreSQL 18 lokal dengan data sintetis, setelah skema disiapkan seperti `bootstrap` | Dump 0,3 detik dan pemulihan dengan daftar tersaring 1,0 detik; 69 tabel dengan jumlah baris sama, semua objek milik `simsa_migrator`, lalu migrasi `applied: 0` (14 November 2026). Login layanan dan grant (4.4) tidak termasuk. | |
+| Bagian 4.2–4.4 pada cluster PostgreSQL 18 lokal yang baru (pemilik database `CREATEROLE`/`CREATEDB`, bukan superuser), data sintetis dari 54 migrasi | 14 November 2026: preflight dan bootstrap 0,2 detik; `pg_restore` dengan daftar tersaring 2,2 detik; `migrate --apply` 0,4 detik (`applied: 0`); `provision` backup dan worker masing-masing 0,1 detik; `verify-runtime` 0,1 detik; login worker dan backup lolos pemeriksaan identitas dan hak; 69 tabel dengan jumlah baris sama dengan sumber. Urutan lama (`provision` sebelum `migrate`) gagal pada pemeriksaan grant tanpa meninggalkan login. Latihan memanggil fungsi yang sama dengan perintah di atas secara langsung, karena perintahnya hanya menerima host Neon. | |
 | Membuka backup (bagian 3) | Belum tercatat | |
 | Project Neon baru sampai `verify-runtime` (bagian 4) | Belum pernah dilatih | |
 | Unggah ulang dokumen (bagian 5) | Belum pernah dilatih dengan layanan sungguhan | |
