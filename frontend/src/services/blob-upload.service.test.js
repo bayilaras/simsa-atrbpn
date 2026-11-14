@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     PESAN_NAMA_BERKAS_TIDAK_DIDUKUNG,
     PESAN_UNGGAH_DITOLAK,
+    businessUploadTimeoutMs,
     uploadFileToBlob,
     waitForVercelBlobReady,
 } from './blob-upload.service';
@@ -212,6 +213,57 @@ describe('bounded upload cancellation and failure recovery', () => {
         const berkas = new File(['pdf'], name, { type: 'application/pdf' });
         await expect(uploadFileToBlob(berkas, { folder: 'surat-masuk' })).rejects.toThrow(PESAN_NAMA_BERKAS_TIDAK_DIDUKUNG);
         expect(blobSdk.upload).not.toHaveBeenCalled();
+    });
+});
+
+describe('upload deadline that follows the PDF size', () => {
+    const MiB = 1024 * 1024;
+
+    beforeEach(() => {
+        blobSdk.upload.mockReset();
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('keeps two minutes for small files, grows with the size, and stops at ten minutes', () => {
+        expect(businessUploadTimeoutMs(3)).toBe(120_000);
+        expect(businessUploadTimeoutMs(MiB)).toBe(120_000);
+        expect(businessUploadTimeoutMs(5 * MiB)).toBe(220_000);
+        expect(businessUploadTimeoutMs(10 * MiB)).toBe(380_000);
+        expect(businessUploadTimeoutMs(100 * MiB)).toBe(600_000);
+        expect(businessUploadTimeoutMs(undefined)).toBe(120_000);
+    });
+
+    it('lets a 10 MiB letter PDF upload past two minutes and then suggests making the PDF smaller', async () => {
+        vi.useFakeTimers();
+        blobSdk.upload.mockReturnValue(new Promise(() => {}));
+        let settled = false;
+        const pending = uploadFileToBlob({ name: 'surat.pdf', type: 'application/pdf', size: 10 * MiB }, { folder: 'surat-masuk' })
+            .finally(() => { settled = true; });
+        const rejection = expect(pending).rejects.toMatchObject({
+            code: 'UPLOAD_TIMEOUT',
+            message: expect.stringContaining('kecilkan ukurannya terlebih dahulu (misalnya dengan fitur kompres PDF)'),
+        });
+        await vi.dynamicImportSettled();
+        await vi.advanceTimersByTimeAsync(120_000);
+        expect(settled).toBe(false);
+        await vi.advanceTimersByTimeAsync(259_999);
+        expect(settled).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        await rejection;
+        expect(blobSdk.upload.mock.calls[0][2].abortSignal.aborted).toBe(true);
+    });
+
+    it('does not tell regulation uploads (up to 50 MiB) to compress their source PDF', async () => {
+        vi.useFakeTimers();
+        blobSdk.upload.mockReturnValue(new Promise(() => {}));
+        const pending = uploadFileToBlob(new File(['pdf'], 'peraturan.pdf', { type: 'application/pdf' }), { folder: 'regulatory-sources', ruleSetId });
+        const rejection = expect(pending).rejects.toMatchObject({ code: 'UPLOAD_TIMEOUT' });
+        await vi.dynamicImportSettled();
+        await vi.advanceTimersByTimeAsync(600_000);
+        await rejection;
+        await pending.catch(error => expect(error.message).not.toContain('kompres'));
     });
 });
 

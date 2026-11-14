@@ -44,14 +44,14 @@ export const suratKeluarService = {
     },
 
     // Create new surat keluar (supports file upload via Vercel Blob)
-    async create(data, file = null) {
+    async create(data, file = null, { onProgress } = {}) {
         // Upload file to Vercel Blob first if present
         let fileUrl = null;
         let fileOriginalName = null;
 
         if (file) {
             try {
-                const blob = await uploadFileToBlob(file, { folder: 'surat-keluar' });
+                const blob = await uploadFileToBlob(file, { folder: 'surat-keluar', onProgress });
                 fileUrl = blob.url;
                 fileOriginalName = file.name;
             } catch (uploadError) {
@@ -73,13 +73,13 @@ export const suratKeluarService = {
     },
 
     // Update surat keluar (supports file upload via Vercel Blob)
-    async update(id, data, file = null) {
+    async update(id, data, file = null, { onProgress } = {}) {
         let fileUrl = null;
         let fileOriginalName = null;
 
         if (file) {
             try {
-                const blob = await uploadFileToBlob(file, { folder: 'surat-keluar' });
+                const blob = await uploadFileToBlob(file, { folder: 'surat-keluar', onProgress });
                 fileUrl = blob.url;
                 fileOriginalName = file.name;
             } catch (uploadError) {

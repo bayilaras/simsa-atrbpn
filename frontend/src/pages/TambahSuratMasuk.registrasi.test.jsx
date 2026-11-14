@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import TambahSuratMasuk from './TambahSuratMasuk'
@@ -99,12 +99,20 @@ describe('registrasi surat masuk', () => {
         expect(payload).not.toHaveProperty('disposisiPj')
     })
 
-    it('tanpa disposisi meminta konfirmasi; bila dibatalkan tidak menyimpan', async () => {
-        const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    it('tanpa disposisi meminta konfirmasi lewat dialog aplikasi; bila dibatalkan tidak menyimpan', async () => {
+        const confirm = vi.spyOn(window, 'confirm')
         const view = await tampilDanIsi()
         fireEvent.submit(view.container.querySelector('form'))
-        expect(confirm).toHaveBeenCalledWith('Surat belum didisposisikan. Simpan tanpa disposisi?')
+        const dialog = await screen.findByRole('alertdialog', { name: 'Simpan tanpa disposisi?' })
+        expect(dialog).toHaveTextContent('Surat belum didisposisikan. Simpan tanpa disposisi?')
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Kembali ke formulir' }))
+        expect(await screen.findByRole('alert')).toHaveTextContent('Disposisi wajib diisi')
         expect(mocks.masuk.create).not.toHaveBeenCalled()
+        expect(confirm).not.toHaveBeenCalled()
+
+        fireEvent.submit(view.container.querySelector('form'))
+        fireEvent.click(await screen.findByRole('button', { name: 'Simpan tanpa disposisi' }))
+        await waitFor(() => expect(mocks.masuk.create).toHaveBeenCalledTimes(1))
     })
 
     // Kasus surat terkendali + disposisi ada di TambahSuratMasuk.kelas.test.jsx:

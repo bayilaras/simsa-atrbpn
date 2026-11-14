@@ -4,6 +4,8 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import SuratKeluarDetail from './SuratKeluarDetail'
 
 const mocks = vi.hoisted(() => ({ getById: vi.fn(), toast: vi.fn(), canWrite: false, getBySurat: vi.fn(), getHistory: vi.fn(), getEligibleApprovers: vi.fn() }))
+// Nama unit dimuat dari daftar unit kerja; halaman tidak pernah menampilkan kodenya.
+vi.mock('@/hooks/use-nama-unit-kerja', () => ({ useNamaUnitKerja: (id) => (id === 'unit-a' ? 'Direktorat Uji A' : '') }))
 vi.mock('@/components/tunjuk-silang/KartuTunjukSilang', () => ({ KartuTunjukSilang: ({ tipe, id }) => <div data-testid="kartu-tunjuk-silang">{`${tipe}:${id}`}</div> }))
 vi.mock('@/components/surat/KoreksiBerkasSection', () => ({ default: () => null }))
 vi.mock('@/services/surat-keluar.service', () => ({ default: { getById: mocks.getById } }))
@@ -188,4 +190,12 @@ it('does not offer submission to another administrator while the creator still s
     expect(screen.queryByRole('button', { name: 'Ajukan Persetujuan' })).toBeNull()
     expect(screen.queryByText(/mengajukan atas nama pembuat/)).toBeNull()
     expect(mocks.getEligibleApprovers).not.toHaveBeenCalled()
+})
+
+it('menampilkan nama unit kerja pemilik, bukan kode unitnya', async () => {
+    mocks.getById.mockResolvedValue({ id: 'surat-id', nomorSurat: '009/2026', perihal: 'Surat unit A', unitKerjaId: 'unit-a', aksesMelalui: 'owner' })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    // Informasi Surat dan Metadata sama-sama menyebut unit kerja.
+    expect(await screen.findAllByText('Direktorat Uji A')).toHaveLength(2)
+    expect(screen.queryByText('unit-a')).toBeNull()
 })

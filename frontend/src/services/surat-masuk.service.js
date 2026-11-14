@@ -60,7 +60,7 @@ export const suratMasukService = {
     },
 
     // Create new surat masuk (supports file upload via Vercel Blob)
-    async create(data, file = null) {
+    async create(data, file = null, { onProgress } = {}) {
         // If a file is provided, upload it directly to Vercel Blob first
         // This bypasses the 4.5MB Vercel serverless function body size limit
         let fileUrl = null;
@@ -68,7 +68,7 @@ export const suratMasukService = {
 
         if (file) {
             try {
-                const blob = await uploadFileToBlob(file, { folder: 'surat-masuk' });
+                const blob = await uploadFileToBlob(file, { folder: 'surat-masuk', onProgress });
                 fileUrl = blob.url;
                 fileOriginalName = file.name;
             } catch (uploadError) {
@@ -90,14 +90,14 @@ export const suratMasukService = {
     },
 
     // Update surat masuk (supports file upload via Vercel Blob)
-    async update(id, data, file = null) {
+    async update(id, data, file = null, { onProgress } = {}) {
         // If a new file is provided, upload it to Blob first
         let fileUrl = null;
         let fileOriginalName = null;
 
         if (file) {
             try {
-                const blob = await uploadFileToBlob(file, { folder: 'surat-masuk' });
+                const blob = await uploadFileToBlob(file, { folder: 'surat-masuk', onProgress });
                 fileUrl = blob.url;
                 fileOriginalName = file.name;
             } catch (uploadError) {

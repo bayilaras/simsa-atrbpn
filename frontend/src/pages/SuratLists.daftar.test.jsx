@@ -76,9 +76,9 @@ describe.each(daftar)('filter jenis pada daftar surat $jenis', ({ Component, jen
         fireEvent.click(screen.getByRole('combobox', { name: filter }))
         for (const nama of ['Naskah Dinas Lainnya', 'Prosedur Tetap (Protap)', 'Tindak Lanjut Pengaduan',
             'Surat Keputusan Hak Wakaf', 'Permohonan Hak Milik', 'Pembatalan Hak']) {
-            expect(await screen.findByRole('button', { name: nama })).toBeInTheDocument()
+            expect(await screen.findByRole('option', { name: nama })).toBeInTheDocument()
         }
-        fireEvent.click(screen.getByRole('button', { name: 'Permohonan Hak Milik' }))
+        fireEvent.click(screen.getByRole('option', { name: 'Permohonan Hak Milik' }))
         await waitFor(() => expect(mocks[jenis].getAll).toHaveBeenLastCalledWith(expect.objectContaining({ [param]: 'Permohonan Hak Milik' })))
     })
 })

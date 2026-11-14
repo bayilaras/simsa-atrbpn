@@ -12,6 +12,7 @@ const metrics = vi.hoisted(() => ({
     user: { id: 'performance-reader', name: 'Siti', role: 'staff', unitKerjaId: 'unit-a' },
 }))
 
+vi.mock('@/hooks/use-nama-unit-kerja', () => ({ useNamaUnitKerja: () => '' }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: metrics.user, canWrite: () => false }) }))
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ capabilities: { files: false, fileUploads: false } }) }))
 vi.mock('react-chartjs-2', () => ({ Line: () => null, Bar: () => null, Doughnut: () => null }))

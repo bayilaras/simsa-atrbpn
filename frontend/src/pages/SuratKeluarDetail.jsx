@@ -43,6 +43,7 @@ import { AlurSuratPanel } from '@/components/surat/AlurSuratPanel'
 import { TindakLanjutMenu } from '@/components/surat/TindakLanjutMenu'
 import { TautkanDialog } from '@/components/surat/AlurSuratActions'
 import { KartuTunjukSilang } from '@/components/tunjuk-silang/KartuTunjukSilang'
+import { useNamaUnitKerja } from '@/hooks/use-nama-unit-kerja'
 
 export default function SuratKeluarDetail() {
     const { id } = useParams()
@@ -54,6 +55,8 @@ export default function SuratKeluarDetail() {
     const [surat, setSurat] = useState(null)
     const aksesMelalui = surat?.aksesMelalui ?? 'owner'
     const isAdmin = Boolean(surat && aksesMelalui === 'owner' && canWrite(surat.unitKerjaId))
+    // Unit pemilik ditampilkan dengan namanya, bukan kodenya.
+    const namaUnit = useNamaUnitKerja(surat?.unitKerjaId || '')
     const [loading, setLoading] = useState(true)
     const [perluAkses, setPerluAkses] = useState(null)
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
@@ -475,7 +478,7 @@ export default function SuratKeluarDetail() {
                                 </div>
                                 <div className="space-y-1 p-3 bg-muted/30 rounded-lg">
                                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Unit Kerja</label>
-                                    <p className="text-sm font-medium">{surat.unitKerjaId || '-'}</p>
+                                    <p className="text-sm font-medium">{namaUnit || '-'}</p>
                                 </div>
                             </div>
 
@@ -675,12 +678,12 @@ export default function SuratKeluarDetail() {
                                     <span className="text-xs text-muted-foreground">{formatRelativeTime(surat.updatedAt)}</span>
                                 </div>
                             </div>
-                            {surat.unitKerjaId && (
+                            {namaUnit && (
                                 <>
                                     <Separator />
-                                    <div className="flex justify-between">
+                                    <div className="flex justify-between gap-2">
                                         <span className="text-muted-foreground">Unit Kerja</span>
-                                        <Badge variant="outline">{surat.unitKerjaId}</Badge>
+                                        <Badge variant="outline" className="text-right">{namaUnit}</Badge>
                                     </div>
                                 </>
                             )}

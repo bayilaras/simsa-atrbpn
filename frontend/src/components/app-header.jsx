@@ -30,6 +30,7 @@ import settingsService from '@/services/settings.service'
 import { notificationRoute } from '@/lib/notification-routing'
 import { useAppConfig } from '@/context/app-config-context'
 import { useNotificationUnitScope } from '@/hooks/use-notification-unit-scope'
+import { useNamaUnitKerja } from '@/hooks/use-nama-unit-kerja'
 import { OperationsStatusIndicator } from '@/components/OperationsStatusIndicator'
 
 // Role label mapping for display in Indonesian
@@ -65,6 +66,8 @@ export function AppHeader() {
     // Super admin can switch unit kerja for notifications
     const notificationUnitScope = useNotificationUnitScope(authUser)
     const isSuperAdmin = notificationUnitScope.isSuperAdmin
+    // Unit kerja ditampilkan dengan namanya, bukan kodenya.
+    const namaUnitSaya = useNamaUnitKerja(authUser?.unitKerjaId || '')
     const notifUnitKerjaId = notificationUnitScope.unitKerjaId
 
     const { counts, loading, hasUrgent, refresh, markAsRead, markAllAsRead, getByCategory, suratCount, arsipCount, workflowCount } = useNotifications({
@@ -135,12 +138,10 @@ export function AppHeader() {
                 </div>
 
                 {/* Unit kerja — context, not a control; it yields space first on narrow screens */}
-                {authUser?.unitKerjaId && (
-                    <div className="hidden items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground md:flex">
-                        <Building2 className="h-3.5 w-3.5" />
-                        <span>
-                            {authUser.unitKerjaId === 'dirjen' ? 'Dirjen PTPP' : authUser.unitKerjaId === 'sesditjen' ? 'Sesditjen' : authUser.unitKerjaId}
-                        </span>
+                {namaUnitSaya && (
+                    <div className="hidden min-w-0 items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground md:flex">
+                        <Building2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                        <span className="max-w-[16rem] truncate" title={namaUnitSaya}>{namaUnitSaya}</span>
                     </div>
                 )}
 

@@ -45,7 +45,6 @@ beforeEach(async () => {
     await clearOfflineStorage()
     Element.prototype.scrollIntoView = vi.fn()
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
     mocks.masuk.update.mockResolvedValue({ id: 'sm-1' })
     mocks.masuk.getById.mockResolvedValue(tersimpan)

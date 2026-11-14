@@ -44,16 +44,16 @@ async function bukaPilihanDisposisi() {
     fireEvent.click(screen.getByRole('button', { name: 'Filter' }))
     await waitFor(() => expect(mocks.units).toHaveBeenCalled())
     fireEvent.click(screen.getByRole('combobox', { name: 'Disposisi Ke' }))
-    return screen.findByRole('button', { name: 'Direktorat BPPT' })
+    return screen.findByRole('option', { name: 'Direktorat BPPT' })
 }
 
 it('menawarkan unit tujuan dan label Kabag, tanpa unit bagian, unit sendiri, atau label singkat lama', async () => {
     await bukaPilihanDisposisi()
-    expect(screen.getByRole('button', { name: 'Kabag Program dan Hukum' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Kabag Kepegawaian Keuangan dan Umum' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Bagian Umum' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Sekretariat Direktorat Jenderal' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Dit. BPPT' })).not.toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Kabag Program dan Hukum' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Kabag Kepegawaian Keuangan dan Umum' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Bagian Umum' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Sekretariat Direktorat Jenderal' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Dit. BPPT' })).not.toBeInTheDocument()
 })
 
 it('memilih unit menyaring lewat id unit tujuan', async () => {
@@ -64,7 +64,7 @@ it('memilih unit menyaring lewat id unit tujuan', async () => {
 
 it('memilih label Kabag menyaring lewat label disposisi', async () => {
     await bukaPilihanDisposisi()
-    fireEvent.click(screen.getByRole('button', { name: 'Kabag Program dan Hukum' }))
+    fireEvent.click(screen.getByRole('option', { name: 'Kabag Program dan Hukum' }))
     await waitFor(() => expect(mocks.getAll).toHaveBeenLastCalledWith(expect.objectContaining({ disposisi: 'Kabag Program dan Hukum' })))
     expect(mocks.getAll.mock.lastCall[0]).not.toHaveProperty('disposisiUnitId')
 })

@@ -40,7 +40,6 @@ beforeEach(async () => {
     await clearOfflineStorage()
     Element.prototype.scrollIntoView = vi.fn()
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
     mocks.masuk.create.mockResolvedValue({ data: { id: 'sm-baru' } })
     mocks.masuk.update.mockResolvedValue({ id: 'sm-1' })
@@ -61,6 +60,12 @@ function tampil(entry) {
     return render(<RouterProvider router={router} />)
 }
 
+// Isian wajib di sini tidak memuat disposisi; dialog konfirmasinya dijawab Simpan tanpa disposisi.
+async function kirimTanpaDisposisi(view) {
+    fireEvent.submit(view.container.querySelector('form'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Simpan tanpa disposisi' }))
+}
+
 function isiWajib() {
     fireEvent.change(screen.getByRole('combobox', { name: 'Jenis surat' }), { target: { value: 'Nota Dinas' } })
     fireEvent.change(screen.getByLabelText(/Tanggal Surat/), { target: { value: '2026-09-23' } })
@@ -77,7 +82,9 @@ describe('No. Agenda pada Tambah Surat Masuk', () => {
         fireEvent.change(screen.getByLabelText('No. Agenda'), { target: { value: '345' } })
         expect(await screen.findByText('345/SM/2026')).toBeInTheDocument()
         expect(mocks.masuk.getNextNumber).toHaveBeenLastCalledWith(expect.objectContaining({ tanggalSurat: '2026-09-23', noUrut: 345 }))
-        fireEvent.submit(view.container.querySelector('form'))
+        await kirimTanpaDisposisi(view)
+        // 345 jauh di atas nomor otomatis berikutnya (9).
+        fireEvent.click(await screen.findByRole('button', { name: 'Simpan dengan nomor ini' }))
         await waitFor(() => expect(mocks.masuk.create).toHaveBeenCalled())
         expect(mocks.masuk.create.mock.calls[0][0]).toMatchObject({ noUrut: 345, tahun: 2026 })
     })
@@ -86,7 +93,7 @@ describe('No. Agenda pada Tambah Surat Masuk', () => {
         const view = tampil('/surat/masuk/tambah')
         isiWajib()
         expect(await screen.findByText('009/SM/2026')).toBeInTheDocument()
-        fireEvent.submit(view.container.querySelector('form'))
+        await kirimTanpaDisposisi(view)
         await waitFor(() => expect(mocks.masuk.create).toHaveBeenCalled())
         expect(mocks.masuk.create.mock.calls[0][0]).not.toHaveProperty('noUrut')
     })
@@ -107,7 +114,7 @@ describe('No. Agenda pada Tambah Surat Masuk', () => {
         const view = tampil('/surat/masuk/tambah')
         isiWajib()
         fireEvent.change(screen.getByLabelText('No. Agenda'), { target: { value: '345' } })
-        fireEvent.submit(view.container.querySelector('form'))
+        await kirimTanpaDisposisi(view)
         const alert = await screen.findByRole('alert')
         expect(alert).toHaveTextContent(pesan)
         expect(within(alert).queryByRole('button', { name: 'Muat ulang' })).toBeNull()
@@ -154,17 +161,19 @@ describe('nomor otomatis berikutnya dan rentang tahun', () => {
     })
 
     it('No. Agenda lebih dari 100 di atas nomor otomatis meminta konfirmasi; bila dibatalkan tidak disimpan', async () => {
-        window.confirm.mockImplementation(pesan => pesan !== PESAN_JAUH)
         const view = tampil('/surat/masuk/tambah')
         isiWajib()
         fireEvent.change(screen.getByLabelText('No. Agenda'), { target: { value: '110' } })
         expect(await screen.findByText('110/SM/2026')).toBeInTheDocument()
-        fireEvent.submit(view.container.querySelector('form'))
-        expect(window.confirm).toHaveBeenCalledWith(PESAN_JAUH)
+        await kirimTanpaDisposisi(view)
+        const dialog = await screen.findByRole('alertdialog', { name: 'Simpan dengan nomor ini?' })
+        expect(dialog).toHaveTextContent(PESAN_JAUH)
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Ubah nomor' }))
+        await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
         expect(mocks.masuk.create).not.toHaveBeenCalled()
 
-        window.confirm.mockReturnValue(true)
-        fireEvent.submit(view.container.querySelector('form'))
+        await kirimTanpaDisposisi(view)
+        fireEvent.click(await screen.findByRole('button', { name: 'Simpan dengan nomor ini' }))
         await waitFor(() => expect(mocks.masuk.create).toHaveBeenCalled())
         expect(mocks.masuk.create.mock.calls[0][0]).toMatchObject({ noUrut: 110 })
     })
@@ -174,9 +183,9 @@ describe('nomor otomatis berikutnya dan rentang tahun', () => {
         isiWajib()
         fireEvent.change(screen.getByLabelText('No. Agenda'), { target: { value: '109' } })
         expect(await screen.findByText('109/SM/2026')).toBeInTheDocument()
-        fireEvent.submit(view.container.querySelector('form'))
+        await kirimTanpaDisposisi(view)
         await waitFor(() => expect(mocks.masuk.create).toHaveBeenCalled())
-        expect(window.confirm).not.toHaveBeenCalledWith(PESAN_JAUH)
+        expect(screen.queryByRole('alertdialog', { name: 'Simpan dengan nomor ini?' })).toBeNull()
     })
 
     it('tanggal di luar 2000-2100 ditolak saat mencatat; isian tanggal dibatasi', async () => {
