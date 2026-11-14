@@ -286,6 +286,22 @@ describe('import identity of numbered letters', () => {
             .rejects.toMatchObject({ statusCode: 409 });
     });
 
+    it('lets the preview count the recorded letters of the unit and the rejected rows without writing anything', async () => {
+        await importer.importRows('surat-masuk', [header, ['005/2026', '02/03/2026', 'Tercatat', 'Instansi A']], 'dir_bppt', audit);
+        const count = async () => Number((await database.query<{ n: string }>('SELECT count(*) AS n FROM surat_masuk')).rows[0].n);
+        const auditRows = async () => Number((await database.query<{ n: string }>('SELECT count(*) AS n FROM audit_log')).rows[0].n);
+        const [lettersBefore, auditBefore] = [await count(), await auditRows()];
+        const rows = [[...header, 'Sifat Surat'], ['005/2026', '02/03/2026', 'Tercatat', 'instansi a', 'Biasa'],
+            ['006/2026', '03/03/2026', 'Baru', 'Instansi A', 'Biasa'], ['007/2026', '04/03/2026', 'Rahasia', 'Instansi A', 'Rahasia']];
+        const preview = await importer.previewRows(rows, 10, 'surat-masuk', { importer: audit, unitKerjaId: 'dir_bppt' });
+        expect(preview.rowIssues).toEqual({ total: 1, rows: [{ row: 3, reason: PESAN_KELAS_MELEBIHI_KEWENANGAN }] });
+        expect(preview.duplicates).toEqual({ source: 0, recorded: 1, deleted: 0 });
+        // Another unit has none of these letters.
+        expect((await importer.previewRows(rows, 10, 'surat-masuk', { importer: audit, unitKerjaId: 'dir_ptep' })).duplicates)
+            .toEqual({ source: 0, recorded: 0, deleted: 0 });
+        expect([await count(), await auditRows()]).toEqual([lettersBefore, auditBefore]);
+    });
+
     it('keeps identifying a numbered surat keluar by its number and year only', async () => {
         const rows = [['Nomor Surat', 'Tanggal Surat', 'Hal', 'Kepada'],
             ['SK-9/2026', '02/03/2026', 'Undangan', 'Instansi A'], ['SK-9/2026', '03/03/2026', 'Undangan lain', 'Instansi B']];

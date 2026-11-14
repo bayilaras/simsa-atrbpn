@@ -30,6 +30,17 @@ const DUPLICATE_LINES = [
     ['deleted', count => `${count} baris cocok dengan surat yang sudah dihapus (tidak dibuat ulang)`],
 ]
 
+const PREVIEW_DUPLICATE_LINES = [
+    ['recorded', count => `${count} baris sudah tercatat di SIMSA pada unit ini dan akan dilewati, atau diperbarui bila Sinkronkan dipilih dan sumbernya berubah.`],
+    ['source', count => `${count} baris ganda di sumber akan dilewati.`],
+    ['deleted', count => `${count} baris cocok dengan surat yang sudah dihapus dan tidak akan dibuat ulang.`],
+]
+
+/** Preview: the rows the import will skip as duplicates, by kind; an older server counts none. */
+export function previewDuplicateLines(duplicates) {
+    return PREVIEW_DUPLICATE_LINES.filter(([kind]) => duplicates?.[kind] > 0).map(([kind, line]) => line(duplicates[kind]))
+}
+
 /** Duplicate counts by kind; a server without per-row outcomes keeps the single earlier line. */
 function duplicateLines(result) {
     if (!result.rows?.length) return result.duplicateRows > 0 ? [`${result.duplicateRows} baris duplikat dilewati (sudah ada di sistem)`] : []

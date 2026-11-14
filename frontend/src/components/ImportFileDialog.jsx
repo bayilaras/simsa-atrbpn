@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { AlertCircle, CheckCircle2, FileSpreadsheet, Upload } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import ImportDateIssues from '@/components/ImportDateIssues'
+import ImportRowIssues from '@/components/ImportRowIssues'
 import ImportRowReport from '@/components/ImportRowReport'
 import ImportSyncOption from '@/components/ImportSyncOption'
 import ImportUnitRequiredButton from '@/components/ImportUnitRequiredButton'
@@ -75,7 +75,8 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
     const chooseSheet = name => { version.current++; setPreview(null); setError(''); setSheet(name) }
 
     const showPreview = async (isCurrent, chosenSheet) => {
-        const data = await api.post('/api/import/berkas/preview', formData(file, { type, sheet: chosenSheet, maxRows: PREVIEW_ROWS }))
+        // With the destination unit the server also counts the rows already recorded there.
+        const data = await api.post('/api/import/berkas/preview', formData(file, { type, sheet: chosenSheet, maxRows: PREVIEW_ROWS, unitKerjaId }))
         if (!isCurrent()) return
         if (data?.importType !== type || !Array.isArray(data.mapping) || !data.mapping.length
             || !Number.isInteger(data.headerRow) || data.headerRow < 1) {
@@ -222,7 +223,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
                     </tr>)}</tbody>
                 </table>
             </div>
-            <ImportDateIssues issues={preview.dateIssues} totalRows={preview.totalRows} />
+            <ImportRowIssues issues={preview.rowIssues ?? preview.dateIssues} duplicates={preview.duplicates} totalRows={preview.totalRows} />
             <ImportSyncOption type={type} checked={sinkron} onChange={setSinkron} disabled={busy} />
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button variant="outline" onClick={() => { version.current++; setPreview(null); setError(''); setStep('file') }} disabled={busy}>Kembali</Button>

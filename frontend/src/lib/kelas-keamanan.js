@@ -36,11 +36,11 @@ export const PESAN_SURAT_MASUK_PERLU_PERSETUJUAN =
     + 'Setelah disimpan, ajukan persetujuan akses untuk membuka surat ini.'
 
 // Catatan pada langkah pratinjau impor surat masuk. Pratinjau (previewRows di
-// backend) tidak memeriksa baris; penolakan baru tampil di rincian hasil.
+// backend) memeriksa setiap baris dengan pemeriksaan impor untuk pengguna ini.
 export const CATATAN_KELAS_IMPOR_SURAT_MASUK =
     'Sifat Surat pada surat masuk sekaligus menjadi klasifikasi keamanan; sel kosong atau “-” dicatat sebagai Biasa. '
     + 'Baris Rahasia atau Sangat Rahasia hanya dapat diimpor oleh Super Admin, dan baris surat baru dengan sifat yang tidak dikenal ditolak. '
-    + 'Pratinjau hanya menampilkan isi sumber; baris yang ditolak terlihat pada Rincian hasil impor setelah Impor, dan baris lain tetap tersimpan.'
+    + 'Baris yang akan ditolak tercantum pada pratinjau ini; baris lain tetap dapat diimpor.'
 
 /** Kelas keamanan baku untuk nilai klasifikasiKeamanan atau sifatSurat. */
 export function normalisasiKelas(nilai) {

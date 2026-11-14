@@ -4,7 +4,7 @@ import api from '@/services/api';
 import { addImportPart, buildGoogleSheetsImportPayload, emptyImportTotals, IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import';
 import { runResumableImport, unfinishedImportNotice } from '@/lib/resumable-import';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import ImportDateIssues from '@/components/ImportDateIssues';
+import ImportRowIssues from '@/components/ImportRowIssues';
 import ImportRowReport from '@/components/ImportRowReport';
 import ImportSyncOption from '@/components/ImportSyncOption';
 import ImportUnitRequiredButton from '@/components/ImportUnitRequiredButton';
@@ -173,11 +173,13 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
         setPreviewData(null);
 
         try {
+            // With the destination unit the server also counts the rows already recorded there.
             const data = await api.post('/api/import/google-drive/preview', {
                 spreadsheetUrl,
                 gid: selectedGid,
                 maxRows: 10,
                 type,
+                unitKerjaId,
             });
 
             if (request !== requestRef.current) return;
@@ -463,7 +465,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                     </table>
                                 </div>
 
-                                <ImportDateIssues issues={previewData.dateIssues} totalRows={previewData.totalRows} />
+                                <ImportRowIssues issues={previewData.rowIssues ?? previewData.dateIssues} duplicates={previewData.duplicates} totalRows={previewData.totalRows} />
 
                                 <ImportSyncOption type={type} checked={sinkron} onChange={setSinkron} />
 

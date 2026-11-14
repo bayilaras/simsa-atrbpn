@@ -22,6 +22,8 @@ const previewInput = z.object({
     spreadsheetUrl, sheetName, gid,
     maxRows: z.number().int().min(1).max(GOOGLE_SHEETS_LIMITS.previewRows).default(10),
     type: z.enum(['surat-masuk', 'surat-keluar']).default('surat-masuk'),
+    // The destination unit; with it the preview also finds the rows already recorded there.
+    unitKerjaId: z.string().trim().max(50).optional(),
 }).strict();
 const importInput = z.object({
     spreadsheetUrl, sheetName, gid,
@@ -56,11 +58,16 @@ router.get('/google-drive/sheets', importDiscoveryLimiter, validateQuery(sheetQu
     } catch (error) { next(error); }
 });
 
-router.post('/google-drive/preview', importPreviewLimiter, validateBody(previewInput), async (req: AuthRequest, res, next) => {
+// Write permission, as for the import: the preview judges rows for the importing user and may look up the unit.
+router.post('/google-drive/preview', importPreviewLimiter, canWriteMiddleware(), validateBody(previewInput), async (req: AuthRequest, res, next) => {
     try {
         const { spreadsheetUrl, maxRows, type } = req.body;
+        // A named unit is resolved and authorized as the import resolves it.
+        const unitKerjaId = req.body.unitKerjaId === undefined ? undefined : resolveImportUnit(req, res);
+        if (unitKerjaId === null) return;
+        const check = { importer: importAuditContext(req), unitKerjaId };
         const preview = await withImportRequest(req, res, options =>
-            googleDriveImportService.previewData(spreadsheetId(spreadsheetUrl), selectedSheet(req.body), maxRows, options, type));
+            googleDriveImportService.previewData(spreadsheetId(spreadsheetUrl), selectedSheet(req.body), maxRows, options, type, check));
         if (!res.destroyed) res.json(preview);
     } catch (error) { next(error); }
 });

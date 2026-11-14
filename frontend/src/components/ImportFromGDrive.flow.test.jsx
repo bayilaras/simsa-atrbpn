@@ -41,13 +41,13 @@ it.each(['surat-masuk', 'surat-keluar'])('shows server mapping for %s and sends 
     await discover();
     await showPreview();
     expect(api.post).toHaveBeenCalledWith('/api/import/google-drive/preview', {
-        spreadsheetUrl: url, gid: '0', maxRows: 10, type,
+        spreadsheetUrl: url, gid: '0', maxRows: 10, type, unitKerjaId: 'unit-a',
     });
     const mapping = screen.getByRole('table', { name: 'Pemetaan kolom ke data SIMSA' });
     expect(within(mapping).getByText('Kolom 2: No. Surat')).toBeInTheDocument();
     expect(within(mapping).getByText('Nomor Surat')).toBeInTheDocument();
     expect(screen.getByText(/baris data ke-3 \(baris kosong tidak dihitung\)/)).toBeInTheDocument();
-    // Only the sifat of an incoming letter is its security class; the preview judges no row.
+    // Only the sifat of an incoming letter is its security class.
     expect(screen.queryAllByText(CATATAN_KELAS_IMPOR_SURAT_MASUK)).toHaveLength(type === 'surat-masuk' ? 1 : 0);
     let finish;
     api.post.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
@@ -208,9 +208,26 @@ it('warns in the preview about rows the import will reject for their date', asyn
     await discover();
     await showPreview();
     const notice = screen.getByRole('alert');
-    expect(notice).toHaveTextContent('1 dari 4 baris akan ditolak karena tanggalnya');
+    expect(notice).toHaveTextContent('1 dari 4 baris akan ditolak');
     expect(notice).toHaveTextContent('Baris data ke-3: Tanggal "31/02/2026" tidak ada di kalender. Periksa hari, bulan, dan tahunnya.');
     expect(screen.getByText(/ditulis dengan urutan hari, bulan, tahun \(misalnya 03\/11\/2026 atau 3 November 2026\)/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Impor 4 baris' })).toBeEnabled();
+});
+
+it('shows in the preview every row the import will reject and the rows it will skip', async () => {
+    const ceiling = 'Klasifikasi keamanan melebihi kewenangan pengguna. Kelas Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin.';
+    api.post.mockImplementation(async (_endpoint, body) => ({ ...preview(body.type), totalRows: 4, dateIssues: { total: 0, rows: [] },
+        rowIssues: { total: 2, rows: [{ row: 2, reason: ceiling }, { row: 4, reason: 'Sifat surat tidak dikenal.' }] },
+        duplicates: { source: 1, recorded: 0, deleted: 0 } }));
+    render(<ImportFromGDrive {...props} type="surat-masuk" />);
+    open();
+    await discover();
+    await showPreview();
+    const notice = screen.getByRole('alert');
+    expect(notice).toHaveTextContent('2 dari 4 baris akan ditolak');
+    expect(within(notice).getAllByRole('listitem').map(item => item.textContent)).toEqual([
+        `Baris data ke-2: ${ceiling}`, 'Baris data ke-4: Sifat surat tidak dikenal.']);
+    expect(screen.getByRole('list', { name: 'Baris yang akan dilewati' })).toHaveTextContent('1 baris ganda di sumber akan dilewati.');
     expect(screen.getByRole('button', { name: 'Impor 4 baris' })).toBeEnabled();
 });
 
