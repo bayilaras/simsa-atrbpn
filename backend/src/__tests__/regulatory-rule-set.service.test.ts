@@ -985,7 +985,7 @@ describe('RegulatoryRuleSetService lifecycle', () => {
         }]);
 
         await expect(service.activate('11111111-1111-4111-8111-111111111111', 'user-1'))
-            .rejects.toThrow(/immutable/i);
+            .rejects.toThrow(/sudah dipublikasikan tidak dapat diubah/i);
         expect(capturedSets).toHaveLength(0);
     });
 });

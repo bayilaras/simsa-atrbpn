@@ -73,7 +73,7 @@ it('offers recovery instead of printing an incomplete document when a template c
     render(<RouterProvider router={router} />)
 
     expect(await screen.findByText('Template tidak dapat dimuat. Muat ulang halaman untuk mencoba kembali.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Try Again' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Coba Lagi' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Cetak Template Kosong' })).not.toBeInTheDocument()
     expect(screen.queryByText('Unexpected Application Error!')).not.toBeInTheDocument()
 })
