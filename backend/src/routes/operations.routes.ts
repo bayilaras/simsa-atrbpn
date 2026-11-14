@@ -187,16 +187,20 @@ router.post('/scanner-run', sensitiveLimiter, async (req: AuthRequest, res) => {
         res.status(400).json({ success: false, message: 'Permintaan menjalankan pemindai tidak valid.' });
         return;
     }
+    const audit = { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip };
     try {
-        await recordScannerRun({ userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip });
+        await recordScannerRun(audit);
     } catch {
         res.status(503).json({ success: false, message: 'Pemindai belum dapat dijalankan. Coba lagi beberapa saat lagi.' });
         return;
     }
     let wakeScheduled = false;
     try { wakeScheduled = scheduleMalwareScanWake(); } catch { /* reported below */ }
+    // The outcome is a second audit record. If it cannot be written, the
+    // request record alone stands and does not claim that a run started.
+    await recordScannerRun(audit, { wakeScheduled }).catch(() => {});
     if (!wakeScheduled) {
-        res.status(503).json({ success: false, message: 'Pemindai tidak dapat dijalankan dari layanan ini. Periksa pengaturan pemindai pada layanan backend.' });
+        res.status(503).json({ success: false, message: 'Pemindai tidak dapat dijalankan dari layanan ini. Hubungi pengelola sistem.' });
         return;
     }
     res.json({ success: true, data: { wakeScheduled } });

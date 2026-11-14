@@ -157,8 +157,10 @@ describe('running the scanner from monitoring', () => {
         const response = await request(app).post('/api/operations/scanner-run').send({}).expect(200);
         expect(response.body).toEqual({ success: true, data: { wakeScheduled: true } });
         expect(response.headers['cache-control']).toBe('no-store');
-        expect(scans.audit).toHaveBeenCalledWith(expect.objectContaining({ userId: 'test-user', userEmail: 'admin@example.test' }));
-        expect(order).toEqual(['audit', 'wake']);
+        const who = expect.objectContaining({ userId: 'test-user', userEmail: 'admin@example.test' });
+        // Request first, then the outcome as a second record.
+        expect(scans.audit.mock.calls).toEqual([[who], [who, { wakeScheduled: true }]]);
+        expect(order).toEqual(['audit', 'wake', 'audit']);
         expect(scans.limited).toHaveBeenCalledOnce();
     });
     it('does not wake the scanner when the audit record cannot be written', async () => {
@@ -168,6 +170,14 @@ describe('running the scanner from monitoring', () => {
         expect(response.body.message).toBe('Pemindai belum dapat dijalankan. Coba lagi beberapa saat lagi.');
         expect(JSON.stringify(response.body)).not.toContain('private');
         expect(scans.wake).not.toHaveBeenCalled();
+        expect(scans.audit).toHaveBeenCalledOnce();
+    });
+    it('still answers after a started run when only the outcome record cannot be written', async () => {
+        state.role = 'super_admin';
+        scans.audit.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('private connection string'));
+        scans.wake.mockReturnValue(true);
+        const response = await request(app).post('/api/operations/scanner-run').send({}).expect(200);
+        expect(response.body).toEqual({ success: true, data: { wakeScheduled: true } });
     });
     it.each([['returns false', () => false], ['throws', () => { throw new Error('private wake detail'); }]])(
         'says plainly that the scanner cannot be run when the wake %s', async (_label, wake) => {
@@ -175,7 +185,9 @@ describe('running the scanner from monitoring', () => {
             scans.audit.mockResolvedValue(undefined);
             scans.wake.mockImplementation(wake);
             const response = await request(app).post('/api/operations/scanner-run').send({}).expect(503);
-            expect(response.body).toEqual({ success: false, message: 'Pemindai tidak dapat dijalankan dari layanan ini. Periksa pengaturan pemindai pada layanan backend.' });
+            expect(response.body).toEqual({ success: false, message: 'Pemindai tidak dapat dijalankan dari layanan ini. Hubungi pengelola sistem.' });
+            // The audit trail tells this request apart from a run that started.
+            expect(scans.audit).toHaveBeenLastCalledWith(expect.objectContaining({ userId: 'test-user' }), { wakeScheduled: false });
         });
     it.each([['/api/operations/scanner-run?force=1', {}], ['/api/operations/scanner-run', { files: ['x'] }]])(
         'rejects a malformed request %s before auditing or waking', async (path, body) => {
