@@ -88,7 +88,8 @@ describe('sesi tanpa aktivitas', () => {
     it('mengakhiri sesi dengan keterangan tidak ada aktivitas bila server sudah membuangnya', async () => {
         service.refreshSession.mockResolvedValue('berakhir')
         await masuk()
-        await lewati(26 * MENIT)
+        // Komputer tertidur 31 menit: jam berjalan, pengatur waktu halaman tidak.
+        vi.setSystemTime(Date.now() + 31 * MENIT)
         await aktivitas()
         expect(service.signOut).toHaveBeenCalledOnce()
         expect(auth.user).toBeNull()

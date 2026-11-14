@@ -32,7 +32,7 @@ export default function Login() {
     const [password, setPassword] = useState('')
     const [showPassword, setShowPassword] = useState(false)
     const [localError, setLocalError] = useState('')
-    // The server refused a session that was not used for 30 minutes.
+    // The server refused a session that was not used within its idle limit.
     const [addressNotice, setAddressNotice] = useState(() => (
         searchParams.get(PARAM_SESI) === SESI_BERAKHIR ? PESAN_SESI_BERAKHIR : ''
     ))

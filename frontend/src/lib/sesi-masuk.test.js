@@ -19,15 +19,15 @@ describe('alasan sesi ditolak server', () => {
         expect(alamatMasukSetelahSesiDitolak(SEKARANG)).toBe('/login')
     })
 
-    it('menganggap sesi ditutup dengan cara lain bila server menerimanya kurang dari 25 menit lalu', () => {
-        catatKontakServer(SEKARANG - 24 * MENIT)
-        expect(lamaTanpaKontak(SEKARANG)).toBe(24 * MENIT)
+    it('menganggap sesi ditutup dengan cara lain bila server menerimanya kurang dari 30 menit lalu', () => {
+        catatKontakServer(SEKARANG - 29 * MENIT)
+        expect(lamaTanpaKontak(SEKARANG)).toBe(29 * MENIT)
         expect(sesiBerakhirKarenaTidakAktif(SEKARANG)).toBe(false)
         expect(alamatMasukSetelahSesiDitolak(SEKARANG)).toBe('/login')
     })
 
-    it('menjelaskan sesi yang habis karena tidak dipakai setelah 25 menit tanpa kontak', () => {
-        catatKontakServer(SEKARANG - 25 * MENIT)
+    it('menjelaskan sesi yang habis karena tidak dipakai setelah 30 menit tanpa kontak', () => {
+        catatKontakServer(SEKARANG - 30 * MENIT)
         expect(sesiBerakhirKarenaTidakAktif(SEKARANG)).toBe(true)
         expect(alamatMasukSetelahSesiDitolak(SEKARANG)).toBe('/login?sesi=berakhir')
     })

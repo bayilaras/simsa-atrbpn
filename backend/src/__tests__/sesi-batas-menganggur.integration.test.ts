@@ -38,8 +38,8 @@ function sessionCookie(setCookies: string[]): string | undefined {
     return setCookies.find(cookie => /better-auth\.session_token=/.test(cookie));
 }
 
-// The server ends a session that nobody uses after 30 minutes, the same
-// limit as the automatic logout in the browser, and keeps extending one in use.
+// The server ends a session that nobody uses after 35 minutes, never before
+// the browser's 30-minute automatic logout, and keeps extending one in use.
 describe('server-side idle limit of a session', () => {
     let database: PGlite;
     let auth: Awaited<ReturnType<typeof configuredAuth>>;
@@ -64,16 +64,19 @@ describe('server-side idle limit of a session', () => {
         return rows.map((row: { expiresAt: Date }) => row.expiresAt);
     }
 
-    async function setExpiry(msFromNow: number) {
+    async function setExpiry(msFromNow: number, lastUsedMsAgo?: number) {
         await holder.db.update(schema.sessions)
-            .set({ expiresAt: new Date(Date.now() + msFromNow) })
+            .set({
+                expiresAt: new Date(Date.now() + msFromNow),
+                ...(lastUsedMsAgo === undefined ? {} : { updatedAt: new Date(Date.now() - lastUsedMsAgo) }),
+            })
             .where(eq(schema.sessions.userId, USER_ID));
     }
 
-    function expectAboutThirtyMinutesAhead(date: Date) {
+    function expectAboutThirtyFiveMinutesAhead(date: Date) {
         const remaining = date.getTime() - Date.now();
-        expect(remaining).toBeGreaterThan(29 * MINUTE);
-        expect(remaining).toBeLessThanOrEqual(30 * MINUTE);
+        expect(remaining).toBeGreaterThan(34 * MINUTE);
+        expect(remaining).toBeLessThanOrEqual(35 * MINUTE);
     }
 
     beforeAll(async () => {
@@ -107,25 +110,25 @@ describe('server-side idle limit of a session', () => {
         await database?.close();
     });
 
-    it('issues a 30-minute session whose cookie lives exactly as long', async () => {
-        expect(auth.options.session).toMatchObject({ expiresIn: 30 * 60, updateAge: 5 * 60 });
+    it('issues a 35-minute session whose cookie lives exactly as long', async () => {
+        expect(auth.options.session).toMatchObject({ expiresIn: 35 * 60, updateAge: 5 * 60 });
         // A cookie cache would keep accepting a session the server already ended.
         expect(auth.options.session?.cookieCache?.enabled).not.toBe(true);
 
         await database.query('DELETE FROM sessions WHERE user_id = $1', [USER_ID]);
         const { setCookies } = await signIn();
-        expect(sessionCookie(setCookies)).toMatch(/Max-Age=1800/);
+        expect(sessionCookie(setCookies)).toMatch(/Max-Age=2100/);
         const [expiresAt] = await storedExpiry();
-        expectAboutThirtyMinutesAhead(expiresAt);
+        expectAboutThirtyFiveMinutesAhead(expiresAt);
     });
 
     it('gives a sign-in without "remember me" the same idle limit', async () => {
         await database.query('DELETE FROM sessions WHERE user_id = $1', [USER_ID]);
         const { setCookies } = await signIn({ rememberMe: false });
-        expect(sessionCookie(setCookies)).toMatch(/Max-Age=1800/);
+        expect(sessionCookie(setCookies)).toMatch(/Max-Age=2100/);
         expect(setCookies.some(cookie => cookie.includes('dont_remember'))).toBe(false);
         const [expiresAt] = await storedExpiry();
-        expectAboutThirtyMinutesAhead(expiresAt);
+        expectAboutThirtyFiveMinutesAhead(expiresAt);
     });
 
     it('extends a session in use and renews its cookie on an ordinary API request', async () => {
@@ -133,21 +136,56 @@ describe('server-side idle limit of a session', () => {
         const { cookie } = await signIn();
 
         // Used again four minutes later: not yet due, nothing is rewritten.
-        await setExpiry(26 * MINUTE);
+        await setExpiry(31 * MINUTE);
         const early = await request(app).get('/api/ping').set('Cookie', cookie).expect(200);
         expect(early.body).toEqual({ user: USER_ID });
         expect(sessionCookie(([] as string[]).concat(early.headers['set-cookie'] ?? []))).toBeUndefined();
 
-        // Used again ten minutes later: extended to 30 minutes from now, and
+        // Used again ten minutes later: extended to 35 minutes from now, and
         // the browser receives a cookie that lives as long.
-        await setExpiry(20 * MINUTE);
+        await setExpiry(25 * MINUTE);
         const due = await request(app).get('/api/ping').set('Cookie', cookie).expect(200);
         expect(due.body).toEqual({ user: USER_ID });
         const renewed = sessionCookie(([] as string[]).concat(due.headers['set-cookie'] ?? []));
-        expect(renewed).toMatch(/Max-Age=1800/);
+        expect(renewed).toMatch(/Max-Age=2100/);
         expect(renewed?.split(';')[0]).toBe(cookie.split('; ').find(part => part.includes('session_token')));
         const [expiresAt] = await storedExpiry();
-        expectAboutThirtyMinutesAhead(expiresAt);
+        expectAboutThirtyFiveMinutesAhead(expiresAt);
+    });
+
+    // Sessions issued before the idle limit expire up to 24 hours after their
+    // last extension, which happened at most every 4 hours.
+    it('ends a long session from before the idle limit that was not used within it', async () => {
+        await database.query('DELETE FROM sessions WHERE user_id = $1', [USER_ID]);
+        const { cookie } = await signIn();
+        await setExpiry(20 * 60 * MINUTE, 4 * 60 * MINUTE);
+
+        const response = await request(app).get('/api/ping').set('Cookie', cookie).expect(401);
+        expect(sessionCookie(([] as string[]).concat(response.headers['set-cookie'] ?? []))).toMatch(/Max-Age=0/);
+        expect(await storedExpiry()).toEqual([]);
+
+        // The browser's own check refuses it as well.
+        const second = await signIn();
+        await setExpiry(20 * 60 * MINUTE, 36 * MINUTE);
+        const session = await auth.handler(new Request(`${ORIGIN}/api/auth/get-session`, { headers: { Cookie: second.cookie } }));
+        expect(await session.json()).toBeNull();
+        expect(sessionCookie(session.headers.getSetCookie())).toMatch(/Max-Age=0/);
+        expect(await storedExpiry()).toEqual([]);
+    });
+
+    it('cuts a long session from before the idle limit that was used within it to the limit', async () => {
+        await database.query('DELETE FROM sessions WHERE user_id = $1', [USER_ID]);
+        const { cookie } = await signIn();
+        await setExpiry(23 * 60 * MINUTE, 10 * MINUTE);
+
+        const response = await request(app).get('/api/ping').set('Cookie', cookie).expect(200);
+        expect(response.body).toEqual({ user: USER_ID });
+        const [expiresAt] = await storedExpiry();
+        expectAboutThirtyFiveMinutesAhead(expiresAt);
+
+        // From then on it follows the idle limit like any new session.
+        await setExpiry(-1 * MINUTE);
+        await request(app).get('/api/ping').set('Cookie', cookie).expect(401);
     });
 
     it('refuses a session left unused past the limit, deletes it and clears the cookie', async () => {

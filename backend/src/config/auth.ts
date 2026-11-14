@@ -1,6 +1,7 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { createAuthMiddleware, APIError, getAuthoritativeSessionFromCtx } from 'better-auth/api';
+import { deleteSessionCookie } from 'better-auth/cookies';
 import { db } from './database';
 import { env } from './env';
 import { getTrustedOrigins, isTrustedOrigin } from './trusted-origins';
@@ -106,16 +107,62 @@ function idleLimitedSignIn(ctx: AuthHookContext) {
     return { context: { body: { ...body, rememberMe: true } } };
 }
 
+// Server-side idle limit. The client signs out after 30 minutes without
+// activity; the server allows 35 minutes and extends a session in use once
+// 5 minutes have passed since its last extension. A session extended up to
+// 5 minutes before the user's last action therefore still outlives the
+// client's automatic logout, and a session nobody uses (a browser closed
+// without signing out) ends 35 minutes after it was last extended.
+export const SESSION_EXPIRES_IN_SECONDS = 35 * 60;
+export const SESSION_UPDATE_AGE_SECONDS = 5 * 60;
+const SESSION_LIFETIME_MS = SESSION_EXPIRES_IN_SECONDS * 1000;
+// Clock and processing slack before a session counts as issued under the
+// previous, longer lifetime.
+const LEGACY_SESSION_SLACK_MS = 60 * 1000;
+
+// Recovery is a Super Admin reset; no reset email exists. The token form of
+// the reset callback carries its token in the path, which disabledPaths (exact
+// paths) cannot match, so it is refused here by its route.
+const DISABLED_ROUTES = ['/reset-password/:token'];
+
 const beforeAuthRequest = createAuthMiddleware(async (ctx) => {
+    if (DISABLED_ROUTES.includes(ctx.path)) throw new APIError('NOT_FOUND');
     await guardOrigin(ctx);
     await rememberSigningOutUser(ctx);
     return idleLimitedSignIn(ctx);
 });
 
+/**
+ * Sessions issued before the idle limit last up to 24 hours. Better Auth only
+ * moves a session's updated_at when it is used (sign-in or extension), so
+ * updated_at is the latest moment the session is known to have been used; the
+ * old 4-hour extension interval means it can lag behind actual use. A session
+ * not known to be used within the idle limit ends now (an active user signs
+ * in once more); one used within it is cut to the idle limit and then slides
+ * like any new session.
+ */
+async function limitLegacySession(ctx: AuthHookContext) {
+    if (ctx.path !== '/get-session') return;
+    const returned = ctx.context.returned as { session?: { token?: string; expiresAt?: Date | string; updatedAt?: Date | string } } | null | undefined;
+    const session = returned?.session;
+    if (!session?.token || !session.expiresAt || !session.updatedAt) return;
+    const now = Date.now();
+    if (new Date(session.expiresAt).getTime() <= now + SESSION_LIFETIME_MS + LEGACY_SESSION_SLACK_MS) return;
+    if (!(now - new Date(session.updatedAt).getTime() <= SESSION_LIFETIME_MS)) {
+        await ctx.context.internalAdapter.deleteSession(session.token);
+        deleteSessionCookie(ctx);
+        return ctx.json(null);
+    }
+    const expiresAt = new Date(now + SESSION_LIFETIME_MS);
+    await ctx.context.internalAdapter.updateSession(session.token, { expiresAt });
+    return ctx.json({ ...returned, session: { ...session, expiresAt } });
+}
+
 // Sign-ins (email and Google), failed email sign-ins, sign-outs and changes
 // of one's own password reach the Audit Log.
 const afterAuthRequest = createAuthMiddleware(async (ctx) => {
     await recordAuthEvent(ctx);
+    return limitLegacySession(ctx);
 });
 
 export const auth = betterAuth({
@@ -169,9 +216,10 @@ export const auth = betterAuth({
     onAPIError: {
         errorURL: loginPageURL(),
     },
-    // The application never calls this endpoint over HTTP, and it has no
-    // dedicated burst rule.
-    disabledPaths: ['/verify-password'],
+    // The application never calls these endpoints over HTTP. Password checks
+    // have no dedicated burst rule, and recovery is a Super Admin reset, not
+    // a reset email (see DISABLED_ROUTES for the token form).
+    disabledPaths: ['/verify-password', '/request-password-reset', '/reset-password', '/reset-password/:token'],
     // Better Auth's per-endpoint burst policies share atomic counters too.
     // Express separately enforces the longer login-attempt window at admission.
     // The sign-in bursts are counted per network, so an office NAT gets room
@@ -184,16 +232,13 @@ export const auth = betterAuth({
             '/sign-in/social': { window: 10, max: 10 },
         },
     },
-    // Server-side idle limit, the same 30 minutes as the client's automatic
-    // logout. A session in use is extended once updateAge has passed since the
-    // last extension (each request through authMiddleware also renews the
-    // cookie); a session nobody uses, e.g. a browser closed without signing
-    // out, expires 30 minutes after it was last extended. The cookie cache
-    // stays off, so every check reads the session row and an expired or
-    // revoked session is refused at once.
+    // Idle limit (see SESSION_EXPIRES_IN_SECONDS). Each request through
+    // authMiddleware also renews the cookie of an extended session. The cookie
+    // cache stays off, so every check reads the session row and an expired
+    // or revoked session is refused at once.
     session: {
-        expiresIn: 60 * 30,
-        updateAge: 60 * 5,
+        expiresIn: SESSION_EXPIRES_IN_SECONDS,
+        updateAge: SESSION_UPDATE_AGE_SECONDS,
     },
     user: {
         validateUserInfo: async ({ user, source }) => {

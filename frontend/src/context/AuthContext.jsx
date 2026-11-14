@@ -35,7 +35,7 @@ export function AuthProvider({ children }) {
     const lastActivityRef = useRef(Date.now());
     const sessionRefreshRef = useRef(false);
 
-    // The server ends a session it has not seen for 30 minutes. Activity
+    // The server ends a session it has not seen for 35 minutes. Activity
     // without API requests (reading a document) still counts, so it asks the
     // server about the session once the last answer is older than the
     // server's extension interval.
