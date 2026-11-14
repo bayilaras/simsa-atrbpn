@@ -73,6 +73,13 @@ it('links the owner to the archive detail page when the response carries arsipId
     expect(await screen.findByRole('link', { name: /lihat di arsip/i })).toHaveAttribute('href', '/arsip/detail/arsip-1')
 })
 
+it('shows a multi-line perihal with its line breaks', async () => {
+    mocks.getById.mockResolvedValue({ id: 'surat-id', nomorSurat: '007/2026', perihal: 'Undangan\nRapat Koordinasi', unitKerjaId: 'unit-a', aksesMelalui: 'owner' })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    const label = await screen.findByText('Perihal', { selector: 'label' })
+    expect(within(label.parentElement).getByText(/Rapat Koordinasi/)).toHaveClass('whitespace-pre-line')
+})
+
 it('breadcrumb Surat points to an existing list route', async () => {
     mocks.getById.mockResolvedValue({ id: 'surat-id', nomorSurat: '006/2026', perihal: 'Remah roti', unitKerjaId: 'unit-a', aksesMelalui: 'owner' })
     render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
