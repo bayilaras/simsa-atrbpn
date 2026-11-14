@@ -70,7 +70,7 @@ export function normalizeUserUnitAssignment(
 
     const normalized = unitKerjaId?.trim() || null;
     if (explicitUnit && normalized !== mandatedUnit) {
-        throw new ValidationError(`Invalid unitKerjaId for ${role}: expected ${mandatedUnit}`);
+        throw new ValidationError('Peran ini memakai unit kerja yang sudah ditetapkan dan tidak dapat diganti.');
     }
 
     return mandatedUnit;
@@ -148,7 +148,7 @@ async function validateCreatePrerequisites(
             .from(unitKerja)
             .where(eq(unitKerja.id, normalizedUnitKerjaId))
             .limit(1);
-        if (!unit) throw new ValidationError(`Invalid unitKerjaId: ${normalizedUnitKerjaId}`);
+        if (!unit) throw new ValidationError('Unit kerja tidak dikenali.');
     }
 }
 
@@ -226,7 +226,7 @@ export const userManagementService = {
         const normalizedEmail = data.email.trim().toLowerCase();
         // Validate role
         if (!(ASSIGNABLE_ROLES as readonly string[]).includes(data.role)) {
-            throw new ValidationError(`Invalid role: ${data.role}`);
+            throw new ValidationError('Peran tidak dikenali.');
         }
         const normalizedUnitKerjaId = normalizeUserUnitAssignment(
             data.role as Role,
@@ -338,7 +338,7 @@ export const userManagementService = {
     ) {
         // Validate role if provided
         if (data.role !== undefined && !(ASSIGNABLE_ROLES as readonly string[]).includes(data.role)) {
-            throw new ValidationError(`Invalid role: ${data.role}`);
+            throw new ValidationError('Peran tidak dikenali.');
         }
 
         const updateData: any = {
@@ -463,7 +463,7 @@ export const userManagementService = {
                 .from(unitKerja)
                 .where(eq(unitKerja.id, nextUnitKerjaId))
                 .limit(1);
-            if (!unit) throw new ValidationError(`Invalid unitKerjaId: ${nextUnitKerjaId}`);
+            if (!unit) throw new ValidationError('Unit kerja tidak dikenali.');
         }
 
         const [updatedUser] = await tx

@@ -7,6 +7,7 @@ import { suratKeluarService } from '../services/surat-keluar.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { validateBody, validateQuery, validateIdParam } from '../middlewares/validate.middleware';
+import { badanGalatValidasi } from '../utils/galat-validasi.js';
 import {
     createSuratKeluarSchema,
     updateSuratKeluarSchema,
@@ -60,14 +61,7 @@ function resolveListUnitKerjaId(req: AuthRequest, requested?: string): string | 
 }
 
 function sendValidationFailure(res: Response, issues: Array<{ path: PropertyKey[]; message: string }>) {
-    return res.status(400).json({
-        success: false,
-        error: 'Validation failed',
-        details: issues.map((issue) => ({
-            field: issue.path.join('.'),
-            message: issue.message,
-        })),
-    });
+    return res.status(400).json(badanGalatValidasi(issues));
 }
 
 // UUID surat masuk sumber hanya untuk pengguna yang boleh membaca surat itu;
@@ -137,7 +131,7 @@ router.get('/next-number', async (req: AuthRequest, res, next) => {
         const unitKerjaId = resolveListUnitKerjaId(req, requestedUnit);
 
         if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
+            return res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
         }
 
         const preview = await suratKeluarService.getNextNumber(
@@ -184,11 +178,11 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
         if (!access.exists || !access.allowed) {
             const perlu = await rekamanPerluPersetujuan(req.user, 'surat_keluar', id, access);
             if (perlu) return res.status(403).json(badanPerluPersetujuan(perlu));
-            return res.status(404).json({ error: 'Surat keluar not found' });
+            return res.status(404).json({ error: 'Surat keluar not found', message: 'Surat keluar tidak ditemukan.' });
         }
         const result = await suratKeluarService.findById(id, scopeForAuthorizedRead(req, access));
         if (!result) {
-            return res.status(404).json({ error: 'Surat keluar not found' });
+            return res.status(404).json({ error: 'Surat keluar not found', message: 'Surat keluar tidak ditemukan.' });
         }
         if (access.via !== 'owner') {
             await auditLogService.logActionOrThrow({
@@ -357,15 +351,15 @@ router.put('/:id', validateIdParam(),
             const existing = await suratKeluarService.findById(id, unitScope);
 
             if (!existing) {
-                return res.status(404).json({ error: 'Surat keluar not found' });
+                return res.status(404).json({ error: 'Surat keluar not found', message: 'Surat keluar tidak ditemukan.' });
             }
             const access = await recordAccessService.check(req.user, 'surat_keluar', id);
             if (!access.exists || !access.mutable) {
-                return res.status(404).json({ error: 'Surat keluar not found' });
+                return res.status(404).json({ error: 'Surat keluar not found', message: 'Surat keluar tidak ditemukan.' });
             }
             if (existing.isArchived) {
                 return res.status(409).json({
-                    error: 'Surat yang telah diarsipkan bersifat immutable; buat versi/koreksi terkendali.',
+                    error: 'Surat yang sudah diarsipkan tidak dapat diubah.',
                 });
             }
             if (!['draft', 'rejected'].includes(existing.approvalStatus)) {
@@ -471,7 +465,7 @@ router.put('/:id', validateIdParam(),
                     entityId: id,
                 }, requestCreatedObjectGeneration);
                 requestCreatedBlobUrl = null;
-                return res.status(404).json({ error: 'Surat keluar not found' });
+                return res.status(404).json({ error: 'Surat keluar not found', message: 'Surat keluar tidak ditemukan.' });
             }
 
             requestCreatedBlobUrl = null;
@@ -528,7 +522,7 @@ router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthR
             return res.status(404).json({ error: 'Surat keluar not found', message: PESAN_SURAT_HAPUS_TIDAK_DITEMUKAN });
         }
 
-        res.json({ success: true, message: 'Surat keluar deleted successfully' });
+        res.json({ success: true, message: 'Surat keluar berhasil dihapus.' });
     } catch (error) {
         next(error);
     }
@@ -541,13 +535,13 @@ router.post('/:id/archive-full', validateIdParam(), canWriteMiddleware(), async 
         const existing = await suratKeluarService.findById(id, resolveRecordUnitScope(req));
 
         if (!existing) {
-            return res.status(404).json({ error: 'Surat keluar not found' });
+            return res.status(404).json({ error: 'Surat keluar not found', message: 'Surat keluar tidak ditemukan.' });
         }
         // Access first, so the approval status of a letter the caller cannot
         // open is not revealed through a 409.
         const access = await recordAccessService.check(req.user, 'surat_keluar', id);
         if (!access.exists || !access.mutable) {
-            return res.status(404).json({ error: 'Surat keluar not found' });
+            return res.status(404).json({ error: 'Surat keluar not found', message: 'Surat keluar tidak ditemukan.' });
         }
         if (existing.approvalStatus !== 'approved') {
             return res.status(409).json({
@@ -556,14 +550,7 @@ router.post('/:id/archive-full', validateIdParam(), canWriteMiddleware(), async 
         }
         const parsed = archiveRegistrationSchema.safeParse(req.body);
         if (!parsed.success) {
-            return res.status(400).json({
-                success: false,
-                error: 'Validation failed',
-                details: parsed.error.issues.map(issue => ({
-                    field: issue.path.join('.'),
-                    message: issue.message,
-                })),
-            });
+            return res.status(400).json(badanGalatValidasi(parsed.error.issues));
         }
         // Kelas arsip >= kelas sumber ditegakkan ArsipService di bawah kunci
         // baris. Plafon peran tidak berlaku bagi kelas yang sama dengan kelas
@@ -618,11 +605,11 @@ router.get('/:id/source', validateIdParam(), async (req: AuthRequest, res, next)
         const existing = await suratKeluarService.findById(id, unitScope);
 
         if (!existing) {
-            return res.status(404).json({ error: 'Surat keluar not found' });
+            return res.status(404).json({ error: 'Surat keluar not found', message: 'Surat keluar tidak ditemukan.' });
         }
         const parentAccess = await recordAccessService.check(req.user, 'surat_keluar', id);
         if (!parentAccess.exists || !parentAccess.allowed) {
-            return res.status(404).json({ error: 'Surat keluar not found' });
+            return res.status(404).json({ error: 'Surat keluar not found', message: 'Surat keluar tidak ditemukan.' });
         }
 
         const source = await suratKeluarService.getSourceSuratMasuk(id, unitScope);
@@ -647,11 +634,11 @@ router.get('/:id/with-links', validateIdParam(), async (req: AuthRequest, res, n
         const result = await suratKeluarService.findByIdWithLinks(id, resolveRecordUnitScope(req));
 
         if (!result) {
-            return res.status(404).json({ error: 'Surat keluar not found' });
+            return res.status(404).json({ error: 'Surat keluar not found', message: 'Surat keluar tidak ditemukan.' });
         }
         const parentAccess = await recordAccessService.check(req.user, 'surat_keluar', id);
         if (!parentAccess.exists || !parentAccess.allowed) {
-            return res.status(404).json({ error: 'Surat keluar not found' });
+            return res.status(404).json({ error: 'Surat keluar not found', message: 'Surat keluar tidak ditemukan.' });
         }
 
         const [sourceAccess, archiveAccess] = await Promise.all([

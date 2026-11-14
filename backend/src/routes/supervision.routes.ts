@@ -26,7 +26,7 @@ router.get('/stats/activity', async (req, res) => {
         res.json(stats);
     } catch (error) {
         log.error({ err: error }, 'Error fetching activity stats:');
-        res.status(500).json({ error: 'Failed to fetch activity stats' });
+        res.status(500).json({ error: 'Failed to fetch activity stats', message: 'Statistik aktivitas gagal dimuat. Silakan coba lagi.' });
     }
 });
 
@@ -37,7 +37,7 @@ router.get('/stats/users', async (req, res) => {
         res.json(stats);
     } catch (error) {
         log.error({ err: error }, 'Error fetching user stats:');
-        res.status(500).json({ error: 'Failed to fetch user stats' });
+        res.status(500).json({ error: 'Failed to fetch user stats', message: 'Statistik pengguna gagal dimuat. Silakan coba lagi.' });
     }
 });
 
@@ -47,7 +47,7 @@ router.get('/stats/compliance', async (req, res) => {
         res.json(stats);
     } catch (error) {
         log.error({ err: error }, 'Error fetching compliance stats:');
-        res.status(500).json({ error: 'Failed to fetch compliance stats' });
+        res.status(500).json({ error: 'Failed to fetch compliance stats', message: 'Statistik kepatuhan gagal dimuat. Silakan coba lagi.' });
     }
 });
 
@@ -65,7 +65,7 @@ router.get('/stats/compliance/issues', async (req: AuthRequest, res) => {
         res.json({ data, total: data.length });
     } catch (error) {
         log.error({ err: error }, 'Error fetching compliance issue queue:');
-        res.status(500).json({ error: 'Failed to fetch compliance issue queue' });
+        res.status(500).json({ error: 'Failed to fetch compliance issue queue', message: 'Daftar temuan kepatuhan gagal dimuat. Silakan coba lagi.' });
     }
 });
 

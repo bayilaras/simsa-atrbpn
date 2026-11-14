@@ -68,7 +68,7 @@ router.get('/expiring', async (req: AuthRequest, res, next) => {
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
 
         if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
+            return res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
         }
 
         const data = await arsipService.getExpiring(
@@ -93,7 +93,7 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
         // all units. Every scoped role must still resolve to one authoritative
         // unit so a missing assignment can never widen access.
         if (!unitKerjaId && req.user?.role !== 'super_admin') {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
+            return res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
         }
 
         const stats = await arsipService.getStats(
@@ -115,7 +115,7 @@ router.get('/search/fulltext', validateQuery(archiveFulltextQuerySchema), async 
         const { q, jenisArsip, tahun, page, limit } = res.locals.validatedQuery;
 
         if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
+            return res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
         }
 
         const result = await fullTextSearchService.search({
@@ -142,7 +142,7 @@ router.get('/search/suggestions', validateQuery(archiveSuggestionsQuerySchema), 
         const { q, limit } = res.locals.validatedQuery;
 
         if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
+            return res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
         }
 
         const suggestions = await fullTextSearchService.getSuggestions(
@@ -165,7 +165,7 @@ router.get('/search/keywords', validateQuery(archiveKeywordsQuerySchema), async 
         const { keywords, page, limit } = res.locals.validatedQuery;
 
         if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
+            return res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
         }
 
         const result = await fullTextSearchService.searchByKeywords(
@@ -199,12 +199,12 @@ router.get('/:id/related', validateIdParam(), validateQuery(archiveRelatedQueryS
         const { limit } = res.locals.validatedQuery;
 
         if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
+            return res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
         }
 
         const sourceAccess = await recordAccessService.check(req.user, 'arsip', id as string);
         if (!sourceAccess.exists || !sourceAccess.allowed) {
-            return res.status(404).json({ error: 'Arsip not found' });
+            return res.status(404).json({ error: 'Arsip not found', message: 'Arsip tidak ditemukan.' });
         }
 
         const related = await fullTextSearchService.getRelatedDocuments(
@@ -228,13 +228,13 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
         const result = await arsipService.findById(id as string);
 
         if (!result) {
-            return res.status(404).json({ error: 'Arsip not found' });
+            return res.status(404).json({ error: 'Arsip not found', message: 'Arsip tidak ditemukan.' });
         }
         const access = await recordAccessService.check(req.user, 'arsip', id as string);
         if (!access.exists || !access.allowed) {
             const perlu = await rekamanPerluPersetujuan(req.user, 'arsip', id as string, access);
             if (perlu) return res.status(403).json(badanPerluPersetujuan(perlu));
-            return res.status(404).json({ error: 'Arsip not found' });
+            return res.status(404).json({ error: 'Arsip not found', message: 'Arsip tidak ditemukan.' });
         }
 
         // Hak aksi ikut di dalam `data` (pola detail surat) agar halaman detail
@@ -271,11 +271,11 @@ router.put('/:id', validateIdParam(),
             const { expectedUpdatedAt, ...metadata } = req.body;
             const existing = await arsipService.findById(id as string);
             if (!existing) {
-                return res.status(404).json({ error: 'Arsip not found' });
+                return res.status(404).json({ error: 'Arsip not found', message: 'Arsip tidak ditemukan.' });
             }
             const access = await recordAccessService.check(req.user, 'arsip', id as string);
             if (!access.exists || !access.mutable) {
-                return res.status(404).json({ error: 'Arsip not found' });
+                return res.status(404).json({ error: 'Arsip not found', message: 'Arsip tidak ditemukan.' });
             }
             // Mengirim ulang kelas yang sudah melekat bukan kenaikan; plafon peran
             // hanya berlaku bila kelasnya berubah.
@@ -303,7 +303,7 @@ router.put('/:id', validateIdParam(),
             }, { expectedUpdatedAt });
 
             if (!result) {
-                return res.status(404).json({ error: 'Arsip not found' });
+                return res.status(404).json({ error: 'Arsip not found', message: 'Arsip tidak ditemukan.' });
             }
 
             res.json({ success: true, data: result });
@@ -331,7 +331,7 @@ router.get('/:id/rule-history', validateIdParam(), async (req: AuthRequest, res,
         const { id } = req.params;
         const access = await recordAccessService.check(req.user, 'arsip', id as string);
         if (!access.exists || !access.allowed) {
-            return res.status(404).json({ error: 'Arsip not found' });
+            return res.status(404).json({ error: 'Arsip not found', message: 'Arsip tidak ditemukan.' });
         }
         const history = await arsipService.getRuleHistory(id as string);
         res.json({ success: true, data: history });
@@ -352,7 +352,7 @@ router.post(
             const existing = await arsipService.findById(id as string);
             const access = await recordAccessService.check(req.user, 'arsip', id as string);
             if (!existing || !access.exists || !access.mutable) {
-                return res.status(404).json({ error: 'Arsip not found' });
+                return res.status(404).json({ error: 'Arsip not found', message: 'Arsip tidak ditemukan.' });
             }
 
             const result = await arsipService.reconcileRules(

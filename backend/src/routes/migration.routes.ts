@@ -94,7 +94,8 @@ router.post('/surat-masuk',
             if (!unitKerjaId) {
                 return res.status(400).json({
                     success: false,
-                    error: 'unitKerjaId is required'
+                    error: 'unitKerjaId is required',
+                    message: 'Pilih unit kerja terlebih dahulu.',
                 });
             }
 
@@ -111,7 +112,8 @@ router.post('/surat-masuk',
             if (!req.file) {
                 return res.status(400).json({
                     success: false,
-                    error: 'CSV file is required'
+                    error: 'CSV file is required',
+                    message: 'Pilih berkas CSV terlebih dahulu.',
                 });
             }
 
@@ -131,7 +133,7 @@ router.post('/surat-masuk',
 
             res.json({
                 success: result.success,
-                message: `Imported ${result.imported} records, skipped ${result.skipped}`,
+                message: `${result.imported} data diimpor, ${result.skipped} dilewati.`,
                 data: result,
             });
         } catch (error) {
@@ -154,7 +156,8 @@ router.post('/surat-keluar',
             if (!unitKerjaId) {
                 return res.status(400).json({
                     success: false,
-                    error: 'unitKerjaId is required'
+                    error: 'unitKerjaId is required',
+                    message: 'Pilih unit kerja terlebih dahulu.',
                 });
             }
 
@@ -171,7 +174,8 @@ router.post('/surat-keluar',
             if (!req.file) {
                 return res.status(400).json({
                     success: false,
-                    error: 'CSV file is required'
+                    error: 'CSV file is required',
+                    message: 'Pilih berkas CSV terlebih dahulu.',
                 });
             }
 
@@ -189,7 +193,7 @@ router.post('/surat-keluar',
 
             res.json({
                 success: result.success,
-                message: `Imported ${result.imported} records, skipped ${result.skipped}`,
+                message: `${result.imported} data diimpor, ${result.skipped} dilewati.`,
                 data: result,
             });
         } catch (error) {
@@ -212,7 +216,8 @@ router.post('/arsip',
             if (!unitKerjaId) {
                 return res.status(400).json({
                     success: false,
-                    error: 'unitKerjaId is required'
+                    error: 'unitKerjaId is required',
+                    message: 'Pilih unit kerja terlebih dahulu.',
                 });
             }
 
@@ -229,7 +234,8 @@ router.post('/arsip',
             if (!req.file) {
                 return res.status(400).json({
                     success: false,
-                    error: 'CSV file is required'
+                    error: 'CSV file is required',
+                    message: 'Pilih berkas CSV terlebih dahulu.',
                 });
             }
 
@@ -247,7 +253,7 @@ router.post('/arsip',
 
             res.json({
                 success: result.success,
-                message: `Imported ${result.imported} records, skipped ${result.skipped}`,
+                message: `${result.imported} data diimpor, ${result.skipped} dilewati.`,
                 data: result,
             });
         } catch (error) {

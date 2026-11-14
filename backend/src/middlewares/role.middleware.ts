@@ -52,7 +52,7 @@ export function canReadMiddleware() {
             return res.status(401).json({ error: 'Unauthorized' });
         }
         if (isNoAccessRole(req.user.role as Role) || missingUnitMandate(req)) {
-            return res.status(403).json({ error: 'Forbidden' });
+            return res.status(403).json({ error: 'Forbidden', message: 'Anda tidak memiliki izin untuk mengakses sumber ini.' });
         }
         next();
     };
@@ -77,7 +77,7 @@ export function roleMiddleware(allowedRoles: Role[]) {
         if (!hasRole || isNoAccessRole(userRole) || missingUnitMandate(req)) {
             return res.status(403).json({
                 error: 'Forbidden',
-                message: 'You do not have permission to access this resource'
+                message: 'Anda tidak memiliki izin untuk mengakses sumber ini.'
             });
         }
 
@@ -100,7 +100,7 @@ export function permissionMiddleware(module: Module, action: Action) {
         if (!hasPermission(userRole, module, action) || missingUnitMandate(req)) {
             return res.status(403).json({
                 error: 'Forbidden',
-                message: `You do not have permission to ${action} ${module.replace('_', ' ')}`
+                message: 'Peran Anda tidak memiliki izin untuk tindakan ini.'
             });
         }
 

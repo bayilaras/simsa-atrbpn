@@ -395,7 +395,7 @@ export class BulkUploadService {
             .from(bulkUploadBatches)
             .where(eq(bulkUploadBatches.id, batchId))
             .limit(1);
-        if (!batch) throw new BulkUploadError('Batch not found', 404);
+        if (!batch) throw new BulkUploadError('Batch unggahan tidak ditemukan.', 404);
         if (batch.status === 'confirmed' || batch.status === 'expired' || batch.expiresAt <= new Date()) {
             throw new BulkUploadError('Batch tidak dapat diproses lagi', 409);
         }
@@ -550,7 +550,7 @@ export class BulkUploadService {
                             .where(activeClaimFence);
                         continue;
                     }
-                    const message = error instanceof Error ? error.message : 'Processing failed';
+                    const message = error instanceof Error ? error.message : 'Pemrosesan berkas gagal.';
                     log.error({ err: error, itemId: claimed.id }, 'Bulk OCR item failed');
                     const [failed] = await db.update(bulkUploadItems)
                         .set({
@@ -585,7 +585,7 @@ export class BulkUploadService {
 
         await this.refreshBatchProgress(batchId);
         const refreshed = await this.getBatch(batchId);
-        if (!refreshed) throw new BulkUploadError('Batch not found', 404);
+        if (!refreshed) throw new BulkUploadError('Batch unggahan tidak ditemukan.', 404);
         return refreshed;
     }
 
@@ -637,7 +637,7 @@ export class BulkUploadService {
                 .where(eq(bulkUploadBatches.id, batchId))
                 .for('update')
                 .limit(1);
-            if (!batch) throw new BulkUploadError('Batch not found', 404);
+            if (!batch) throw new BulkUploadError('Batch unggahan tidak ditemukan.', 404);
             if (batch.status === 'confirmed' || batch.status === 'expired' || batch.expiresAt <= new Date()) {
                 throw new BulkUploadError('Batch sudah dikonfirmasi atau kedaluwarsa', 409);
             }
@@ -811,7 +811,7 @@ export class BulkUploadService {
             .from(bulkUploadBatches)
             .where(eq(bulkUploadBatches.id, batchId))
             .limit(1);
-        if (!batch) throw new BulkUploadError('Batch not found', 404);
+        if (!batch) throw new BulkUploadError('Batch unggahan tidak ditemukan.', 404);
         if (batch.status === 'confirmed') {
             throw new BulkUploadError('Batch yang sudah dikonfirmasi tidak dapat dibatalkan', 409);
         }

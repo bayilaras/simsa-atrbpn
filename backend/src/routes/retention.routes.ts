@@ -35,7 +35,7 @@ function resolveScopedUnit(
     );
 
     if (!unitKerjaId) {
-        res.status(400).json({ error: 'unitKerjaId is required' });
+        res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
         return null;
     }
 

@@ -242,7 +242,7 @@ class PrintTemplateService {
             unitScope,
             securityClassifications,
         );
-        if (!batch) throw new AppError('Batch not found', 404);
+        if (!batch) throw new AppError('Batch penyusutan tidak ditemukan.', 404);
 
         const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
@@ -294,7 +294,7 @@ class PrintTemplateService {
             unitScope,
             securityClassifications,
         );
-        if (!batch) throw new AppError('Batch not found', 404);
+        if (!batch) throw new AppError('Batch penyusutan tidak ditemukan.', 404);
 
         const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
@@ -358,7 +358,7 @@ class PrintTemplateService {
             unitScope,
             securityClassifications,
         );
-        if (!batch) throw new AppError('Batch not found', 404);
+        if (!batch) throw new AppError('Batch penyusutan tidak ditemukan.', 404);
 
         const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
@@ -422,7 +422,7 @@ class PrintTemplateService {
             unitScope,
             securityClassifications,
         );
-        if (!batch) throw new AppError('Batch not found', 404);
+        if (!batch) throw new AppError('Batch penyusutan tidak ditemukan.', 404);
 
         const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
@@ -502,7 +502,7 @@ class PrintTemplateService {
             unitScope,
             securityClassifications,
         );
-        if (!batch) throw new AppError('Batch not found', 404);
+        if (!batch) throw new AppError('Batch penyusutan tidak ditemukan.', 404);
 
         const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
@@ -594,7 +594,7 @@ class PrintTemplateService {
             unitScope,
             securityClassifications,
         );
-        if (!batch) throw new AppError('Batch not found', 404);
+        if (!batch) throw new AppError('Batch penyusutan tidak ditemukan.', 404);
 
         const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
@@ -729,7 +729,7 @@ class PrintTemplateService {
             unitScope,
             securityClassifications,
         );
-        if (!batch) throw new AppError('Batch not found', 404);
+        if (!batch) throw new AppError('Batch penyusutan tidak ditemukan.', 404);
 
         const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });
@@ -821,7 +821,7 @@ class PrintTemplateService {
             unitScope,
             securityClassifications,
         );
-        if (!batch) throw new AppError('Batch not found', 404);
+        if (!batch) throw new AppError('Batch penyusutan tidak ditemukan.', 404);
 
         switch (batch.jenisPenyusutan) {
             case 'pemindahan':
@@ -849,7 +849,7 @@ class PrintTemplateService {
             unitScope,
             securityClassifications,
         );
-        if (!batch) throw new AppError('Batch not found', 404);
+        if (!batch) throw new AppError('Batch penyusutan tidak ditemukan.', 404);
 
         const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'portrait', margin: this.MARGIN.left });

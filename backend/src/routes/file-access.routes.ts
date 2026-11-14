@@ -110,7 +110,7 @@ async function streamAuthorizedFile(
             stream?.destroy();
             return;
         }
-        if (!stored) return res.status(404).json({ error: 'File not found' });
+        if (!stored) return res.status(404).json({ error: 'File not found', message: 'Berkas tidak ditemukan.' });
 
         const disposition = download ? 'attachment' : 'inline';
         const fileName = safeFileName(details.fileName, stored.fileName);
@@ -178,7 +178,7 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
                 .limit(1);
 
             if (!attachment || !['surat_masuk', 'surat_keluar', 'arsip'].includes(attachment.entityType)) {
-                return res.status(404).json({ error: 'File not found' });
+                return res.status(404).json({ error: 'File not found', message: 'Berkas tidak ditemukan.' });
             }
 
             const parentType = attachment.entityType as RecordEntityType;
@@ -186,7 +186,7 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
                 ? { ...(await recordAccessService.check(req.user, parentType, attachment.entityId)), via: 'owner' as const, rangkaianId: null }
                 : await recordAccessService.checkRead(req.user, parentType, attachment.entityId);
             if (!access.exists || !access.allowed) {
-                return res.status(404).json({ error: 'File not found' });
+                return res.status(404).json({ error: 'File not found', message: 'Berkas tidak ditemukan.' });
             }
 
             if (!isFileReleased(attachment)) {
@@ -198,7 +198,7 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
             }
 
             const locator = normalizeBlobLocator(attachment.fileUrl || attachment.driveFileId);
-            if (!locator) return res.status(404).json({ error: 'File not found' });
+            if (!locator) return res.status(404).json({ error: 'File not found', message: 'Berkas tidak ditemukan.' });
 
             return await streamAuthorizedFile(req, res, {
                 locator,
@@ -219,12 +219,12 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
         }
 
         if (!['surat_masuk', 'surat_keluar'].includes(entityType)) {
-            return res.status(400).json({ error: 'Unsupported entity type' });
+            return res.status(400).json({ error: 'Unsupported entity type', message: 'Jenis data tidak dikenali.' });
         }
 
         const access = await recordAccessService.checkRead(req.user, entityType as 'surat_masuk' | 'surat_keluar', entityId);
         if (!access.exists || !access.allowed) {
-            return res.status(404).json({ error: 'File not found' });
+            return res.status(404).json({ error: 'File not found', message: 'Berkas tidak ditemukan.' });
         }
 
         const [record] = entityType === 'surat_masuk'
@@ -234,7 +234,7 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
                 .from(suratKeluar).where(eq(suratKeluar.id, entityId)).limit(1);
 
         const locator = normalizeBlobLocator(record?.filePath);
-        if (!locator) return res.status(404).json({ error: 'File not found' });
+        if (!locator) return res.status(404).json({ error: 'File not found', message: 'Berkas tidak ditemukan.' });
 
         // Keep the registered private object tied to this exact parent and
         // locator, and serve it only after the scan released that registration.
@@ -274,7 +274,7 @@ router.get('/:entityType/:entityId', async (req: AuthRequest, res: Response) => 
         });
     } catch (error) {
         log.error({ err: error }, 'Authorized file retrieval failed');
-        if (!res.headersSent) return res.status(500).json({ error: 'Failed to retrieve file' });
+        if (!res.headersSent) return res.status(500).json({ error: 'Failed to retrieve file', message: 'Berkas gagal dibuka. Silakan coba lagi.' });
         return res.end();
     }
 });

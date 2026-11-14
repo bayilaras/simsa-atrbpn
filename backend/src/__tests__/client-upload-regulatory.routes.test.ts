@@ -297,6 +297,7 @@ describe('rule-set-bound direct Blob upload tokens', () => {
         }).expect(400);
         expect(response.body).toEqual({
             error: 'Upload request rejected',
+            message: 'Berkas tidak dapat diunggah. Pastikan berkas berformat PDF dan namanya tidak memuat dua titik berurutan (".."), lalu coba lagi.',
             code: 'CLIENT_UPLOAD_REJECTED',
         });
         expect(JSON.stringify(response.body)).not.toContain('payload is invalid');
@@ -325,6 +326,7 @@ describe('rule-set-bound direct Blob upload tokens', () => {
 
         expect(response.body).toEqual({
             error: 'Upload request rejected',
+            message: 'Berkas tidak dapat diunggah. Pastikan berkas berformat PDF dan namanya tidak memuat dua titik berurutan (".."), lalu coba lagi.',
             code: 'CLIENT_UPLOAD_REJECTED',
         });
         expect(state.tokenOptions).toBeNull();

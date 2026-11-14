@@ -156,7 +156,7 @@ describe('authMiddleware', () => {
 
         // Assert
         expect(res.status).toHaveBeenCalledWith(500);
-        expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
+        expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error', message: 'Terjadi kesalahan pada server.' });
     });
 
     it('should deny an unprovisioned default user', async () => {

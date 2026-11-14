@@ -11,7 +11,7 @@ export function resolveImportUnit(req: AuthRequest, res: Response): string | nul
     const requestedUnit = typeof req.body?.unitKerjaId === 'string' ? req.body.unitKerjaId.trim() : '';
     const role = (req.user?.role || 'user') as Role;
     const unitKerjaId = resolveEffectiveUnitKerjaId(role, req.user?.unitKerjaId, requestedUnit);
-    if (!unitKerjaId) { res.status(400).json({ error: 'unitKerjaId is required' }); return null; }
+    if (!unitKerjaId) { res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' }); return null; }
     if (!canAccessUnit(role, req.user?.unitKerjaId || null, unitKerjaId)) {
         res.status(403).json({ error: 'Anda tidak berwenang mengimpor data untuk unit kerja tersebut' });
         return null;
