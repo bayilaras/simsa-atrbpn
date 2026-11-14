@@ -76,4 +76,20 @@ describe('pencarian global berhalaman', () => {
         expect(kesebelas.results).toEqual([]);
         expect(kesebelas.pagination.hasMore).toBe(false);
     });
+
+    it('dua hasil pada milidetik yang sama tetap muncul sekali masing-masing', async () => {
+        // Mikrodetik berlawanan dengan urutan id: basis data dan penggabungan
+        // harus memakai urutan yang sama agar batas halaman tidak bergeser.
+        const idBesar = '78000000-0000-4000-8000-0000000000ff';
+        const idKecil = '78000000-0000-4000-8000-000000000001';
+        await database.exec(`
+            INSERT INTO unit_kerja (id, name) VALUES ('unit_milidetik','Unit Milidetik') ON CONFLICT (id) DO NOTHING;
+            INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, sifat_surat, nomor_surat, perihal, dari, tanggal_surat, created_at) VALUES
+                ('${idBesar}', 'unit_milidetik', 1, 2026, 'biasa', 'SM-MD-1', 'Undangan milidetik', 'Pengirim', '2026-10-02', '2026-10-02 03:00:00.123100'),
+                ('${idKecil}', 'unit_milidetik', 2, 2026, 'biasa', 'SM-MD-2', 'Undangan milidetik', 'Pengirim', '2026-10-02', '2026-10-02 03:00:00.123900');
+        `);
+        const halaman = [await cari(1, 1, 'unit_milidetik'), await cari(2, 1, 'unit_milidetik')];
+        expect(halaman.map(hasil => hasil.results.map(item => item.id))).toEqual([[idBesar], [idKecil]]);
+        expect(halaman.map(hasil => hasil.pagination.hasMore)).toEqual([true, false]);
+    });
 });

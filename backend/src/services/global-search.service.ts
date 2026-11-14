@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { suratMasuk, suratKeluar, arsip, dosir } from '../db/schema';
-import { sql, or, ilike, desc, and, eq, isNull, inArray } from 'drizzle-orm';
+import { sql, or, ilike, desc, and, eq, isNull, inArray, type AnyColumn } from 'drizzle-orm';
 import { bacaArsipSql, klasifikasiInSql, type PenggunaVisibilitas } from './access/visibility-spec';
 import { escapeLike, LIKE_ESCAPE } from '../utils/nomor-surat';
 
@@ -48,6 +48,11 @@ interface ModuleSearchResult {
     items: GlobalSearchResult[];
     total: number;
 }
+
+// Urutan tiap modul memakai waktu input sampai milidetik, sama dengan Date di
+// penggabungan JavaScript; sisa mikrodetik tidak ikut agar pengikat id
+// menentukan urutan yang sama di basis data dan di penggabungan.
+const terbaruDulu = (createdAt: AnyColumn) => desc(sql`date_trunc('milliseconds', ${createdAt})`);
 
 // Pengikat urutan untuk hasil berwaktu input sama dari modul berbeda.
 const URUTAN_JENIS: Record<GlobalSearchResult['type'], number> = { surat_masuk: 0, surat_keluar: 1, arsip: 2, dosir: 3 };
@@ -253,7 +258,7 @@ class GlobalSearchService {
                 .select()
                 .from(suratMasuk)
                 .where(whereClause)
-                .orderBy(desc(suratMasuk.createdAt), desc(suratMasuk.id))
+                .orderBy(terbaruDulu(suratMasuk.createdAt), desc(suratMasuk.id))
                 .limit(fetchLimit),
         ]);
 
@@ -334,7 +339,7 @@ class GlobalSearchService {
                 .select()
                 .from(suratKeluar)
                 .where(whereClause)
-                .orderBy(desc(suratKeluar.createdAt), desc(suratKeluar.id))
+                .orderBy(terbaruDulu(suratKeluar.createdAt), desc(suratKeluar.id))
                 .limit(fetchLimit),
         ]);
 
@@ -395,7 +400,7 @@ class GlobalSearchService {
                 .select()
                 .from(arsip)
                 .where(whereClause)
-                .orderBy(desc(arsip.createdAt), desc(arsip.id))
+                .orderBy(terbaruDulu(arsip.createdAt), desc(arsip.id))
                 .limit(fetchLimit),
         ]);
 
@@ -451,7 +456,7 @@ class GlobalSearchService {
                 .select()
                 .from(dosir)
                 .where(whereClause)
-                .orderBy(desc(dosir.createdAt), desc(dosir.id))
+                .orderBy(terbaruDulu(dosir.createdAt), desc(dosir.id))
                 .limit(fetchLimit),
         ]);
 
