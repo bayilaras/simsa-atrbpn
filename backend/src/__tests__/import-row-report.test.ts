@@ -163,6 +163,33 @@ describe('per-row import report', () => {
         expect(dateIssues.rows.map(issue => issue.row)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     });
 
+    it('passes the source No as the requested number and reports one that was replaced', async () => {
+        // createImported answers with the number it stored: kept, already used (57), or replaced because unusable (58).
+        mocks.outgoing.mockResolvedValueOnce({ id: 'a', noUrut: 1 }).mockResolvedValueOnce({ id: 'b', noUrut: 57 })
+            .mockResolvedValueOnce({ id: 'c', noUrut: 58 }).mockResolvedValueOnce({ id: 'd', noUrut: 59 });
+        const result = await service.importRows('surat-keluar', [header,
+            letter(1, '1/UND/2026', '05/01/2026', 'Nomor bebas'),
+            letter(2, '2/UND/2026', '05/01/2026', 'Nomor sudah dipakai'),
+            ['2a', '3/UND/2026', '05/01/2026', 'Bukan angka', 'Biasa', link(3)],
+            ['', '4/UND/2026', '05/01/2026', 'Tanpa nomor sumber', 'Biasa', link(4)],
+        ], 'unit-a', audit);
+        expect(mocks.outgoing.mock.calls.map(([record]) => record.noUrut)).toEqual([1, 2, undefined, undefined]);
+        expect(result.rows?.map(row => [row.status, row.reason])).toEqual([
+            ['imported', undefined],
+            ['imported', 'Nomor urut sumber 2 sudah dipakai; diberi nomor 57.'],
+            ['imported', 'Nomor urut sumber "2a" bukan angka 1 sampai 999999; diberi nomor 58.'],
+            ['imported', undefined],
+        ]);
+    });
+
+    it('names the No. Agenda of surat masuk in the report', async () => {
+        mocks.incoming.mockResolvedValueOnce({ id: 'a', noUrut: 31 });
+        const result = await service.importRows('surat-masuk', [['No. Agenda', 'Nomor Surat', 'Tanggal Surat', 'Perihal', 'Dari'],
+            ['12', 'SM-1', '12/09/2026', 'Permohonan data', 'Kantah A']], 'unit-a', audit);
+        expect(mocks.incoming).toHaveBeenCalledWith(expect.objectContaining({ noUrut: 12 }), audit, {});
+        expect(result.rows?.[0]).toMatchObject({ no: '12', status: 'imported', reason: 'Nomor agenda sumber 12 sudah dipakai; diberi nomor 31.' });
+    });
+
     it('shortens a long perihal in the report only', async () => {
         const long = 'Perihal panjang '.repeat(40).trim();
         const result = await service.importRows('surat-keluar', [header, letter(1, '1/UND/2026', '05/01/2026', long)], 'unit-a', audit);

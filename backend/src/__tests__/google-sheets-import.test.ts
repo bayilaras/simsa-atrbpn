@@ -66,7 +66,7 @@ describe('exact Google Sheets column mapping before writes', () => {
             const row = ['1', '87/SK-600/I/2026', '05/01/2026', '', 'Tim peneliti', 'Segera', '', '', 'https://drive.google.com/file/d/synthetic-a/view'];
             const { columnMap, mapping } = resolveSheetMapping([header, row], 'surat-keluar');
             expect(columnMap.noUrut).toBe(0);
-            expect(mapping).toContainEqual({ field: 'noUrut', label: 'Nomor urut sumber', columnIndex: 0, header: first });
+            expect(mapping).toContainEqual({ field: 'noUrut', label: 'No. Urut (disimpan bila belum dipakai)', columnIndex: 0, header: first });
         });
 
     it('keeps the sequence column to exact titles elsewhere and to a title ending in the word No in the first column', () => {
@@ -76,6 +76,16 @@ describe('exact Google Sheets column mapping before writes', () => {
         expect(resolveSheetMapping([['Casino', 'Nomor Surat', 'Tanggal', 'Hal']], 'surat-keluar').columnMap).not.toHaveProperty('noUrut');
         // An exact title wins; the first column is then not a second candidate.
         expect(resolveSheetMapping([['REGISTER No', 'No', 'Nomor Surat', 'Tanggal', 'Hal']], 'surat-keluar').columnMap.noUrut).toBe(1);
+    });
+
+    it('stores an agenda-number column, preferring it over a plain No column, and names it in the preview', () => {
+        const { columnMap, mapping } = resolveSheetMapping([['No', 'No. Agenda', 'Nomor Surat', 'Tanggal', 'Perihal', 'Dari']], 'surat-masuk');
+        expect(columnMap.noUrut).toBe(1);
+        expect(mapping).toContainEqual({ field: 'noUrut', label: 'No. Agenda (disimpan bila belum dipakai)', columnIndex: 1, header: 'No. Agenda' });
+        expect(resolveSheetMapping([['Nomor Agenda', 'Nomor Surat', 'Tanggal', 'Hal']], 'surat-keluar').mapping)
+            .toContainEqual({ field: 'noUrut', label: 'No. Urut (disimpan bila belum dipakai)', columnIndex: 0, header: 'Nomor Agenda' });
+        expect(() => resolveSheetMapping([['No', 'No', 'Nomor Surat', 'Tanggal', 'Perihal', 'Dari']], 'surat-masuk'))
+            .toThrow('Pemetaan No. Agenda ambigu pada kolom 1, 2. Sisakan satu kolom yang sesuai.');
     });
 
     it('does not infer an unknown header by its position or substring', () => {

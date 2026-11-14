@@ -297,3 +297,30 @@ describe('archive update keeps arsip_items aligned with the item summary', () =>
             .toEqual([{ arsip_item_id: ITEM.satu }]);
     });
 });
+
+describe('Ubah Metadata dari dialog yang datanya sudah diubah orang lain', () => {
+    /** updatedAt seperti yang diterima dialog: Date dari Drizzle, lewat JSON, lalu dikirim balik. */
+    async function versiDimuat() {
+        const [row] = await holder.db.select({ updatedAt: schema.arsip.updatedAt }).from(schema.arsip);
+        return new Date(JSON.parse(JSON.stringify(row.updatedAt)));
+    }
+
+    it('menolak versi lama dengan 409 DATA_SUDAH_BERUBAH tanpa mengubah data', async () => {
+        await database.exec("UPDATE arsip SET updated_at = '2026-09-10 08:00:00.123456'");
+        const dimuat = await versiDimuat();
+        // Orang lain menyimpan sesudah dialog dibuka.
+        await database.exec("UPDATE arsip SET updated_at = '2026-09-10 09:30:00'");
+        await expect(service.update(archiveId, { keterangan: 'Deskripsi baru' }, { userId, userEmail: 'stale@example.test' },
+            { expectedUpdatedAt: dimuat })).rejects.toMatchObject({ statusCode: 409, code: 'DATA_SUDAH_BERUBAH' });
+        await unchanged();
+    });
+
+    it('menerima versi yang dimuat walau updated_at tersimpan bermikrodetik', async () => {
+        await database.exec("UPDATE arsip SET updated_at = '2026-09-10 08:00:00.123456'");
+        const dimuat = await versiDimuat();
+        expect(dimuat.toISOString()).toBe('2026-09-10T08:00:00.123Z');
+        const result = await service.update(archiveId, { keterangan: 'Deskripsi baru' }, { userId, userEmail: 'stale@example.test' },
+            { expectedUpdatedAt: dimuat });
+        expect(result?.keterangan).toBe('Deskripsi baru');
+    });
+});

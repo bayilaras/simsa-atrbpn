@@ -1,8 +1,8 @@
-import { type NewSuratMasuk } from '../db/schema/surat-masuk';
 import { type NewSuratKeluar } from '../db/schema/surat-keluar';
 import { createLogger } from '../utils/logger';
-import { suratMasukService } from './surat-masuk.service.js';
+import { suratMasukService, type ImportedSuratMasuk } from './surat-masuk.service.js';
 import { suratKeluarService } from './surat-keluar.service.js';
+import { catatanNomorUrutImpor, nomorUrutSumber, type JenisNomorUrut } from './surat-nomor-urut.js';
 import type { CriticalAuditContext } from './audit-log.service.js';
 import { assertImportedKelasSuratMasuk, assertSifatSuratMasukDapatDisimpan, type ImportAuditContext } from './import-plafon-kelas.js';
 import { AppError, PayloadTooLargeError, ValidationError } from '../utils/errors.js';
@@ -98,9 +98,14 @@ interface ImportTarget<T> {
     /** Advisory: the recorded letters each identity matches; createImported and update() stay the authority. */
     importMatches(keys: SuratImportIdentityKey[]): Promise<SuratImportMatch[][]>;
     sync: ImportSyncTarget;
+    /** Whose sequence the source No column fills: No. Agenda (masuk) or No. Urut (keluar). */
+    nomorUrut: JenisNomorUrut;
 }
+/** A source row: its No. Urut is kept when free, otherwise the next number is given. */
+type ImportedSuratKeluar = Omit<NewSuratKeluar, 'noUrut'> & { noUrut?: number | null; numberingMode: 'manual' };
 // Imported rows are written only by the canonical surat services.
-const incoming: ImportTarget<NewSuratMasuk> = {
+const incoming: ImportTarget<ImportedSuratMasuk> = {
+    nomorUrut: 'masuk',
     importIdentityKey: record => suratMasukService.importIdentityKey(record),
     createImported: (record, auditContext, options) => suratMasukService.createImported(record, auditContext, options),
     importMatches: keys => suratMasukService.importMatches(keys),
@@ -110,7 +115,8 @@ const incoming: ImportTarget<NewSuratMasuk> = {
             suratMasukService.update(id, patch, unitKerjaId, undefined, auditContext, undefined, auditDetails),
     },
 };
-const outgoing: ImportTarget<NewSuratKeluar & { numberingMode: 'manual' }> = {
+const outgoing: ImportTarget<ImportedSuratKeluar> = {
+    nomorUrut: 'keluar',
     importIdentityKey: record => suratKeluarService.importIdentityKey(record),
     createImported: (record, auditContext, options) => suratKeluarService.createImported(record, auditContext, options),
     importMatches: keys => suratKeluarService.importMatches(keys),
@@ -337,25 +343,26 @@ export class GoogleDriveImportService {
 
         return type === 'surat-masuk'
             ? this.importRecords(dataRows, incoming, write, {
-                summary, build: (row, i) => this.incomingRecord(row, i, colMap, unitKerjaId, auditContext),
+                summary, build: row => this.incomingRecord(row, colMap, unitKerjaId, auditContext),
                 admit: record => assertImportedKelasSuratMasuk(auditContext, record.sifatSurat),
                 // Sinkron never writes the sifat, so only a row that would be stored must name a class.
                 admitInsert: record => assertSifatSuratMasukDapatDisimpan(record.sifatSurat),
                 syncSource: row => syncSource(row, ['perihal', 'tanggalSurat', 'jenisSurat'], { field: 'dari', label: 'Pengirim' }) })
             : this.importRecords(dataRows, outgoing, write, {
-                summary, build: (row, i) => this.outgoingRecord(row, i, colMap, unitKerjaId, auditContext),
+                summary, build: row => this.outgoingRecord(row, colMap, unitKerjaId, auditContext),
                 syncSource: row => syncSource(row, ['perihal', 'tanggalSurat', 'sifatSurat', 'linkDokumen', 'naskahDinas'],
                     { field: 'kepada', label: 'Tujuan' }) });
     }
 
-    private incomingRecord(row: string[], i: number, colMap: Record<string, number>, unitKerjaId: string,
-        auditContext: CriticalAuditContext): NewSuratMasuk | null {
+    private incomingRecord(row: string[], colMap: Record<string, number>, unitKerjaId: string,
+        auditContext: CriticalAuditContext): ImportedSuratMasuk | null {
         const nomorSurat = this.getField(row, colMap, 'nomorSurat');
         const perihal = this.getField(row, colMap, 'perihal');
         // Only skip if BOTH nomor surat and perihal are empty (truly empty row)
         if (!nomorSurat && !perihal) return null;
 
-        const noUrut = parseInt(this.getField(row, colMap, 'noUrut') || String(i + 1)) || (i + 1);
+        // The source No. Agenda; a missing or unusable one leaves numbering automatic.
+        const noUrut = nomorUrutSumber(this.getField(row, colMap, 'noUrut')) ?? undefined;
         const tanggalStr = this.getField(row, colMap, 'tanggalSurat');
         // An unreadable date rejects the row here; it is never guessed or left out.
         const parsedDate = parseImportDate(tanggalStr);
@@ -365,9 +372,9 @@ export class GoogleDriveImportService {
         const disposisiRaw = this.getField(row, colMap, 'disposisi');
         const disposisiArr = disposisiRaw ? disposisiRaw.split(/[,;]/).map(d => d.trim()).filter(Boolean) : [];
 
-        const newSurat: NewSuratMasuk = {
+        const newSurat: ImportedSuratMasuk = {
             unitKerjaId,
-            noUrut: noUrut,
+            noUrut,
             tahun: effectiveTahun,
             jenisSurat: this.getField(row, colMap, 'jenisSurat') || 'Surat Dinas',
             sifatSurat: sifatSuratMasukSumber(this.getField(row, colMap, 'sifatSurat')),
@@ -383,14 +390,15 @@ export class GoogleDriveImportService {
         return newSurat;
     }
 
-    private outgoingRecord(row: string[], i: number, colMap: Record<string, number>, unitKerjaId: string,
-        auditContext: CriticalAuditContext): NewSuratKeluar & { numberingMode: 'manual' } | null {
+    private outgoingRecord(row: string[], colMap: Record<string, number>, unitKerjaId: string,
+        auditContext: CriticalAuditContext): ImportedSuratKeluar | null {
         const nomorSurat = this.getField(row, colMap, 'nomorSurat');
         const perihal = this.getField(row, colMap, 'perihal');
         // Only skip if BOTH nomor surat and perihal are empty
         if (!nomorSurat && !perihal) return null;
 
-        const noUrut = parseInt(this.getField(row, colMap, 'noUrut') || String(i + 1)) || (i + 1);
+        // The source No. Urut; a missing or unusable one leaves numbering automatic.
+        const noUrut = nomorUrutSumber(this.getField(row, colMap, 'noUrut')) ?? undefined;
         const tanggalStr = this.getField(row, colMap, 'tanggalSurat');
         // An unreadable date rejects the row here; it is never guessed or left out.
         const parsedDate = parseImportDate(tanggalStr);
@@ -402,9 +410,9 @@ export class GoogleDriveImportService {
         const klasifikasiArsip = this.getField(row, colMap, 'klasifikasiArsip');
         const link = this.getField(row, colMap, 'linkDokumen');
 
-        const newSurat: NewSuratKeluar & { numberingMode: 'manual' } = {
+        const newSurat: ImportedSuratKeluar = {
             unitKerjaId,
-            noUrut: noUrut,
+            noUrut,
             tahun: effectiveTahun,
             naskahDinas: this.getField(row, colMap, 'naskahDinas') || 'Surat Dinas',
             sifatSurat: normalizeSifatSurat(this.getField(row, colMap, 'sifatSurat')),
@@ -546,9 +554,11 @@ export class GoogleDriveImportService {
                 if ('error' in item) throw item.error;
                 if (options.signal?.aborted) throw new AppError('Permintaan impor dibatalkan.', 499);
                 admitInsert?.(item.record);
-                await target.createImported(item.record, auditContext, options);
+                const created = await target.createImported(item.record, auditContext, options) as { noUrut?: unknown } | null;
                 importedRows++;
-                report(i, 'imported');
+                // A source number already used, or not a number, was replaced by the next one.
+                const nomor = catatanNomorUrutImpor(target.nomorUrut, summary(dataRows[i]).no, created?.noUrut);
+                report(i, 'imported', nomor ? { reason: nomor } : {});
             } catch (error) {
                 if (error instanceof DuplicateSuratImportError) {
                     duplicateRows++; report(i, 'duplicate', duplicateOf(item as PreparedRecord<T>, i)); continue;

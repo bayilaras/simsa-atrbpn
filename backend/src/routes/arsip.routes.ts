@@ -267,6 +267,8 @@ router.put('/:id', validateIdParam(),
     async (req: AuthRequest, res, next) => {
         try {
             const { id } = req.params;
+            // Versi yang dimuat dialog dibandingkan di dalam transaksi ubah; bukan metadata.
+            const { expectedUpdatedAt, ...metadata } = req.body;
             const existing = await arsipService.findById(id as string);
             if (!existing) {
                 return res.status(404).json({ error: 'Arsip not found' });
@@ -278,9 +280,9 @@ router.put('/:id', validateIdParam(),
             // Mengirim ulang kelas yang sudah melekat bukan kenaikan; plafon peran
             // hanya berlaku bila kelasnya berubah.
             if (
-                req.body.klasifikasiKeamanan !== undefined
-                && !isAllowedForClassification(req.user, req.body.klasifikasiKeamanan)
-                && normalizeSecurityClassification(req.body.klasifikasiKeamanan)
+                metadata.klasifikasiKeamanan !== undefined
+                && !isAllowedForClassification(req.user, metadata.klasifikasiKeamanan)
+                && normalizeSecurityClassification(metadata.klasifikasiKeamanan)
                     !== normalizeSecurityClassification(existing.klasifikasiKeamanan)
             ) {
                 return res.status(403).json({ error: PESAN_KELAS_MELEBIHI_KEWENANGAN });
@@ -288,17 +290,17 @@ router.put('/:id', validateIdParam(),
             // Juga untuk null: hanya unit pemilik arsip atau super_admin yang
             // memindahkan maupun melepas lokasi simpan arsip.
             if (
-                req.body.storageLocationId !== undefined
-                && (req.body.storageLocationId ?? null) !== (existing.storageLocationId ?? null)
+                metadata.storageLocationId !== undefined
+                && (metadata.storageLocationId ?? null) !== (existing.storageLocationId ?? null)
                 && !bolehMemakaiLokasiUnit(req, existing.unitKerjaId)
             ) {
                 return res.status(400).json({ error: PESAN_LOKASI_SIMPAN_TIDAK_SESUAI });
             }
-            const result = await arsipService.update(id as string, req.body, {
+            const result = await arsipService.update(id as string, metadata, {
                 userId: req.user?.id,
                 userEmail: req.user?.email,
                 ipAddress: req.ip,
-            });
+            }, { expectedUpdatedAt });
 
             if (!result) {
                 return res.status(404).json({ error: 'Arsip not found' });
