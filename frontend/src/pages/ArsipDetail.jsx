@@ -39,6 +39,7 @@ import { useAuth } from '@/context/AuthContext'
 import { PerluPersetujuanAkses } from '@/components/PerluPersetujuanAkses'
 import { rekamanPerluPersetujuan } from '@/lib/akses-rekaman'
 import { pesanGalat } from '@/lib/pesan-galat'
+import { labelKelasKeamanan, labelStatusPenyusutan } from '@/lib/label-arsip'
 import { useToast } from '@/hooks/use-toast'
 import { format, formatDistanceToNow, differenceInDays } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
@@ -538,7 +539,7 @@ export default function ArsipDetail() {
     // Timeline events
     const timelineEvents = [
         arsip.disposalStatus === 'executed' && {
-            icon: Trash2, label: 'Disposal Dilakukan', date: arsip.updatedAt, color: 'red'
+            icon: Trash2, label: 'Penyusutan Dilaksanakan', date: arsip.updatedAt, color: 'red'
         },
         { icon: Archive, label: 'Diarsipkan', date: arsip.createdAt, color: 'emerald' },
         arsip.tanggalSuratOriginal && {
@@ -616,11 +617,11 @@ export default function ArsipDetail() {
                                         ? 'bg-red-500/20 text-red-200 border-red-400/30'
                                         : 'bg-card/10 text-white/70 border-white/20'
                                     }`}>
-                                    {arsip.disposalStatus || 'Active'}
+                                    {labelStatusPenyusutan(arsip.disposalStatus)}
                                 </Badge>
                                 {arsip.klasifikasiKeamanan && (
                                     <Badge className="bg-amber-500/20 text-amber-200 border-amber-400/30 border">
-                                        <Shield className="mr-1 h-3 w-3" /> {arsip.klasifikasiKeamanan}
+                                        <Shield className="mr-1 h-3 w-3" /> {labelKelasKeamanan(arsip.klasifikasiKeamanan)}
                                     </Badge>
                                 )}
                                 <RuleProvenanceBadge
@@ -636,7 +637,7 @@ export default function ArsipDetail() {
                         <QuickStatBox icon={Layers} label="Item Arsip" value={`${itemCount} Item`} />
                         <QuickStatBox icon={Clock} label="Retensi" value={totalRetensi > 0 ? `${totalRetensi} Tahun` : '-'} />
                         <QuickStatBox icon={MapPin} label="Lokasi" value={lokasiStr} />
-                        <QuickStatBox icon={Shield} label="Keamanan" value={arsip.klasifikasiKeamanan || 'Biasa'} />
+                        <QuickStatBox icon={Shield} label="Keamanan" value={labelKelasKeamanan(arsip.klasifikasiKeamanan)} />
                     </div>
                 </div>
             </div>
@@ -837,7 +838,7 @@ export default function ArsipDetail() {
                                         <EnhancedInfoField icon={Clock} label="Retensi Inaktif" value={arsip.retensiInaktif} />
                                         <EnhancedInfoField icon={Info} label="Hasil Akhir" value={arsip.hasilAkhir} teksKosong={keteranganRetensi || undefined} badge variant={arsip.hasilAkhir === 'Permanen' ? 'default' : 'destructive'} />
                                         <EnhancedInfoField icon={Calendar} label="Tanggal Kadaluarsa" value={arsip.tanggalKadaluarsa ? formatDate(arsip.tanggalKadaluarsa) : null} teksKosong={keteranganRetensi || undefined} />
-                                        <EnhancedInfoField icon={Info} label="Status Disposal" value={arsip.disposalStatus} badge variant={statusColor} className="sm:col-span-2" />
+                                        <EnhancedInfoField icon={Info} label="Status Penyusutan" value={labelStatusPenyusutan(arsip.disposalStatus)} badge variant={statusColor} className="sm:col-span-2" />
                                     </div>
                                     {keteranganRetensi === PESAN_MENUNGGU_PEMICU_RETENSI && (
                                         <p className="mt-3 text-xs text-muted-foreground">
@@ -976,8 +977,8 @@ export default function ArsipDetail() {
                                 </CardHeader>
                                 <CardContent>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <EnhancedInfoField icon={Shield} label="Klasifikasi Keamanan" value={arsip.klasifikasiKeamanan} badge variant="outline" />
-                                        <EnhancedInfoField icon={User} label="Person In Charge (PIC)" value={arsip.personInCharge} />
+                                        <EnhancedInfoField icon={Shield} label="Klasifikasi Keamanan" value={labelKelasKeamanan(arsip.klasifikasiKeamanan)} badge variant="outline" />
+                                        <EnhancedInfoField icon={User} label="Penanggung Jawab" value={arsip.personInCharge} />
                                         <EnhancedInfoField icon={FileText} label="Keterangan" value={arsip.keterangan} className="sm:col-span-2" />
                                     </div>
                                 </CardContent>
@@ -1028,10 +1029,10 @@ export default function ArsipDetail() {
                         </CardHeader>
                         <CardContent className="space-y-3 pt-0">
                             <StatusIndicator
-                                label="Status disposal"
+                                label="Status penyusutan"
                                 active={arsip.disposalStatus === 'active'}
                                 activeLabel="Aktif"
-                                inactiveLabel={arsip.disposalStatus || 'Tidak diketahui'}
+                                inactiveLabel={labelStatusPenyusutan(arsip.disposalStatus)}
                                 activeColor="emerald"
                                 icon={Archive}
                             />

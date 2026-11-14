@@ -77,7 +77,7 @@ describe('EditArsipDialog', () => {
         expect(screen.getByLabelText(/^No\. Filing Cabinet/)).toHaveValue('FC-01')
         expect(screen.getByLabelText(/^No\. Laci/)).toHaveValue('L-02')
         expect(screen.getByLabelText(/^No\. Folder/)).toHaveValue('F-003')
-        expect(screen.getByLabelText('Person In Charge (PIC)')).toHaveValue('Rina')
+        expect(screen.getByLabelText('Penanggung Jawab')).toHaveValue('Rina')
         expect(selectNative('unitPengolah')).toHaveValue('Ditjen')
         expect(selectNative('tingkatPerkembangan')).toHaveValue('Asli')
         expect(selectNative('mediaType')).toHaveValue('kertas')
