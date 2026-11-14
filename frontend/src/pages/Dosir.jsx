@@ -14,6 +14,7 @@ import { pesanGalat } from '@/lib/pesan-galat'
 import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope'
 import dosirService from '@/services/dosir.service'
 import settingsService from '@/services/settings.service'
+import { EditDosirDialog } from '@/components/dosir/EditDosirDialog'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { format, parseISO } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
@@ -85,6 +86,8 @@ export default function Dosir() {
     const [isCreateOpen, setIsCreateOpen] = useState(false)
     const [createLoading, setCreateLoading] = useState(false)
     const [createError, setCreateError] = useState('')
+    // Dosir tetap disimpan saat dialog ditutup agar isi tidak hilang selama animasi tutup.
+    const [ubahDosir, setUbahDosir] = useState({ open: false, dosir: null })
     const [formData, setFormData] = useState({
         judul: '',
         deskripsi: '',
@@ -513,7 +516,7 @@ export default function Dosir() {
                                                 <DropdownMenuItem onClick={() => navigate(`/dosir/${item.id}`)}>
                                                     <Eye className="mr-2 h-4 w-4" /> Lihat Detail
                                                 </DropdownMenuItem>
-                                                <DropdownMenuItem>
+                                                <DropdownMenuItem onClick={() => setUbahDosir({ open: true, dosir: item })}>
                                                     <Edit2 className="mr-2 h-4 w-4" /> Edit
                                                 </DropdownMenuItem>
                                                 <DropdownMenuSeparator />
@@ -568,6 +571,14 @@ export default function Dosir() {
                     </Button>
                 </div>
             )}
+
+            <EditDosirDialog
+                open={ubahDosir.open}
+                onOpenChange={open => setUbahDosir(sebelum => ({ ...sebelum, open }))}
+                dosir={ubahDosir.dosir}
+                kategoriOptions={KATEGORI_OPTIONS}
+                onBerhasil={fetchData}
+            />
         </div>
     )
 }
