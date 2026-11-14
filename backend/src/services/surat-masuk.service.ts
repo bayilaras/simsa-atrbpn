@@ -30,11 +30,11 @@ import {
     type SuratNumberContext,
     type SuratNumberPreview,
 } from '../utils/surat-numbering.js';
-import { afterSuratMasukInsert, afterSuratMasukMutation, guardSuratMasukMutation } from './rangkaian/tindak-lanjut.hook.js';
+import { afterSuratMasukInsert, afterSuratMasukMutation, guardSuratMasukMutation, identitasDikunciBerkas } from './rangkaian/tindak-lanjut.hook.js';
 import type { DisposisiRoutingInput } from '../validators/schemas.js';
 import type { RecordUser } from './record-access.service.js';
 import { klasifikasiInSql, sifatKunciSql } from './access/visibility-spec.js';
-import { kunciTemplatBilaPindahTahun, pindahUrutanTahun, tentukanNomorUrut } from './surat-nomor-urut.js';
+import { ALASAN_NOMOR_PINDAH_TAHUN, kunciTemplatBilaPindahTahun, pindahUrutanTahun, tentukanNomorUrut } from './surat-nomor-urut.js';
 
 export type CreateSuratMasukInput = Omit<NewSuratMasuk, 'disposisi' | 'noUrut'> & {
     /** No. Agenda yang diminta; tanpa nilai, nomor tertinggi + 1 di unit dan tahun itu. */
@@ -403,11 +403,23 @@ export class SuratMasukService {
                 : undefined;
             if (perluBaris && !current) return undefined;
             if (current) pastikanBelumBerubah(current.updatedAt, expectedUpdatedAt);
-            // G-LOCK: kunci surat_masuk → rangkaian sebelum UPDATE (T13-1).
-            const guard = await guardSuratMasukMutation(tx, { suratMasukId: id, perubahan: patch, alasan, audit: auditContext });
+            // Pindah tahun: No. Agenda berikutnya di tahun baru; nomor surat buatan
+            // template ikut dibuat ulang, kecuali surat dalam berkas yang sudah
+            // diberkaskan (nomornya dikunci, §5).
+            const pindah = current ? await pindahUrutanTahun(tx, 'masuk', current, patch, templatTerkunci) : null;
+            if (pindah?.sesudah.nomorSurat && await identitasDikunciBerkas(tx, id)) {
+                delete pindah.sesudah.nomorSurat;
+                delete pindah.sebelum.nomorSurat;
+            }
+            // G-LOCK: kunci surat_masuk → rangkaian sebelum UPDATE (T13-1). Nomor
+            // surat yang dibuat ulang mengikuti aturan rangkaian yang sama.
+            const guard = await guardSuratMasukMutation(tx, {
+                suratMasukId: id, perubahan: patch, alasan, audit: auditContext,
+                ...(pindah?.sesudah.nomorSurat
+                    ? { perubahanOtomatis: { nomorSurat: pindah.sesudah.nomorSurat }, alasanOtomatis: ALASAN_NOMOR_PINDAH_TAHUN }
+                    : {}),
+            });
             const ruleSelection = await prepareSuratRuleSelection(tx, 'masuk', patch, current);
-            // Nomor surat tetap; hanya tahun dan No. Agenda yang berpindah.
-            const pindah = current ? await pindahUrutanTahun(tx, 'masuk', current, patch.tanggalSurat, templatTerkunci) : null;
             const [result] = await tx
                 .update(suratMasuk)
                 .set({ ...patch, ...ruleSelection, ...pindah?.sesudah, updatedAt: new Date() })
@@ -452,7 +464,7 @@ export class SuratMasukService {
                             hasFile: Boolean(result.filePath),
                             ...(pindah ? { tahun: result.tahun, noUrut: result.noUrut } : {}),
                         },
-                        fields: [...Object.keys(patch), ...(pindah ? ['tahun', 'noUrut'] : [])],
+                        fields: [...new Set([...Object.keys(patch), ...(pindah ? Object.keys(pindah.sesudah) : [])])],
                         ruleSelection,
                     },
                 }, tx);

@@ -2,7 +2,7 @@ import { and, desc, eq, type SQL } from 'drizzle-orm';
 import { suratKeluar, suratMasuk } from '../db/schema';
 import { ConflictError, ValidationError } from '../utils/errors.js';
 import { resolveSuratCalendar } from '../utils/surat-numbering.js';
-import { settingsService } from './settings.service.js';
+import { settingsService, type SuratTemplate } from './settings.service.js';
 
 /**
  * Nomor urut (No. Agenda surat masuk, No. Urut surat keluar) per unit dan
@@ -71,7 +71,7 @@ export async function nomorUrutTerpakai(
 export function pesanNomorUrutTerpakai(jenis: JenisNomorUrut, noUrut: number, tahun: number): string {
     const label = LABEL_NOMOR_URUT[jenis];
     return `${label} ${noUrut} tahun ${tahun} sudah dipakai surat lain di unit ini. `
-        + `Nomor surat yang sudah dihapus juga tidak dapat dipakai ulang. Kosongkan ${label} untuk nomor otomatis atau isi nomor lain.`;
+        + `${label} milik surat yang sudah dihapus juga tidak dapat dipakai ulang. Kosongkan ${label} untuk nomor otomatis atau isi nomor lain.`;
 }
 
 /**
@@ -119,11 +119,25 @@ export function catatanNomorUrutImpor(jenis: JenisNomorUrut, sumber: string | nu
     return `${nama} sumber ${diminta} sudah dipakai; diberi nomor ${tersimpan}.`;
 }
 
-type BarisBernomor = { unitKerjaId: string; tahun: number; noUrut: number; tanggalSurat: string | null };
+type BarisBernomor = {
+    unitKerjaId: string;
+    tahun: number;
+    noUrut: number;
+    tanggalSurat: string | null;
+    nomorSurat: string | null;
+    /** Surat keluar saja; template nomornya dapat memuat {naskahDinas}. */
+    naskahDinas?: string | null;
+};
+
+/** Rentang tahun yang sama dengan isian tahun saat mencatat surat. */
+export const TAHUN_URUTAN_MIN = 2000;
+export const TAHUN_URUTAN_MAKS = 2100;
+export const PESAN_TAHUN_DI_LUAR_RENTANG = 'Tahun harus antara 2000 dan 2100';
 
 /**
  * Tahun urutan baru bila tanggal surat diubah ke tahun lain dari kolom tahun;
- * null bila tanggal tidak berubah atau tetap di tahun yang sama.
+ * null bila tanggal tidak berubah atau tetap di tahun yang sama. Pindah ke
+ * tahun di luar 2000-2100 ditolak seperti saat mencatat surat.
  */
 export function tahunUrutanBaru(
     sekarang: Pick<BarisBernomor, 'tahun' | 'tanggalSurat'>,
@@ -131,54 +145,94 @@ export function tahunUrutanBaru(
 ): number | null {
     if (!tanggalBaru || tanggalBaru === sekarang.tanggalSurat) return null;
     const { tahun } = resolveSuratCalendar({ tanggalSurat: tanggalBaru });
-    return tahun === sekarang.tahun ? null : tahun;
+    if (tahun === sekarang.tahun) return null;
+    if (tahun < TAHUN_URUTAN_MIN || tahun > TAHUN_URUTAN_MAKS) throw new ValidationError(PESAN_TAHUN_DI_LUAR_RENTANG);
+    return tahun;
 }
 
 /**
  * Langkah pertama transaksi ubah: bila tanggal baru membawa surat ke tahun
  * lain, kunci templat unit sebelum baris surat, urutan kunci yang sama dengan
  * pembuatan surat (templat, lalu baris surat). Dibaca tanpa kunci; keputusan
- * akhirnya diambil lagi di bawah kunci baris (pindahUrutanTahun).
+ * akhirnya diambil lagi di bawah kunci baris (pindahUrutanTahun). Hasilnya
+ * templat yang terkunci, atau null.
  */
 export async function kunciTemplatBilaPindahTahun(
     executor: any,
     jenis: JenisNomorUrut,
     where: SQL,
     tanggalBaru: string | null | undefined,
-): Promise<boolean> {
-    if (!tanggalBaru) return false;
+): Promise<SuratTemplate | null> {
+    if (!tanggalBaru) return null;
     const tabel = TABEL[jenis];
     const [sekarang] = await executor
         .select({ unitKerjaId: tabel.unitKerjaId, tahun: tabel.tahun, tanggalSurat: tabel.tanggalSurat })
         .from(tabel)
         .where(where)
         .limit(1);
-    if (!sekarang || tahunUrutanBaru(sekarang, tanggalBaru) === null) return false;
-    await settingsService.lockSuratTemplates(executor, sekarang.unitKerjaId);
-    return true;
+    if (!sekarang || tahunUrutanBaru(sekarang, tanggalBaru) === null) return null;
+    return settingsService.lockSuratTemplates(executor, sekarang.unitKerjaId);
 }
 
+/** Alasan koreksi rangkaian bila nomor surat hanya berubah karena dibuat ulang saat pindah tahun. */
+export const ALASAN_NOMOR_PINDAH_TAHUN = 'Nomor surat otomatis dibuat ulang karena tahun surat berubah.';
+
 export interface PindahUrutan {
-    sebelum: { tahun: number; noUrut: number };
-    sesudah: { tahun: number; noUrut: number };
+    /** nomorSurat hanya ada bila nomor surat otomatis ikut dibuat ulang. */
+    sebelum: { tahun: number; noUrut: number; nomorSurat?: string | null };
+    sesudah: { tahun: number; noUrut: number; nomorSurat?: string };
+}
+
+const bulanDari = (tanggal: string | null | undefined) => tanggal ? resolveSuratCalendar({ tanggalSurat: tanggal }).bulan : null;
+
+/** Nomor dari template unit seperti saat surat dicatat; null bila template tidak menghasilkan nomor. */
+function nomorDariTemplat(format: string, data: { noUrut: number; tahun: number; bulan: number; unitKerja: string; naskahDinas?: string | null }) {
+    try {
+        return settingsService.generateSuratNumber(format, { ...data, naskahDinas: data.naskahDinas || undefined });
+    } catch {
+        return null;
+    }
 }
 
 /**
  * Surat yang tanggalnya pindah tahun mendapat nomor berikutnya di tahun baru,
- * di bawah kunci templat yang sama dengan pembuatan surat. Nomor surat tidak
- * diubah. `sekarang` adalah baris yang sudah dikunci.
+ * di bawah kunci templat yang sama dengan pembuatan surat. Nomor surat yang
+ * sama persis dengan hasil template untuk tahun, nomor, dan bulan lama dibuat
+ * otomatis, jadi ikut dibuat ulang untuk tahun dan nomor baru; tanpa itu surat
+ * yang dicatat kemudian di tahun lama mendapat nomor surat yang sama. Nomor
+ * yang diketik staf (berbeda dari hasil template) atau diubah pada suntingan
+ * ini tidak disentuh. `sekarang` adalah baris yang sudah dikunci.
  */
 export async function pindahUrutanTahun(
     executor: any,
     jenis: JenisNomorUrut,
     sekarang: BarisBernomor,
-    tanggalBaru: string | null | undefined,
-    templatTerkunci: boolean,
+    perubahan: { tanggalSurat?: string | null; nomorSurat?: string | null; naskahDinas?: string | null },
+    templatTerkunci: SuratTemplate | null,
 ): Promise<PindahUrutan | null> {
-    const tahun = tahunUrutanBaru(sekarang, tanggalBaru);
+    const tahun = tahunUrutanBaru(sekarang, perubahan.tanggalSurat);
     if (tahun === null) return null;
-    // Hanya bila tahun berubah di antara pembacaan awal dan kunci baris.
-    if (!templatTerkunci) await settingsService.lockSuratTemplates(executor, sekarang.unitKerjaId);
+    // Templat dikunci di sini hanya bila tahun berubah di antara pembacaan awal dan kunci baris.
+    const templat = templatTerkunci ?? await settingsService.lockSuratTemplates(executor, sekarang.unitKerjaId);
     const noUrut = await nomorUrutBerikutnya(executor, jenis, sekarang.unitKerjaId, tahun);
-    return { sebelum: { tahun: sekarang.tahun, noUrut: sekarang.noUrut }, sesudah: { tahun, noUrut } };
+    const pindah: PindahUrutan = { sebelum: { tahun: sekarang.tahun, noUrut: sekarang.noUrut }, sesudah: { tahun, noUrut } };
+
+    const nomorDikirim = perubahan.nomorSurat?.trim();
+    const bulanLama = bulanDari(sekarang.tanggalSurat);
+    if (!sekarang.nomorSurat || bulanLama === null || (nomorDikirim && nomorDikirim !== sekarang.nomorSurat)) return pindah;
+    const format = jenis === 'masuk' ? templat.masukFormat : templat.keluarFormat;
+    // Surat masuk dicatat tanpa {naskahDinas}; surat keluar dengan naskah dinasnya.
+    const naskahLama = jenis === 'keluar' ? sekarang.naskahDinas : undefined;
+    const naskahBaru = jenis === 'keluar' ? (perubahan.naskahDinas ?? sekarang.naskahDinas) : undefined;
+    const otomatisLama = nomorDariTemplat(format, {
+        noUrut: sekarang.noUrut, tahun: sekarang.tahun, bulan: bulanLama, unitKerja: sekarang.unitKerjaId, naskahDinas: naskahLama,
+    });
+    if (otomatisLama !== sekarang.nomorSurat) return pindah;
+    const otomatisBaru = nomorDariTemplat(format, {
+        noUrut, tahun, bulan: bulanDari(perubahan.tanggalSurat)!, unitKerja: sekarang.unitKerjaId, naskahDinas: naskahBaru,
+    });
+    if (!otomatisBaru) return pindah;
+    pindah.sebelum.nomorSurat = sekarang.nomorSurat;
+    pindah.sesudah.nomorSurat = otomatisBaru;
+    return pindah;
 }

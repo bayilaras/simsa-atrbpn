@@ -449,8 +449,8 @@ export class SuratKeluarService {
             if (perluBaris && !current) return undefined;
             if (current) pastikanBelumBerubah(current.updatedAt, expectedUpdatedAt);
             const ruleSelection = await prepareSuratRuleSelection(tx, 'keluar', patch, current);
-            // Nomor surat tetap; hanya tahun dan No. Urut yang berpindah.
-            const pindah = current ? await pindahUrutanTahun(tx, 'keluar', current, patch.tanggalSurat, templatTerkunci) : null;
+            // Pindah tahun: No. Urut berikutnya di tahun baru; nomor surat buatan template ikut dibuat ulang.
+            const pindah = current ? await pindahUrutanTahun(tx, 'keluar', current, patch, templatTerkunci) : null;
             const [result] = await tx
                 .update(suratKeluar)
                 .set({ ...patch, ...ruleSelection, ...pindah?.sesudah, updatedAt: new Date() })
@@ -494,7 +494,7 @@ export class SuratKeluarService {
                             hasFile: Boolean(result.filePath),
                             ...(pindah ? { tahun: result.tahun, noUrut: result.noUrut } : {}),
                         },
-                        fields: [...Object.keys(patch), ...(pindah ? ['tahun', 'noUrut'] : [])],
+                        fields: [...new Set([...Object.keys(patch), ...(pindah ? Object.keys(pindah.sesudah) : [])])],
                         ruleSelection,
                     },
                 }, tx);

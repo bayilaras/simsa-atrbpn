@@ -27,7 +27,7 @@ describe('nomor urut dari sumber impor', () => {
 
     it('pesan 409 formulir menyebut nomor, tahun, dan nama isiannya', () => {
         expect(pesanNomorUrutTerpakai('keluar', 120, 2026)).toBe('No. Urut 120 tahun 2026 sudah dipakai surat lain di unit ini. '
-            + 'Nomor surat yang sudah dihapus juga tidak dapat dipakai ulang. Kosongkan No. Urut untuk nomor otomatis atau isi nomor lain.');
+            + 'No. Urut milik surat yang sudah dihapus juga tidak dapat dipakai ulang. Kosongkan No. Urut untuk nomor otomatis atau isi nomor lain.');
     });
 });
 
