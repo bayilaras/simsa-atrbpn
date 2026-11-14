@@ -94,7 +94,7 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
     if (!cookieToken || !headerToken) {
         res.status(403).json({
             error: 'CSRF Validation Failed',
-            message: 'Missing CSRF token. Please refresh the page and try again.',
+            message: 'Token keamanan halaman tidak ditemukan. Muat ulang halaman, lalu coba lagi.',
         });
         return;
     }
@@ -104,7 +104,7 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
     if (!isCsrfToken(cookieToken) || !isCsrfToken(headerToken)) {
         res.status(403).json({
             error: 'CSRF Validation Failed',
-            message: 'Invalid CSRF token. Please refresh the page and try again.',
+            message: 'Token keamanan halaman tidak valid. Muat ulang halaman, lalu coba lagi.',
         });
         return;
     }
@@ -117,7 +117,7 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
     if (!valid) {
         res.status(403).json({
             error: 'CSRF Validation Failed',
-            message: 'Invalid CSRF token. Please refresh the page and try again.',
+            message: 'Token keamanan halaman tidak valid. Muat ulang halaman, lalu coba lagi.',
         });
         return;
     }

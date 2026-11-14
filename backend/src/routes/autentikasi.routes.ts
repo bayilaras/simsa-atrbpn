@@ -61,7 +61,7 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
         const { id } = req.params;
         const result = await autentikasiService.findById(id as string);
         if (!result) {
-            return res.status(404).json({ error: 'Autentikasi not found' });
+            return res.status(404).json({ error: 'Autentikasi not found', message: 'Data autentikasi tidak ditemukan.' });
         }
         res.json({ success: true, data: result });
     } catch (error) {
@@ -117,7 +117,7 @@ router.get('/:id/pdf', async (req: AuthRequest, res, next) => {
         });
 
         if (!result) {
-            return res.status(404).json({ error: 'PDF not found' });
+            return res.status(404).json({ error: 'PDF not found', message: 'Berkas PDF berita acara tidak ditemukan.' });
         }
 
         res.setHeader('Content-Type', 'application/pdf');

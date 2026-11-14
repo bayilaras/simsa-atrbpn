@@ -100,5 +100,17 @@ const labelDari = (peta: Map<string, string>) => (nilai: string | null | undefin
     return teks ? peta.get(teks) ?? teks : '';
 };
 
+// Cermin frontend/src/pages/ArsipTerjaga/constants.js.
+const KATEGORI_ARSIP_TERJAGA = new Map([
+    ['kepulauan', 'Arsip Kepulauan'],
+    ['perjanjian_internasional', 'Arsip Perjanjian Internasional'],
+    ['masalah_strategis', 'Arsip Masalah-masalah Pemerintahan yang Strategis'],
+    ['kekayaan_negara', 'Kekayaan negara (kategori lama, perlu ditinjau)'],
+    ['hak_keperdataan', 'Hak keperdataan (kategori lama, perlu ditinjau)'],
+    ['pertanahan', 'Pertanahan (kategori lama, perlu ditinjau)'],
+    ['batas_wilayah', 'Batas wilayah (kategori lama, perlu ditinjau)'],
+]);
+
 export const labelKategoriArsipVital = labelDari(KATEGORI_ARSIP_VITAL);
+export const labelKategoriArsipTerjaga = labelDari(KATEGORI_ARSIP_TERJAGA);
 export const labelStatusProteksi = labelDari(STATUS_PROTEKSI);

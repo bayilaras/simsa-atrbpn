@@ -130,7 +130,7 @@ export default function ArsipTerjagaForm({ open, onOpenChange, form, setForm, on
                                 <Input type="date" value={form.tanggalPenetapan} onChange={e => setForm(f => ({ ...f, tanggalPenetapan: e.target.value }))} />
                             </div>
                             <div className="space-y-2">
-                                <Label className="flex items-center gap-2"><Calendar className="h-3.5 w-3.5" /> Next Review</Label>
+                                <Label className="flex items-center gap-2"><Calendar className="h-3.5 w-3.5" /> Tinjauan Berikutnya</Label>
                                 <Input type="date" value={form.tanggalReviewSelanjutnya} onChange={e => setForm(f => ({ ...f, tanggalReviewSelanjutnya: e.target.value }))} />
                             </div>
                             <div className="space-y-2">

@@ -527,7 +527,7 @@ describe('ArsipService', () => {
             }]);
 
             await expect(svc.update('1', { keterangan: 'Tidak boleh berubah' } as any))
-                .rejects.toThrow(/immutable/i);
+                .rejects.toThrow(/sudah dilaksanakan tidak dapat diubah/i);
         });
 
         it('should reject direct mutation of workflow-managed fields', async () => {

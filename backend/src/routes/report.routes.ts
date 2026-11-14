@@ -28,7 +28,7 @@ router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
         const { year, month, tanggalDari, tanggalSampai, period, page, limit } = req.query;
 
         if (!unitKerjaId) {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
             return;
         }
 
@@ -48,7 +48,7 @@ router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
         res.json(report);
     } catch (error) {
         log.error({ err: error }, 'Error getting surat masuk report:');
-        res.status(500).json({ error: 'Failed to generate report' });
+        res.status(500).json({ error: 'Failed to generate report', message: 'Laporan gagal dibuat. Silakan coba lagi.' });
     }
 });
 
@@ -62,7 +62,7 @@ router.get('/surat-keluar', async (req: AuthRequest, res: Response) => {
         const { year, tanggalDari, tanggalSampai, period, page, limit } = req.query;
 
         if (!unitKerjaId) {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
             return;
         }
 
@@ -81,7 +81,7 @@ router.get('/surat-keluar', async (req: AuthRequest, res: Response) => {
         res.json(report);
     } catch (error) {
         log.error({ err: error }, 'Error getting surat keluar report:');
-        res.status(500).json({ error: 'Failed to generate report' });
+        res.status(500).json({ error: 'Failed to generate report', message: 'Laporan gagal dibuat. Silakan coba lagi.' });
     }
 });
 
@@ -95,7 +95,7 @@ router.get('/arsip', async (req: AuthRequest, res: Response) => {
         const { type, mediaType, daysAhead, year, page, limit } = req.query;
 
         if (!unitKerjaId) {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
             return;
         }
 
@@ -114,7 +114,7 @@ router.get('/arsip', async (req: AuthRequest, res: Response) => {
         res.json(report);
     } catch (error) {
         log.error({ err: error }, 'Error getting arsip report:');
-        res.status(500).json({ error: 'Failed to generate report' });
+        res.status(500).json({ error: 'Failed to generate report', message: 'Laporan gagal dibuat. Silakan coba lagi.' });
     }
 });
 
@@ -128,7 +128,7 @@ router.get('/lending', async (req: AuthRequest, res: Response) => {
         const { status, tanggalDari, tanggalSampai, page, limit } = req.query;
 
         if (!unitKerjaId) {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
             return;
         }
 
@@ -146,7 +146,7 @@ router.get('/lending', async (req: AuthRequest, res: Response) => {
         res.json(report);
     } catch (error) {
         log.error({ err: error }, 'Error getting lending report:');
-        res.status(500).json({ error: 'Failed to generate report' });
+        res.status(500).json({ error: 'Failed to generate report', message: 'Laporan gagal dibuat. Silakan coba lagi.' });
     }
 });
 
@@ -160,7 +160,7 @@ router.get('/summary', async (req: AuthRequest, res: Response) => {
         const { year } = req.query;
 
         if (!unitKerjaId) {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
             return;
         }
 
@@ -172,7 +172,7 @@ router.get('/summary', async (req: AuthRequest, res: Response) => {
         res.json(report);
     } catch (error) {
         log.error({ err: error }, 'Error getting summary report:');
-        res.status(500).json({ error: 'Failed to generate report' });
+        res.status(500).json({ error: 'Failed to generate report', message: 'Laporan gagal dibuat. Silakan coba lagi.' });
     }
 });
 

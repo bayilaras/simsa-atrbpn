@@ -87,7 +87,7 @@ const GALAT_PERNYATAAN_ARSIP = 'Centang pernyataan di atas sebelum menyimpan ars
 
 const UNIT_PENGOLAH_OPTIONS = [
     { value: 'Ditjen', label: 'Ditjen' },
-    { value: 'SekDitjen', label: 'SekDitjen' },
+    { value: 'SekDitjen', label: 'Sesditjen' },
     { value: 'Dit. BPPT', label: 'Dit. BPPT' },
     { value: 'Dit. PTEP', label: 'Dit. PTEP' },
     { value: 'Dit. KTPP', label: 'Dit. KTPP' },
@@ -845,7 +845,7 @@ export function ArchiveDialog({
                                     </FormField>
 
                                     <FormField
-                                        label="Person In Charge (PIC)"
+                                        label="Penanggung Jawab"
                                         required
                                         icon={User}
                                         hint="Nama yang bertanggung jawab atas pengarsipan"

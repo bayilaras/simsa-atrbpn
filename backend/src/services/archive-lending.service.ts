@@ -199,10 +199,10 @@ export class ArchiveLendingService {
 
         // Validate type-specific IDs
         if (data.lendingType === 'arsip' && !data.arsipId) {
-            throw new ValidationError('arsipId is required for per-arsip lending');
+            throw new ValidationError('Pilih arsip yang akan dipinjam.');
         }
         if (data.lendingType === 'box' && !data.storageLocationId) {
-            throw new ValidationError('storageLocationId is required for per-box lending');
+            throw new ValidationError('Pilih box yang akan dipinjam.');
         }
 
         return await db.transaction(async (tx: any) => {
@@ -219,10 +219,10 @@ export class ArchiveLendingService {
                     .for('update');
 
                 if (!existingArsip) {
-                    throw new AppError('Arsip not found', 404);
+                    throw new AppError('Arsip tidak ditemukan.', 404);
                 }
                 if (existingArsip.lendingStatus === 'borrowed') {
-                    throw new ConflictError('Arsip is already borrowed');
+                    throw new ConflictError('Arsip ini sedang dipinjam.');
                 }
             }
 
@@ -241,7 +241,7 @@ export class ArchiveLendingService {
                     .for('update');
 
                 if (!box) {
-                    throw new AppError('Storage box not found', 404);
+                    throw new AppError('Box penyimpanan tidak ditemukan.', 404);
                 }
 
                 const [openBoxLending] = await tx
@@ -254,7 +254,7 @@ export class ArchiveLendingService {
                     .limit(1);
 
                 if (openBoxLending) {
-                    throw new ConflictError('Box is already borrowed');
+                    throw new ConflictError('Box ini sedang dipinjam.');
                 }
             }
 
@@ -337,10 +337,10 @@ export class ArchiveLendingService {
                 .for('update');
 
             if (!lending) {
-                throw new AppError('Lending record not found', 404);
+                throw new AppError('Data peminjaman tidak ditemukan.', 404);
             }
             if (lending.status === 'returned') {
-                throw new ConflictError('Already returned');
+                throw new ConflictError('Peminjaman ini sudah dikembalikan.');
             }
 
             // Update lending record
@@ -360,7 +360,7 @@ export class ArchiveLendingService {
                 .returning();
 
             if (!updated) {
-                throw new ConflictError('Lending record changed before it could be returned');
+                throw new ConflictError('Data peminjaman berubah sebelum pengembalian tersimpan. Muat ulang halaman, lalu coba lagi.');
             }
 
             // Update arsip lending status
@@ -424,10 +424,10 @@ export class ArchiveLendingService {
                 .for('update');
 
             if (!lending) {
-                throw new AppError('Lending record not found', 404);
+                throw new AppError('Data peminjaman tidak ditemukan.', 404);
             }
             if (lending.status === 'returned') {
-                throw new ConflictError('Cannot extend returned item');
+                throw new ConflictError('Peminjaman yang sudah dikembalikan tidak dapat diperpanjang.');
             }
 
             const [updated] = await tx
@@ -445,7 +445,7 @@ export class ArchiveLendingService {
                 .returning();
 
             if (!updated) {
-                throw new ConflictError('Lending record changed before it could be extended');
+                throw new ConflictError('Data peminjaman berubah sebelum perpanjangan tersimpan. Muat ulang halaman, lalu coba lagi.');
             }
 
             if (auditContext) {

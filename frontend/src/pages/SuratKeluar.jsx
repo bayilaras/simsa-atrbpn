@@ -201,7 +201,7 @@ export default function SuratKeluar() {
             setLoadError(true);
             console.error('Error fetching surat keluar:', error);
             toast({
-                title: 'Error',
+                title: 'Gagal',
                 description: 'Gagal memuat data surat keluar',
                 variant: 'destructive',
             });
@@ -355,7 +355,7 @@ export default function SuratKeluar() {
             refreshAll();
         } catch (error) {
             toast({
-                title: 'Error',
+                title: 'Gagal',
                 description: error.message || 'Gagal mengarsipkan surat',
                 variant: 'destructive',
             });
@@ -374,7 +374,7 @@ export default function SuratKeluar() {
             refreshAll();
         } catch (error) {
             toast({
-                title: 'Error',
+                title: 'Gagal',
                 description: pesanGalat(error, 'Gagal menghapus surat'),
                 variant: 'destructive',
             });

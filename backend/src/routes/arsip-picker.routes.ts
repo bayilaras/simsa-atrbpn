@@ -17,7 +17,7 @@ router.get('/klasifikasi/tree', authMiddleware, async (req: Request, res: Respon
         res.json({ success: true, data: tree });
     } catch (error) {
         log.error({ err: error }, 'Error fetching klasifikasi tree:');
-        res.status(500).json({ success: false, error: 'Failed to fetch klasifikasi tree' });
+        res.status(500).json({ success: false, error: 'Failed to fetch klasifikasi tree', message: 'Daftar klasifikasi gagal dimuat. Silakan coba lagi.' });
     }
 });
 
@@ -42,7 +42,7 @@ router.get('/lifecycle', authMiddleware, async (req: AuthRequest, res: Response)
     try {
         const unitKerjaId = resolveUnitKerjaId(req);
         if (!unitKerjaId) {
-            res.status(400).json({ success: false, error: 'unitKerjaId is required' });
+            res.status(400).json({ success: false, error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
             return;
         }
 
@@ -53,7 +53,7 @@ router.get('/lifecycle', authMiddleware, async (req: AuthRequest, res: Response)
         res.json({ success: true, data: notifications });
     } catch (error) {
         log.error({ err: error }, 'Error fetching lifecycle notifications:');
-        res.status(500).json({ success: false, error: 'Failed to fetch lifecycle notifications' });
+        res.status(500).json({ success: false, error: 'Failed to fetch lifecycle notifications', message: 'Pemberitahuan retensi gagal dimuat. Silakan coba lagi.' });
     }
 });
 

@@ -26,7 +26,8 @@ router.get('/', async (req: AuthRequest, res, next) => {
         if (!q || typeof q !== 'string') {
             return res.status(400).json({
                 success: false,
-                error: 'Query parameter "q" is required'
+                error: 'Query parameter "q" is required',
+                message: 'Kata kunci pencarian wajib diisi.',
             });
         }
 
@@ -66,7 +67,8 @@ router.get('/content', ocrLimiter, async (req: AuthRequest, res, next) => {
         if (!q || typeof q !== 'string') {
             return res.status(400).json({
                 success: false,
-                error: 'Query parameter "q" is required'
+                error: 'Query parameter "q" is required',
+                message: 'Kata kunci pencarian wajib diisi.',
             });
         }
 

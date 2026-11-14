@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+    PESAN_NAMA_BERKAS_TIDAK_DIDUKUNG,
+    PESAN_UNGGAH_DITOLAK,
     uploadFileToBlob,
     waitForVercelBlobReady,
 } from './blob-upload.service';
@@ -192,13 +194,24 @@ describe('bounded upload cancellation and failure recovery', () => {
         expect(blobSdk.upload.mock.calls[0][2].abortSignal.aborted).toBe(false);
     });
 
-    it('reports a network failure with recovery instructions and preserves specific authorization errors', async () => {
+    it('reports a network failure with recovery instructions and storage rejections in Indonesian', async () => {
         blobSdk.upload.mockRejectedValueOnce(new TypeError('Failed to fetch'));
         await expect(uploadFileToBlob(file, { folder: 'surat-masuk' }))
             .rejects.toMatchObject({ code: 'UPLOAD_CONNECTION_FAILED', message: expect.stringContaining('muat ulang halaman') });
-        const denied = new Error('Vercel Blob: This token does not have access to this store.');
+        const denied = new Error('Vercel Blob: Failed to retrieve the client token');
         blobSdk.upload.mockRejectedValueOnce(denied);
-        await expect(uploadFileToBlob(file, { folder: 'surat-masuk' })).rejects.toBe(denied);
+        await expect(uploadFileToBlob(file, { folder: 'surat-masuk' }))
+            .rejects.toMatchObject({ code: 'UPLOAD_REJECTED', message: PESAN_UNGGAH_DITOLAK, cause: denied });
+        const lain = new Error('kesalahan lain');
+        blobSdk.upload.mockRejectedValueOnce(lain);
+        await expect(uploadFileToBlob(file, { folder: 'surat-masuk' })).rejects.toBe(lain);
+    });
+
+    it.each(['Surat No.12..pdf', 'map\\surat.pdf'])('rejects the file name %s before requesting storage authorization', async name => {
+        blobSdk.upload.mockReset();
+        const berkas = new File(['pdf'], name, { type: 'application/pdf' });
+        await expect(uploadFileToBlob(berkas, { folder: 'surat-masuk' })).rejects.toThrow(PESAN_NAMA_BERKAS_TIDAK_DIDUKUNG);
+        expect(blobSdk.upload).not.toHaveBeenCalled();
     });
 });
 

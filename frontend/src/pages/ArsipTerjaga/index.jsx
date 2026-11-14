@@ -153,7 +153,7 @@ export default function ArsipTerjaga() {
             link.setAttribute('download', `daftar-arsip-terjaga-${unitKerjaId}.pdf`)
             document.body.appendChild(link); link.click(); link.parentNode.removeChild(link)
             window.URL.revokeObjectURL(url)
-        } catch { toast({ title: 'Error', description: 'Gagal mencetak daftar arsip terjaga', variant: 'destructive' }) }
+        } catch { toast({ title: 'Gagal', description: 'Gagal mencetak daftar arsip terjaga', variant: 'destructive' }) }
     }
 
     const getStatValue = (arr, key) => {

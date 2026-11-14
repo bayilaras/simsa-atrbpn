@@ -22,6 +22,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/context/AuthContext';
 import { layananUserInitial, layananUserName } from './layanan-display';
+import { pesanGalat } from '@/lib/pesan-galat';
 
 export default function LayananArsipDetail() {
     const { id } = useParams();
@@ -45,7 +46,7 @@ export default function LayananArsipDetail() {
             setData(result);
         } catch (error) {
             console.error(error);
-            toast({ title: "Error", description: error.message || "Gagal memuat detail", variant: "destructive" });
+            toast({ title: "Gagal", description: pesanGalat(error, "Gagal memuat detail permohonan"), variant: "destructive" });
         } finally {
             setLoading(false);
         }
@@ -70,8 +71,9 @@ export default function LayananArsipDetail() {
             toast({ title: "Sukses", description: "Status berhasil diperbarui" });
             fetchDetail();
             setIsDialogOpen(false);
-        } catch {
-            toast({ title: "Error", description: "Gagal memperbarui status", variant: "destructive" });
+        } catch (error) {
+            // Pesan server (mis. status sudah berubah) lebih jelas daripada pesan umum.
+            toast({ title: "Gagal", description: pesanGalat(error, "Gagal memperbarui status"), variant: "destructive" });
         } finally {
             setProcessing(false);
         }
@@ -83,7 +85,14 @@ export default function LayananArsipDetail() {
         setIsDialogOpen(true);
     };
 
-    if (loading) return <div>Loading...</div>;
+    if (loading) {
+        return (
+            <div role="status" className="flex items-center justify-center h-[50vh] gap-2 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                <span>Memuat detail permohonan...</span>
+            </div>
+        );
+    }
     if (!data) return <div>Data tidak ditemukan</div>;
 
     return (

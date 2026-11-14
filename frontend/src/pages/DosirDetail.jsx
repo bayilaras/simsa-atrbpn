@@ -374,7 +374,7 @@ export default function DosirDetail() {
                     </div>
                     <div className="flex items-center gap-2">
                         <Clock className="h-4 w-4 text-amber-300" />
-                        <span className="text-white/70">Terakhir Update:</span>
+                        <span className="text-white/70">Terakhir Diperbarui:</span>
                         <span className="font-semibold text-white">
                             {formatDistanceToNow(parseISO(dosir.updatedAt), { addSuffix: true, locale: idLocale })}
                         </span>

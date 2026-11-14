@@ -2,6 +2,15 @@
 import { clearOfflineStorage } from '../lib/offline-storage';
 import { API_BASE_URL } from '../lib/api-url';
 import { alamatMasukSetelahSesiDitolak, catatKontakServer } from '../lib/sesi-masuk';
+import { gabungPesanValidasi } from '../lib/pesan-galat';
+
+// Cadangan bila server tidak mengirim pesan; tidak menampilkan kode HTTP.
+function pesanStatusHttp(status) {
+    if (status === 404) return 'Data atau alamat yang diminta tidak ditemukan.';
+    if (status === 409) return 'Data sudah berubah. Muat ulang halaman, lalu coba lagi.';
+    if (status === 413) return 'Ukuran data melebihi batas yang diizinkan.';
+    return 'Permintaan tidak dapat diproses. Periksa isian Anda, lalu coba lagi.';
+}
 
 export { API_BASE_URL };
 
@@ -333,9 +342,11 @@ export class ApiClient {
             }
 
             // Other errors. Preserve structured validation details so forms can
-            // show actionable item-level feedback returned by the API.
+            // show actionable item-level feedback returned by the API; the
+            // message itself names those fields for callers that only show text.
             throw createApiError(
-                errorBody.message || errorBody.error || `HTTP ${response.status}`,
+                gabungPesanValidasi(errorBody.message || errorBody.error, errorBody.details)
+                    || pesanStatusHttp(response.status),
                 response,
                 errorBody,
             );

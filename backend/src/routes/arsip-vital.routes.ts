@@ -31,7 +31,7 @@ router.use(authMiddleware);
 router.get('/print/daftar', canReadMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
-        if (!unitKerjaId) return res.status(400).json({ error: 'Unit Kerja ID required' });
+        if (!unitKerjaId) return res.status(400).json({ error: 'Unit Kerja ID required', message: 'Pilih unit kerja terlebih dahulu.' });
 
         // Daftar tercetak memakai filter yang sama dengan tabel di layar.
         const filterTeks = (nilai: unknown) => (typeof nilai === 'string' && nilai ? nilai.slice(0, 200) : undefined);
@@ -63,7 +63,7 @@ router.get('/', async (req: AuthRequest, res, next) => {
         const { kategoriVital, tingkatKekritisan, statusProteksi, search, page, limit } = req.query;
 
         if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
+            return res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
         }
 
         const result = await arsipVitalService.findAll({
@@ -89,7 +89,7 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
 
         if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
+            return res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
         }
 
         const stats = await arsipVitalService.getStats(
@@ -109,7 +109,7 @@ router.get('/due-review', async (req: AuthRequest, res, next) => {
         const { daysAhead } = req.query;
 
         if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
+            return res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
         }
 
         const data = await arsipVitalService.getDueForReview(
@@ -135,7 +135,7 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
         );
 
         if (!result) {
-            return res.status(404).json({ error: 'Arsip vital not found' });
+            return res.status(404).json({ error: 'Arsip vital not found', message: 'Arsip vital tidak ditemukan.' });
         }
 
         res.json({ success: true, data: result });
@@ -159,7 +159,7 @@ router.post('/',
         try {
             const access = await recordAccessService.check(req.user, 'arsip', req.body.arsipId);
             if (!access.exists || !access.mutable || !access.unitKerjaId) {
-                return res.status(404).json({ error: 'Arsip not found' });
+                return res.status(404).json({ error: 'Arsip not found', message: 'Arsip tidak ditemukan.' });
             }
 
             const result = await arsipVitalService.create({
@@ -192,7 +192,7 @@ router.put('/:id',
             );
 
             if (!existing || !(await canManageParentArchive(req, existing.arsipId))) {
-                return res.status(404).json({ error: 'Arsip vital not found' });
+                return res.status(404).json({ error: 'Arsip vital not found', message: 'Arsip vital tidak ditemukan.' });
             }
 
             const result = await arsipVitalService.update(
@@ -202,7 +202,7 @@ router.put('/:id',
                 criticalAuditContext(req),
             );
             if (!result) {
-                return res.status(404).json({ error: 'Arsip vital not found' });
+                return res.status(404).json({ error: 'Arsip vital not found', message: 'Arsip vital tidak ditemukan.' });
             }
 
             res.json({ success: true, data: result });
@@ -224,7 +224,7 @@ router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res, next) 
         );
 
         if (!existing || !(await canManageParentArchive(req, existing.arsipId))) {
-            return res.status(404).json({ error: 'Arsip vital not found' });
+            return res.status(404).json({ error: 'Arsip vital not found', message: 'Arsip vital tidak ditemukan.' });
         }
 
         const deleted = await arsipVitalService.delete(
@@ -233,7 +233,7 @@ router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res, next) 
             criticalAuditContext(req),
         );
         if (!deleted) {
-            return res.status(404).json({ error: 'Arsip vital not found' });
+            return res.status(404).json({ error: 'Arsip vital not found', message: 'Arsip vital tidak ditemukan.' });
         }
 
         res.json({ success: true, message: 'Arsip vital designation removed' });

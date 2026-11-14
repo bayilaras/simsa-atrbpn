@@ -139,10 +139,10 @@ export default function ArsipElektronikTable({
                 <div className="flex items-center justify-end gap-2">
                     <span className="text-sm text-muted-foreground">Halaman {page} dari {totalPages}</span>
                     <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
-                        <ChevronUp className="h-4 w-4 rotate-[-90deg]" /> Prev
+                        <ChevronUp className="h-4 w-4 rotate-[-90deg]" /> Sebelumnya
                     </Button>
                     <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
-                        Next <ChevronUp className="h-4 w-4 rotate-90" />
+                        Berikutnya <ChevronUp className="h-4 w-4 rotate-90" />
                     </Button>
                 </div>
             )}

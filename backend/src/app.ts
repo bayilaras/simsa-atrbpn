@@ -334,6 +334,7 @@ app.get('/api/blob-test', authMiddleware as any, roleMiddleware(['super_admin'])
         res.status(503).json({
             success: false,
             error: 'Private object storage is unavailable',
+            message: 'Penyimpanan berkas sementara tidak tersedia. Silakan coba lagi.',
             provider: cloudPlatformConfig.storageProvider,
         });
     }
@@ -394,7 +395,7 @@ app.use('/api/record-access-grants', recordAccessGrantRoutes); // Purpose-bound,
 
 // 404 handler
 app.use((req: Request, res: Response) => {
-    res.status(404).json({ success: false, error: 'Not Found', path: req.path });
+    res.status(404).json({ success: false, error: 'Not Found', message: 'Alamat yang diminta tidak ditemukan.', path: req.path });
 });
 
 // Request body errors raised by body-parser that are the client's, by type.

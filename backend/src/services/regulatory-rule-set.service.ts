@@ -1306,7 +1306,7 @@ export class RegulatoryRuleSetService {
                 .for('update');
             if (!ruleSet) throw new NotFoundError('Versi aturan');
             if (ruleSet.status !== 'draft') {
-                throw new ConflictError('Impor hanya boleh mengganti isi versi draft. Versi terbit bersifat immutable.');
+                throw new ConflictError('Impor hanya boleh mengganti isi versi draf. Versi terbit tidak dapat diubah.');
             }
 
             const instrumentType = ruleSet.instrumentType as RegulatoryInstrumentType;
@@ -2032,7 +2032,7 @@ export class RegulatoryRuleSetService {
                 }
                 if (!['draft', 'submitted', 'reviewed', 'approved'].includes(candidate.status)) {
                     if (['active', 'superseded', 'withdrawn'].includes(candidate.status)) {
-                        throw new ConflictError('Versi yang sudah dipublikasikan bersifat immutable.');
+                        throw new ConflictError('Versi yang sudah dipublikasikan tidak dapat diubah.');
                     }
                     throw new ConflictError('Hanya edisi yang belum dipublikasikan dapat diaktifkan.');
                 }

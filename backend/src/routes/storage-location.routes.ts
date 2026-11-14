@@ -175,7 +175,7 @@ router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res, next) 
             return res.status(404).json({ error: 'Lokasi simpan tidak ditemukan.' });
         }
 
-        res.json({ success: true, message: 'Storage location deleted successfully' });
+        res.json({ success: true, message: 'Lokasi simpan berhasil dihapus.' });
     } catch (error) {
         next(error);
     }

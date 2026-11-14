@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { pesanCabangUnion } from './pesan-zod.js';
 import { LEGACY_PERMANENT_TRANSFER_READ_ONLY_MESSAGE } from '../utils/permanent-transfer-policy';
 import {
     MAX_NOTIFICATION_ID_LENGTH,
@@ -11,7 +12,7 @@ import { KATEGORI_PERLU_DILENGKAPI } from '../services/perlu-dilengkapi.constant
 import { URUTAN_DAFTAR_SURAT } from '../services/urutan-daftar-surat.constants.js';
 
 // Common schemas
-export const uuidSchema = z.string().uuid('Invalid UUID format');
+export const uuidSchema = z.string().uuid();
 export const dateSchema = z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Tanggal harus berformat TTTT-BB-HH, misalnya 2026-01-31')
     .refine((value) => {
@@ -184,9 +185,10 @@ export const createSuratMasukSchema = z.object({
     dari: z.string('Pengirim wajib diisi').min(1, 'Pengirim wajib diisi').max(255, 'Pengirim maksimal 255 karakter'), // Field name is 'dari' in DB
     kepada: teksMaks('Penerima', 255).optional(),
     status: z.enum(['belum_dibalas', 'sudah_dibalas'], 'Status surat tidak valid').optional().default('belum_dibalas'),
+    // Bila isi disposisi berbentuk objek, pesan aturannya (mis. batas 10 unit) yang ditampilkan.
     disposisi: z.preprocess(parseJsonObjectString, z.union(
         [disposisiRoutingSchema, legacyDisposisiLabels],
-        'Disposisi tidak valid. Periksa unit tujuan dan batas waktunya.',
+        { error: (isu) => pesanCabangUnion(isu) ?? 'Disposisi tidak valid. Periksa unit tujuan dan batas waktunya.' },
     )).optional(),
     referensi: z.preprocess(parseJsonObjectString, z.object({
         jenis: z.literal('surat_keluar', 'Surat rujukan tidak valid'),
@@ -305,7 +307,7 @@ export const createSuratKeluarSchema = suratKeluarBaseSchema
             ctx.addIssue({ code: 'custom', path: ['tindakLanjut'], message: 'Tindak lanjut memerlukan surat induk' });
         }
         if (value.tindakLanjut && value.balasanUntuk && value.tindakLanjut.suratId !== value.balasanUntuk) {
-            ctx.addIssue({ code: 'custom', path: ['balasanUntuk'], message: 'balasanUntuk harus sama dengan surat induk tindak lanjut' });
+            ctx.addIssue({ code: 'custom', path: ['balasanUntuk'], message: 'Surat yang dibalas harus sama dengan surat induk tindak lanjut' });
         }
     })
     // balasanUntuk lama dipetakan ke relasi 'balasan'; kolom balasan_untuk
@@ -577,7 +579,7 @@ export const createAutentikasiSchema = z.object({
     nomorBeritaAcara: z.string().min(1, 'Nomor berita acara wajib diisi').max(100),
     tanggalAutentikasi: dateSchema,
     kegiatan: z.string().min(1, 'Kegiatan wajib diisi').max(255),
-    itemArsipIds: z.array(uuidSchema).min(1, 'At least one archive must be selected'),
+    itemArsipIds: z.array(uuidSchema).min(1, 'Pilih minimal satu arsip'),
     // Optional overrides for PDF generation if needed
     jabatanPenandaTangan: z.string().max(100).optional(),
     tempatDilakukan: z.string().max(150).optional(),
@@ -664,8 +666,10 @@ export const createDistributionSchema = z.object({
     penanggungJawab: z.boolean().optional(),
     targets: disposisiTargetsSchema.optional(),
 }).superRefine((value, ctx) => {
-    if (Boolean(value.targetUnitId) === Boolean(value.targets)) {
-        ctx.addIssue({ code: 'custom', path: ['targets'], message: 'Isi salah satu: targetUnitId atau targets' });
+    if (!value.targetUnitId && !value.targets) {
+        ctx.addIssue({ code: 'custom', path: ['targets'], message: 'Pilih minimal satu unit tujuan' });
+    } else if (value.targetUnitId && value.targets) {
+        ctx.addIssue({ code: 'custom', path: ['targets'], message: 'Unit tujuan terkirim dua kali. Muat ulang halaman, lalu coba lagi.' });
     }
 }).transform((value) => ({
     suratMasukId: value.suratMasukId,
@@ -804,7 +808,7 @@ export const borrowArchiveSchema = z.object({
         if (data.lendingType === 'box') return !!data.storageLocationId;
         return true;
     },
-    { message: 'arsipId required for arsip lending, storageLocationId required for box lending' }
+    { message: 'Pilih arsip untuk peminjaman arsip, atau box untuk peminjaman box' }
 );
 
 export const extendLendingSchema = z.object({

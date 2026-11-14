@@ -70,6 +70,7 @@ function verifyFileContent(req: Request, res: Response, next: NextFunction) {
     } catch {
         return res.status(400).json({
             error: 'File content does not match the declared file type.',
+            message: 'Isi berkas tidak sesuai dengan jenis berkasnya. Pastikan berkas tidak rusak, lalu coba lagi.',
         });
     }
 
@@ -103,7 +104,7 @@ router.post(
             // Validate surat type
             const entityType = toRecordEntityType(suratType);
             if (!entityType) {
-                return res.status(400).json({ error: 'Invalid surat type' });
+                return res.status(400).json({ error: 'Invalid surat type', message: 'Jenis surat tidak dikenali.' });
             }
 
             if (req.is('application/json')) {
@@ -120,11 +121,11 @@ router.post(
 
             const access = await recordAccessService.check(req.user, entityType, suratId);
             if (!access.exists || !access.mutable) {
-                return res.status(404).json({ error: 'Record not found' });
+                return res.status(404).json({ error: 'Record not found', message: 'Data tidak ditemukan.' });
             }
 
             if (!req.file) {
-                return res.status(400).json({ error: 'No file uploaded' });
+                return res.status(400).json({ error: 'No file uploaded', message: 'Pilih berkas yang akan diunggah.' });
             }
 
             const attachment = await fileAttachmentService.create({
@@ -146,7 +147,7 @@ router.post(
                 success: true,
                 data: publicAttachment(attachment),
                 hash: (attachment as any).hash, // Return hash to client
-                message: 'File uploaded successfully',
+                message: 'Berkas berhasil diunggah.',
             });
         } catch (error) {
             if (error instanceof AppError && 'code' in error && error.code === 'UPLOAD_COMPLETION_PENDING') {
@@ -169,7 +170,7 @@ router.post('/:suratType/:suratId/scan', authMiddleware, canWriteMiddleware(), s
                 return res.status(400).json({ success: false, code: 'INVALID_SCAN_RECOVERY_REQUEST' });
             }
             const access = await recordAccessService.check(req.user, entityType, req.params.suratId as string);
-            if (!access.exists || !access.allowed) return res.status(404).json({ error: 'Record not found' });
+            if (!access.exists || !access.allowed) return res.status(404).json({ error: 'Record not found', message: 'Data tidak ditemukan.' });
             if (!scheduleMalwareScanWake()) return res.status(503).json({ success: false,
                 code: 'MALWARE_SCAN_WAKE_UNAVAILABLE', message: 'Pemindaian belum dapat dijadwalkan. Berkas tetap menunggu pemeriksaan.' });
             return res.status(202).json({ success: true, status: 'pending',
@@ -187,10 +188,10 @@ router.get('/:suratType/:suratId', authMiddleware, async (req: AuthRequest, res:
         const suratId = req.params.suratId as string;
 
         const entityType = toRecordEntityType(suratType);
-        if (!entityType) return res.status(400).json({ error: 'Invalid surat type' });
+        if (!entityType) return res.status(400).json({ error: 'Invalid surat type', message: 'Jenis surat tidak dikenali.' });
         const access = await recordAccessService.check(req.user, entityType, suratId);
         if (!access.exists || !access.allowed) {
-            return res.status(404).json({ error: 'Record not found' });
+            return res.status(404).json({ error: 'Record not found', message: 'Data tidak ditemukan.' });
         }
 
         const attachments = await fileAttachmentService.findBySurat(suratId, suratType);

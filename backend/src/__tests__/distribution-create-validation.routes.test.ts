@@ -85,7 +85,7 @@ describe('POST /distributions dengan validator asli', () => {
     ])('menolak instruction bertipe %s dengan 400 sebelum menyentuh service', async (_label, instruction) => {
         const res = await request(app).post('/distributions').send({ ...BASE, instruction });
         expect(res.status).toBe(400);
-        expect(res.body.error).toBe('Validation failed');
+        expect(res.body.error).toBe('Data yang dikirim belum valid. Periksa isian berikut.');
         expect(res.body.details.map((detail: { field: string }) => detail.field)).toContain('instruction');
         expect(mocks.recordAccess.check).not.toHaveBeenCalled();
         expect(mocks.distribution.distributeMany).not.toHaveBeenCalled();

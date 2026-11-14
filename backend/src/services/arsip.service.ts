@@ -634,7 +634,7 @@ export class ArsipService {
 
             if (!existing) throw new NotFoundError('Arsip');
             if (existing.disposalStatus === 'executed') {
-                throw new ConflictError('Arsip yang penyusutannya telah dieksekusi bersifat immutable.');
+                throw new ConflictError('Arsip yang penyusutannya sudah dilaksanakan tidak dapat diubah.');
             }
             if (existing.legalHold || existing.disposalStatus !== 'active' || existing.disposalBatchId) {
                 throw new ConflictError(
@@ -749,7 +749,7 @@ export class ArsipService {
             if (!existing) return undefined;
             if (existing.disposalStatus === 'executed') {
                 throw new ConflictError(
-                    'Arsip yang penyusutannya telah dieksekusi bersifat immutable.'
+                    'Arsip yang penyusutannya sudah dilaksanakan tidak dapat diubah.'
                 );
             }
 

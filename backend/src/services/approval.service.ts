@@ -929,7 +929,7 @@ export class ApprovalService {
                 const delivery = await emailService.sendApprovalNotification(
                     targetUser.email,
                     surat.nomorSurat || 'Draft',
-                    requester.name || 'Unknown',
+                    requester.name || 'Seorang pengguna',
                     buildApprovalReviewUrl(env.FRONTEND_URL, suratId),
                 );
                 if (!delivery.sent) {

@@ -360,7 +360,7 @@ describe('bulk upload authorization boundaries', () => {
             })
             .expect(400)
             .expect(({ body }) => {
-                expect(body).toMatchObject({ success: false, error: 'Validation failed' });
+                expect(body).toMatchObject({ success: false, error: 'Data yang dikirim belum valid. Periksa isian berikut.', code: 'VALIDATION_ERROR' });
                 expect(body.details.length).toBeGreaterThanOrEqual(4);
             });
         expect(state.service.confirmBatch).not.toHaveBeenCalled();

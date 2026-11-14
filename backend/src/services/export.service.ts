@@ -10,7 +10,7 @@ import { jenisFormulirArsip, lengkapiJenisPenyusutanLama, saringFormulirArsip } 
 import { barisFormulirArsip, rincianItemDicetak, totalFormulirArsip, uraianFormulir6, type BarisFormulirArsip } from './export-formulir-baris.js';
 import { AppError } from '../utils/errors.js';
 import { loadExcelJS, loadPdfKit } from '../utils/lazy-libraries.js';
-import { tanggalCetakWib, waktuWib } from '../utils/waktu-wib.js';
+import { tanggalCetakWib, waktuWib } from '../utils/jakarta-date.js';
 import { batasBawahPdf, CATATAN_TEKS_DIPOTONG, lebarPenuh, tinggiBarisPdf, tulisBarisPdf } from './export-pdf-tabel.js';
 import { klasifikasiSuratKeluar, labelKelasKeamanan, labelSifatSuratMasuk, labelStatusSuratMasuk } from './export-label.js';
 

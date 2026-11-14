@@ -146,7 +146,7 @@ export function AuthProvider({ children }) {
             await authService.signInWithGoogle();
         } catch (err) {
             console.error('Sign in failed:', err);
-            setError(err.message || 'Login failed');
+            setError(err.message || 'Gagal masuk. Silakan coba lagi.');
             setLoading(false);
         }
     }
@@ -161,7 +161,7 @@ export function AuthProvider({ children }) {
             await checkAuth();
         } catch (err) {
             console.error('Email sign in failed:', err);
-            setError(err.message || 'Login failed');
+            setError(err.message || 'Gagal masuk. Silakan coba lagi.');
             throw err;
         } finally {
             setLoading(false);
@@ -176,7 +176,7 @@ export function AuthProvider({ children }) {
             await checkAuth();
         } catch (err) {
             console.error('Sign up failed:', err);
-            setError(err.message || 'Sign up failed');
+            setError(err.message || 'Pendaftaran akun gagal. Silakan coba lagi.');
             throw err;
         } finally {
             setLoading(false);

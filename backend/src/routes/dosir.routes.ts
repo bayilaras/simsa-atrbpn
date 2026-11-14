@@ -76,7 +76,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         res.json({ success: true, data });
     } catch (error) {
         log.error({ err: error }, 'Error fetching dosir:');
-        res.status(500).json({ success: false, error: 'Failed to fetch dosir' });
+        res.status(500).json({ success: false, error: 'Failed to fetch dosir', message: 'Dosir gagal dimuat. Silakan coba lagi.' });
     }
 });
 
@@ -88,7 +88,7 @@ router.get('/stats', async (req: AuthRequest, res: Response) => {
         res.json({ success: true, data: stats });
     } catch (error) {
         log.error({ err: error }, 'Error fetching stats:');
-        res.status(500).json({ success: false, error: 'Failed to fetch stats' });
+        res.status(500).json({ success: false, error: 'Failed to fetch stats', message: 'Ringkasan dosir gagal dimuat. Silakan coba lagi.' });
     }
 });
 
@@ -99,6 +99,7 @@ router.get('/generate-kode', async (req: AuthRequest, res: Response) => {
             res.status(400).json({
                 success: false,
                 error: 'unitKerjaId is required for all-unit administrators',
+                message: 'Pilih unit kerja terlebih dahulu.',
             });
             return;
         }
@@ -106,7 +107,7 @@ router.get('/generate-kode', async (req: AuthRequest, res: Response) => {
         res.json({ success: true, data: { kode } });
     } catch (error) {
         log.error({ err: error }, 'Error generating kode:');
-        res.status(500).json({ success: false, error: 'Failed to generate kode' });
+        res.status(500).json({ success: false, error: 'Failed to generate kode', message: 'Kode dosir gagal dibuat. Silakan coba lagi.' });
     }
 });
 
@@ -134,7 +135,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
         });
     } catch (error) {
         log.error({ err: error }, 'Error fetching dosir:');
-        res.status(500).json({ success: false, error: 'Failed to fetch dosir' });
+        res.status(500).json({ success: false, error: 'Failed to fetch dosir', message: 'Dosir gagal dimuat. Silakan coba lagi.' });
     }
 });
 
@@ -155,7 +156,7 @@ router.get('/:id/timeline', async (req: AuthRequest, res: Response) => {
         res.json({ success: true, data: timeline });
     } catch (error) {
         log.error({ err: error }, 'Error fetching timeline:');
-        res.status(500).json({ success: false, error: 'Failed to fetch timeline' });
+        res.status(500).json({ success: false, error: 'Failed to fetch timeline', message: 'Linimasa dosir gagal dimuat. Silakan coba lagi.' });
     }
 });
 
@@ -165,7 +166,7 @@ router.post('/', canWriteMiddleware(), validateBody(createDosirSchema), async (r
         const { kode, judul, deskripsi, kategori, tanggalMulai } = req.body;
 
         if (!judul) {
-            res.status(400).json({ success: false, error: 'Judul is required' });
+            res.status(400).json({ success: false, error: 'Judul is required', message: 'Judul wajib diisi.' });
             return;
         }
 
@@ -174,6 +175,7 @@ router.post('/', canWriteMiddleware(), validateBody(createDosirSchema), async (r
             res.status(400).json({
                 success: false,
                 error: 'unitKerjaId is required for all-unit administrators',
+                message: 'Pilih unit kerja terlebih dahulu.',
             });
             return;
         }
@@ -254,7 +256,7 @@ router.post('/:id/surat', canWriteMiddleware(), validateBody(linkSuratToDosirSch
         const { type, suratId, notes } = req.body;
 
         if (!type || !suratId) {
-            res.status(400).json({ success: false, error: 'type and suratId required' });
+            res.status(400).json({ success: false, error: 'type and suratId required', message: 'Pilih surat yang akan ditautkan.' });
             return;
         }
 
@@ -278,7 +280,7 @@ router.post('/:id/surat', canWriteMiddleware(), validateBody(linkSuratToDosirSch
                 { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
             );
         } else {
-            res.status(400).json({ success: false, error: 'Invalid type. Use masuk or keluar' });
+            res.status(400).json({ success: false, error: 'Invalid type. Use masuk or keluar', message: 'Jenis surat harus surat masuk atau surat keluar.' });
             return;
         }
 

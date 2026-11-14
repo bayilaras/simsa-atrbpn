@@ -238,7 +238,7 @@ describe('ArsipDetail - Ubah Metadata', () => {
             description: expect.stringMatching(/memerlukan persetujuan akses/),
         })))
         expect(screen.queryByText('Arsip Tidak Ditemukan')).not.toBeInTheDocument()
-        expect(screen.getAllByText('terbatas').length).toBeGreaterThan(0)
+        expect(screen.getAllByText('Terbatas').length).toBeGreaterThan(0)
     })
 
     it('mengunci tombol bila muat ulang ditolak 404 setelah kelas dinaikkan', async () => {

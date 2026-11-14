@@ -46,6 +46,7 @@ import {
     konfirmasiNomorJauh, nomorJauhDiAtas, nomorUrutDiketik, tahunDiLuarRentang, tahunUrutanBaru,
 } from '@/lib/surat-nomor-urut';
 import { dataSudahBerubah, versiDimuat } from '@/lib/data-sudah-berubah';
+import { adalahPesanValidasiUmum } from '@/lib/pesan-galat';
 import {
     MailOpen,
     ChevronLeft,
@@ -166,7 +167,7 @@ function uraikanGalatSimpan(err) {
     if (pesan.length > 0) {
         return { ringkasan: `Surat belum dapat disimpan. Periksa isian berikut: ${pesan.join('; ')}`, perIsian };
     }
-    const umum = err?.message && err.message !== 'Validation failed' ? err.message : '';
+    const umum = err?.message && !adalahPesanValidasiUmum(err.message) ? err.message : '';
     return { ringkasan: umum || 'Gagal menyimpan surat masuk. Periksa kembali isian Anda, lalu coba lagi.', perIsian };
 }
 
