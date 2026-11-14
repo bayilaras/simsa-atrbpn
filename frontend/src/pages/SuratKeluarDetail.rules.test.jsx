@@ -80,6 +80,15 @@ it('shows a multi-line perihal with its line breaks', async () => {
     expect(within(label.parentElement).getByText(/Rapat Koordinasi/)).toHaveClass('whitespace-pre-line')
 })
 
+it('shows multi-line approval notes in the history with their line breaks', async () => {
+    mocks.canWrite = true
+    mocks.getById.mockResolvedValue({ id: 'surat-id', nomorSurat: '008/2026', perihal: 'Riwayat catatan', unitKerjaId: 'unit-a', aksesMelalui: 'owner', approvalStatus: 'rejected' })
+    mocks.getHistory.mockResolvedValue([{ action: 'rejected', createdAt: '2026-11-10T03:00:00.000Z', userName: 'Penyetuju', notes: 'Perbaiki lampiran\nTambahkan paraf' }])
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    const catatan = await screen.findAllByText(/Tambahkan paraf/)
+    catatan.forEach((elemen) => expect(elemen).toHaveClass('whitespace-pre-line'))
+})
+
 it('breadcrumb Surat points to an existing list route', async () => {
     mocks.getById.mockResolvedValue({ id: 'surat-id', nomorSurat: '006/2026', perihal: 'Remah roti', unitKerjaId: 'unit-a', aksesMelalui: 'owner' })
     render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)

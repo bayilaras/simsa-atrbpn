@@ -24,6 +24,7 @@ const SKIP_FIELDS = new Set(['extractedText', 'password', 'currentPassword', 'ne
 /** Bidang isian multi-baris (textarea): tag tetap dibuang, baris baru dipertahankan (§5). */
 export const MULTILINE_FIELDS: ReadonlySet<string> = new Set([
     'instruction', 'instruksi', 'catatan', 'catatanPenyelesaian', 'alasan', 'keterangan', 'perihal',
+    'uraianBerkas', 'purpose', 'details', 'notes', 'reason', 'deskripsi', 'description',
 ]);
 
 /** Elemen yang isinya bukan teks bacaan; dibuang bersama isinya. */

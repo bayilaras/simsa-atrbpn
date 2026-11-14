@@ -73,7 +73,7 @@ export default function StorageLocationDetail() {
                             ['ID lokasi', location.id], ['Unit kerja', location.unitKerjaId],
                             ['Keterangan', location.description || '—'], ['Kapasitas', location.capacity ?? 'Tidak ditentukan'],
                             ['Jumlah arsip (termasuk sub-lokasi)', [location.arsipCount ?? location.currentCount ?? 0, rincianArsipLokasi(location)].filter(bagian => bagian !== '').join(': ')],
-                        ].map(([label, value]) => <div key={label}><dt className="text-sm text-muted-foreground">{label}</dt><dd className="mt-1 break-words font-medium">{value}</dd></div>)}
+                        ].map(([label, value]) => <div key={label}><dt className="text-sm text-muted-foreground">{label}</dt><dd className="mt-1 break-words font-medium whitespace-pre-line">{value}</dd></div>)}
                     </dl>
                     {/* Daftar arsip tampil per jenis: satu tautan per jenis bila keduanya ada. */}
                     {location.arsipMasukCount > 0 && location.arsipKeluarCount > 0 ? (

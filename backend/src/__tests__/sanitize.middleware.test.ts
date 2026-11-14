@@ -39,13 +39,20 @@ describe('sanitizeInput', () => {
             .toBe('1. Siapkan data\n2. Koordinasikan dengan PTEP\n\n3. Laporkan');
     });
 
-    it('mencakup persis bidang multi-baris §5 ditambah perihal (textarea)', () => {
-        expect([...MULTILINE_FIELDS].sort()).toEqual(['alasan', 'catatan', 'catatanPenyelesaian', 'instruction', 'instruksi', 'keterangan', 'perihal']);
+    it('mencakup persis bidang multi-baris §5 ditambah bidang lain yang berupa textarea', () => {
+        expect([...MULTILINE_FIELDS].sort()).toEqual([
+            'alasan', 'catatan', 'catatanPenyelesaian', 'description', 'deskripsi', 'details', 'instruction', 'instruksi',
+            'keterangan', 'notes', 'perihal', 'purpose', 'reason', 'uraianBerkas',
+        ]);
     });
 
     it('perihal mempertahankan baris baru dari isian multi-baris', () => {
         expect(jalankan({ perihal: 'Undangan\r\nRapat  Koordinasi <b>Tahap</b>\n\n\n\nII' }).perihal)
             .toBe('Undangan\nRapat Koordinasi Tahap\n\nII');
+    });
+
+    it.each(['uraianBerkas', 'purpose', 'details', 'notes', 'reason', 'deskripsi', 'description'])('%s (textarea) mempertahankan baris baru', (bidang) => {
+        expect(jalankan({ [bidang]: 'Baris  <b>satu</b>\r\nbaris dua' })[bidang]).toBe('Baris satu\nbaris dua');
     });
 
     it('bidang lain tetap diratakan menjadi satu baris', () => {

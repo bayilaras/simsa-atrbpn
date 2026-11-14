@@ -747,7 +747,7 @@ export default function SuratKeluarDetail() {
                                                     <span className="text-muted-foreground">{formatDate(item.createdAt)}</span>
                                                 </div>
                                                 <p>{item.userName || item.userRole || '-'}</p>
-                                                {item.notes && <p className="mt-1 text-muted-foreground">{item.notes}</p>}
+                                                {item.notes && <p className="mt-1 text-muted-foreground whitespace-pre-line">{item.notes}</p>}
                                             </div>
                                         ))}
                                     </div>
