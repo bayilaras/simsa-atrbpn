@@ -1,8 +1,10 @@
 # Backup Neon terenkripsi dan uji pemulihan
 
-**Status 12 September 2026:** database aktif sudah dimigrasikan menjadi 40 entri. Backup 39 sebelum upgrade dan backup 40 sesudahnya tersimpan dengan helper masing-masing. Gunakan helper sumber yang cocok dengan manifest; jangan memakai helper39 untuk backup database40. Detail snapshot, pengujian, dan bukti ada pada [laporan migrasi 0039](riwayat/MIGRASI_0039_2026-09-12.md).
+> **Halaman ini hanya untuk backup database manual dari workstation operator.** Backup terjadwal harian (database dan dokumen, beserta uji pulih) berjalan lewat workflow `operations-recovery.yml`; lihat [cadangan dan pemulihan](OPERATIONS_RECOVERY.md) dan [kondisi produksi](KONDISI_PRODUKSI.md). Untuk menghidupkan layanan dari backup, ikuti [runbook pemulihan produksi](RUNBOOK_PEMULIHAN_PRODUKSI.md).
 
-Perintah ini membuat **backup database sesuai permintaan operator**. Tidak ada jadwal otomatis, unggahan ke object storage, secret GitHub, atau perubahan layanan hosting. Komputer cukup hidup selama perintah berjalan; hal ini belum memenuhi kebutuhan backup cloud otomatis tanpa operator.
+Riwayat: pada 12 September 2026 database aktif dimigrasikan menjadi 40 entri, dengan backup 39 sebelum upgrade dan backup 40 sesudahnya, masing-masing memakai helper yang cocok. Gunakan selalu helper sumber yang cocok dengan manifest bundle. Detailnya ada di [laporan migrasi 0039](riwayat/MIGRASI_0039_2026-09-12.md).
+
+Perintah ini membuat **backup database sesuai permintaan operator**: tanpa jadwal, tanpa unggahan ke object storage, tanpa secret GitHub, dan tanpa perubahan layanan hosting. Komputer cukup hidup selama perintah berjalan. Kebutuhan backup otomatis tanpa operator dipenuhi workflow terjadwal di atas, bukan perintah ini.
 
 Backup mencakup database SIMSA, termasuk akun dan hash kata sandi, sesi, audit, serta referensi berkas. **Isi berkas di object storage, rahasia hosting, dan konfigurasi akun provider tidak termasuk.** Simpan bundle dan kunci secara privat dan terpisah. Salinan pada disk yang sama belum melindungi dari kehilangan disk.
 
@@ -96,7 +98,7 @@ Jika proses terputus atau target gagal dihentikan, jangan menghapus PID/direktor
 
 Tes unit/PGlite atau restore database disposable tidak membuktikan backup data Neon sebenarnya. Catat penerimaan nyata secara terpisah: waktu snapshot, commit/helper, hash bundle, kecocokan fingerprint, dan target sudah berhenti. Jangan menyalin isi baris, session, password, atau kunci ke laporan.
 
-Setelah backup dan restore nyata berhasil, operator tetap perlu memilih lokasi salinan di luar workstation, penanggung jawab, frekuensi backup, masa simpan dan pengujian berkala. Jadwal cloud dan unggahan privat belum dipasang oleh CLI ini. Netlify Scheduled Functions memiliki batas 30 detik sehingga bukan janji bahwa dump dan restore penuh akan selesai. GitHub Actions tidak digunakan sebagai runtime aplikasi atau jalur akses arsip. [Batas fungsi Netlify](https://docs.netlify.com/build/functions/configuration/), [ketentuan Actions](https://docs.github.com/en/site-policy/github-terms/github-terms-for-additional-products-and-features#actions).
+Bundle manual ini melengkapi backup terjadwal dan tidak menggantikannya. CLI ini sendiri tidak memasang jadwal maupun unggahan. Lokasi salinan di luar workstation, penanggung jawab, dan masa simpan dicatat di [kondisi produksi](KONDISI_PRODUKSI.md). GitHub Actions hanya menjalankan pekerjaan backup dan pemeriksaan; tidak dipakai sebagai runtime aplikasi atau jalur akses arsip ([ketentuan Actions](https://docs.github.com/en/site-policy/github-terms/github-terms-for-additional-products-and-features#actions)).
 
 Tes lokal terarah:
 

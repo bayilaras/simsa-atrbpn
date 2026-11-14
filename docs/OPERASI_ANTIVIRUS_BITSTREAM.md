@@ -7,7 +7,7 @@ Adaptor native memakai executable resmi, definisi bertanda tangan yang diperbaru
 setelah 24 jam, deadline serta batas memori; Preview aplikasi tidak menjalankannya.
 Aktivasi Production memerlukan hasil uji cloud lengkap, bukan hanya unit test.
 
-Bukti verifikasi pemindai on-demand berlaku 24 jam sejak definisi terakhir diperbarui. Pemindai yang dibangunkan memperbarui definisi lewat Freshclam begitu masa berlakunya tersisa kurang dari 13 jam (`MALWARE_DEFINITION_REFRESH_BEFORE_MS`); bila pembaruan lebih awal itu gagal, definisi yang masih sah tetap dipakai dan mirror resmi baru dicoba lagi satu jam kemudian. Definisi yang sudah kedaluwarsa tidak pernah dipakai. Pemicunya dua: **Vercel Cron** (`backend/vercel.json`, enam entri harian pukul 03:07, 07:07, 11:07, 15:07, 19:07, dan 23:07 UTC; paket Hobby mengizinkan tiap entri sekali sehari dengan presisi ±59 menit) memanggil `GET /api/operations/scanner-wake` dengan `Authorization: Bearer $CRON_SECRET`, dan workflow **SIMSA Operations Monitor** memanggil `POST /api/operations/scanner-wake` dengan `OPERATIONS_MONITOR_TOKEN` sebelum probe. Jadwal GitHub bersifat *best-effort* dan dapat tertunda berjam-jam, sehingga Vercel Cron menjadi pemicu utama. Backend membangunkan pemindai bila verifikasi hilang atau tersisa kurang dari 13 jam, atau bila ada berkas yang sudah lebih dari 10 menit menunggu pemindaian (berkas baru, percobaan ulang, pemindaian yang terputus, atau berkas bersih yang hash-nya belum terverifikasi; `SCAN_WAKE_WAITING_MINUTES`). Berkas surat lama berstatus `not_required` tidak dihitung. `CRON_SECRET` (acak, minimal 32 karakter) wajib diisi di environment Production `simsa-backend`; tanpa itu cron ditolak 401. Endpoint ini hanya mempercepat; ia tidak mengubah status antrean atau karantina.
+Bukti verifikasi pemindai on-demand berlaku 24 jam sejak definisi terakhir diperbarui. Pemindai yang dibangunkan memperbarui definisi lewat Freshclam begitu masa berlakunya tersisa kurang dari 13 jam (`MALWARE_DEFINITION_REFRESH_BEFORE_MS`); bila pembaruan lebih awal itu gagal, definisi yang masih sah tetap dipakai dan mirror resmi baru dicoba lagi satu jam kemudian. Definisi yang sudah kedaluwarsa tidak pernah dipakai. Pemicunya dua: **Vercel Cron** (`backend/vercel.json`, enam entri harian pukul 03:07, 07:07, 11:07, 15:07, 19:07, dan 23:07 UTC; jadwal ini disusun ketika produksi masih memakai paket Hobby, yang mengizinkan tiap entri sekali sehari dengan presisi ±59 menit, dan tetap dipakai di paket Pro) memanggil `GET /api/operations/scanner-wake` dengan `Authorization: Bearer $CRON_SECRET`, dan workflow **SIMSA Operations Monitor** memanggil `POST /api/operations/scanner-wake` dengan `OPERATIONS_MONITOR_TOKEN` sebelum probe. Jadwal GitHub bersifat *best-effort* dan dapat tertunda berjam-jam, sehingga Vercel Cron menjadi pemicu utama. Backend membangunkan pemindai bila verifikasi hilang atau tersisa kurang dari 13 jam, atau bila ada berkas yang sudah lebih dari 10 menit menunggu pemindaian (berkas baru, percobaan ulang, pemindaian yang terputus, atau berkas bersih yang hash-nya belum terverifikasi; `SCAN_WAKE_WAITING_MINUTES`). Berkas surat lama berstatus `not_required` tidak dihitung. `CRON_SECRET` (acak, minimal 32 karakter) wajib diisi di environment Production `simsa-backend`; tanpa itu cron ditolak 401. Endpoint ini hanya mempercepat; ia tidak mengubah status antrean atau karantina.
 
 Definisi yang sudah diperbarui hanya ada di `/tmp` instance yang memperbaruinya. Instance dingin mulai dari definisi bawaan build (`native-clamav-assets/manifest.json`, `verifiedAt` = waktu build), sehingga pada deployment yang berumur lebih dari 24 jam setiap pemindaian dingin harus mengunduh definisi dari `database.clamav.net`. Karena itu `/ready` membedakan:
 
@@ -80,14 +80,20 @@ proses API. Klaim database atomik memungkinkan beberapa replika API berjalan
 tanpa memindai job yang sama secara bersamaan.
 
 Vercel Serverless tidak boleh memakai mode `embedded`, karena timer proses dapat
-dibekukan setelah request. Konfigurasi API Vercel harus memakai:
+dibekukan setelah request. Konfigurasi API Vercel memakai salah satu dari dua
+runtime berikut; pada produksi dengan ClamAV aktif, runtime lain ditolak saat
+konfigurasi dimuat:
 
-```dotenv
-MALWARE_SCAN_WORKER_RUNTIME=external
-```
+- `MALWARE_SCAN_WORKER_RUNTIME=on-demand`: **dipakai produksi.** Pemindaian
+  berjalan di fungsi Vercel `api/internal-malware-scan.js` dengan ClamAV native,
+  tanpa server pemindai terpisah. Konfigurasinya ada di
+  [panduan Vercel dan Neon](DEPLOY_VERCEL_NEON.md#antivirus-native-sesuai-permintaan).
+- `MALWARE_SCAN_WORKER_RUNTIME=external`: worker persisten terpisah yang
+  terhubung ke `clamd` TCP, seperti dijelaskan di bawah.
 
-Kemudian jalankan image/build backend yang sama pada container/VM persisten di
-jaringan privat ClamAV dengan environment `external` dan perintah:
+Untuk runtime `external`, jalankan image/build backend yang sama pada
+container/VM persisten di jaringan privat ClamAV dengan environment `external`
+dan perintah:
 
 ```sh
 npm run build
@@ -101,9 +107,10 @@ batas aplikasi, dan patok image ClamAV dengan digest seperti contoh di atas;
 perubahan digest wajib disertai uji ulang.
 
 Untuk produksi dengan ClamAV aktif, worker wajib diaktifkan dan API pada Vercel
-memakai runtime `external`. Token Blob wajib tersedia. Host scanner eksplisit dan pengakuan
-jaringan tepercaya wajib pada proses yang benar-benar membuka koneksi ClamAV.
-Worker terpisah juga menolak dijalankan sebagai fungsi Vercel.
+memakai runtime `on-demand` (produksi saat ini) atau `external`. Token Blob wajib
+tersedia. Pada runtime `external`, host scanner eksplisit dan pengakuan jaringan
+tepercaya wajib pada proses yang benar-benar membuka koneksi ClamAV. Worker
+terpisah juga menolak dijalankan sebagai fungsi Vercel.
 
 Profil `internal` mengizinkan scanner dan worker sama-sama nonaktif dalam mode
 karantina tertutup. Pengecualian ini memungkinkan pengelolaan metadata sebelum

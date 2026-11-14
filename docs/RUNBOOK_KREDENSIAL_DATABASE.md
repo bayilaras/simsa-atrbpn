@@ -1,6 +1,6 @@
 # Runbook kredensial database dan rilis SIMSA
 
-Runbook ini mengatur di mana setiap kredensial produksi disimpan, cara memakainya saat rilis, cara merotasinya tanpa (atau dengan jeda sesingkat mungkin) gangguan layanan, dan cara memverifikasinya. Alat yang dipakai ada di `scripts/ops/`. Alat itu menggantikan helper yang sebelumnya disimpan di luar repository, di folder rilis (`rilis-neon.ps1`, `diag-neon.mjs`, `rotasi-migrasi.mjs`, `make-manifest.py`). Status per 6 November 2026: produksi backend C70 dan frontend C64 dari `main` `32a425a`, dengan journal 54 migrasi.
+Runbook ini mengatur di mana setiap kredensial produksi disimpan, cara memakainya saat rilis, cara merotasinya tanpa (atau dengan jeda sesingkat mungkin) gangguan layanan, dan cara memverifikasinya. Alat yang dipakai ada di `scripts/ops/`. Alat itu menggantikan helper yang sebelumnya disimpan di luar repository, di folder rilis (`rilis-neon.ps1`, `diag-neon.mjs`, `rotasi-migrasi.mjs`, `make-manifest.py`). Versi yang sedang berjalan di produksi, jumlah migrasinya, dan jadwal pekerjaan otomatis dicatat di [kondisi produksi](KONDISI_PRODUKSI.md); laporan setiap rilis ada di [`docs/rilis/`](rilis/README.md).
 
 Aturan dasar:
 
@@ -94,11 +94,11 @@ Wrapper memeriksa dependensi ini **sebelum** prompt muncul dan mencetak perintah
 ## Prosedur rilis
 
 1. **Pra-cek.** PR sudah di-merge ke `main` dan kelima check wajib hijau pada commit merge. Run `operations-recovery.yml` terakhir sukses. Produksi sehat (Operations Monitor).
-2. **Bila rilis memuat migrasi.** Backup harian tetap berjalan setelah merge ke `main` selama migrasi belum diterapkan, karena riwayat produksi sama dengan bagian awal journal. Sebelum migrasi:
+2. **Bila rilis memuat migrasi.** Backup harian tetap berjalan sesudah PR bermigrasi di-merge ke `main`, selama database produksi hanya tertinggal dari `main`. Backup itu masih memuat skema lama sampai migrasi diterapkan, jadi terapkan migrasi pada hari yang sama dengan merge. Sebelum migrasi:
    - buat branch Neon `pra-00xx-<tanggal>` dari branch produksi (Neon Console → Branches). Pada *Automatically delete branch after*, pilih 7 hari, karena bawaannya 1 hari;
    - pastikan backup terakhir dari rantai lama ada.
 
-   Paket Neon Free membatasi 10 branch per project, dan branch yang diarsipkan ikut dihitung. Sisakan minimal dua slot: satu untuk `pra-00xx`, satu untuk branch `<nama>_old_<waktu>` yang dibuat Neon saat restore. Bila slot penuh, buat snapshot manual lewat Backup & Restore (Free hanya menyimpan satu), lalu hapus snapshot itu setelah rilis stabil.
+   Jumlah branch per project dibatasi paket Neon yang aktif; periksa batasnya di Neon Console sebelum rilis bermigrasi. Catatan Oktober 2026, saat project memakai paket Free: batasnya 10 branch, dan branch yang diarsipkan ikut dihitung. Sisakan minimal dua slot: satu untuk `pra-00xx`, satu untuk branch `<nama>_old_<waktu>` yang dibuat Neon saat restore. Bila slot penuh, buat snapshot manual lewat Backup & Restore (jumlah snapshot manual juga dibatasi paket), lalu hapus snapshot itu setelah rilis stabil.
 
    Jangan menghubungkan integrasi Neon–Vercel ke project SIMSA mana pun. Integrasi itu membuat branch `preview/<git-branch>`, yaitu salinan penuh data produksi, untuk setiap deployment preview. Integrasi juga menaruh `DATABASE_URL` berisi password pemilik database di Vercel. Frontend tidak memakai database, dan backend memakai env yang diisi manual. Pada Oktober 2026, sembilan branch semacam itu memenuhi batas sehingga titik pulih pra-0052 tidak bisa dibuat. Integrasinya dihapus pada 2 November 2026.
 
@@ -155,7 +155,7 @@ PostgreSQL hanya mengenal satu password per role, dan kebijakan role yang sudah 
 
 ### simsa_backup
 
-Tidak ada gangguan bagi pengguna. Hindari jendela backup terjadwal (cron 15:30 UTC atau 22:30 WIB; GitHub sering baru memulainya beberapa jam kemudian).
+Tidak ada gangguan bagi pengguna. Hindari jendela backup terjadwal (cron 15:30 UTC atau 22:30 WIB; jadwal persisnya di `operations-recovery.yml`, dan run GitHub sering baru mulai beberapa jam kemudian).
 
 1. Jalankan `rilis-neon.ps1 -Action rotate-role -Role simsa_backup`. Output menampilkan `rotasi simsa_backup: ok` dan `login simsa_backup dengan password baru: ok`.
 2. **Segera** perbarui secret `NEON_BACKUP_DATABASE_URL` di env `production-recovery` dengan connection string dari password manager. Format: `postgresql://simsa_backup:<password ter-URL-encode>@<host direct>/<db>?sslmode=verify-full`. Hanya `sslmode=verify-full` dan opsional `channel_binding=require` yang diterima.

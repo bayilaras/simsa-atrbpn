@@ -65,8 +65,11 @@ instance.
    cocokkan dengan kesehatan database, worker, serta penyimpanan. `/health`
    menunjukkan proses HTTP hidup; `/ready` memeriksa ketergantungan dan dapat
    menunjukkan layanan berkas belum tersedia.
-4. **Pemulihan data:** gunakan prosedur backup dan verifikasi terpisah. Jangan
-   melakukan reset atau menjalankan bootstrap untuk menangani masalah runtime.
+4. **Pemulihan data:** gunakan prosedur backup dan verifikasi terpisah, serta
+   [runbook pemulihan produksi](RUNBOOK_PEMULIHAN_PRODUKSI.md) bila layanan
+   harus dihidupkan dari backup. Jangan melakukan reset atau menjalankan
+   bootstrap untuk menangani masalah runtime. Pegangan singkat per gejala ada di
+   [buku saku insiden](BUKU_SAKU_INSIDEN.md).
 
 ## Unggahan terputus dan pemrosesan OCR
 
@@ -123,9 +126,12 @@ lihat [cadangan dan pemulihan](OPERATIONS_RECOVERY.md). Backup manual database
 oleh operator mengikuti [backup Neon](BACKUP_NEON.md). Status backup dan restore
 terbaru tampil pada panel operasional Super Admin.
 
-Tidak ada pengiriman alarm ke pihak luar atau penjadwalan baru yang diaktifkan
-oleh perubahan ini. Batas waktu respons, jumlah pengguna bersamaan, toleransi
-kehilangan data, serta waktu pemulihan organisasi perlu ditetapkan bersama
+Kegagalan run backup dan monitor dilaporkan sebagai isu GitHub kepada pemantau
+repositori ([monitoring operasional](OPERASI_MONITORING.md#pemberitahuan-kegagalan)).
+Toleransi kehilangan data dari backup (RPO) sekitar 24 jam karena backup berjalan
+sekali sehari. Jendela pemulihan titik waktu Neon dan waktu pemulihan layanan
+(RTO) dicatat di [kondisi produksi](KONDISI_PRODUKSI.md#titik-pulih-dan-jendela-pemulihan).
+Batas waktu respons dan jumlah pengguna bersamaan masih perlu ditetapkan bersama
 pengelola berdasarkan pengukuran lingkungan tujuan.
 
 Acuan: [OWASP Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html)

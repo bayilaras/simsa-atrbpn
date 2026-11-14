@@ -95,6 +95,10 @@ Seed tester hanya untuk database uji.
 
 | Topik | Dokumen |
 | --- | --- |
+| Kondisi produksi saat ini (layanan, jadwal, pemantauan, bukti, peran) | [KONDISI_PRODUKSI.md](docs/KONDISI_PRODUKSI.md) |
+| Langkah saat terjadi gangguan | [BUKU_SAKU_INSIDEN.md](docs/BUKU_SAKU_INSIDEN.md) |
+| Menghidupkan layanan dari backup | [RUNBOOK_PEMULIHAN_PRODUKSI.md](docs/RUNBOOK_PEMULIHAN_PRODUKSI.md) |
+| Serah terima operator kedua | [SERAH_TERIMA_OPERATOR.md](docs/SERAH_TERIMA_OPERATOR.md) |
 | Rilis, kredensial database, dan rollback | [RUNBOOK_KREDENSIAL_DATABASE.md](docs/RUNBOOK_KREDENSIAL_DATABASE.md) |
 | Konfigurasi Vercel dan Neon | [DEPLOY_VERCEL_NEON.md](docs/DEPLOY_VERCEL_NEON.md) |
 | Menyiapkan database Neon baru | [PENYIAPAN_DATABASE_NEON.md](docs/PENYIAPAN_DATABASE_NEON.md) |

@@ -1,6 +1,7 @@
 # Status Deployment SIMSA — 29 Agustus 2026
 
 > **Arsip historis.** Laporan ini hanya berlaku untuk snapshot 29 Agustus 2026.
+> Kondisi produksi terkini ada di [kondisi produksi](KONDISI_PRODUKSI.md).
 > Untuk keputusan deployment saat ini gunakan `docs/DEPLOY_VERCEL_NEON.md`,
 > `docs/RUNBOOK_KREDENSIAL_DATABASE.md`, dan `docs/OPERATIONS_RECOVERY.md`.
 > Angka migrasi, test, serta langkah Vercel di bawah ini tidak boleh dipakai

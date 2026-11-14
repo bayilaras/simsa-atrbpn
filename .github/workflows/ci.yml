@@ -19,6 +19,23 @@ jobs:
     name: Lint & Type Check
     runs-on: ubuntu-24.04
 
+    # Throwaway PostgreSQL 18 for the document re-upload tool test: it migrates
+    # its own database and rewrites locators against the real guard triggers.
+    services:
+      postgres:
+        image: postgres:18-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af
+        env:
+          POSTGRES_USER: simsa_test
+          POSTGRES_PASSWORD: simsa_test_password
+          POSTGRES_DB: simsa_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U simsa_test -d simsa_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,12 +66,15 @@ jobs:
       - name: Test operations monitoring, recovery, and integrity contracts
         env:
           OPERATIONS_RECOVERY_TEST_PG_BIN: /usr/lib/postgresql/18/bin
+          # Superuser of the service container above (creates and drops its own databases).
+          TEST_POSTGRES_URL: postgresql://simsa_test:simsa_test_password@127.0.0.1:5432/simsa_test
         run: >-
           node --test
           scripts/check-operations.test.mjs
           scripts/operations-recovery.test.mjs
           scripts/operations-recovery-documents.test.mjs
           scripts/operations-recovery-extract.test.mjs
+          scripts/operations-recovery-reupload.test.mjs
           scripts/operations-recovery-target.test.mjs
           scripts/check-file-integrity.test.mjs
           scripts/ops/neon-role-rotation.postgres.test.mjs
