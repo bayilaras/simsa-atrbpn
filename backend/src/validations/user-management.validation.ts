@@ -29,6 +29,9 @@ export const updateUserSchema = z.object({
     isActive: z.boolean().optional(),
     jabatan: z.string().max(100).nullable().optional(),
     nip: z.string().max(30).nullable().optional(),
+    // The approval dialog's "Saya sudah memastikan langsung kepada pemilik
+    // email ini." Required to give a pending account a role.
+    ownerConfirmed: z.boolean().optional(),
 });
 
 // Params with userId. uuid() also accepts upper-case hex; Postgres returns

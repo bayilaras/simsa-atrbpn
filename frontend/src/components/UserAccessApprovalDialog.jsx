@@ -21,7 +21,7 @@ export function UserAccessApprovalDialog({ user, unitKerjaList, onClose, onAppro
         setSaving(true)
         setError('')
         try {
-            const result = await userManagementService.updateUser(user.id, { role, unitKerjaId: role === 'super_admin' ? null : unitKerjaId, isActive: true })
+            const result = await userManagementService.updateUser(user.id, { role, unitKerjaId: role === 'super_admin' ? null : unitKerjaId, isActive: true, ownerConfirmed: true })
             if (result?.success !== true) throw new Error('Persetujuan belum terkonfirmasi. Coba lagi.')
             onApproved(user)
         } catch (failure) {

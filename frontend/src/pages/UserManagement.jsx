@@ -542,10 +542,13 @@ export default function UserManagement() {
                                                 <DropdownMenuContent align="end" className="w-56">
                                                     <DropdownMenuLabel>Tindakan Pengguna</DropdownMenuLabel>
                                                     <DropdownMenuSeparator />
-                                                    <DropdownMenuItem onClick={() => handleEdit(user)}>
-                                                        <Edit2 className="h-4 w-4 mr-2" />
-                                                        Ubah Peran/Unit
-                                                    </DropdownMenuItem>
+                                                    {/* A pending account gets its role only through Setujui akses. */}
+                                                    {user.role !== 'user' && (
+                                                        <DropdownMenuItem onClick={() => handleEdit(user)}>
+                                                            <Edit2 className="h-4 w-4 mr-2" />
+                                                            Ubah Peran/Unit
+                                                        </DropdownMenuItem>
+                                                    )}
                                                     {/* Own password: Pengaturan. Pending identities are approved first. */}
                                                     {user.id !== currentUser?.id && user.role !== 'user' && (
                                                         <DropdownMenuItem onClick={() => setPasswordResetTarget(user)}>

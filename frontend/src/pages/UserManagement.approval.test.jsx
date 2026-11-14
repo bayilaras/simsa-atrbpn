@@ -82,7 +82,7 @@ describe('explicit approval of pending Google identities', () => {
         confirmOwner(dialog)
         expect(submit).toBeEnabled()
         fireEvent.click(submit)
-        await waitFor(() => expect(state.updateUser).toHaveBeenCalledWith('pending-1', { role: 'admin_unit', unitKerjaId: 'sesditjen', isActive: true }))
+        await waitFor(() => expect(state.updateUser).toHaveBeenCalledWith('pending-1', { role: 'admin_unit', unitKerjaId: 'sesditjen', isActive: true, ownerConfirmed: true }))
         expect(await screen.findByRole('status')).toHaveTextContent(/disetujui.*masuk kembali/i)
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
@@ -97,7 +97,7 @@ describe('explicit approval of pending Google identities', () => {
         expect(unit).toBeDisabled()
         confirmOwner(dialog)
         fireEvent.click(dialog.getByRole('button', { name: 'Setujui akses', exact: true }))
-        await waitFor(() => expect(state.updateUser).toHaveBeenCalledWith('pending-1', { role: 'super_admin', unitKerjaId: null, isActive: true }))
+        await waitFor(() => expect(state.updateUser).toHaveBeenCalledWith('pending-1', { role: 'super_admin', unitKerjaId: null, isActive: true, ownerConfirmed: true }))
     })
 
     it('keeps a failed approval open with its chosen mandate and permits retry', async () => {

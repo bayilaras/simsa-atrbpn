@@ -47,6 +47,15 @@ async function openReset(email = 'unit@example.test') {
     return within(await screen.findByRole('dialog', { name: ACTION }))
 }
 
+describe('pending accounts', () => {
+    it('are approved only through Setujui akses, never through Ubah Peran/Unit', async () => {
+        render(<UserManagement />)
+        expect(within(await row('pending@example.test')).queryByRole('menuitem', { name: 'Ubah Peran/Unit' })).not.toBeInTheDocument()
+        expect(within(await row('pending@example.test')).getByRole('button', { name: /Setujui akses/ })).toBeInTheDocument()
+        expect(within(await row('unit@example.test')).getByRole('menuitem', { name: 'Ubah Peran/Unit' })).toBeInTheDocument()
+    })
+})
+
 describe('unit names in user management', () => {
     it('names the unit a legacy role is bound to instead of showing its code', async () => {
         state.getUnitKerja.mockResolvedValue({ data: [{ id: 'ditjen', name: 'Direktorat Jenderal PTPP' }] })

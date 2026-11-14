@@ -112,6 +112,12 @@ describe('updateUserSchema', () => {
         expect(result.success).toBe(false);
     });
 
+    it('carries the owner confirmation of the approval dialog', () => {
+        const result = updateUserSchema.safeParse({ role: 'admin_unit', unitKerjaId: 'ditjen', ownerConfirmed: true });
+        expect(result.success && result.data.ownerConfirmed).toBe(true);
+        expect(updateUserSchema.safeParse({ ownerConfirmed: 'ya' }).success).toBe(false);
+    });
+
     it('accepts isActive boolean', () => {
         const result = updateUserSchema.safeParse({ isActive: false });
         expect(result.success).toBe(true);

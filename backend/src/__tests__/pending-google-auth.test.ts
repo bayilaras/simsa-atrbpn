@@ -211,7 +211,7 @@ it('revokes the old native cookie in the real approval transaction and requires 
         const [administrator]=await db.insert(schema.users).values({email:'approver@example.test',name:'Approver',role:'super_admin',unitKerjaId:null,isActive:true}).returning();
         await db.insert(schema.unitKerja).values({id:'ditjen',name:'Ditjen',code:'DITJEN'});
         const {userManagementService}=await import('../services/user-management.service');
-        const approved=await userManagementService.updateUser(original.user.id,{role:'admin_unit',unitKerjaId:'ditjen'},{userId:administrator.id,userEmail:administrator.email});
+        const approved=await userManagementService.updateUser(original.user.id,{role:'admin_unit',unitKerjaId:'ditjen',ownerConfirmed:true},{userId:administrator.id,userEmail:administrator.email});
         expect(approved).toMatchObject({role:'admin_unit',unitKerjaId:'ditjen',isActive:true});
         expect(await (await readOldSession()).json()).toBeNull();
         const audited=(await database.query("SELECT changes FROM audit_log WHERE action='update'")).rows;

@@ -29,7 +29,12 @@ export interface UpdateUserData {
     isActive?: boolean;
     jabatan?: string | null;
     nip?: string | null;
+    /** Sent only by the approval dialog after the owner of the email was confirmed. */
+    ownerConfirmed?: boolean;
 }
+
+export const PENDING_APPROVAL_CONFIRMATION_MESSAGE =
+    'Setujui akun ini melalui Setujui akses setelah memastikan langsung kepada pemilik emailnya.';
 
 export interface CreateUserData {
     email: string;
@@ -371,7 +376,14 @@ export const userManagementService = {
             if (data.role === 'admin_unit' && !data.unitKerjaId?.trim()) {
                 throw new ValidationError('Unit kerja wajib dipilih saat menyetujui Admin Unit.');
             }
+            // Anyone can sign up with a Google account; granting a role is an
+            // approval and needs the confirmation the approval dialog asks for.
+            if (data.role !== undefined && data.role !== 'user' && data.ownerConfirmed !== true) {
+                throw new ValidationError(PENDING_APPROVAL_CONFIRMATION_MESSAGE);
+            }
         }
+        const approvesPendingAccount = existingUser.role === 'user'
+            && data.role !== undefined && data.role !== 'user';
 
         if (auditContext?.userId === userId) {
             if (data.isActive === false && existingUser.isActive) {
@@ -488,7 +500,8 @@ export const userManagementService = {
                     jabatan: updatedUser.jabatan,
                     nip: updatedUser.nip,
                 },
-                fields: Object.keys(data),
+                fields: Object.keys(data).filter(field => field !== 'ownerConfirmed'),
+                ...(approvesPendingAccount ? { pemilikEmailDikonfirmasi: true } : {}),
             },
         }, tx);
 
