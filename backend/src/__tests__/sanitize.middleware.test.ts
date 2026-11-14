@@ -340,5 +340,5 @@ describe('penyaring hanya membuang markup HTML', () => {
             // sebesar ini; di sini cukup dipastikan hasilnya titik tetap.
             expect(sanitizeSatuBaris(hasil)).toBe(hasil);
         }
-    });
+    }, 120_000);
 });

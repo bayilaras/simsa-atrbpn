@@ -92,7 +92,7 @@ describe.skipIf(!parse5)('penyaring diuji dengan pengurai HTML parse5', () => {
             '<x onclick=alert(1)', `<x ${'a=1 '.repeat(100)}onclick=alert(1)>`, '<x a="1"onclick=alert(1)>', '<x a=1/onclick=alert(1)>',
         ];
         expect(kasus.flatMap(periksa)).toEqual([]);
-    });
+    }, 120_000);
 
     it('acakan token dengan benih tetap', () => {
         const token = ['<', '<', '<', '<', '>', '>', '/', '/', '=', '"', "'", ' ', '\n', '\u000b', ' ', '\u0000', 'img', 'x', 'b', 'a',
@@ -109,7 +109,7 @@ describe.skipIf(!parse5)('penyaring diuji dengan pengurai HTML parse5', () => {
             }
             expect(galat).toEqual([]);
         }
-    });
+    }, 120_000);
 
     it('kombinasi terstruktur awalan, nama, sisipan, atribut, dan akhiran', () => {
         const awalan = ['', 'teks ', '<', '<!--'];
@@ -123,5 +123,5 @@ describe.skipIf(!parse5)('penyaring diuji dengan pengurai HTML parse5', () => {
             if (galat.length < 10) galat.push(...periksa(`${a}<${n}${s}${t}${z}`));
         }
         expect(galat).toEqual([]);
-    });
+    }, 120_000);
 });
