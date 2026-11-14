@@ -93,8 +93,8 @@ export async function runRecovery(environment){
    report.backup.deliveryVerified=true;
   }finally{wrappingKey.fill(0);keys.fill(0);}
   stage='document_inventory';if(invalidDocumentBudget)throw invalidDocumentBudget;
-  const sql=await workspace.command('pg_restore',['--data-only','--schema=public','--table=file_attachments','--table=regulatory_rule_sets','--file=-'],{input:plain.archive,metadata:true,maximum:20*1024*1024});
-  let references;try{references=documentReferences(parseCopyTable(sql.toString(),'file_attachments'),parseCopyTable(sql.toString(),'regulatory_rule_sets'),{captureMissingHashes:environment.OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES==='true',limits});}finally{sql.fill(0);}
+  const sql=await workspace.command('pg_restore',['--data-only','--schema=public','--table=file_attachments','--table=regulatory_rule_sets','--table=autentikasi','--file=-'],{input:plain.archive,metadata:true,maximum:20*1024*1024});
+  let references;try{references=documentReferences(parseCopyTable(sql.toString(),'file_attachments'),parseCopyTable(sql.toString(),'regulatory_rule_sets'),{captureMissingHashes:environment.OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES==='true',limits,autentikasi:parseCopyTable(sql.toString(),'autentikasi')});}finally{sql.fill(0);}
   report.documentBudget=documentBudgetUsage(references,limits);
   const annotation=documentBudgetAnnotation(report.documentBudget);if(annotation&&environment.GITHUB_ACTIONS==='true')console.log(annotation);
   stage='document_backup';const documentDirectory=join(output,'documents');

@@ -6,7 +6,7 @@ Alur baru ada di `scripts/operations-recovery.mjs`. Alur ini membaca sumber Neon
 
 Database menggunakan snapshot konsisten, autentikasi bundle, hash helper, dan riwayat migrasi yang sama dengan jurnal checkout atau sama dengan bagian awalnya. Verifikasi pemulihan membandingkan semua hitungan tabel, hash isi, schema, constraints, indexes, triggers, routines, sequences, extensions, grants, locale, serta jurnal. Role API terbatas juga diuji. Role `simsa_worker` dipulihkan dengan batas izin existing dan password baru dalam RAM. Daftar login target restore (`RESTORE_LOGIN_ROLES` di `scripts/neon-database-policy.mjs`) dipakai bersama oleh pemulihan operasional dan `neon-backup.mjs restore-verify`, sehingga keduanya tidak dapat berbeda lagi.
 
-Dokumen mencakup seluruh `file_attachments` dan sumber privat `regulatory_rule_sets`. Lease unggahan bukan salinan dokumen tambahan; database tetap menyimpan seluruh metadata lease. Hash dan ukuran existing wajib cocok. Dokumen dengan hash null ditolak secara default. Operator dapat memilih `OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES=true` untuk mencatat hash byte pertama dalam manifest cadangan: ini **tidak mengubah database dan tidak membuktikan integritas historis yang sebelumnya tidak dicatat**. Hash malformed atau berbeda tetap ditolak.
+Dokumen mencakup seluruh `file_attachments`, sumber privat `regulatory_rule_sets`, dan PDF Berita Acara Autentikasi (`autentikasi.file_lampiran`, jenis `autentikasi` di manifest). Setiap run mengunduh ulang PDF tersebut dan mencocokkan hash serta ukurannya dengan yang tercatat, sama seperti dokumen lain; manifest lama tanpa jenis ini tetap dapat dipulihkan. Lease unggahan bukan salinan dokumen tambahan; database tetap menyimpan seluruh metadata lease. Hash dan ukuran existing wajib cocok. Dokumen dengan hash null ditolak secara default. Operator dapat memilih `OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES=true` untuk mencatat hash byte pertama dalam manifest cadangan: ini **tidak mengubah database dan tidak membuktikan integritas historis yang sebelumnya tidak dicatat**. Hash malformed atau berbeda tetap ditolak.
 
 Dokumen dan manifest dienkripsi AES-256-GCM, terikat pada hash arsip database. Pemulihan membaca ulang ciphertext, memeriksa autentikasi dan semua hash, lalu mengenkripsi ulang ke target baru. Gateway recovery loopback menguji unduhan dengan bearer acak, menolak akses anonim, dan dihentikan setelah selesai. Gateway ini tidak mewakili seluruh RBAC atau login Google aplikasi. Pengambilan dokumen melalui API aplikasi, bila dilakukan oleh operator, dicatat terpisah dari verifikasi gateway recovery.
 
@@ -75,7 +75,7 @@ Konsekuensinya, salinan jangka panjang **wajib** disimpan di luar GitHub: unduh 
 | Hasil | Isi |
 |---|---|
 | `database/simsa.dump` | Arsip `pg_dump` format custom, siap `pg_restore` ke PostgreSQL 18 kosong |
-| `dokumen/<entity_type>/<entity_id>/<nama file>` | Semua PDF asli; ukuran dan SHA-256 dicocokkan dengan manifest terautentikasi |
+| `dokumen/<entity_type>/<entity_id>/<nama file>` | Semua PDF asli; ukuran dan SHA-256 dicocokkan dengan manifest terautentikasi. Sumber regulasi dan Berita Acara Autentikasi ada di `dokumen/regulatory_source/<id>/` dan `dokumen/autentikasi/<id>/` |
 | `DAFTAR-DOKUMEN.csv` | Pemetaan PDF ke surat/arsip (`entity_type`, `entity_id`, nama file, hash, lokasi) |
 | `BACA-SAYA.txt`, `MANIFEST.sha256` | Ringkasan snapshot dan hash setiap file |
 
