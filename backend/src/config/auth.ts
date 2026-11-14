@@ -1,16 +1,18 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { createAuthMiddleware, APIError, getAuthoritativeSessionFromCtx } from 'better-auth/api';
+import { deleteSessionCookie } from 'better-auth/cookies';
 import { db } from './database';
 import { env } from './env';
 import { getTrustedOrigins, isTrustedOrigin } from './trusted-origins';
 import { hashCredentialPassword, verifyCredentialPassword } from './password-hashing.js';
-import { CREDENTIAL_PASSWORD_MAX_LENGTH, CREDENTIAL_PASSWORD_MIN_LENGTH } from './password-policy.js';
+import { CREDENTIAL_PASSWORD_MAX_LENGTH, CREDENTIAL_PASSWORD_MIN_LENGTH, newPasswordProblem } from './password-policy.js';
 import { buildGoogleOAuthConfig } from './google-oauth.js';
 import { createRateLimiterStore, usesSharedRateLimits } from './rate-limits.js';
 import { betterAuthIpOptions } from '../middlewares/better-auth-ip.middleware.js';
 import * as schema from '../db/schema';
 import { archiveAccessProvisioningIssue } from '../services/identity-user.service.js';
+import { recordAuthEvent, rememberSigningOutUser } from '../services/auth-audit.service.js';
 
 const deployedRuntime = usesSharedRateLimits();
 const googleConfig = buildGoogleOAuthConfig();
@@ -41,12 +43,26 @@ function resolveBaseURL(): string {
     return (configured || 'http://localhost:3001').replace(/\/+$/, '');
 }
 
+type AuthHookContext = Parameters<Parameters<typeof createAuthMiddleware>[0]>[0];
+
+// A refused Google sign-in returns to the login page, which explains the
+// error code. The client also asks for this page (errorCallbackURL); this
+// covers errors found before the requested page is known, e.g. an expired
+// sign-in state.
+function loginPageURL(): string | undefined {
+    try {
+        return new URL('/login', env.FRONTEND_URL).toString();
+    } catch {
+        return undefined;
+    }
+}
+
 // This origin guard is an additional boundary around Better Auth's built-in
 // state-cookie, PKCE and CSRF protections.
 // A browser always sends Origin (or at least Referer) on a cross-site POST, so rejecting
 // untrusted origins blocks login/sign-out CSRF, while origin-less traffic (OAuth redirects,
 // server-to-server calls through the proxy) keeps working as before.
-const originGuard = createAuthMiddleware(async (ctx) => {
+async function guardOrigin(ctx: AuthHookContext) {
     const request = ctx.request;
     if (!request) return;
 
@@ -70,6 +86,83 @@ const originGuard = createAuthMiddleware(async (ctx) => {
     }) !== null)) {
         throw new APIError('FORBIDDEN', { code: 'ACCESS_PENDING', message: 'Akun hanya dapat melihat status akses atau keluar. Hubungi administrator.' });
     }
+
+    // A password the user chooses follows the same rules as one a Super Admin
+    // sets. Sign-in is not checked: existing passwords keep working.
+    const body: unknown = ctx.body;
+    const newPassword = body && typeof body === 'object' ? (body as { newPassword?: unknown }).newPassword : undefined;
+    if (ctx.path === '/change-password' && current && typeof newPassword === 'string') {
+        const problem = newPasswordProblem(newPassword, current.user);
+        if (problem) throw new APIError('BAD_REQUEST', { code: 'PASSWORD_POLICY', message: problem });
+    }
+}
+
+// Every session follows the idle limit in `session` below. With
+// rememberMe=false Better Auth would instead issue a fixed one-day session
+// that use never extends and idleness never shortens.
+function idleLimitedSignIn(ctx: AuthHookContext) {
+    const body: unknown = ctx.body;
+    if (ctx.path !== '/sign-in/email' || !body || typeof body !== 'object') return;
+    if ((body as { rememberMe?: unknown }).rememberMe !== false) return;
+    return { context: { body: { ...body, rememberMe: true } } };
+}
+
+// Server-side idle limit. The client signs out after 30 minutes without
+// activity; the server allows 35 minutes and extends a session in use once
+// 5 minutes have passed since its last extension. A session extended up to
+// 5 minutes before the user's last action therefore still outlives the
+// client's automatic logout, and a session nobody uses (a browser closed
+// without signing out) ends 35 minutes after it was last extended.
+export const SESSION_EXPIRES_IN_SECONDS = 35 * 60;
+export const SESSION_UPDATE_AGE_SECONDS = 5 * 60;
+const SESSION_LIFETIME_MS = SESSION_EXPIRES_IN_SECONDS * 1000;
+// Clock and processing slack before a session counts as issued under the
+// previous, longer lifetime.
+const LEGACY_SESSION_SLACK_MS = 60 * 1000;
+
+// Recovery is a Super Admin reset; no reset email exists. The token form of
+// the reset callback carries its token in the path, which disabledPaths (exact
+// paths) cannot match, so it is refused here by its route.
+const DISABLED_ROUTES = ['/reset-password/:token'];
+
+const beforeAuthRequest = createAuthMiddleware(async (ctx) => {
+    if (DISABLED_ROUTES.includes(ctx.path)) throw new APIError('NOT_FOUND');
+    await guardOrigin(ctx);
+    await rememberSigningOutUser(ctx);
+    return idleLimitedSignIn(ctx);
+});
+
+/**
+ * Sessions issued before the idle limit last up to 24 hours. Better Auth only
+ * moves a session's updated_at when it is used (sign-in or extension), so
+ * updated_at is the latest moment the session is known to have been used; the
+ * old 4-hour extension interval means it can lag behind actual use. A session
+ * not known to be used within the idle limit ends now (an active user signs
+ * in once more); one used within it is cut to the idle limit and then slides
+ * like any new session.
+ */
+async function limitLegacySession(ctx: AuthHookContext) {
+    if (ctx.path !== '/get-session') return;
+    const returned = ctx.context.returned as { session?: { token?: string; expiresAt?: Date | string; updatedAt?: Date | string } } | null | undefined;
+    const session = returned?.session;
+    if (!session?.token || !session.expiresAt || !session.updatedAt) return;
+    const now = Date.now();
+    if (new Date(session.expiresAt).getTime() <= now + SESSION_LIFETIME_MS + LEGACY_SESSION_SLACK_MS) return;
+    if (!(now - new Date(session.updatedAt).getTime() <= SESSION_LIFETIME_MS)) {
+        await ctx.context.internalAdapter.deleteSession(session.token);
+        deleteSessionCookie(ctx);
+        return ctx.json(null);
+    }
+    const expiresAt = new Date(now + SESSION_LIFETIME_MS);
+    await ctx.context.internalAdapter.updateSession(session.token, { expiresAt });
+    return ctx.json({ ...returned, session: { ...session, expiresAt } });
+}
+
+// Sign-ins (email and Google), failed email sign-ins, sign-outs and changes
+// of one's own password reach the Audit Log.
+const afterAuthRequest = createAuthMiddleware(async (ctx) => {
+    await recordAuthEvent(ctx);
+    return limitLegacySession(ctx);
 });
 
 export const auth = betterAuth({
@@ -120,9 +213,13 @@ export const auth = betterAuth({
         },
     },
     trustedOrigins: getTrustedOrigins(),
-    // The application never calls this endpoint over HTTP, and it has no
-    // dedicated burst rule.
-    disabledPaths: ['/verify-password'],
+    onAPIError: {
+        errorURL: loginPageURL(),
+    },
+    // The application never calls these endpoints over HTTP. Password checks
+    // have no dedicated burst rule, and recovery is a Super Admin reset, not
+    // a reset email (see DISABLED_ROUTES for the token form).
+    disabledPaths: ['/verify-password', '/request-password-reset', '/reset-password', '/reset-password/:token'],
     // Better Auth's per-endpoint burst policies share atomic counters too.
     // Express separately enforces the longer login-attempt window at admission.
     // The sign-in bursts are counted per network, so an office NAT gets room
@@ -135,9 +232,13 @@ export const auth = betterAuth({
             '/sign-in/social': { window: 10, max: 10 },
         },
     },
+    // Idle limit (see SESSION_EXPIRES_IN_SECONDS). Each request through
+    // authMiddleware also renews the cookie of an extended session. The cookie
+    // cache stays off, so every check reads the session row and an expired
+    // or revoked session is refused at once.
     session: {
-        expiresIn: 60 * 60 * 24, // 24 hours — hardened for government document security
-        updateAge: 60 * 60 * 4,  // 4 hours — refresh session more frequently
+        expiresIn: SESSION_EXPIRES_IN_SECONDS,
+        updateAge: SESSION_UPDATE_AGE_SECONDS,
     },
     user: {
         validateUserInfo: async ({ user, source }) => {
@@ -176,7 +277,8 @@ export const auth = betterAuth({
         },
     },
     hooks: {
-        before: originGuard,
+        before: beforeAuthRequest,
+        after: afterAuthRequest,
     },
     databaseHooks: {
         user: {

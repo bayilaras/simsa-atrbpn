@@ -196,15 +196,22 @@ describe('Super Admin password reset', () => {
         expect(await credentialRows(USER.google)).toEqual([]);
     });
 
-    it('applies the Better Auth password bounds without echoing the value', async () => {
-        const tooShort = await resetRequest(USER.unit, superAdminCookie, { newPassword: 'pendek7' }).expect(400);
-        expect(tooShort.body.message).toBe('Kata sandi minimal 8 karakter');
-        expect(JSON.stringify(tooShort.body)).not.toContain('pendek7');
+    it('applies the rules for new passwords without echoing the value', async () => {
+        const tooShort = await resetRequest(USER.unit, superAdminCookie, { newPassword: 'pendek-11ch' }).expect(400);
+        expect(tooShort.body.message).toBe('Kata sandi minimal 12 karakter.');
+        expect(JSON.stringify(tooShort.body)).not.toContain('pendek-11ch');
 
         const tooLong = 'p'.repeat(129);
         const long = await resetRequest(USER.unit, superAdminCookie, { newPassword: tooLong }).expect(400);
-        expect(long.body.message).toBe('Kata sandi maksimal 128 karakter');
+        expect(long.body.message).toBe('Kata sandi maksimal 128 karakter.');
         expect(JSON.stringify(long.body)).not.toContain(tooLong);
+
+        // The account's own email (admin-unit@…) and name (Admin Unit).
+        const withEmail = await resetRequest(USER.unit, superAdminCookie, { newPassword: 'x-admin-unit-2026' }).expect(400);
+        expect(withEmail.body.message).toBe('Kata sandi tidak boleh memuat bagian depan alamat email (sebelum tanda @).');
+        const withName = await resetRequest(USER.unit, superAdminCookie, { newPassword: 'kantor-ADMIN-2026' }).expect(400);
+        expect(withName.body.message).toBe('Kata sandi tidak boleh memuat nama pengguna.');
+        expect(JSON.stringify(withName.body)).not.toContain('kantor-ADMIN-2026');
 
         await resetRequest(USER.unit, superAdminCookie, {}).expect(400);
         await resetRequest('bukan-uuid', superAdminCookie).expect(400);
@@ -257,7 +264,7 @@ describe('Super Admin password reset', () => {
         expect((await currentSession(cookieHeader(fresh)))?.user?.id).toBe(USER.unit);
 
         const audit = await database.query<{ user_id: string; action: string; entity_type: string; changes: any }>(
-            `SELECT user_id, action, entity_type, changes FROM audit_log WHERE entity_id = $1`, [USER.unit],
+            `SELECT user_id, action, entity_type, changes FROM audit_log WHERE entity_id = $1 AND action = 'update'`, [USER.unit],
         );
         expect(audit.rows).toHaveLength(1);
         expect(audit.rows[0]).toMatchObject({
@@ -324,7 +331,7 @@ describe('Super Admin password reset', () => {
         expect((await signIn(EMAIL.upperCase, PASSWORD.reset)).status).toBe(200);
 
         const audit = await database.query<{ changes: any }>(
-            'SELECT changes FROM audit_log WHERE entity_id = $1', [USER.upperCase],
+            "SELECT changes FROM audit_log WHERE entity_id = $1 AND action = 'update'", [USER.upperCase],
         );
         expect(audit.rows).toHaveLength(1);
         expect(audit.rows[0].changes.after).toMatchObject({ credentialAccount: 'diperbarui' });
@@ -346,5 +353,29 @@ describe('Super Admin password reset', () => {
             { issuer: 'local:credential', account_id: USER.googleUpperCase, password: expect.any(String) },
         ]);
         expect((await signIn(EMAIL.googleUpperCase, PASSWORD.reset)).status).toBe(200);
+    });
+
+    // Runs last: it approves the pending identity the cases above rely on.
+    it('approves a pending identity through the plain update only with the owner confirmation', async () => {
+        const update = (body: object) => request(app)
+            .put(`/api/users/${USER.pending}`)
+            .set('Cookie', `${superAdminCookie}; csrf-token=${CSRF}`)
+            .set('X-CSRF-Token', CSRF)
+            .send(body);
+        const role = async () => (await database.query<{ role: string }>('SELECT role FROM users WHERE id = $1', [USER.pending])).rows[0].role;
+
+        const refused = await update({ role: 'admin_unit', unitKerjaId: 'sesditjen', isActive: true }).expect(400);
+        expect(refused.body.message).toBe('Setujui akun ini melalui Setujui akses setelah memastikan langsung kepada pemilik emailnya.');
+        await update({ role: 'super_admin', unitKerjaId: null, ownerConfirmed: false }).expect(400);
+        expect(await role()).toBe('user');
+
+        await update({ role: 'admin_unit', unitKerjaId: 'sesditjen', isActive: true, ownerConfirmed: true }).expect(200);
+        expect(await role()).toBe('admin_unit');
+        const audit = await database.query<{ changes: any }>(
+            "SELECT changes FROM audit_log WHERE entity_id = $1 AND action = 'update'", [USER.pending],
+        );
+        expect(audit.rows).toHaveLength(1);
+        expect(audit.rows[0].changes).toMatchObject({ pemilikEmailDikonfirmasi: true, after: { role: 'admin_unit', unitKerjaId: 'sesditjen' } });
+        expect(audit.rows[0].changes.fields).not.toContain('ownerConfirmed');
     });
 });

@@ -47,6 +47,30 @@ async function openReset(email = 'unit@example.test') {
     return within(await screen.findByRole('dialog', { name: ACTION }))
 }
 
+describe('pending accounts', () => {
+    it('are approved only through Setujui akses, never through Ubah Peran/Unit', async () => {
+        render(<UserManagement />)
+        expect(within(await row('pending@example.test')).queryByRole('menuitem', { name: 'Ubah Peran/Unit' })).not.toBeInTheDocument()
+        expect(within(await row('pending@example.test')).getByRole('button', { name: /Setujui akses/ })).toBeInTheDocument()
+        expect(within(await row('unit@example.test')).getByRole('menuitem', { name: 'Ubah Peran/Unit' })).toBeInTheDocument()
+    })
+})
+
+describe('unit names in user management', () => {
+    it('names the unit a legacy role is bound to instead of showing its code', async () => {
+        state.getUnitKerja.mockResolvedValue({ data: [{ id: 'ditjen', name: 'Direktorat Jenderal PTPP' }] })
+        state.listUsers.mockResolvedValue({
+            data: [{ id: 'lama-1', email: 'lama@example.test', name: 'Admin Lama', role: 'admin_dirjen', unitKerjaId: 'ditjen', isActive: true }],
+            pagination: { total: 1, totalPages: 1 },
+        })
+        render(<UserManagement />)
+        await waitFor(() => expect(state.getUnitKerja).toHaveBeenCalled())
+        fireEvent.click(within(await row('lama@example.test')).getByRole('menuitem', { name: 'Ubah Peran/Unit' }))
+        expect(await screen.findByText('Unit Direktorat Jenderal PTPP ditetapkan otomatis oleh mandat peran.')).toBeInTheDocument()
+        expect(screen.queryByText(/Unit ditjen ditetapkan/)).not.toBeInTheDocument()
+    })
+})
+
 describe('Super Admin password reset', () => {
     it('offers the action for other approved accounts only', async () => {
         render(<UserManagement />)
@@ -62,10 +86,11 @@ describe('Super Admin password reset', () => {
         const password = dialog.getByLabelText('Kata sandi baru')
         const confirmation = dialog.getByLabelText('Konfirmasi kata sandi baru')
         expect(password).toHaveAttribute('maxLength', '128')
+        expect(password).toHaveAccessibleDescription(/Minimal 12 karakter.*Minta pegawai mengganti kata sandi ini di Pengaturan › Profil setelah masuk pertama kali\./)
         fireEvent.change(password, { target: { value: 'pendek7' } })
         fireEvent.change(confirmation, { target: { value: 'pendek7' } })
         fireEvent.click(dialog.getByRole('button', { name: ACTION }))
-        expect(await dialog.findByRole('alert')).toHaveTextContent('Kata sandi minimal 8 karakter.')
+        expect(await dialog.findByRole('alert')).toHaveTextContent('Kata sandi minimal 12 karakter.')
         fireEvent.change(password, { target: { value: 'sintetis-baru-01' } })
         fireEvent.change(confirmation, { target: { value: 'sintetis-baru-02' } })
         fireEvent.click(dialog.getByRole('button', { name: ACTION }))

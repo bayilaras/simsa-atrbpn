@@ -1,6 +1,7 @@
 // API Configuration
 import { clearOfflineStorage } from '../lib/offline-storage';
 import { API_BASE_URL } from '../lib/api-url';
+import { alamatMasukSetelahSesiDitolak, catatKontakServer } from '../lib/sesi-masuk';
 
 export { API_BASE_URL };
 
@@ -293,12 +294,14 @@ export class ApiClient {
             // 401 Unauthorized — session expired or invalid
             if (response.status === 401) {
                 console.warn('[API] Session expired — redirecting to login');
+                // The login page explains a session that ended for lack of use.
+                const loginUrl = alamatMasukSetelahSesiDitolak();
                 // Purge legacy offline data before handing the workstation to a
                 // subsequent user. This also covers server-side session expiry.
                 try {
                     await scope.run(() => clearOfflineStorage());
                 } finally {
-                    window.location.href = '/login';
+                    window.location.href = loginUrl;
                 }
                 throw createApiError('Sesi telah berakhir. Silakan login kembali.', response, errorBody);
             }
@@ -337,6 +340,8 @@ export class ApiClient {
                 errorBody,
             );
         }
+
+        catatKontakServer();
 
         // File consumers sometimes need Content-Disposition or a bounded stream.
         // Return it only after applying the same auth/error handling as JSON.

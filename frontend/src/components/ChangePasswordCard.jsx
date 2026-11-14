@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
-import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, newPasswordError } from '@/lib/password-policy'
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_RULES_HINT, newPasswordError } from '@/lib/password-policy'
 import { authService } from '@/services/auth.service'
 
 // Better Auth mengirim kode galat berbahasa Inggris; tampilkan padanannya.
@@ -57,7 +57,7 @@ function PasswordField({ id, label, value, onChange, visible, onToggle, autoComp
  * Ubah kata sandi sendiri untuk akun email+kata sandi. Akun yang hanya masuk
  * dengan Google tidak memiliki kata sandi SIMSA, jadi formulir tidak ditampilkan.
  */
-export function ChangePasswordCard() {
+export function ChangePasswordCard({ owner }) {
     const { toast } = useToast()
     // null: belum diketahui, mis. daftar metode masuk gagal dimuat. Formulir
     // tetap tampil karena server sendiri menolak akun tanpa kata sandi.
@@ -85,7 +85,7 @@ export function ChangePasswordCard() {
         if (saving) return
         const invalid = !current
             ? 'Masukkan kata sandi saat ini.'
-            : newPasswordError(next, confirmation)
+            : newPasswordError(next, confirmation, owner)
                 || (next === current ? 'Kata sandi baru harus berbeda dari kata sandi saat ini.' : '')
         setError(invalid)
         if (invalid) return
@@ -159,7 +159,7 @@ export function ChangePasswordCard() {
                         />
                     </div>
                     <p id="settings-new-password-hint" className="text-xs text-muted-foreground">
-                        {PASSWORD_MIN_LENGTH} sampai {PASSWORD_MAX_LENGTH} karakter.
+                        {PASSWORD_RULES_HINT}
                     </p>
                     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
                     <div className="flex justify-end">

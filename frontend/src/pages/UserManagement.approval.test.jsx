@@ -25,6 +25,7 @@ beforeEach(() => {
     state.updateUser.mockResolvedValue({ success: true })
 })
 afterEach(cleanup)
+const confirmOwner = dialog => fireEvent.click(dialog.getByRole('checkbox', { name: 'Saya sudah memastikan langsung kepada pemilik email ini.' }))
 async function openApproval() {
     render(<UserManagement />)
     await screen.findByText('pending@example.test')
@@ -73,8 +74,15 @@ describe('explicit approval of pending Google identities', () => {
         fireEvent.change(role, { target: { value: 'admin_unit' } })
         expect(submit).toBeDisabled()
         fireEvent.change(dialog.getByRole('combobox', { name: 'Unit kerja untuk persetujuan' }), { target: { value: 'sesditjen' } })
+        // The email is shown in full, and its owner must have been confirmed in person.
+        expect(dialog.getByText('pending@example.test')).toHaveClass('font-semibold', 'break-all')
+        expect(submit).toBeDisabled()
         fireEvent.click(submit)
-        await waitFor(() => expect(state.updateUser).toHaveBeenCalledWith('pending-1', { role: 'admin_unit', unitKerjaId: 'sesditjen', isActive: true }))
+        expect(state.updateUser).not.toHaveBeenCalled()
+        confirmOwner(dialog)
+        expect(submit).toBeEnabled()
+        fireEvent.click(submit)
+        await waitFor(() => expect(state.updateUser).toHaveBeenCalledWith('pending-1', { role: 'admin_unit', unitKerjaId: 'sesditjen', isActive: true, ownerConfirmed: true }))
         expect(await screen.findByRole('status')).toHaveTextContent(/disetujui.*masuk kembali/i)
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
@@ -87,8 +95,9 @@ describe('explicit approval of pending Google identities', () => {
         fireEvent.change(unit, { target: { value: 'ditjen' } })
         fireEvent.change(role, { target: { value: 'super_admin' } })
         expect(unit).toBeDisabled()
+        confirmOwner(dialog)
         fireEvent.click(dialog.getByRole('button', { name: 'Setujui akses', exact: true }))
-        await waitFor(() => expect(state.updateUser).toHaveBeenCalledWith('pending-1', { role: 'super_admin', unitKerjaId: null, isActive: true }))
+        await waitFor(() => expect(state.updateUser).toHaveBeenCalledWith('pending-1', { role: 'super_admin', unitKerjaId: null, isActive: true, ownerConfirmed: true }))
     })
 
     it('keeps a failed approval open with its chosen mandate and permits retry', async () => {
@@ -96,6 +105,7 @@ describe('explicit approval of pending Google identities', () => {
         const dialog = await openApproval()
         fireEvent.change(dialog.getByRole('combobox', { name: 'Peran untuk persetujuan' }), { target: { value: 'admin_unit' } })
         fireEvent.change(dialog.getByRole('combobox', { name: 'Unit kerja untuk persetujuan' }), { target: { value: 'ditjen' } })
+        confirmOwner(dialog)
         fireEvent.click(dialog.getByRole('button', { name: 'Setujui akses', exact: true }))
         expect(await dialog.findByRole('alert')).toHaveTextContent('Server tidak tersedia')
         expect(dialog.getByRole('combobox', { name: 'Unit kerja untuk persetujuan' })).toHaveValue('ditjen')

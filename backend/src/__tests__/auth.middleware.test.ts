@@ -41,8 +41,16 @@ function createMockRes(): Response {
     const res: Partial<Response> = {
         status: vi.fn().mockReturnThis() as any,
         json: vi.fn().mockReturnThis() as any,
+        append: vi.fn().mockReturnThis() as any,
     };
     return res as Response;
+}
+
+// auth.api.getSession({ returnHeaders: true }) answers with the cookies it set.
+function sessionLookup(session: unknown, setCookies: string[] = []) {
+    const headers = new Headers();
+    for (const cookie of setCookies) headers.append('set-cookie', cookie);
+    return { headers, response: session };
 }
 
 const mockNext: NextFunction = vi.fn();
@@ -61,7 +69,7 @@ describe('authMiddleware', () => {
     });
 
     it.each(['unit-a', null, '', '   '])('uses DB admin_unit assignment and blocks incomplete unit %s', async unitKerjaId => {
-        (auth.api.getSession as any).mockResolvedValue({ user: { id: 'user-1', role: 'super_admin' } });
+        (auth.api.getSession as any).mockResolvedValue(sessionLookup({ user: { id: 'user-1', role: 'super_admin' } }));
         (db.select as any).mockReturnValue({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({
             limit: vi.fn().mockResolvedValue([{ ...mockUser, role: 'admin_unit', unitKerjaId }]),
         }) }) });
@@ -78,7 +86,7 @@ describe('authMiddleware', () => {
 
     it('should attach user to req and call next() when session is valid', async () => {
         // Arrange
-        (auth.api.getSession as any).mockResolvedValue({ user: { id: 'user-1' } });
+        (auth.api.getSession as any).mockResolvedValue(sessionLookup({ user: { id: 'user-1' } }));
         (db.select as any).mockReturnValue({
             from: vi.fn().mockReturnValue({
                 where: vi.fn().mockReturnValue({
@@ -100,7 +108,7 @@ describe('authMiddleware', () => {
 
     it('should return 401 when no session exists', async () => {
         // Arrange
-        (auth.api.getSession as any).mockResolvedValue(null);
+        (auth.api.getSession as any).mockResolvedValue(sessionLookup(null));
 
         const req = createMockReq();
         const res = createMockRes();
@@ -116,7 +124,7 @@ describe('authMiddleware', () => {
 
     it('should return 401 when user not found in database', async () => {
         // Arrange
-        (auth.api.getSession as any).mockResolvedValue({ user: { id: 'unknown-user' } });
+        (auth.api.getSession as any).mockResolvedValue(sessionLookup({ user: { id: 'unknown-user' } }));
         (db.select as any).mockReturnValue({
             from: vi.fn().mockReturnValue({
                 where: vi.fn().mockReturnValue({
@@ -152,7 +160,7 @@ describe('authMiddleware', () => {
     });
 
     it('should deny an unprovisioned default user', async () => {
-        (auth.api.getSession as any).mockResolvedValue({ user: { id: 'user-1' } });
+        (auth.api.getSession as any).mockResolvedValue(sessionLookup({ user: { id: 'user-1' } }));
         (db.select as any).mockReturnValue({
             from: vi.fn().mockReturnValue({
                 where: vi.fn().mockReturnValue({
@@ -172,7 +180,7 @@ describe('authMiddleware', () => {
     });
 
     it('should fail closed for an unknown database role', async () => {
-        (auth.api.getSession as any).mockResolvedValue({ user: { id: 'user-1' } });
+        (auth.api.getSession as any).mockResolvedValue(sessionLookup({ user: { id: 'user-1' } }));
         (db.select as any).mockReturnValue({
             from: vi.fn().mockReturnValue({
                 where: vi.fn().mockReturnValue({
@@ -192,7 +200,7 @@ describe('authMiddleware', () => {
     });
 
     it('should deny staff without an assigned unit kerja', async () => {
-        (auth.api.getSession as any).mockResolvedValue({ user: { id: 'user-1' } });
+        (auth.api.getSession as any).mockResolvedValue(sessionLookup({ user: { id: 'user-1' } }));
         (db.select as any).mockReturnValue({
             from: vi.fn().mockReturnValue({
                 where: vi.fn().mockReturnValue({
@@ -208,6 +216,39 @@ describe('authMiddleware', () => {
 
         expect(res.status).toHaveBeenCalledWith(403);
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Unit kerja required' }));
+        expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('asks for the session with its cookies and renews the cookie of an extended session', async () => {
+        const renewed = 'better-auth.session_token=synthetic.signed; Max-Age=1800; Path=/; HttpOnly; SameSite=Lax';
+        (auth.api.getSession as any).mockResolvedValue(sessionLookup({ user: { id: 'user-1' } }, [renewed]));
+        (db.select as any).mockReturnValue({
+            from: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue([mockUser]),
+                }),
+            }),
+        });
+
+        const req = createMockReq();
+        const res = createMockRes();
+        await authMiddleware(req, res, mockNext);
+
+        expect(auth.api.getSession).toHaveBeenCalledWith(expect.objectContaining({ returnHeaders: true }));
+        expect(res.append).toHaveBeenCalledExactlyOnceWith('Set-Cookie', renewed);
+        expect(mockNext).toHaveBeenCalledOnce();
+    });
+
+    it('clears the cookie of an expired session while refusing the request', async () => {
+        const cleared = 'better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax';
+        (auth.api.getSession as any).mockResolvedValue(sessionLookup(null, [cleared]));
+
+        const req = createMockReq();
+        const res = createMockRes();
+        await authMiddleware(req, res, mockNext);
+
+        expect(res.append).toHaveBeenCalledExactlyOnceWith('Set-Cookie', cleared);
+        expect(res.status).toHaveBeenCalledWith(401);
         expect(mockNext).not.toHaveBeenCalled();
     });
 });

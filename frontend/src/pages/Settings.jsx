@@ -344,7 +344,7 @@ export default function Settings() {
                         </CardContent>
                     </Card>
 
-                    <ChangePasswordCard />
+                    <ChangePasswordCard owner={user} />
                 </TabsContent>
 
                 <TabsContent value="preferences" className="mt-0">

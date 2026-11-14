@@ -54,6 +54,36 @@ describe('canonical account assignments', () => {
         await waitFor(() => expect(mocks.createUser).toHaveBeenCalledWith(expect.objectContaining({ role: 'admin_unit', unitKerjaId: 'unit-a' })))
     })
 
+    it('explains the password rules in Tambah Pengguna and checks them before calling the server', async () => {
+        render(<UserManagement />)
+        await waitFor(() => expect(mocks.getUnitKerja).toHaveBeenCalled())
+        fireEvent.click(screen.getByRole('button', { name: 'Tambah Pengguna', exact: true }))
+        const dialog = within(await screen.findByRole('dialog'))
+        const password = dialog.getByLabelText('Kata sandi')
+        expect(password).toHaveAccessibleDescription(/Minimal 12 karakter, tidak memuat nama atau bagian depan email pengguna, dan bukan kata sandi yang umum\./)
+        expect(password).toHaveAccessibleDescription(/Minta pegawai mengganti kata sandi ini di Pengaturan › Profil setelah masuk pertama kali\./)
+        expect(password).toHaveAccessibleDescription(/akun tanpa kata sandi hanya dapat masuk dengan Google/)
+
+        fireEvent.change(dialog.getByLabelText(/^Email/), { target: { value: 'siti.rahma@example.test' } })
+        fireEvent.change(dialog.getByLabelText(/^Nama Lengkap/), { target: { value: 'Siti Rahmawati' } })
+        fireEvent.change(dialog.getByRole('combobox', { name: 'Unit kerja pengguna baru' }), { target: { value: 'unit-a' } })
+        const submit = dialog.getByRole('button', { name: 'Tambah Pengguna' })
+        for (const [value, message] of [
+            ['sebelas-chr', 'Kata sandi minimal 12 karakter.'],
+            ['kantor-rahmawati-7', 'Kata sandi tidak boleh memuat nama pengguna.'],
+            ['x-siti.rahma-2026', 'Kata sandi tidak boleh memuat bagian depan alamat email (sebelum tanda @).'],
+            ['Password1234', 'Kata sandi ini terlalu umum dan mudah ditebak. Pilih kata sandi lain.'],
+        ]) {
+            fireEvent.change(password, { target: { value } })
+            fireEvent.click(submit)
+            expect(await dialog.findByRole('alert')).toHaveTextContent(message)
+        }
+        expect(mocks.createUser).not.toHaveBeenCalled()
+        fireEvent.change(password, { target: { value: 'lemari-arsip-biru-7' } })
+        fireEvent.click(submit)
+        await waitFor(() => expect(mocks.createUser).toHaveBeenCalledWith(expect.objectContaining({ password: 'lemari-arsip-biru-7' })))
+    })
+
     it('keeps account management unavailable to a unit administrator', () => {
         mocks.user = { id: 'unit-1', role: 'admin_unit', unitKerjaId: 'unit-a' }
         render(<UserManagement />)

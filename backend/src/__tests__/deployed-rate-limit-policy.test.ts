@@ -366,7 +366,7 @@ describe('deployed rate limit policy', { timeout: 30_000 }, () => {
             'x-forwarded-for': '203.0.113.99, 198.51.100.1',
         }), auth.options)).toBe('192.0.2.10');
         expect(auth.options.advanced?.ipAddress?.ipv6Subnet).toBe(56);
-        expect(auth.options.disabledPaths).toEqual(['/verify-password']);
+        expect(auth.options.disabledPaths).toEqual(['/verify-password', '/request-password-reset', '/reset-password', '/reset-password/:token']);
         expect(auth.options.rateLimit?.customRules).toEqual({
             '/sign-in/email': { window: 10, max: 10 },
             '/sign-in/social': { window: 10, max: 10 },

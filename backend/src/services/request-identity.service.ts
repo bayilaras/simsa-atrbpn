@@ -1,4 +1,4 @@
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 export interface VerifiedRequestIdentity {
     subject: string;
@@ -14,12 +14,20 @@ export interface VerifiedRequestIdentity {
 // One session lookup per request: the rate limiter and authMiddleware share
 // it. A rejected lookup is dropped so a later caller can retry.
 const identityLookups = new WeakMap<Request, Promise<VerifiedRequestIdentity | null>>();
+// Session cookies Better Auth set during a lookup: the renewed cookie of a
+// session it extended, or the removal of an expired one.
+const sessionCookies = new WeakMap<Request, string[]>();
 
 async function lookupRequestIdentity(
     req: Request,
 ): Promise<VerifiedRequestIdentity | null> {
     const { auth } = await import('../config/auth.js');
-    const session = await auth.api.getSession({ headers: req.headers as any });
+    const { headers, response: session } = await auth.api.getSession({
+        headers: req.headers as any,
+        returnHeaders: true,
+    });
+    const cookies = headers?.getSetCookie() ?? [];
+    if (cookies.length > 0) sessionCookies.set(req, cookies);
     if (!session) return null;
     const { user } = session;
     return {
@@ -43,4 +51,16 @@ export function verifyRequestIdentity(
         if (identityLookups.get(req) === lookup) identityLookups.delete(req);
     });
     return lookup;
+}
+
+/**
+ * Passes the session cookie from this request's lookup on to the browser.
+ * The cookie lives exactly as long as the session, so a session extended
+ * while the browser keeps an older cookie would still end for the user.
+ */
+export function forwardSessionCookies(req: Request, res: Response): void {
+    const cookies = sessionCookies.get(req);
+    if (!cookies) return;
+    sessionCookies.delete(req);
+    for (const cookie of cookies) res.append('Set-Cookie', cookie);
 }
