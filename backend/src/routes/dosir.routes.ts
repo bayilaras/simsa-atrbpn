@@ -120,7 +120,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
         );
 
         if (!data) {
-            res.status(404).json({ success: false, error: 'Dosir not found' });
+            res.status(404).json({ success: false, error: 'Dosir tidak ditemukan atau sudah dihapus.' });
             return;
         }
 
@@ -148,7 +148,7 @@ router.get('/:id/timeline', async (req: AuthRequest, res: Response) => {
         );
 
         if (!timeline) {
-            res.status(404).json({ success: false, error: 'Dosir not found' });
+            res.status(404).json({ success: false, error: 'Dosir tidak ditemukan atau sudah dihapus.' });
             return;
         }
 

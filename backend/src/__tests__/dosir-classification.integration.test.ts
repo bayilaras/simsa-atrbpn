@@ -206,6 +206,14 @@ describe('DELETE /api/dosir/:id', () => {
     });
 });
 
+describe('dosir yang tidak ada', () => {
+    it('detail dan linimasa menjawab 404 dengan pesan berbahasa Indonesia', async () => {
+        const harapan = { success: false, error: 'Dosir tidak ditemukan atau sudah dihapus.' };
+        expect((await request(app).get(`/api/dosir/${ACAK}`).set(sebagai(admin)).expect(404)).body).toEqual(harapan);
+        expect((await request(app).get(`/api/dosir/${ACAK}/timeline`).set(sebagai(admin)).expect(404)).body).toEqual(harapan);
+    });
+});
+
 describe('kode dosir unik per unit', () => {
     const tahun = new Date().getFullYear();
     const buat = (judul: string) => request(app).post('/api/dosir').set(sebagai(admin)).send({ judul });
