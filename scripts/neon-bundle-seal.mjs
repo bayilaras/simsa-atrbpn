@@ -5,6 +5,11 @@ import { encryptBuffer, decryptBuffer, sha256, requireCondition as check } from 
 
 export const NEON_BACKUP_FORMAT = 'simsa-neon-backup-v1';
 function mac(body,key) { return createHmac('sha256',key).update(NEON_BACKUP_FORMAT + '\0' + JSON.stringify(body)).digest('hex'); }
+// `migrations` is the checkout journal the backup was made with. A source that
+// was behind it records how many of those migrations it had applied; bundles
+// without the count were only made from a source identical to the journal.
+const appliedCount = body => body.applied_migration_count === undefined ? body.migrations?.length : body.applied_migration_count;
+export const appliedMigrations = body => body.migrations.slice(0, appliedCount(body));
 export function sealNeonBundle({ metadata, runId, key, archive, evidence }) {
   check(archive.subarray(0,5).toString('ascii') === 'PGDMP', 'Dump is not a PostgreSQL custom archive');
   const sealedArchive = encryptBuffer(archive,key,runId,'archive'), sealedEvidence = encryptBuffer(evidence,key,runId,'evidence');
@@ -20,7 +25,8 @@ export function openNeonBundle(bundle,key) {
     && /^ep-[a-z0-9-]+(?:\.[a-z0-9-]+)+\.neon\.tech$/.test(body.source?.host)
     && !body.source.host.split('.')[0].endsWith('-pooler') && /^[a-z][a-z0-9_]{2,62}$/.test(body.source.database)
     && !['postgres','template0','template1'].includes(body.source.database) && body.source.role === 'simsa_backup' && body.source.major === 18
-    && Number.isFinite(Date.parse(body.snapshot_at)) && Array.isArray(body.migrations) && body.helpers && Object.values(body.helpers).every(h => /^[a-f0-9]{64}$/.test(h)), 'Unsupported backup manifest');
+    && Number.isFinite(Date.parse(body.snapshot_at)) && Array.isArray(body.migrations) && body.helpers && Object.values(body.helpers).every(h => /^[a-f0-9]{64}$/.test(h))
+    && Number.isSafeInteger(appliedCount(body)) && appliedCount(body) >= 1 && appliedCount(body) <= body.migrations.length, 'Unsupported backup manifest');
   check(sha256(bundle.archive) === body.archive_sha256 && sha256(bundle.evidence) === body.evidence_sha256, 'Encrypted artifact hash mismatch');
   const archive = decryptBuffer(bundle.archive,key,body.run_id,'archive');
   try {

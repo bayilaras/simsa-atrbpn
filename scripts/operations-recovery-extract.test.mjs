@@ -16,12 +16,12 @@ const attachment = { id: '00000000-0000-4000-8000-000000000001', entity_type: 's
   file_name: 'Undangan Rapat: 10/2026.pdf', file_url: 'https://teststore123.private.blob.vercel-storage.com/surat-masuk/abc.pdf',
   sha256: sha256(pdf), size_bytes: String(pdf.length), storage_access: 'private' };
 
-async function syntheticDelivery() {
+async function syntheticDelivery(metadata = {}, autentikasi = []) {
   const root = await mkdtemp(join(tmpdir(), 'simsa-extract-unit-')), directory = join(root, 'artifact');
   const runId = 'c'.repeat(32), databaseKey = randomBytes(32), documentKey = randomBytes(32), archiveSha256 = sha256(archive);
   const bundle = sealNeonBundle({ runId, key: databaseKey, archive, evidence: Buffer.from('table_count\tx\t1\n'), metadata: {
     source: { host: 'ep-synthetic-123456.us-east-2.aws.neon.tech', database: 'simsa_test', role: 'simsa_backup', major: 18 },
-    snapshot_at: '2026-10-09T00:15:00.000Z', migrations: [{ tag: '0050_example' }, { tag: '0051_example' }], helpers: { 'scripts/x.mjs': 'd'.repeat(64) } } });
+    snapshot_at: '2026-10-09T00:15:00.000Z', migrations: [{ tag: '0050_example' }, { tag: '0051_example' }], helpers: { 'scripts/x.mjs': 'd'.repeat(64) }, ...metadata } });
   await mkdir(join(directory, 'database'), { recursive: true });
   await writeFile(join(directory, 'database/manifest.json'), JSON.stringify(bundle.manifest));
   await writeFile(join(directory, 'database/database.dump.aesgcm'), bundle.archive);
@@ -30,7 +30,7 @@ async function syntheticDelivery() {
   const keys = Buffer.from(JSON.stringify({ databaseKeyRecord: JSON.stringify({ run_id: runId, key_base64: databaseKey.toString('base64') }), documentKeyBase64: documentKey.toString('base64') }));
   await writeFile(join(directory, 'recovery-keys.aesgcm'), seal(keys, wrapping, `simsa-recovery-keys-v1:${archiveSha256}`));
   await writeFile(join(directory, 'key-envelope.json'), JSON.stringify({ schemaVersion: 1, kdf: 'scrypt', N: 32768, r: 8, p: 1, saltBase64: salt.toString('base64'), archiveSha256 }));
-  await backupDocuments({ references: documentReferences([attachment], []), token, directory: join(directory, 'documents'), key: documentKey,
+  await backupDocuments({ references: documentReferences([attachment], [], { autentikasi }), token, directory: join(directory, 'documents'), key: documentKey,
     sourceSnapshotAt: '2026-10-09T00:15:00.000Z', archiveSha256, fetchImpl: async () => new Response(pdf, { status: 200 }) });
   return { root, directory };
 }
@@ -47,6 +47,24 @@ test('extracts the database dump and every PDF with verified hashes, outside the
   for (const line of (await readFile(join(output, 'MANIFEST.sha256'), 'utf8')).trim().split('\n')) {
     const [hash, file] = line.split('  '); assert.equal(sha256(await readFile(join(output, ...file.split('/')))), hash);
   }
+});
+
+test('a Berita Acara Autentikasi PDF is opened beside the letters and listed as autentikasi', async () => {
+  const baId = '00000000-0000-4000-8000-0000000000b1';
+  const { root, directory } = await syntheticDelivery({}, [{ id: baId, file_lampiran: 'https://teststore123.private.blob.vercel-storage.com/autentikasi/BA_Autentikasi_BA_001-x1.pdf',
+    file_lampiran_sha256: sha256(pdf), file_lampiran_size_bytes: String(pdf.length) }]);
+  const output = join(root, 'hasil'), summary = await extractDelivery({ directory, output, passphrase });
+  assert.deepEqual([summary.documents, summary.references], [2, 2]);
+  const path = `dokumen/autentikasi/${baId}/BA_Autentikasi_BA_001-x1.pdf`;
+  assert.deepEqual(await readFile(join(output, ...path.split('/'))), pdf);
+  assert.match(await readFile(join(output, 'DAFTAR-DOKUMEN.csv'), 'utf8'), new RegExp(`\\r\\nautentikasi,,,${baId},,${pdf.length},${sha256(pdf)},${path}\\r\\n`));
+});
+
+test('a backup of a database behind the checkout journal names its own last migration', async () => {
+  const { root, directory } = await syntheticDelivery({ applied_migration_count: 1 }), output = join(root, 'hasil');
+  const summary = await extractDelivery({ directory, output, passphrase });
+  assert.deepEqual([summary.migrations, summary.lastMigration], [1, '0050_example']);
+  assert.match(await readFile(join(output, 'BACA-SAYA.txt'), 'utf8'), /Migrasi terakhir {8}: 0050_example \(1 migrasi\)/);
 });
 
 test('wrong passphrase writes nothing', async () => {

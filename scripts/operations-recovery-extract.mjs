@@ -10,7 +10,7 @@ import { mkdir, readFile, writeFile, lstat } from 'node:fs/promises';
 import { join, resolve, relative, isAbsolute, dirname, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { boundedFile } from './neon-backup-runtime.mjs';
-import { openNeonBundle } from './neon-bundle-seal.mjs';
+import { openNeonBundle, appliedMigrations } from './neon-bundle-seal.mjs';
 import { unwrapRecoveryKeys } from './operations-recovery-keys.mjs';
 import { unseal, sha256 } from './operations-recovery-documents.mjs';
 
@@ -96,7 +96,7 @@ export async function extractDelivery({ directory, passphrase, output, repositor
       manifest.objects.find(row => row.url === ref.url).sha256, pathByUrl.get(ref.url)]);
     await write('DAFTAR-DOKUMEN.csv', Buffer.from('﻿' + [header, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n', 'utf8'));
 
-    const migrations = plain.body.migrations;
+    const migrations = appliedMigrations(plain.body);
     const summary = { sourceSnapshotAt: plain.body.snapshot_at, archiveSha256: metadata.archiveSha256, migrations: migrations.length,
       lastMigration: migrations.at(-1)?.tag ?? null, documents: manifest.objects.length, references: manifest.references.length,
       documentBytes: manifest.objects.reduce((sum, row) => sum + row.sizeBytes, 0), output };

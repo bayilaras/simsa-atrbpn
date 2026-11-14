@@ -53,7 +53,9 @@ test('Vercel routes explicitly use the gated Node function and Fluid Compute', (
     // least two further attempts after a failed definition refresh, and
     // re-prove a newly promoted deployment within about five hours.
     const hours = [3, 7, 11, 15, 19, 23];
-    assert.deepEqual(config.crons, hours.map(hour => ({ path: '/api/operations/scanner-wake', schedule: `7 ${hour} * * *` })));
+    // One daily run (01:37 WIB) deletes direct uploads whose lease expired unused.
+    assert.deepEqual(config.crons, [...hours.map(hour => ({ path: '/api/operations/scanner-wake', schedule: `7 ${hour} * * *` })),
+        { path: '/api/operations/upload-reconcile', schedule: '37 18 * * *' }]);
     for (const { schedule } of config.crons) assert.match(schedule, /^\d{1,2} \d{1,2} \* \* \*$/, 'Hobby crons must run at most once a day');
     assert.equal(config.functions['api/internal-malware-scan.js'].maxDuration, 300);
     assert.equal(config.functions['api/internal-malware-scan.js'].includeFiles, '{dist-vercel/workers,native-clamav-assets}/**');

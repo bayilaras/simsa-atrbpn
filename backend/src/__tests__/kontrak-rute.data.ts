@@ -243,6 +243,8 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'GET /probe': 'bukan-rekaman',
         'POST /scanner-wake': 'bukan-rekaman',
         'GET /scanner-wake': 'bukan-rekaman',
+        // Cron: hanya lease unggahan langsung yang kedaluwarsa tanpa dipakai.
+        'GET /upload-reconcile': 'bukan-rekaman',
         'POST /storage-latency': 'bukan-rekaman',
         'GET /status': 'bukan-rekaman',
         'GET /metrics': 'bukan-rekaman',
@@ -250,6 +252,8 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'GET /scan-failures': 'bukan-rekaman',
         'POST /scan-failures/requeue': 'bukan-rekaman',
         'POST /scan-failures/:attachmentId/requeue': 'bukan-rekaman',
+        // Super Admin saja: membangunkan pemindai, tanpa membaca atau mengubah berkas.
+        'POST /scanner-run': 'bukan-rekaman',
     },
     'penyusutan.routes.ts': {
         'GET /print/daftar-arsip-aktif': proyeksi('printTemplateService.generateDaftarArsipAktif'),
@@ -486,6 +490,7 @@ export const TANPA_SESI: Record<string, Record<string, string>> = {
         'GET /probe': 'token otomasi (Bearer), bukan sesi',
         'POST /scanner-wake': 'token otomasi (Bearer), bukan sesi',
         'GET /scanner-wake': 'token otomasi (Bearer), bukan sesi',
+        'GET /upload-reconcile': 'token otomasi (Bearer), bukan sesi',
         'POST /storage-latency': 'token otomasi (Bearer), bukan sesi',
     },
 };
