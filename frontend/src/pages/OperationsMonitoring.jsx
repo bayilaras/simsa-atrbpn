@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import api from '@/services/api';
+import { umumkanStatusOperasional } from '@/lib/operations-status';
 
 const statuses = {
     healthy: { label: 'Sehat', className: 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200' },
@@ -121,7 +122,7 @@ export default function OperationsMonitoring() {
         setLoading(true); setError(false);
         try {
             const result = await api.get('/api/operations/status', {}, { signal: controller.signal });
-            if (!controller.signal.aborted) setSnapshot(result.data);
+            if (!controller.signal.aborted) { setSnapshot(result.data); umumkanStatusOperasional(result.data?.status); }
         } catch {
             if (!controller.signal.aborted) { setSnapshot(null); setError(true); }
         } finally {

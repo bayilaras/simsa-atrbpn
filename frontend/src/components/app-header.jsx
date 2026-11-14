@@ -30,6 +30,7 @@ import settingsService from '@/services/settings.service'
 import { notificationRoute } from '@/lib/notification-routing'
 import { useAppConfig } from '@/context/app-config-context'
 import { useNotificationUnitScope } from '@/hooks/use-notification-unit-scope'
+import { OperationsStatusIndicator } from '@/components/OperationsStatusIndicator'
 
 // Role label mapping for display in Indonesian
 const ROLE_LABELS = {
@@ -165,6 +166,9 @@ export function AppHeader() {
                     <Search className="h-4 w-4" />
                     <span className="sr-only">Cari surat, arsip</span>
                 </Button>
+
+                {/* Super Admin only: shown while operations monitoring is not healthy */}
+                <OperationsStatusIndicator />
 
                 {/* Theme and text-size preferences */}
                 <DropdownMenu>

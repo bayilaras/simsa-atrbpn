@@ -19,6 +19,17 @@ describe('operational monitoring', () => {
         expect(screen.getByText('Gagal')).toBeInTheDocument();
         expect(screen.getByRole('link', { name: /Buka status CI/ })).toHaveAttribute('href', snapshot.ciUrl);
     });
+    it('shares each loaded status with the header indicator', async () => {
+        const heard = [];
+        const listen = event => heard.push(event.detail.status);
+        window.addEventListener('simsa:status-operasional', listen);
+        try {
+            get.mockResolvedValue({ data: snapshot });
+            render(<OperationsMonitoring />);
+            await screen.findByText('Belum ada bukti terverifikasi.');
+            expect(heard).toEqual(['attention']);
+        } finally { window.removeEventListener('simsa:status-operasional', listen); }
+    });
     it('removes old healthy status when refresh fails and offers retry', async () => {
         get.mockResolvedValueOnce({ data: { ...snapshot, status: 'healthy', checks: [{ id: 'database', label: 'Database', status: 'healthy', message: 'Terhubung' }] } })
             .mockRejectedValueOnce(new Error('private credential error'))
