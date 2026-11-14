@@ -232,8 +232,8 @@ export const dashboardService = {
             keluarBulanIni: (keluarByMonth.get(currentMonth) || 0) as number,
             monthlyTrend,
             statusBreakdown: {
-                masuk: masukStatusBreakdown.map((s: any) => ({ status: s.status || 'Unknown', count: s.count })),
-                keluar: keluarJenisBreakdown.map((s: any) => ({ status: s.status || 'Unknown', count: s.count })),
+                masuk: masukStatusBreakdown.map((s: any) => ({ status: s.status || 'Tanpa keterangan', count: s.count })),
+                keluar: keluarJenisBreakdown.map((s: any) => ({ status: s.status || 'Tanpa keterangan', count: s.count })),
             },
         };
     },
