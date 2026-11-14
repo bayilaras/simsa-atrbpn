@@ -13,6 +13,9 @@ import { jakartaDate } from '../utils/jakarta-date.js';
 
 const log = createLogger('ExportRoutes');
 
+const PESAN_GAGAL_EXCEL = 'Gagal mengekspor ke Excel. Silakan coba lagi.';
+const PESAN_GAGAL_PDF = 'Gagal mengekspor ke PDF. Silakan coba lagi.';
+
 const router = Router();
 
 // Apply rate limiting to all export routes
@@ -54,7 +57,7 @@ router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
             return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
         }
         log.error({ err: error }, 'Error exporting Surat Masuk to Excel:');
-        res.status(500).json({ error: 'Failed to export to Excel' });
+        res.status(500).json({ error: PESAN_GAGAL_EXCEL });
     }
 });
 
@@ -90,7 +93,7 @@ router.get('/surat-masuk/pdf', async (req: AuthRequest, res: Response) => {
             return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
         }
         log.error({ err: error }, 'Error exporting Surat Masuk to PDF:');
-        res.status(500).json({ error: 'Failed to export to PDF' });
+        res.status(500).json({ error: PESAN_GAGAL_PDF });
     }
 });
 
@@ -127,7 +130,7 @@ router.get('/surat-keluar/excel', async (req: AuthRequest, res: Response) => {
             return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
         }
         log.error({ err: error }, 'Error exporting Surat Keluar to Excel:');
-        res.status(500).json({ error: 'Failed to export to Excel' });
+        res.status(500).json({ error: PESAN_GAGAL_EXCEL });
     }
 });
 
@@ -162,7 +165,7 @@ router.get('/surat-keluar/pdf', async (req: AuthRequest, res: Response) => {
             return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
         }
         log.error({ err: error }, 'Error exporting Surat Keluar to PDF:');
-        res.status(500).json({ error: 'Failed to export to PDF' });
+        res.status(500).json({ error: PESAN_GAGAL_PDF });
     }
 });
 
@@ -200,7 +203,7 @@ router.get('/arsip/excel', async (req: AuthRequest, res: Response) => {
             return res.status(error.statusCode).json({ error: error.code, message: error.message });
         }
         log.error({ err: error }, 'Error exporting Arsip to Excel:');
-        res.status(500).json({ error: 'Failed to export to Excel' });
+        res.status(500).json({ error: PESAN_GAGAL_EXCEL });
     }
 });
 
@@ -236,7 +239,7 @@ router.get('/arsip/pdf', async (req: AuthRequest, res: Response) => {
             return res.status(error.statusCode).json({ error: error.code, message: error.message });
         }
         log.error({ err: error }, 'Error exporting Arsip to PDF:');
-        res.status(500).json({ error: 'Failed to export to PDF' });
+        res.status(500).json({ error: PESAN_GAGAL_PDF });
     }
 });
 

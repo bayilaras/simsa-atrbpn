@@ -187,12 +187,12 @@ router.get('/export/:type/:format', exportLimiter, permissionMiddleware('reports
         const { year, tanggalDari, tanggalSampai, arsipType, mediaType } = req.query;
 
         if (!unitKerjaId) {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'Unit kerja wajib dipilih.' });
             return;
         }
 
         if (!['surat-masuk', 'surat-keluar', 'arsip'].includes(type) || !['excel', 'pdf'].includes(format)) {
-            res.status(400).json({ error: 'Invalid report type' });
+            res.status(400).json({ error: 'Jenis laporan tidak dikenal.' });
             return;
         }
         // The arsip report filters (Akan Kadaluarsa/Permanen/Musnah, media) are
@@ -255,7 +255,7 @@ router.get('/export/:type/:format', exportLimiter, permissionMiddleware('reports
                 res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
             }
         } else {
-            res.status(400).json({ error: 'Invalid report type' });
+            res.status(400).json({ error: 'Jenis laporan tidak dikenal.' });
             return;
         }
 
@@ -269,7 +269,7 @@ router.get('/export/:type/:format', exportLimiter, permissionMiddleware('reports
             return;
         }
         log.error({ err: error }, 'Error exporting report:');
-        res.status(500).json({ error: 'Failed to export report' });
+        res.status(500).json({ error: 'Gagal mengekspor laporan. Silakan coba lagi.' });
     }
 });
 

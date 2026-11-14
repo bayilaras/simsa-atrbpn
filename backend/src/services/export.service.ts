@@ -4,7 +4,7 @@ import { suratMasukService, SuratMasukFilters } from './surat-masuk.service';
 import { suratKeluarService, SuratKeluarFilters } from './surat-keluar.service';
 import { arsipService, ArsipFilters } from './arsip.service';
 import { ASAL_NASKAH_LABEL, resolveBalasanLabels } from './export-balasan';
-import { namaUnitPengolah } from './export-unit-pengolah.js';
+import { namaUnitBaris, namaUnitPengolah, namaUnitPerBaris } from './export-unit-pengolah.js';
 import { sifatSuratLabel } from './sifat-surat.js';
 import { jenisFormulirArsip, lengkapiJenisPenyusutanLama, saringFormulirArsip } from './arsip-fase.js';
 import { barisFormulirArsip, rincianItemDicetak, totalFormulirArsip, uraianFormulir6, type BarisFormulirArsip } from './export-formulir-baris.js';
@@ -12,6 +12,7 @@ import { AppError } from '../utils/errors.js';
 import { loadExcelJS, loadPdfKit } from '../utils/lazy-libraries.js';
 import { tanggalCetakWib, waktuWib } from '../utils/waktu-wib.js';
 import { batasBawahPdf, lebarPenuh, tinggiBarisPdf, tulisBarisPdf } from './export-pdf-tabel.js';
+import { klasifikasiSuratKeluar, labelKelasKeamanan, labelSifatSuratMasuk, labelStatusSuratMasuk } from './export-label.js';
 
 export const PESAN_FORMULIR6_KOSONG = 'Belum ada arsip inaktif untuk filter ini. Arsip masuk Formulir 6 setelah masa aktifnya berakhir menurut JRA dan pemicu retensi yang terverifikasi, atau setelah pemindahannya dicatat di SIMSA melalui modul Penyusutan. Pemindahan yang dilakukan di luar SIMSA tidak mengubah daftar ini.';
 
@@ -32,6 +33,21 @@ export interface OpsiEksporSurat {
 
 const keteranganTahun = (tahun: number | undefined, opsi: OpsiEksporSurat) =>
     opsi.keteranganPeriode || `Tahun ${tahun || 'Semua'}`;
+
+/** Klasifikasi surat keluar di PDF: kode dan nama, seperti halaman detail. */
+const teksKlasifikasiSuratKeluar = (item: Parameters<typeof klasifikasiSuratKeluar>[0]) => {
+    const { kode, nama } = klasifikasiSuratKeluar(item);
+    return [kode, nama].filter(Boolean).join(' - ');
+};
+
+/** Jangka simpan dan nasib akhir Formulir 6, sama di Excel dan PDF. */
+const jangkaSimpanFormulir6 = (item: any) => [
+    item.masaSimpanAktif ? `Aktif: ${item.masaSimpanAktif}` : '',
+    item.masaSimpanInaktif ? `Inaktif: ${item.masaSimpanInaktif}` : '',
+    item.hasilAkhir ? `Nasib: ${item.hasilAkhir}` : '',
+].filter(Boolean).join('\n');
+
+const kategoriFormulir6 = (item: any) => (item.jenisArsip === 'masuk' ? 'Surat Masuk' : 'Surat Keluar');
 
 export interface ExportOptions {
     format: 'excel' | 'pdf';
@@ -78,6 +94,9 @@ export class ExportService {
         });
         const data = requireCompleteExport(result);
         const unitPengolah = await namaUnitPengolah(filters.unitKerjaId);
+        // Ekspor Semua Unit Kerja diberi kolom Unit Kerja berisi nama unit.
+        const namaUnit = await namaUnitPerBaris(filters.unitKerjaId, data);
+        const kolomTerakhir = namaUnit ? 14 : 13;
 
         const { Workbook } = await loadExcelJS();
         const workbook = new Workbook();
@@ -87,13 +106,13 @@ export class ExportService {
         const worksheet = workbook.addWorksheet('Surat Masuk');
 
         // Title section
-        worksheet.mergeCells('A1:M1');
+        worksheet.mergeCells(1, 1, 1, kolomTerakhir);
         const titleCell = worksheet.getCell('A1');
         titleCell.value = 'DAFTAR SURAT MASUK';
         titleCell.font = TITLE_FONT;
         titleCell.alignment = CENTER_ALIGN;
 
-        worksheet.mergeCells('A2:M2');
+        worksheet.mergeCells(2, 1, 2, kolomTerakhir);
         const subtitleCell = worksheet.getCell('A2');
         subtitleCell.value = `${unitPengolah} — ${keteranganTahun(filters.tahun, opsi)}`;
         subtitleCell.font = { ...SUBTITLE_FONT, bold: false };
@@ -104,9 +123,10 @@ export class ExportService {
         const headers = [
             'ID', 'No', 'Jenis Surat', 'Sifat Surat', 'Nomor Surat',
             'Tanggal Surat', 'Perihal', 'Dari', 'Kepada', 'Status',
-            'Disposisi', 'Timestamp', 'Status Arsip'
+            'Disposisi', 'Timestamp', 'Status Arsip',
+            ...(namaUnit ? ['Unit Kerja'] : []),
         ];
-        const colWidths = [20, 8, 18, 14, 28, 15, 40, 25, 25, 18, 25, 18, 14];
+        const colWidths = [20, 8, 18, 14, 28, 15, 40, 25, 25, 18, 25, 18, 14, ...(namaUnit ? [30] : [])];
 
         headers.forEach((header, i) => {
             const cell = worksheet.getCell(headerRow, i + 1);
@@ -131,16 +151,17 @@ export class ExportService {
                 item.id || '',
                 index + 1,
                 item.jenisSurat || '',
-                item.sifatSurat || '',
+                labelSifatSuratMasuk(item.sifatSurat),
                 item.nomorSurat || '',
                 item.tanggalSurat || '',
                 item.perihal || '',
                 item.dari || '',
                 item.kepada || '',
-                item.status === 'sudah_dibalas' ? 'Sudah Dibalas' : 'Belum Dibalas',
+                labelStatusSuratMasuk(item.status),
                 Array.isArray(item.disposisi) ? item.disposisi.join(', ') : (item.disposisi || ''),
                 waktuWib(item.createdAt),
                 item.isArchived ? 'Diarsipkan' : 'Belum',
+                ...(namaUnit ? [namaUnitBaris(namaUnit, item.unitKerjaId)] : []),
             ];
 
             rowData.forEach((val, i) => {
@@ -148,7 +169,7 @@ export class ExportService {
                 cell.value = val;
                 cell.font = DATA_FONT;
                 cell.border = THIN_BORDER;
-                cell.alignment = i === 6 || i === 7 || i === 8 || i === 10 ? LEFT_ALIGN : CENTER_ALIGN;
+                cell.alignment = i === 6 || i === 7 || i === 8 || i === 10 || i === 13 ? LEFT_ALIGN : CENTER_ALIGN;
             });
         });
 
@@ -171,6 +192,8 @@ export class ExportService {
         const data = requireCompleteExport(result);
         const balasanLabels = await resolveBalasanLabels(data, filters.securityClassifications);
         const unitPengolah = await namaUnitPengolah(filters.unitKerjaId);
+        const namaUnit = await namaUnitPerBaris(filters.unitKerjaId, data);
+        const kolomTerakhir = namaUnit ? 16 : 15;
 
         const { Workbook } = await loadExcelJS();
         const workbook = new Workbook();
@@ -180,13 +203,13 @@ export class ExportService {
         const worksheet = workbook.addWorksheet('Surat Keluar');
 
         // Title section
-        worksheet.mergeCells('A1:O1');
+        worksheet.mergeCells(1, 1, 1, kolomTerakhir);
         const titleCell = worksheet.getCell('A1');
         titleCell.value = 'DAFTAR SURAT KELUAR';
         titleCell.font = TITLE_FONT;
         titleCell.alignment = CENTER_ALIGN;
 
-        worksheet.mergeCells('A2:O2');
+        worksheet.mergeCells(2, 1, 2, kolomTerakhir);
         const subtitleCell = worksheet.getCell('A2');
         subtitleCell.value = `${unitPengolah} — ${keteranganTahun(filters.tahun, opsi)}`;
         subtitleCell.font = { ...SUBTITLE_FONT, bold: false };
@@ -197,9 +220,10 @@ export class ExportService {
         const headers = [
             'ID', 'No Urut', 'Jenis Surat', 'Nomor Surat', 'Tanggal Surat',
             'Perihal', 'Tujuan', 'Link Dokumen', 'Tanggal Input', 'Balasan Untuk', 'Asal Naskah',
-            'Klasifikasi Arsip', 'Klasifikasi Kode', 'Klasifikasi Jenis', 'Sifat Surat'
+            'Klasifikasi Arsip', 'Klasifikasi Kode', 'Klasifikasi Jenis', 'Sifat Surat',
+            ...(namaUnit ? ['Unit Kerja'] : []),
         ];
-        const colWidths = [20, 10, 18, 28, 15, 40, 25, 30, 18, 24, 16, 28, 15, 15, 15];
+        const colWidths = [20, 10, 18, 28, 15, 40, 25, 30, 18, 24, 16, 28, 15, 15, 15, ...(namaUnit ? [30] : [])];
 
         headers.forEach((header, i) => {
             const cell = worksheet.getCell(headerRow, i + 1);
@@ -218,10 +242,7 @@ export class ExportService {
         // Data rows
         data.forEach((item, index) => {
             const rowNum = headerRow + 1 + index;
-            // Determine klasifikasi jenis
-            let klasifikasiJenis = '';
-            if (item.klasifikasiFasilitatif) klasifikasiJenis = 'fasilitatif';
-            if (item.klasifikasiSubstantif) klasifikasiJenis = 'substantif';
+            const klasifikasi = klasifikasiSuratKeluar(item);
 
             const rowData = [
                 item.id || '',
@@ -235,10 +256,11 @@ export class ExportService {
                 waktuWib(item.createdAt),
                 balasanLabels.get(item.id) || '',
                 ASAL_NASKAH_LABEL[item.asalNaskah ?? ''] || '',
-                item.klasifikasiFasilitatif || item.klasifikasiSubstantif || '',
-                item.klasifikasiFasilitatifKode || item.klasifikasiSubstantifKode || '',
-                klasifikasiJenis,
+                klasifikasi.nama,
+                klasifikasi.kode,
+                klasifikasi.jenis,
                 sifatSuratLabel(item.sifatSurat),
+                ...(namaUnit ? [namaUnitBaris(namaUnit, item.unitKerjaId)] : []),
             ];
 
             rowData.forEach((val, i) => {
@@ -246,7 +268,7 @@ export class ExportService {
                 cell.value = val;
                 cell.font = DATA_FONT;
                 cell.border = THIN_BORDER;
-                cell.alignment = i === 5 || i === 6 || i === 7 || i === 11 ? LEFT_ALIGN : CENTER_ALIGN;
+                cell.alignment = i === 5 || i === 6 || i === 7 || i === 11 || i === 15 ? LEFT_ALIGN : CENTER_ALIGN;
             });
         });
 
@@ -263,6 +285,7 @@ export class ExportService {
     async generateExcelArsip(filters: ArsipFilters, formulirType?: string): Promise<Buffer> {
         const data = await this.dataFormulirArsip(filters, formulirType);
         const unitPengolah = await namaUnitPengolah(filters.unitKerjaId);
+        const namaUnit = await namaUnitPerBaris(filters.unitKerjaId, data.map((baris) => baris.berkas));
 
         const { Workbook } = await loadExcelJS();
         const workbook = new Workbook();
@@ -270,11 +293,11 @@ export class ExportService {
         workbook.created = new Date();
 
         if (formulirType === 'formulir6') {
-            return this.generateExcelArsipFormulir6(workbook, data, filters, unitPengolah);
+            return this.generateExcelArsipFormulir6(workbook, data, filters, unitPengolah, namaUnit);
         }
 
         // Default: Formulir 4 - Daftar Arsip Aktif
-        return this.generateExcelArsipFormulir4(workbook, data, filters, unitPengolah);
+        return this.generateExcelArsipFormulir4(workbook, data, filters, unitPengolah, namaUnit);
     }
 
     /**
@@ -322,13 +345,15 @@ export class ExportService {
      * Formulir 4 — DAFTAR ARSIP AKTIF
      * Permen ATRBPN 2 Tahun 2026 Kearsipan
      */
-    private async generateExcelArsipFormulir4(workbook: ExcelJS.Workbook, data: BarisFormulirArsip[], filters: ArsipFilters, unitPengolah: string): Promise<Buffer> {
+    private async generateExcelArsipFormulir4(workbook: ExcelJS.Workbook, data: BarisFormulirArsip[], filters: ArsipFilters, unitPengolah: string, namaUnit: Map<string, string> | null): Promise<Buffer> {
         const worksheet = workbook.addWorksheet('Formulir 4 - Arsip Aktif', {
             pageSetup: { orientation: 'landscape', paperSize: 9 /* A4 */ },
         });
+        // Ekspor Semua Unit Kerja menambah kolom (14) Unit Kerja.
+        const kolomTerakhir = namaUnit ? 14 : 13;
 
         // Title
-        worksheet.mergeCells('A1:M1');
+        worksheet.mergeCells(1, 1, 1, kolomTerakhir);
         const titleCell = worksheet.getCell('A1');
         titleCell.value = 'DAFTAR ARSIP AKTIF';
         titleCell.font = TITLE_FONT;
@@ -399,6 +424,7 @@ export class ExportService {
             { col: 11, label: 'Lokasi\nSimpan', width: 16 },
             { col: 12, label: 'Tingkat Klasifikasi\nKeamanan & Akses', width: 18 },
             { col: 13, label: 'Ket.', width: 14 },
+            ...(namaUnit ? [{ col: 14, label: 'Unit Kerja', width: 24 }] : []),
         ];
 
         remainingCols.forEach(({ col, label, width }) => {
@@ -414,7 +440,7 @@ export class ExportService {
 
         // Column numbering row (1)-(13)
         const numRow = hRow2 + 1;
-        for (let i = 1; i <= 13; i++) {
+        for (let i = 1; i <= kolomTerakhir; i++) {
             const cell = worksheet.getCell(numRow, i);
             cell.value = `(${i})`;
             cell.font = { ...DATA_FONT, italic: true, size: 8 };
@@ -430,7 +456,7 @@ export class ExportService {
         const startRow = numRow + 1;
         // Kolom berkas (1-5, 12, 13) digabung menurun untuk berkas yang punya
         // lebih dari satu item; kolom 6-11 diisi per item.
-        const kolomBerkas = [1, 2, 3, 4, 5, 12, 13];
+        const kolomBerkas = [1, 2, 3, 4, 5, 12, 13, ...(namaUnit ? [14] : [])];
         data.forEach((baris, index) => {
             const rowNum = startRow + index;
             const item = baris.berkas;
@@ -446,8 +472,9 @@ export class ExportService {
                 baris.jumlah,
                 baris.tingkatPerkembangan,
                 baris.lokasi,
-                item.klasifikasiKeamanan || '',
+                labelKelasKeamanan(item.klasifikasiKeamanan),
                 item.keterangan || '',
+                ...(namaUnit ? [namaUnitBaris(namaUnit, item.unitKerjaId)] : []),
             ];
 
             rowData.forEach((val, i) => {
@@ -455,7 +482,7 @@ export class ExportService {
                 cell.value = baris.itemKe > 0 && kolomBerkas.includes(i + 1) ? null : val;
                 cell.font = DATA_FONT;
                 cell.border = THIN_BORDER;
-                cell.alignment = i === 2 || i === 6 ? LEFT_ALIGN : CENTER_ALIGN;
+                cell.alignment = i === 2 || i === 6 || i === 13 ? LEFT_ALIGN : CENTER_ALIGN;
             });
 
             if (baris.jumlahBaris > 1 && baris.itemKe === baris.jumlahBaris - 1) {
@@ -502,13 +529,15 @@ export class ExportService {
      *          Tingkat Perkembangan, Jumlah, Lokasi Simpan, Keamanan & Akses,
      *          Jangka Simpan & Nasib Akhir, Kategori Arsip, Ket.
      */
-    private async generateExcelArsipFormulir6(workbook: ExcelJS.Workbook, data: BarisFormulirArsip[], filters: ArsipFilters, unitPengolah: string): Promise<Buffer> {
+    private async generateExcelArsipFormulir6(workbook: ExcelJS.Workbook, data: BarisFormulirArsip[], filters: ArsipFilters, unitPengolah: string, namaUnit: Map<string, string> | null): Promise<Buffer> {
         const worksheet = workbook.addWorksheet('Formulir 6 - Arsip Inaktif', {
             pageSetup: { orientation: 'landscape', paperSize: 9 },
         });
+        // Ekspor Semua Unit Kerja menambah kolom (12) Unit Kerja.
+        const kolomTerakhir = namaUnit ? 12 : 11;
 
         // Title
-        worksheet.mergeCells('A1:K1');
+        worksheet.mergeCells(1, 1, 1, kolomTerakhir);
         const titleCell = worksheet.getCell('A1');
         titleCell.value = 'DAFTAR ARSIP INAKTIF (KERTAS)';
         titleCell.font = TITLE_FONT;
@@ -535,9 +564,10 @@ export class ExportService {
         const headers = [
             'No', 'Kode\nKlasifikasi', 'Uraian Informasi\nArsip/Berkas', 'Kurun\nWaktu',
             'Tingkat\nPerkembangan', 'Jumlah', 'Lokasi Simpan\n(Rak/Boks/Folder)',
-            'Keamanan\n& Akses', 'Jangka Simpan\n& Nasib Akhir', 'Kategori\nArsip', 'Ket.'
+            'Keamanan\n& Akses', 'Jangka Simpan\n& Nasib Akhir', 'Kategori\nArsip', 'Ket.',
+            ...(namaUnit ? ['Unit Kerja'] : []),
         ];
-        const colWidths = [6, 14, 35, 12, 14, 8, 20, 14, 18, 14, 14];
+        const colWidths = [6, 14, 35, 12, 14, 8, 20, 14, 18, 14, 14, ...(namaUnit ? [24] : [])];
 
         headers.forEach((header, i) => {
             const cell = worksheet.getCell(hRow, i + 1);
@@ -555,7 +585,7 @@ export class ExportService {
 
         // Column numbering
         const numRow = hRow + 1;
-        for (let i = 1; i <= 11; i++) {
+        for (let i = 1; i <= kolomTerakhir; i++) {
             const cell = worksheet.getCell(numRow, i);
             cell.value = `(${i})`;
             cell.font = { ...DATA_FONT, italic: true, size: 8 };
@@ -568,14 +598,6 @@ export class ExportService {
         data.forEach((baris, index) => {
             const rowNum = startRow + index;
             const item = baris.berkas;
-            const jangkaSimpan = [
-                item.masaSimpanAktif ? `Aktif: ${item.masaSimpanAktif}` : '',
-                item.masaSimpanInaktif ? `Inaktif: ${item.masaSimpanInaktif}` : '',
-                item.hasilAkhir ? `Nasib: ${item.hasilAkhir}` : '',
-            ].filter(Boolean).join('\n');
-
-            const kategoriArsip = item.jenisArsip === 'masuk' ? 'Surat Masuk' : 'Surat Keluar';
-
             const rowData = [
                 index + 1,
                 item.kodeKlasifikasi || '',
@@ -584,10 +606,11 @@ export class ExportService {
                 baris.tingkatPerkembangan,
                 baris.jumlah,
                 baris.lokasi,
-                item.klasifikasiKeamanan || '',
-                jangkaSimpan,
-                kategoriArsip,
+                labelKelasKeamanan(item.klasifikasiKeamanan),
+                jangkaSimpanFormulir6(item),
+                kategoriFormulir6(item),
                 item.keterangan || '',
+                ...(namaUnit ? [namaUnitBaris(namaUnit, item.unitKerjaId)] : []),
             ];
 
             rowData.forEach((val, i) => {
@@ -595,7 +618,7 @@ export class ExportService {
                 cell.value = val;
                 cell.font = DATA_FONT;
                 cell.border = THIN_BORDER;
-                cell.alignment = i === 2 || i === 8 ? LEFT_ALIGN : CENTER_ALIGN;
+                cell.alignment = i === 2 || i === 8 || i === 11 ? LEFT_ALIGN : CENTER_ALIGN;
             });
         });
 
@@ -653,6 +676,7 @@ export class ExportService {
         });
         const data = requireCompleteExport(result);
         const unitPengolah = await namaUnitPengolah(filters.unitKerjaId);
+        const namaUnit = await namaUnitPerBaris(filters.unitKerjaId, data);
 
         const PDFDocument = await loadPdfKit();
         return new Promise((resolve, reject) => {
@@ -671,10 +695,10 @@ export class ExportService {
 
             // Table
             const tableTop = doc.y;
-            const colWidths = [25, 40, 100, 80, 200, 90, 90, 90];
-            const headers = ['No', 'No.Urut', 'Nomor Surat', 'Tanggal', 'Perihal', 'Dari', 'Kepada', 'Status'];
+            const colWidths = lebarPenuh([25, 40, 100, 80, 200, 90, 90, 90, ...(namaUnit ? [90] : [])], 4, LEBAR_TABEL_PDF);
+            const headers = ['No', 'No.Urut', 'Nomor Surat', 'Tanggal', 'Perihal', 'Dari', 'Kepada', 'Status', ...(namaUnit ? ['Unit Kerja'] : [])];
 
-            doc.rect(30, tableTop - 5, 782, 20).fill('#1E3A5F');
+            doc.rect(30, tableTop - 5, LEBAR_TABEL_PDF, 20).fill('#1E3A5F');
             let xPos = 30;
             doc.font('Helvetica-Bold').fontSize(8).fillColor('white');
             headers.forEach((header, i) => {
@@ -682,38 +706,42 @@ export class ExportService {
                 xPos += colWidths[i];
             });
 
-            let yPos = tableTop + 20;
+            // Teks panjang dibungkus; tinggi baris mengikuti sel tertinggi.
+            const batasBawah = batasBawahPdf(doc);
+            const tata = { padX: 2, padY: 3, minimal: 15 };
+            let yPos = tableTop + 17;
             doc.font('Helvetica').fontSize(7).fillColor('black');
 
             data.forEach((item, index) => {
-                if (yPos > 520) {
-                    doc.addPage();
-                    yPos = 30;
-                }
-                if (index % 2 === 0) {
-                    doc.rect(30, yPos - 3, 782, 15).fill('#F5F5F5');
-                }
-
-                xPos = 30;
                 const rowData = [
                     String(index + 1),
                     String(item.noUrut),
                     item.nomorSurat || '',
                     item.tanggalSurat || '',
-                    (item.perihal || '').substring(0, 50),
-                    (item.dari || '').substring(0, 20),
-                    (item.kepada || '').substring(0, 20),
-                    item.status === 'sudah_dibalas' ? 'Dibalas' : 'Belum',
+                    item.perihal || '',
+                    item.dari || '',
+                    item.kepada || '',
+                    labelStatusSuratMasuk(item.status),
+                    ...(namaUnit ? [namaUnitBaris(namaUnit, item.unitKerjaId)] : []),
                 ];
 
+                const tinggi = tinggiBarisPdf(doc, rowData, colWidths, tata);
+                if (yPos + tinggi > batasBawah) {
+                    doc.addPage();
+                    yPos = doc.page.margins.top;
+                }
+                if (index % 2 === 0) {
+                    doc.rect(30, yPos, LEBAR_TABEL_PDF, tinggi).fill('#F5F5F5');
+                }
                 doc.fillColor('black');
-                rowData.forEach((text, i) => {
-                    doc.text(text, xPos + 2, yPos, { width: colWidths[i] - 4, align: 'left' });
-                    xPos += colWidths[i];
-                });
-                yPos += 15;
+                tulisBarisPdf(doc, rowData, colWidths, 30, yPos, tata);
+                yPos += tinggi;
             });
 
+            if (yPos + 30 > batasBawah) {
+                doc.addPage();
+                yPos = doc.page.margins.top;
+            }
             doc.fontSize(8).text(`Total: ${data.length} surat`, 30, yPos + 20);
             doc.end();
         });
@@ -727,6 +755,7 @@ export class ExportService {
         });
         const data = requireCompleteExport(result);
         const unitPengolah = await namaUnitPengolah(filters.unitKerjaId);
+        const namaUnit = await namaUnitPerBaris(filters.unitKerjaId, data);
 
         const PDFDocument = await loadPdfKit();
         return new Promise((resolve, reject) => {
@@ -743,10 +772,10 @@ export class ExportService {
             doc.moveDown(1.5);
 
             const tableTop = doc.y;
-            const colWidths = [25, 40, 110, 80, 90, 220, 100, 100];
-            const headers = ['No', 'No.Urut', 'Nomor Surat', 'Tanggal', 'Naskah Dinas', 'Perihal', 'Kepada', 'Klasifikasi'];
+            const colWidths = lebarPenuh([25, 40, 110, 80, 90, 220, 100, 100, ...(namaUnit ? [90] : [])], 5, LEBAR_TABEL_PDF);
+            const headers = ['No', 'No.Urut', 'Nomor Surat', 'Tanggal', 'Jenis Surat', 'Perihal', 'Kepada', 'Klasifikasi', ...(namaUnit ? ['Unit Kerja'] : [])];
 
-            doc.rect(30, tableTop - 5, 782, 20).fill('#1E3A5F');
+            doc.rect(30, tableTop - 5, LEBAR_TABEL_PDF, 20).fill('#1E3A5F');
             let xPos = 30;
             doc.font('Helvetica-Bold').fontSize(8).fillColor('white');
             headers.forEach((header, i) => {
@@ -754,38 +783,42 @@ export class ExportService {
                 xPos += colWidths[i];
             });
 
-            let yPos = tableTop + 20;
+            // Teks panjang dibungkus; tinggi baris mengikuti sel tertinggi.
+            const batasBawah = batasBawahPdf(doc);
+            const tata = { padX: 2, padY: 3, minimal: 15 };
+            let yPos = tableTop + 17;
             doc.font('Helvetica').fontSize(7).fillColor('black');
 
             data.forEach((item, index) => {
-                if (yPos > 520) {
-                    doc.addPage();
-                    yPos = 30;
-                }
-                if (index % 2 === 0) {
-                    doc.rect(30, yPos - 3, 782, 15).fill('#F5F5F5');
-                }
-
-                xPos = 30;
                 const rowData = [
                     String(index + 1),
                     String(item.noUrut),
                     item.nomorSurat || '',
                     item.tanggalSurat || '',
-                    (item.naskahDinas || '').substring(0, 18),
-                    (item.perihal || '').substring(0, 55),
-                    (item.kepada || '').substring(0, 22),
-                    (item.klasifikasiFasilitatif || '').substring(0, 22),
+                    item.naskahDinas || '',
+                    item.perihal || '',
+                    item.kepada || '',
+                    teksKlasifikasiSuratKeluar(item),
+                    ...(namaUnit ? [namaUnitBaris(namaUnit, item.unitKerjaId)] : []),
                 ];
 
+                const tinggi = tinggiBarisPdf(doc, rowData, colWidths, tata);
+                if (yPos + tinggi > batasBawah) {
+                    doc.addPage();
+                    yPos = doc.page.margins.top;
+                }
+                if (index % 2 === 0) {
+                    doc.rect(30, yPos, LEBAR_TABEL_PDF, tinggi).fill('#F5F5F5');
+                }
                 doc.fillColor('black');
-                rowData.forEach((text, i) => {
-                    doc.text(text, xPos + 2, yPos, { width: colWidths[i] - 4, align: 'left' });
-                    xPos += colWidths[i];
-                });
-                yPos += 15;
+                tulisBarisPdf(doc, rowData, colWidths, 30, yPos, tata);
+                yPos += tinggi;
             });
 
+            if (yPos + 30 > batasBawah) {
+                doc.addPage();
+                yPos = doc.page.margins.top;
+            }
             doc.fontSize(8).text(`Total: ${data.length} surat`, 30, yPos + 20);
             doc.end();
         });
@@ -798,6 +831,7 @@ export class ExportService {
         const data = await this.dataFormulirArsip(filters, formulirType);
         const jumlahArsip = new Set(data.map((baris) => baris.urutBerkas)).size;
         const unitPengolah = await namaUnitPengolah(filters.unitKerjaId);
+        const namaUnit = await namaUnitPerBaris(filters.unitKerjaId, data.map((baris) => baris.berkas));
 
         const PDFDocument = await loadPdfKit();
         return new Promise((resolve, reject) => {
@@ -834,8 +868,8 @@ export class ExportService {
 
             if (formulirType === 'formulir6') {
                 // Formulir 6 columns: No, Kode Klas, Uraian, Kurun Waktu, Tk.Perkembangan, Jumlah, Lokasi, Keamanan, Jangka Simpan, Kategori, Ket
-                const colWidths = lebarPenuh([20, 50, 180, 70, 55, 30, 70, 55, 80, 50, 70], 2, LEBAR_TABEL_PDF);
-                const headers = ['No', 'Kode\nKlas.', 'Uraian Informasi Arsip/Berkas', 'Kurun\nWaktu', 'Tk.\nPrkbg.', 'Jml', 'Lokasi Simpan', 'Keamanan\n& Akses', 'Jangka Simpan\n& Nasib Akhir', 'Kategori\nArsip', 'Ket.'];
+                const colWidths = lebarPenuh([20, 50, 180, 70, 55, 30, 70, 55, 80, 50, 70, ...(namaUnit ? [70] : [])], 2, LEBAR_TABEL_PDF);
+                const headers = ['No', 'Kode\nKlas.', 'Uraian Informasi Arsip/Berkas', 'Kurun\nWaktu', 'Tk.\nPrkbg.', 'Jml', 'Lokasi Simpan', 'Keamanan\n& Akses', 'Jangka Simpan\n& Nasib Akhir', 'Kategori\nArsip', 'Ket.', ...(namaUnit ? ['Unit\nKerja'] : [])];
 
                 doc.rect(30, tableTop - 5, LEBAR_TABEL_PDF, 25).fill('#1E3A5F');
                 let xPos = 30;
@@ -851,11 +885,6 @@ export class ExportService {
 
                 data.forEach((baris, index) => {
                     const item = baris.berkas;
-                    const jangkaSimpan = [
-                        item.masaSimpanAktif ? `A:${item.masaSimpanAktif}` : '',
-                        item.hasilAkhir || '',
-                    ].filter(Boolean).join(' / ');
-
                     const rowData = [
                         String(index + 1),
                         item.kodeKlasifikasi || '',
@@ -864,10 +893,11 @@ export class ExportService {
                         baris.tingkatPerkembangan,
                         String(baris.jumlah),
                         baris.lokasi,
-                        item.klasifikasiKeamanan || '',
-                        jangkaSimpan,
-                        item.jenisArsip === 'masuk' ? 'SM' : 'SK',
+                        labelKelasKeamanan(item.klasifikasiKeamanan),
+                        jangkaSimpanFormulir6(item),
+                        kategoriFormulir6(item),
                         item.keterangan || '',
+                        ...(namaUnit ? [namaUnitBaris(namaUnit, item.unitKerjaId)] : []),
                     ];
 
                     const tinggi = tinggiBarisPdf(doc, rowData, colWidths, tata);
@@ -891,8 +921,11 @@ export class ExportService {
                 doc.fontSize(7).text('Formulir 6. Daftar Arsip Inaktif (Kertas)', 600, yPos + 35, { align: 'right' });
             } else {
                 // Formulir 4 columns
-                const colWidths = lebarPenuh([45, 45, 145, 67, 30, 25, 145, 40, 25, 50, 55, 55, 55], 2, LEBAR_TABEL_PDF);
-                const headers = ['No.\nBrks', 'Kode\nKlas.', 'Uraian Info.\nBerkas', 'Kurun\nWktu', 'Jml\nBrks', 'No.\nItem', 'Uraian Info.\nArsip', 'Tgl', 'Jml', 'Tk.\nPrkbg.', 'Lokasi\nSimpan', 'Keamanan\n& Akses', 'Ket.'];
+                // Ekspor Semua Unit Kerja: kedua kolom uraian menyempit untuk kolom Unit Kerja.
+                const colWidths = lebarPenuh(namaUnit
+                    ? [45, 45, 115, 67, 30, 25, 115, 40, 25, 50, 55, 55, 55, 60]
+                    : [45, 45, 145, 67, 30, 25, 145, 40, 25, 50, 55, 55, 55], 2, LEBAR_TABEL_PDF);
+                const headers = ['No.\nBrks', 'Kode\nKlas.', 'Uraian Info.\nBerkas', 'Kurun\nWktu', 'Jml\nBrks', 'No.\nItem', 'Uraian Info.\nArsip', 'Tgl', 'Jml', 'Tk.\nPrkbg.', 'Lokasi\nSimpan', 'Keamanan\n& Akses', 'Ket.', ...(namaUnit ? ['Unit\nKerja'] : [])];
 
                 doc.rect(30, tableTop - 5, LEBAR_TABEL_PDF, 25).fill('#1E3A5F');
                 let xPos = 30;
@@ -908,7 +941,7 @@ export class ExportService {
 
                 // Kolom berkas dicetak pada baris pertama tiap berkas, dan
                 // diulang bila berkas itu bersambung ke halaman berikutnya.
-                const kolomBerkas = [0, 1, 2, 3, 4, 11, 12];
+                const kolomBerkas = [0, 1, 2, 3, 4, 11, 12, 13];
                 let awalHalaman = true;
                 data.forEach((baris) => {
                     const item = baris.berkas;
@@ -924,8 +957,9 @@ export class ExportService {
                         String(baris.jumlah),
                         baris.tingkatPerkembangan,
                         baris.lokasi,
-                        item.klasifikasiKeamanan || '',
+                        labelKelasKeamanan(item.klasifikasiKeamanan),
                         item.keterangan || '',
+                        ...(namaUnit ? [namaUnitBaris(namaUnit, item.unitKerjaId)] : []),
                     ];
                     const isiBaris = (cetakBerkas: boolean) =>
                         rowData.map((teks, i) => (cetakBerkas || !kolomBerkas.includes(i) ? teks : ''));
