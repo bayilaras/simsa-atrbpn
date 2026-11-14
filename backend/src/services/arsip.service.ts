@@ -27,6 +27,7 @@ import {
 } from '../constants/pesan-akses.js';
 import { hasPermission, type Role } from '../config/permissions';
 import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-lock';
+import { pastikanBelumBerubah } from '../utils/versi-rekaman.js';
 import { isAllowedForClassification, recordAccessService } from './record-access.service';
 import { barisDari, kelasSumberSurat, normalizeSecurityClassification, rankKelas } from './access/visibility-spec';
 import { alasanArsipTerkunci } from './access/arsip-aksi';
@@ -696,7 +697,13 @@ export class ArsipService {
         });
     }
 
-    async update(id: string, data: Partial<Arsip>, auditContext?: CriticalAuditContext) {
+    async update(
+        id: string,
+        data: Partial<Arsip>,
+        auditContext?: CriticalAuditContext,
+        /** expectedUpdatedAt: the updatedAt the Ubah Metadata dialog loaded; a different stored value is a 409. */
+        { expectedUpdatedAt }: { expectedUpdatedAt?: Date } = {},
+    ) {
         // HTTP callers supply this context on the server, never from the body.
         // Retain the existing trusted internal, unaudited metadata API contract.
         if (auditContext && !auditContext.userId) {
@@ -782,6 +789,8 @@ export class ArsipService {
                 }
                 actorAudit = { ...auditContext, userId: actor.id, userEmail: actor.email };
             }
+            // Baris sudah dikunci: perubahan orang lain sejak dialog dibuka tidak ditimpa.
+            pastikanBelumBerubah(existing.updatedAt, expectedUpdatedAt);
             // Plafon peran di atas hanya membatasi kenaikan; arsip tertaut juga
             // tidak boleh diturunkan di bawah kelas surat sumbernya (NULL = biasa).
             if (data.klasifikasiKeamanan !== undefined && existing.sourceSuratId) {

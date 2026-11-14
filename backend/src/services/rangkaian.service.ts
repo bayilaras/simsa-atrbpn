@@ -588,8 +588,10 @@ export const rangkaianService = {
             });
             const changed = after !== before;
             if (changed) {
-                // Hanya status + updated_at: guard 0021 tetap lolos untuk surat terarsip.
-                await tx.update(suratMasuk).set({ status: after, updatedAt: new Date() }).where(eq(suratMasuk.id, row.id));
+                // Hanya status: guard 0021 tetap lolos untuk surat terarsip. updated_at
+                // tidak disentuh agar status turunan tidak menolak suntingan yang sedang
+                // terbuka (versi data formulir); perubahan status tercatat di audit.
+                await tx.update(suratMasuk).set({ status: after }).where(eq(suratMasuk.id, row.id));
                 await catatAudit(tx, actor, {
                     action: 'status_change',
                     entityType: 'surat_masuk',

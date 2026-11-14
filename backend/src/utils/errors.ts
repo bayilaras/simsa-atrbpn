@@ -46,6 +46,14 @@ export class ConflictError extends AppError {
     }
 }
 
+/** The record changed after the client loaded it (optimistic concurrency); the public code stays stable. */
+export class DataSudahBerubahError extends ConflictError {
+    readonly code = 'DATA_SUDAH_BERUBAH';
+    constructor() {
+        super('Data ini sudah diubah pengguna lain sejak Anda membukanya. Muat ulang halaman untuk melihat perubahan terbaru, lalu ulangi perubahan Anda.');
+    }
+}
+
 export class GoneError extends AppError {
     constructor(message: string = 'Sumber daya sudah tidak tersedia.') {
         super(message, 410);

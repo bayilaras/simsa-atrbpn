@@ -158,6 +158,7 @@ router.get('/next-number', async (req: AuthRequest, res, next) => {
             {
                 tahun: queryValidation.data.tahun,
                 tanggalSurat: queryValidation.data.tanggalSurat,
+                noUrut: queryValidation.data.noUrut,
             },
         );
 

@@ -38,6 +38,7 @@ import { arsipService } from '@/services/arsip.service'
 import { useAuth } from '@/context/AuthContext'
 import { PerluPersetujuanAkses } from '@/components/PerluPersetujuanAkses'
 import { rekamanPerluPersetujuan } from '@/lib/akses-rekaman'
+import { pesanGalat } from '@/lib/pesan-galat'
 import { useToast } from '@/hooks/use-toast'
 import { format, formatDistanceToNow, differenceInDays } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
@@ -404,6 +405,23 @@ export default function ArsipDetail() {
         }
     }
 
+    // Ubah Metadata ditolak karena arsip diubah orang lain: muat data terbaru
+    // tanpa skeleton. true bila berhasil, agar dialog memasang ulang formulirnya.
+    const muatUlangArsip = async () => {
+        try {
+            const refreshed = await arsipService.getById(id)
+            setArsip(refreshed?.data || refreshed)
+            return true
+        } catch (err) {
+            toast({
+                title: 'Data terbaru belum dapat dimuat',
+                description: pesanGalat(err, 'Muat ulang halaman untuk melihat data terbaru.'),
+                variant: 'destructive',
+            })
+            return false
+        }
+    }
+
     // Respons PUT adalah baris mentah, bukan read model detail; gabungkan hanya
     // field yang dikirim lalu muat ulang tanpa skeleton.
     const handleMetadataSaved = async (perubahan, hasil) => {
@@ -413,6 +431,8 @@ export default function ArsipDetail() {
                 field,
                 hasil && Object.hasOwn(hasil, field) ? hasil[field] : perubahan[field],
             ])),
+            // Versi baru untuk suntingan berikutnya, juga bila muat ulang di bawah gagal.
+            ...(hasil?.updatedAt ? { updatedAt: hasil.updatedAt } : {}),
             // Nama lokasi baru datang dari muat ulang; nama lama tidak ditampilkan.
             ...(Object.hasOwn(perubahan, 'storageLocationId') ? { lokasiSimpan: null } : {}),
         }))
@@ -1183,6 +1203,7 @@ export default function ArsipDetail() {
                     onOpenChange={setEditOpen}
                     arsip={arsip}
                     onSaved={handleMetadataSaved}
+                    onMuatUlang={muatUlangArsip}
                 />
             )}
 

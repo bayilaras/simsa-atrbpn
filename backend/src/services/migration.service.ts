@@ -15,6 +15,7 @@ import { assertImportResumable, importPrefixHash, type ImportResume } from './im
 import { normalizeSifatSurat, sifatSuratMasukSumber } from './sifat-surat.js';
 import { assertImportedKelasSuratMasuk, assertSifatSuratMasukDapatDisimpan, type ImportAuditContext } from './import-plafon-kelas.js';
 import { parseImportDate } from './import-tanggal.js';
+import { catatanNomorUrutImpor, nomorUrutSumber } from './surat-nomor-urut.js';
 
 const log = createLogger('MigrationService');
 
@@ -50,6 +51,7 @@ interface ImportResult {
 interface CsvRow { [key: string]: string | undefined }
 type PreparedImport = {
     identity: string;
+    /** A string result is the record's note, such as a replaced source number. */
     create: () => Promise<unknown>;
 } & (
     /** The canonical surat identity, looked up for the whole file in one query. */
@@ -186,11 +188,12 @@ async function runImport(
                 continue;
             }
             result.valid++;
+            let catatan: unknown;
             if (!result.dryRun) {
                 // Actual import always repeats validation and duplicate checks.
                 // Preview is advisory and never grants mutation authority.
                 try {
-                    await item.create();
+                    catatan = await item.create();
                 } catch (error) {
                     if (!(error instanceof DuplicateSuratImportError)) throw error;
                     // Another importer may commit after the advisory lookup.
@@ -207,6 +210,7 @@ async function runImport(
             seen.add(item.identity);
             if ('key' in item) seenKeys.push(item.key);
             diagnostic.status = result.dryRun ? 'valid' : 'imported';
+            if (typeof catatan === 'string') diagnostic.message = catatan;
         } catch (error) {
             const failure = publicErrorResponse(error, currentRequestId());
             log.warn({ event: 'csv_import_row_rejected', row: diagnostic.row, publicCode: failure.code }, 'Import row rejected');
@@ -231,7 +235,7 @@ const ARSIP_COLUMNS: CsvColumns = { date: ['Tanggal', 'Tanggal Arsip'], required
 
 export const migrationService = {
     async importSuratMasuk(csvContent: string, unitKerjaId: string, auditContext: ImportAuditContext, options: ImportOptions = {}): Promise<ImportResult> {
-        return runImport(csvContent, SURAT_COLUMNS, (row, date, year, position) => {
+        return runImport(csvContent, SURAT_COLUMNS, (row, date, year) => {
             const sifatSurat = sifatSuratMasukSumber(row['Sifat Surat']);
             // A class above the importer's ceiling, or a sifat that names no
             // class, makes the row invalid, in a dry run too. This path has no
@@ -245,7 +249,8 @@ export const migrationService = {
             const numbered = Boolean(nomorSurat && nomorSurat !== '-');
             if (!numbered && !dari) throw new ValidationError('Nomor surat kosong memerlukan tanggal, perihal, dan pengirim untuk identitas impor yang stabil.');
             const record = {
-                unitKerjaId, noUrut: parseInt(row['No'] || '0') || position, tahun: year,
+                // No. Agenda dari kolom No dipakai bila belum terpakai; tanpa nomor, penomoran otomatis.
+                unitKerjaId, noUrut: nomorUrutSumber(row['No']) ?? undefined, tahun: year,
                 jenisSurat: row['Jenis Surat'] || 'Surat Dinas', sifatSurat,
                 nomorSurat, tanggalSurat: date, perihal, dari, kepada: row['Kepada'] || '',
                 status: row['Status'] || 'belum_dibalas', disposisi: row['Disposisi'] ? [row['Disposisi']] : [],
@@ -257,7 +262,8 @@ export const migrationService = {
             return {
                 identity: JSON.stringify(key),
                 key,
-                create: () => suratMasukService.createImported(record, auditContext),
+                create: async () => catatanNomorUrutImpor('masuk', row['No'],
+                    (await suratMasukService.createImported(record, auditContext))?.noUrut),
             };
         }, options, keys => suratMasukService.existingImportIdentities(keys));
     },
@@ -271,7 +277,9 @@ export const migrationService = {
             const numbered = Boolean(nomorSurat && nomorSurat !== '-');
             if (!numbered && !kepada) throw new ValidationError('Nomor surat kosong memerlukan tanggal, perihal, dan tujuan untuk identitas impor yang stabil.');
             const record = {
-                unitKerjaId, tahun: year, naskahDinas: row['Naskah Dinas'] || row['Jenis Surat'] || 'Surat Dinas',
+                // No. Urut dari kolom No dipakai bila belum terpakai; tanpa nomor, penomoran otomatis.
+                unitKerjaId, noUrut: nomorUrutSumber(row['No']) ?? undefined, tahun: year,
+                naskahDinas: row['Naskah Dinas'] || row['Jenis Surat'] || 'Surat Dinas',
                 sifatSurat: normalizeSifatSurat(row['Sifat Surat']),
                 numberingMode: numbered ? 'manual' as const : 'auto' as const, nomorSurat: numbered ? nomorSurat : undefined,
                 tanggalSurat: date, perihal, kepada, createdBy: auditContext.userId,
@@ -279,7 +287,8 @@ export const migrationService = {
             return {
                 identity: JSON.stringify(numbered ? [unitKerjaId, year, nomorSurat] : [unitKerjaId, date, perihal, kepada]),
                 key: suratKeluarService.importIdentityKey(record),
-                create: () => suratKeluarService.createImported(record, auditContext),
+                create: async () => catatanNomorUrutImpor('keluar', row['No'],
+                    (await suratKeluarService.createImported(record, auditContext))?.noUrut),
             };
         }, options, keys => suratKeluarService.existingImportIdentities(keys));
     },

@@ -25,6 +25,25 @@ const optionalNomorSuratSchema = z.preprocess(
         .max(255, 'Nomor surat maksimal 255 karakter').optional(),
 );
 
+/**
+ * No. Agenda / No. Urut typed on a create form (surat-nomor-urut.ts). Blank
+ * means automatic numbering; the bound matches the import reader's.
+ */
+const nomorUrutManualSchema = (label: string) => z.preprocess(
+    value => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    z.coerce.number(`${label} harus berupa angka`).int(`${label} harus berupa bilangan bulat`)
+        .min(1, `${label} harus antara 1 dan 999999`).max(999_999, `${label} harus antara 1 dan 999999`).optional(),
+);
+
+/**
+ * The updatedAt an edit form loaded (optimistic concurrency). Optional, so a
+ * browser still running the previous release saves as before.
+ */
+const updatedAtDimuatSchema = z.preprocess(
+    value => value === null || value === '' ? undefined : value,
+    z.coerce.date('Versi data tidak dikenali. Muat ulang halaman, lalu ulangi perubahan Anda.').optional(),
+);
+
 const PESAN_LOKASI_BERKAS_TIDAK_VALID = 'Berkas unggahan tidak dapat dikenali. Unggah ulang berkas.';
 const PESAN_LINK_DOKUMEN_TIDAK_VALID = 'Link dokumen harus berupa alamat lengkap, misalnya https://contoh.go.id/berkas';
 
@@ -85,6 +104,8 @@ export const nextSuratNumberQuerySchema = z.object({
     tahun: z.coerce.number().int().min(2000).max(2100).optional(),
     tanggalSurat: dateSchema.optional(),
     naskahDinas: z.string().trim().max(100).optional(),
+    // No. Agenda / No. Urut typed on the form; the preview number uses it.
+    noUrut: z.coerce.number().int().min(1).max(999_999).optional(),
 }).strict();
 
 // ==================== Rangkaian surat (P3) ====================
@@ -162,8 +183,7 @@ export type TindakLanjutInput = z.infer<typeof tindakLanjutInputSchema>;
 // Fields must match database schema in db/schema/surat-masuk.ts
 export const createSuratMasukSchema = z.object({
     unitKerjaId: z.string('Unit kerja wajib diisi').min(1, 'Unit kerja wajib diisi').max(50, 'Unit kerja tidak valid'),
-    noUrut: z.coerce.number('Nomor urut harus berupa angka').int('Nomor urut harus berupa bilangan bulat')
-        .positive('Nomor urut harus lebih dari 0').optional(), // Auto-generated if not provided
+    noUrut: nomorUrutManualSchema('No. Agenda'), // Auto-generated if not provided
     tahun: z.coerce.number('Tahun harus berupa angka').int('Tahun harus berupa bilangan bulat')
         .min(2000, 'Tahun harus antara 2000 dan 2100').max(2100, 'Tahun harus antara 2000 dan 2100').optional(), // Defaults to current year
     jenisSurat: teksMaks('Jenis surat', 100).optional(),
@@ -196,13 +216,15 @@ export const createSuratMasukSchema = z.object({
 });
 
 // Zod 4 applies inner defaults even through partial(). Status surat masuk kini
-// diturunkan server (§8), sehingga tidak lagi dapat diubah lewat PUT.
+// diturunkan server (§8), sehingga tidak lagi dapat diubah lewat PUT. Tahun dan
+// No. Agenda mengikuti tanggal surat di server (pindah tahun), bukan isian klien.
 export const updateSuratMasukSchema = createSuratMasukSchema.partial()
-    .omit({ unitKerjaId: true, status: true, disposisi: true, referensi: true })
+    .omit({ unitKerjaId: true, status: true, disposisi: true, referensi: true, noUrut: true, tahun: true })
     .extend({
         disposisi: z.union([z.string(), z.array(z.string())], 'Disposisi tidak valid')
             .pipe(legacyDisposisiLabels).optional(),
         alasan: alasanText.optional(),
+        expectedUpdatedAt: updatedAtDimuatSchema,
     });
 
 export const querySuratMasukSchema = paginationSchema.extend({
@@ -266,6 +288,7 @@ export const createSuratKeluarSchema = suratKeluarBaseSchema
         // Older clients remain compatible, but every newly registered record
         // receives an explicit security classification.
         klasifikasiKeamanan: z.enum(['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']).default('biasa'),
+        noUrut: nomorUrutManualSchema('No. Urut'),
     })
     .superRefine((value, ctx) => {
         const effectiveNumberingMode = value.numberingMode
@@ -305,10 +328,13 @@ export const createSuratKeluarSchema = suratKeluarBaseSchema
 
 // balasan_untuk is owned by the follow-up (tindak lanjut) service and is
 // cleared only when its relation is cancelled, so an edit never changes it;
-// older clients that still send the field have it stripped.
+// older clients that still send the field have it stripped. Tahun follows the
+// date on the server (moving the letter to that year's sequence), so it is
+// stripped too.
 export const updateSuratKeluarSchema = suratKeluarBaseSchema
-    .omit({ unitKerjaId: true, numberingMode: true, asalNaskah: true, tindakLanjut: true, balasanUntuk: true })
-    .partial();
+    .omit({ unitKerjaId: true, numberingMode: true, asalNaskah: true, tindakLanjut: true, balasanUntuk: true, tahun: true })
+    .partial()
+    .extend({ expectedUpdatedAt: updatedAtDimuatSchema });
 
 export const querySuratKeluarSchema = paginationSchema.extend({
     unitKerjaId: z.string().optional(),
@@ -471,9 +497,11 @@ export const updateArsipSchema = z.object({
     klasifikasiKeamanan: z.enum(['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']).optional(),
     // Retain explicit workflow guidance for attempted direct retention edits.
     ...retentionMetadataFields,
+    // Ubah Metadata: updatedAt saat dialog dibuka; bukan metadata yang disimpan.
+    expectedUpdatedAt: updatedAtDimuatSchema,
 }).strict()
     .superRefine(rejectDirectRetentionTrigger)
-    .refine(value => Object.values(value).some(field => field !== undefined), {
+    .refine(value => Object.entries(value).some(([field, nilai]) => field !== 'expectedUpdatedAt' && nilai !== undefined), {
         message: 'Sedikitnya satu metadata arsip harus diberikan',
     });
 

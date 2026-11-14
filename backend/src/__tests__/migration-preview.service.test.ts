@@ -115,6 +115,26 @@ describe('CSV date fidelity and mutation-free preview', () => {
         expect(mocks.keluar).toHaveBeenCalledWith(expect.objectContaining({ sifatSurat: 'sangat_segera' }), actor);
     });
 
+    it('requests the No column as the letter number and reports one that was replaced', async () => {
+        // createImported answers with the number it stored.
+        mocks.masuk.mockResolvedValueOnce({ id: 'a', noUrut: 57 }).mockResolvedValueOnce({ id: 'b', noUrut: 58 });
+        const masuk = await migrationService.importSuratMasuk([
+            'No,Nomor Surat,Tanggal Surat,Perihal,Dari',
+            '12,SM-12,2026-09-11,Register lama,Unit A',
+            ',SM-13,2026-09-11,Register lama,Unit A',
+        ].join('\n'), 'unit-a', actor);
+        expect(mocks.masuk.mock.calls.map(([record]) => record.noUrut)).toEqual([12, undefined]);
+        expect(masuk.rows.map(row => [row.status, row.message])).toEqual([
+            ['imported', 'Nomor agenda sumber 12 sudah dipakai; diberi nomor 57.'],
+            ['imported', undefined],
+        ]);
+        mocks.keluar.mockResolvedValueOnce({ id: 'c', noUrut: 5 });
+        const keluar = await migrationService.importSuratKeluar('No,Nomor Surat,Tanggal Surat,Perihal,Kepada\n5,SK-5,2026-09-11,Register keluar,Unit B', 'unit-a', actor);
+        expect(mocks.keluar).toHaveBeenCalledWith(expect.objectContaining({ noUrut: 5 }), actor);
+        expect(keluar.rows[0]).toMatchObject({ status: 'imported' });
+        expect(keluar.rows[0].message).toBeUndefined();
+    });
+
     it('preserves partial-import and failed-critical-audit counts with row diagnostics', async () => {
         mocks.masuk.mockRejectedValueOnce(new Error('audit unavailable')).mockResolvedValueOnce({ id: 'good' });
         const result = await migrationService.importSuratMasuk([
