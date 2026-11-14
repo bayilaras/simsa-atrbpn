@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MULTILINE_FIELDS, sanitizeInput } from '../middlewares/sanitize.middleware';
+import { MULTILINE_FIELDS, sanitizeInput, sanitizeSatuBaris } from '../middlewares/sanitize.middleware';
 
 function jalankan(body: unknown) {
     const req: any = { body };
@@ -13,16 +13,81 @@ describe('sanitizeInput', () => {
             .toBe('1. Siapkan data\n2. Koordinasikan dengan PTEP\n\n3. Laporkan');
     });
 
-    it('mencakup persis bidang multi-baris §5', () => {
-        expect([...MULTILINE_FIELDS].sort()).toEqual(['alasan', 'catatan', 'catatanPenyelesaian', 'instruction', 'instruksi', 'keterangan']);
+    it('mencakup persis bidang multi-baris §5 ditambah perihal (textarea)', () => {
+        expect([...MULTILINE_FIELDS].sort()).toEqual(['alasan', 'catatan', 'catatanPenyelesaian', 'instruction', 'instruksi', 'keterangan', 'perihal']);
+    });
+
+    it('perihal mempertahankan baris baru dari isian multi-baris', () => {
+        expect(jalankan({ perihal: 'Undangan\r\nRapat  Koordinasi <b>Tahap</b>\n\n\n\nII' }).perihal)
+            .toBe('Undangan\nRapat Koordinasi Tahap\n\nII');
     });
 
     it('bidang lain tetap diratakan menjadi satu baris', () => {
-        expect(jalankan({ perihal: 'Undangan\n  rapat' }).perihal).toBe('Undangan rapat');
+        expect(jalankan({ dari: 'Biro\n  Umum' }).dari).toBe('Biro Umum');
     });
 
     it('bidang bersarang (disposisi.instruksi) ikut dipertahankan', () => {
         expect(jalankan({ disposisi: { instruksi: 'a\nb', targets: [{ unitKerjaId: ' dir_bppt ' }] } }))
             .toEqual({ disposisi: { instruksi: 'a\nb', targets: [{ unitKerjaId: 'dir_bppt' }] } });
+    });
+});
+
+describe('penyaring hanya membuang markup HTML', () => {
+    const teksBiasa = [
+        'a < b > c',
+        'x<y',
+        'Budi <budi@contoh.go.id>',
+        '->',
+        '<- kembali',
+        '<= 5',
+        'Luas < 5 ha dan > 2 ha',
+        'Rp <5 juta',
+        '<http://contoh.go.id/surat>',
+        '<!DOCTYPE html>',
+    ];
+
+    it.each(teksBiasa)('teks %j disimpan persis', (teks) => {
+        expect(sanitizeSatuBaris(teks)).toBe(teks);
+        expect(jalankan({ dari: teks, keterangan: teks, catatan: [teks] })).toEqual({ dari: teks, keterangan: teks, catatan: [teks] });
+    });
+
+    it('teks bertanda < dan > pada bidang multi-baris tetap utuh beserta baris barunya', () => {
+        expect(jalankan({ keterangan: 'Luas < 5 ha\ndan > 2 ha' }).keterangan).toBe('Luas < 5 ha\ndan > 2 ha');
+    });
+
+    it.each([
+        ['<img src=x onerror=alert(1)>', ''],
+        ['<script>alert(1)</script>', ''],
+        ['<b>tebal</b>', 'tebal'],
+        ['Surat <i>penting</i> ini', 'Surat penting ini'],
+        ['<SCRIPT type="text/javascript">alert(1)</SCRIPT >sisa', 'sisa'],
+        ['<style>p { color: red }</style>teks', 'teks'],
+        ['a<!-- catatan -->b', 'ab'],
+        ['baris<br/>berikut</div>', 'barisberikut'],
+        ['<img alt=">" src=x onerror=alert(1)>tetap', 'tetap'],
+        ['<script>tanpa penutup', 'tanpa penutup'],
+        // Tag yang baru terbentuk setelah tag lain dibuang ikut dibuang.
+        ['<scr<b>ipt>alert(1)</scr</b>ipt>', ''],
+        ['<<b>img src=x onerror=alert(1)>', ''],
+    ])('markup %j dibuang menjadi %j', (masukan, hasil) => {
+        expect(sanitizeSatuBaris(masukan)).toBe(hasil);
+        expect(jalankan({ keterangan: masukan }).keterangan).toBe(hasil);
+    });
+
+    it('waktu kerja tetap linear untuk masukan dengan tanda < sangat banyak', () => {
+        const bentuk = [
+            '<'.repeat(200_000),
+            '<a b="'.repeat(40_000),
+            '<script>'.repeat(25_000),
+            '<style>'.repeat(15_000) + '</script>' + '<script>'.repeat(15_000),
+            '<!--'.repeat(50_000),
+            '<'.repeat(50_000) + '<b>' + 'b>'.repeat(50_000),
+        ];
+        for (const masukan of bentuk) {
+            const mulai = performance.now();
+            const hasil = sanitizeSatuBaris(masukan);
+            expect(performance.now() - mulai).toBeLessThan(1_500);
+            expect(hasil).not.toMatch(/<[a-z][a-z0-9-]*[\s/>][^<]*>/i);
+        }
     });
 });
