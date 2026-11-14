@@ -13,7 +13,7 @@ const statuses = {
     unknown: { label: 'Belum terverifikasi', className: 'bg-muted text-muted-foreground' },
     disabled: { label: 'Tidak diaktifkan', className: 'bg-muted text-muted-foreground' },
 };
-const countLabels = { waiting: 'Menunggu', overdue: 'Terlambat', errors: 'Gagal', infected: 'Terdeteksi berbahaya', unscheduled: 'Belum terjadwal', mismatched: 'Tidak cocok' };
+const countLabels = { waiting: 'Menunggu', overdue: 'Terlambat', errors: 'Gagal', infected: 'Terdeteksi berbahaya', unscheduled: 'Belum terjadwal', mismatched: 'Tidak cocok', stale: 'Belum terhapus' };
 const sourceLabels = { surat_masuk: 'Surat masuk', surat_keluar: 'Surat keluar', arsip: 'Arsip' };
 const REQUEUE_FAILED = 'Berkas belum dapat diantre ulang. Coba lagi beberapa saat lagi.';
 const SCANNER_RUN_FAILED = 'Pemindai belum dapat dijalankan. Coba lagi beberapa saat lagi.';
@@ -156,6 +156,7 @@ export default function OperationsMonitoring() {
                         {check.id === 'scan_queue' && scanNotice && <p role="status">{scanNotice}</p>}
                         {check.id === 'scan_queue' && check.counts?.errors > 0 && <FailedScans checkedAt={snapshot.timestamp} onChanged={refresh} onNotice={setScanNotice} />}
                         {check.id === 'scanner' && check.status !== 'disabled' && <RunScanner />}
+                        {check.id === 'upload_cleanup' && check.status !== 'disabled' && <p className="text-xs text-muted-foreground">Berkas yang diunggah tetapi tidak jadi disimpan pada surat atau arsip dihapus otomatis setiap hari setelah masa tunggunya habis. Bila angka ini tidak turun dalam beberapa hari, hubungi pengelola sistem.</p>}
                         {check.checkedAt && <p className="text-xs text-muted-foreground">Bukti terakhir: {timestamp(check.checkedAt)}</p>}
                         {check.expiresAt && <p className="text-xs text-muted-foreground">Berlaku hingga: {timestamp(check.expiresAt)}</p>}
                     </CardContent>

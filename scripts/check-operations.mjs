@@ -2,6 +2,10 @@ import { pathToFileURL } from 'node:url';
 
 const MAXIMUM_FUTURE_SKEW_MS = 5000;
 const REQUIRED_CHECKS = ['database', 'storage', 'scanner', 'scan_queue', 'fixity', 'backup', 'restore'];
+// Reported by backends that have it; this script runs from main and may probe
+// a production release from before the check existed.
+const OPTIONAL_CHECKS = ['upload_cleanup'];
+const KNOWN_CHECKS = [...REQUIRED_CHECKS, ...OPTIONAL_CHECKS];
 const PROBLEM_STATUSES = ['attention', 'failed', 'unknown'];
 
 export function validateOperationsProbe(responseStatus, payload, now = Date.now()) {
@@ -9,16 +13,18 @@ export function validateOperationsProbe(responseStatus, payload, now = Date.now(
     const timestamp = Date.parse(payload?.timestamp);
     if (responseStatus !== 200 || payload?.status !== 'healthy' || !Number.isFinite(timestamp)
         || timestamp - now > MAXIMUM_FUTURE_SKEW_MS || now - timestamp > 120000 || !Array.isArray(payload?.checks)) return false;
-    return payload.checks.length === required.length && required.every(id => {
+    const fine = (id, optional) => {
         const items = payload.checks.filter(check => check?.id === id);
-        return items.length === 1 && ['healthy', 'disabled'].includes(items[0].status);
-    });
+        return (optional && items.length === 0) || (items.length === 1 && ['healthy', 'disabled'].includes(items[0].status));
+    };
+    return payload.checks.every(check => KNOWN_CHECKS.includes(check?.id))
+        && required.every(id => fine(id, false)) && OPTIONAL_CHECKS.every(id => fine(id, true));
 }
 
 /** Only known check ids with a known problem status; never echo other response text. */
 function unhealthyChecks(payload) {
     if (!Array.isArray(payload?.checks)) return [];
-    return REQUIRED_CHECKS.flatMap(id => {
+    return KNOWN_CHECKS.flatMap(id => {
         const items = payload.checks.filter(check => check?.id === id);
         return items.length === 1 && PROBLEM_STATUSES.includes(items[0].status) ? [`${id}: ${items[0].status}`] : [];
     });

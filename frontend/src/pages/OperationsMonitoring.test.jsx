@@ -46,6 +46,26 @@ describe('operational monitoring', () => {
     });
 });
 
+describe('direct uploads left uncleaned', () => {
+    const cleanup = (status, stale) => ({ status: status === 'healthy' ? 'healthy' : 'attention', timestamp: '2026-09-15T00:00:00Z', checks: [
+        { id: 'upload_cleanup', label: 'Pembersihan unggahan langsung', status, message: 'Keadaan pembersihan.', ...(stale === undefined ? {} : { counts: { stale } }) },
+    ] });
+    it('shows how many uploads are still not deleted, with what happens next', async () => {
+        get.mockResolvedValue({ data: cleanup('attention', 3) });
+        render(<OperationsMonitoring />);
+        expect(await screen.findByText('Pembersihan unggahan langsung')).toBeInTheDocument();
+        expect(screen.getByText('Belum terhapus').nextSibling).toHaveTextContent('3');
+        expect(screen.getByText('Berkas yang diunggah tetapi tidak jadi disimpan pada surat atau arsip dihapus otomatis setiap hari setelah masa tunggunya habis. Bila angka ini tidak turun dalam beberapa hari, hubungi pengelola sistem.')).toBeInTheDocument();
+        expect(screen.queryByText('stale')).not.toBeInTheDocument();
+    });
+    it('gives no cleanup explanation where file storage is not enabled', async () => {
+        get.mockResolvedValue({ data: cleanup('disabled') });
+        render(<OperationsMonitoring />);
+        expect(await screen.findByText('Keadaan pembersihan.')).toBeInTheDocument();
+        expect(screen.queryByText(/dihapus otomatis setiap hari/)).not.toBeInTheDocument();
+    });
+});
+
 describe('running the scanner from monitoring', () => {
     const scanner = status => ({ status: status === 'healthy' ? 'healthy' : 'attention', timestamp: '2026-09-15T00:00:00Z', checks: [
         { id: 'scanner', label: 'Pemindai keamanan dokumen', status, message: 'Keadaan pemindai.' },
@@ -61,11 +81,11 @@ describe('running the scanner from monitoring', () => {
     });
     it('shows the server explanation when the scanner cannot be run, and never a raw error', async () => {
         get.mockResolvedValue({ data: scanner('failed') });
-        post.mockRejectedValueOnce(Object.assign(new Error('Pemindai tidak dapat dijalankan dari layanan ini. Periksa pengaturan pemindai pada layanan backend.'), { status: 503 }))
+        post.mockRejectedValueOnce(Object.assign(new Error('Pemindai tidak dapat dijalankan dari layanan ini. Hubungi pengelola sistem.'), { status: 503 }))
             .mockRejectedValueOnce(new Error('ECONNRESET private detail'));
         render(<OperationsMonitoring />);
         fireEvent.click(await screen.findByRole('button', { name: 'Jalankan pemindai' }));
-        expect(await screen.findByRole('alert')).toHaveTextContent('Pemindai tidak dapat dijalankan dari layanan ini. Periksa pengaturan pemindai pada layanan backend.');
+        expect(await screen.findByRole('alert')).toHaveTextContent('Pemindai tidak dapat dijalankan dari layanan ini. Hubungi pengelola sistem.');
         await waitFor(() => expect(screen.getByRole('button', { name: 'Jalankan pemindai' })).toBeEnabled());
         fireEvent.click(screen.getByRole('button', { name: 'Jalankan pemindai' }));
         await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Pemindai belum dapat dijalankan. Coba lagi beberapa saat lagi.'));

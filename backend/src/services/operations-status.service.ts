@@ -23,7 +23,11 @@ const validCount = (value: unknown) => (typeof value === 'number' || (typeof val
 // row healthy and reports four. Enrollment runs before any read.
 const FIXITY_ENROLLMENT_GRACE_HOURS = 28;
 const FIXITY_OVERDUE_GRACE_HOURS = 28;
-const QUEUE_KEYS = ['scanWaiting', 'scanOverdue', 'scanErrors', 'scanInfected', 'fixityOverdue', 'fixityErrors', 'fixityUnscheduled', 'mismatched'];
+// The daily cleanup removes a direct upload once its lease has expired unused.
+// Two days later the cleanup has run at least once more, so a lease still
+// waiting then means deletions keep failing or the schedule is not running.
+const UPLOAD_CLEANUP_OVERDUE_HOURS = 48;
+const QUEUE_KEYS = ['scanWaiting', 'scanOverdue', 'scanErrors', 'scanInfected', 'fixityOverdue', 'fixityErrors', 'fixityUnscheduled', 'mismatched', 'uploadLeasesStale'];
 
 export function evaluateRecoveryCheck(id: 'backup' | 'restore', evidence: unknown, now: number): Check {
     const label = id === 'backup' ? 'Backup database dan dokumen' : 'Uji pemulihan backup';
@@ -75,6 +79,16 @@ export function buildOperationsStatus(input: { now: number; readiness: unknown; 
     checks.push({ id: 'fixity', label: 'Integritas dokumen berkala', status: unavailable ? 'unknown' : fixityCounts.mismatched ? 'failed' : Object.values(fixityCounts).some(Boolean) ? 'attention' : 'healthy',
         message: unavailable ? 'Jadwal integritas belum dapat diperiksa.' : `Periksa berkas rusak, pemeriksaan gagal, jadwal terlambat lebih dari ${FIXITY_OVERDUE_GRACE_HOURS} jam, atau berkas bersih yang belum terjadwal lebih dari ${FIXITY_ENROLLMENT_GRACE_HOURS} jam.`, ...(!unavailable ? { counts: fixityCounts } : {}) });
     checks.push(evaluateRecoveryCheck('backup', recovery.backup, input.now), evaluateRecoveryCheck('restore', recovery.restore, input.now));
+    const staleUploads = count(queues.uploadLeasesStale);
+    checks.push(blob.required === false
+        ? { id: 'upload_cleanup', label: 'Pembersihan unggahan langsung', status: 'disabled', message: 'Penyimpanan berkas tidak diaktifkan.' }
+        : unavailable
+            ? { id: 'upload_cleanup', label: 'Pembersihan unggahan langsung', status: 'unknown', message: 'Pembersihan unggahan langsung belum dapat diperiksa.' }
+            : { id: 'upload_cleanup', label: 'Pembersihan unggahan langsung', status: staleUploads ? 'attention' : 'healthy',
+                message: staleUploads
+                    ? `Ada berkas unggahan langsung yang tidak jadi dipakai dan belum terhapus lebih dari ${UPLOAD_CLEANUP_OVERDUE_HOURS} jam setelah masa tunggunya habis. Pembersihan harian belum berhasil menghapusnya.`
+                    : `Tidak ada berkas unggahan langsung yang tertinggal lebih dari ${UPLOAD_CLEANUP_OVERDUE_HOURS} jam setelah masa tunggunya habis.`,
+                counts: { stale: staleUploads } });
     return { timestamp: new Date(input.now).toISOString(), status: checks.some(c => c.status === 'failed') ? 'failed' : checks.some(c => ['attention', 'unknown'].includes(c.status)) ? 'attention' : 'healthy',
         checks, ciUrl: 'https://github.com/bayilaras/simsa-atrbpn/actions', refreshAfterSeconds: 60 };
 }
@@ -125,6 +139,8 @@ export async function collectOperationsStatus(readEvidence: () => Promise<unknow
     // INSERT on file_fixity_jobs). A scan that releases a file records its
     // verified hash in last_fixity_check_at, so count a file as unscheduled
     // only after the next scheduled run has had time to enroll it.
+    // uploadLeasesStale: direct-upload leases the daily cleanup should already
+    // have cleared (never claimed, expired longer than the tolerance).
     const fixityEligible = `f.storage_access='private' AND f.malware_scan_status='clean'
         AND f.sha256 IS NOT NULL AND f.integrity_status <> 'mismatch'`;
     const [ready, queue, recovery] = await Promise.allSettled([
@@ -141,7 +157,10 @@ export async function collectOperationsStatus(readEvidence: () => Promise<unknow
             (SELECT count(*) FROM file_attachments f LEFT JOIN file_fixity_jobs j ON j.attachment_id=f.id
                 WHERE j.attachment_id IS NULL AND ${fixityEligible}
                   AND coalesce(f.last_fixity_check_at, f.created_at) < now() - interval '${FIXITY_ENROLLMENT_GRACE_HOURS} hours') AS "fixityUnscheduled",
-            (SELECT count(*) FROM file_attachments WHERE integrity_status='mismatch') AS "mismatched"`, query_timeout: 5000 } as QueryConfig & { query_timeout: number }),
+            (SELECT count(*) FROM file_attachments WHERE integrity_status='mismatch') AS "mismatched",
+            (SELECT count(*) FROM client_blob_uploads
+                WHERE status IN ('authorized', 'pending', 'release_cleanup', 'cleanup_started')
+                  AND expires_at < now() - interval '${UPLOAD_CLEANUP_OVERDUE_HOURS} hours') AS "uploadLeasesStale"`, query_timeout: 5000 } as QueryConfig & { query_timeout: number }),
         readEvidence(),
     ]);
     return buildOperationsStatus({ now: Date.now(), readiness: ready.status === 'fulfilled' ? ready.value : null,

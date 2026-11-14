@@ -51,6 +51,14 @@ dicoba lagi pada run berikutnya; respons run itu 503 (`incomplete`). Batch
 unggah massal yang kedaluwarsa tidak termasuk; batch itu dibersihkan saat unggah
 massal baru dibuat atau oleh worker di bawah.
 
+Kegagalan cron tidak hanya terlihat di log Vercel. Monitoring Operasional
+memuat pemeriksaan **Pembersihan unggahan langsung** (`upload_cleanup`): bila
+ada lease berstatus `authorized`, `pending`, `release_cleanup`, atau
+`cleanup_started` yang sudah lebih dari 48 jam melewati `expires_at`,
+pemeriksaan itu berstatus perlu perhatian dan menampilkan jumlahnya
+(**Belum terhapus**). Tanda di header Super Admin dan probe Operations Monitor
+ikut menampilkannya.
+
 Di luar Vercel, jalankan one-shot worker berikut melalui scheduler persisten
 sedikitnya setiap jam (Kubernetes CronJob, systemd timer, atau scheduler
 container yang setara):
