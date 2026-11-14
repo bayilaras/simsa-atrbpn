@@ -10,6 +10,11 @@ export const IMPORT_ROW_STATUS_LABELS = {
 
 const REVIEW_STATUSES = new Set(['locked', 'invalid'])
 
+/** The SIMSA data a source column maps to; a column the server recognises but does not store says so. */
+export function importMappingLabel(item) {
+    return item.stored === false ? `${item.label} (tidak disimpan)` : item.label
+}
+
 /**
  * Rows that need action: rejected rows, rows whose letter could not be updated,
  * rows repeating an earlier source row, and rows matching a deleted letter. A

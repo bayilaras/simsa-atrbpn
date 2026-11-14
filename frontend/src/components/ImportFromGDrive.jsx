@@ -8,7 +8,7 @@ import ImportDateIssues from '@/components/ImportDateIssues';
 import ImportRowReport from '@/components/ImportRowReport';
 import ImportSyncOption from '@/components/ImportSyncOption';
 import ImportUnitRequiredButton from '@/components/ImportUnitRequiredButton';
-import { importResultSummary } from '@/lib/import-report';
+import { importMappingLabel, importResultSummary } from '@/lib/import-report';
 import { CATATAN_KELAS_IMPOR_SURAT_MASUK } from '@/lib/kelas-keamanan';
 import { useAppConfig } from '@/context/app-config-context';
 
@@ -423,7 +423,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                             </tr></thead>
                                             <tbody>{previewData.mapping.map(item => <tr key={item.field} className="border-b last:border-0">
                                                 <td className="px-3 py-2">Kolom {item.columnIndex + 1}: {item.header}</td>
-                                                <td className="px-3 py-2">{item.label}</td>
+                                                <td className="px-3 py-2">{importMappingLabel(item)}</td>
                                             </tr>)}</tbody>
                                         </table>
                                     </div>

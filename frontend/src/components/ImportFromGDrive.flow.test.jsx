@@ -62,6 +62,18 @@ it.each(['surat-masuk', 'surat-keluar'])('shows server mapping for %s and sends 
     expect(completed).toHaveBeenCalledTimes(1);
 });
 
+it('marks the columns the server recognises but does not store', async () => {
+    api.post.mockImplementation(async (_endpoint, body) => ({ ...preview(body.type), mapping: [...preview(body.type).mapping,
+        { field: 'id', label: 'ID sumber', columnIndex: 4, header: 'ID', stored: false }] }));
+    render(<ImportFromGDrive {...props} />);
+    open();
+    await discover();
+    await showPreview();
+    const mapping = screen.getByRole('table', { name: 'Pemetaan kolom ke data SIMSA' });
+    expect(within(mapping).getByText('ID sumber (tidak disimpan)')).toBeInTheDocument();
+    expect(within(mapping).getByText('Perihal')).toBeInTheDocument();
+});
+
 describe('a sheet imported in parts', () => {
     const importEndpoint = '/api/import/google-drive/surat-keluar';
     const source = { spreadsheetUrl: url, gid: '0', unitKerjaId: 'unit-a' };

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ImportFileDialog from './ImportFileDialog'
 import { CATATAN_KELAS_IMPOR_SURAT_MASUK } from '@/lib/kelas-keamanan'
@@ -148,6 +148,18 @@ describe('CSV/XLSX import dialog', () => {
         expect(notice).toHaveTextContent('Baris data ke-2: Tanggal "11/25/2026" tampaknya ditulis dengan bulan lebih dulu')
         expect(screen.getByText(/ditulis dengan urutan hari, bulan, tahun \(misalnya 03\/11\/2026 atau 3 November 2026\)/)).toBeInTheDocument()
         expect(screen.getByRole('button', { name: 'Impor 3 baris' })).toBeEnabled()
+    })
+
+    it('marks the columns the server recognises but does not store', async () => {
+        await open('surat-masuk')
+        await choose(csv())
+        mocks.post.mockResolvedValueOnce(preview({ format: 'csv', sheet: null, importType: 'surat-masuk', mapping: [
+            { field: 'nomorSurat', label: 'Nomor surat', columnIndex: 1, header: 'Nomor Surat' },
+            { field: 'status', label: 'Status sumber', columnIndex: 6, header: 'Status', stored: false }] }))
+        click('Pratinjau')
+        const mapping = await screen.findByRole('table', { name: 'Pemetaan kolom ke data SIMSA' })
+        expect(within(mapping).getByText('Status sumber (tidak disimpan)')).toBeInTheDocument()
+        expect(within(mapping).getByText('Nomor surat')).toBeInTheDocument()
     })
 
     it('previews a single-tab workbook without asking for a tab', async () => {

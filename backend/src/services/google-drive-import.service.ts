@@ -397,7 +397,8 @@ export class GoogleDriveImportService {
         const kepada = this.getField(row, colMap, 'kepada');
         const effectiveTahun = parsedDate ? Number(parsedDate.slice(0, 4)) : new Date().getFullYear();
 
-        const klasifikasiJenis = this.getField(row, colMap, 'klasifikasiJenis');
+        // Registers write the type in any letter case ("Fasilitatif", "SUBSTANTIF").
+        const klasifikasiJenis = this.getField(row, colMap, 'klasifikasiJenis').toLowerCase();
         const klasifikasiKode = this.getField(row, colMap, 'klasifikasiKode');
         const klasifikasiArsip = this.getField(row, colMap, 'klasifikasiArsip');
         const link = this.getField(row, colMap, 'linkDokumen');

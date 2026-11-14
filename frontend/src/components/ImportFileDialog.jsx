@@ -6,7 +6,7 @@ import ImportDateIssues from '@/components/ImportDateIssues'
 import ImportRowReport from '@/components/ImportRowReport'
 import ImportSyncOption from '@/components/ImportSyncOption'
 import ImportUnitRequiredButton from '@/components/ImportUnitRequiredButton'
-import { importResultSummary } from '@/lib/import-report'
+import { importMappingLabel, importResultSummary } from '@/lib/import-report'
 import { CATATAN_KELAS_IMPOR_SURAT_MASUK } from '@/lib/kelas-keamanan'
 import api from '@/services/api'
 import { addImportPart, emptyImportTotals, IMPORT_FILE_MAX_BYTES, IMPORT_FILE_TOO_LARGE, IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import'
@@ -207,7 +207,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
                     </tr></thead>
                     <tbody>{preview.mapping.map(item => <tr key={item.field} className="border-b last:border-0">
                         <td className="px-3 py-2">Kolom {item.columnIndex + 1}: {item.header}</td>
-                        <td className="px-3 py-2">{item.label}</td>
+                        <td className="px-3 py-2">{importMappingLabel(item)}</td>
                     </tr>)}</tbody>
                 </table>
             </div>
