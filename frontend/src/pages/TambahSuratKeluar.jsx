@@ -21,6 +21,7 @@ import { sifatSuratKeluarOptions } from '@/lib/sifat-surat-keluar';
 import { PESAN_KELAS_TERBATAS_PERAN, adaKelasTersembunyi, bolehMemilihKelas, saringOpsiKelas } from '@/lib/kelas-keamanan';
 import { PETUNJUK_NO_URUT, catatanPindahTahun, galatNomorUrut, nomorUrutDiketik, tahunUrutanBaru } from '@/lib/surat-nomor-urut';
 import { dataSudahBerubah, versiDimuat } from '@/lib/data-sudah-berubah';
+import { useLacakSearch } from '@/hooks/use-lacak-search';
 import {
     Card,
     CardContent,
@@ -350,6 +351,10 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
         });
         return () => { active = false; };
     }, [formData.naskahDinas, formData.tanggalSurat, isEditMode, noUrutPratinjau, resolvedUnitKerjaId]);
+
+    // Peringatan nomor ganda (§6 Lacak mode cek, hanya surat keluar yang terlihat); tidak aktif pada edit.
+    const cekNomor = useLacakSearch(isEditMode ? '' : formData.nomorSurat, { mode: 'cek', jenis: 'surat_keluar' });
+    const duplikat = cekNomor.data?.kelompok ?? [];
 
     // Tanggal ke tahun lain: server memindahkan surat ke urutan No. Urut tahun itu.
     const tahunBaru = isEditMode ? tahunUrutanBaru(dimuat, formData.tanggalSurat) : null;
@@ -717,6 +722,11 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
                                     && numberPreview?.noUrut === noUrutPratinjau
                                     && numberPreview?.nomorSurat && (
                                     <p className="text-xs text-emerald-700 dark:text-emerald-300">Preview dari template unit: <code>{numberPreview.nomorSurat}</code></p>
+                                )}
+                                {duplikat.length > 0 && (
+                                    <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                                        {duplikat[0].rangkaian ? `Nomor sudah terdaftar / terkait ${duplikat[0].rangkaian.kode}` : 'Nomor sudah terdaftar'}
+                                    </p>
                                 )}
                             </div>
 
