@@ -45,7 +45,7 @@ Akses aktif dapat dicabut sewaktu-waktu dengan alasan yang dicatat.
 
 - Persetujuan hanya berlaku untuk pengguna, rekod, klasifikasi, dan mode akses yang disetujui.
 - Bila unit pengguna atau klasifikasi rekod berubah, akses tertutup dan perlu diajukan ulang.
-- Izin **Tayang saja** tidak dapat digunakan untuk mengunduh.
+- Izin **Tayang saja** tidak dapat digunakan untuk mengunduh. Mode ini hanya menyembunyikan tombol unduh, cetak, dan buka di tab baru; isi berkas tetap tampil di layar peminta dan dapat disalin, dan setiap penayangan tercatat di Audit Log. Keterangan ini juga tampil saat memilih mode **Tayang saja** dan saat Super Admin menyetujuinya.
 - Izin **Tayang saja** dan **Tayang dan unduh** tidak dapat digunakan untuk mengubah rekod; mutasi memerlukan izin **Tayang dan kelola**.
 - Izin **Tayang dan kelola** tidak otomatis mengizinkan pengunduhan.
 - Rekod yang dihapus, diarsipkan, terkena legal hold, atau selesai disusutkan tetap mengikuti pembatasan mutasi masing-masing.

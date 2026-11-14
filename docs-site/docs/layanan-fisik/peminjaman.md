@@ -54,7 +54,7 @@ Klik **"Simpan Peminjaman"**. Peminjaman langsung tercatat dengan status **Dipin
 3. Klik **"Perpanjang"** untuk mengubah tanggal jatuh tempo, atau **"Kembalikan"** untuk mencatat pengembalian.
 4. Saat pengembalian, isi catatan kondisi bila perlu, lalu klik **"Konfirmasi Pengembalian"**.
 
-Peminjaman yang sudah dikembalikan tampil di tab **Riwayat**.
+Peminjaman yang sudah dikembalikan tampil di tab **Riwayat**. Rekap peminjaman, termasuk yang **Terlambat**, juga tersedia di **Laporan**, tab **Peminjaman**.
 
 Selama arsip atau boksnya masih dipinjam, lokasi simpan arsip tidak dapat diubah, dan arsip lain tidak dapat ditautkan ke boks yang sedang dipinjam. Catat pengembaliannya terlebih dahulu.
 

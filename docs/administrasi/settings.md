@@ -6,9 +6,9 @@ Panduan menggunakan halaman pengaturan SIMSA.
 
 ## Akses Pengaturan
 
-Menu **Pengaturan** (⚙️) di sidebar muncul bagi semua akun yang sudah aktif. Super Admin juga dapat membukanya dari menu avatar di header. Tab yang tersedia menyesuaikan role.
+Menu **Pengaturan** (⚙️) di sidebar muncul bagi semua akun yang sudah aktif. Semua peran juga dapat membukanya dari menu akun (avatar) di kanan atas header. Tab yang tersedia menyesuaikan role.
 
-1. Buka **Pengaturan** dari sidebar.
+1. Buka **Pengaturan** dari sidebar atau dari menu akun.
 2. Semua pengguna mendapat tab **Profil** dan **Preferensi**.
 3. Admin Unit Kerja mendapat tab **Template** untuk unitnya. Super Admin mendapat tab **Template** untuk unit yang dipilih dan tab **Unit Kerja**.
 
@@ -31,10 +31,18 @@ Tab ini tersedia untuk **semua pengguna** yang login.
 Kartu **Ubah Kata Sandi** ada di bawah profil dan berlaku untuk akun yang masuk dengan email dan kata sandi.
 
 1. Isi **Kata sandi saat ini**.
-2. Isi **Kata sandi baru** (8 sampai 128 karakter dan berbeda dari kata sandi saat ini), lalu ulangi pada **Konfirmasi kata sandi baru**.
+2. Isi **Kata sandi baru**, lalu ulangi pada **Konfirmasi kata sandi baru**. Kata sandi baru minimal 12 karakter (paling banyak 128), tidak memuat nama atau bagian depan email Anda, bukan kata sandi yang umum, dan berbeda dari kata sandi saat ini.
 3. Klik **"Simpan Kata Sandi"**.
 
-> 💡 Setelah berhasil, sesi di perangkat lain ditutup; perangkat yang sedang Anda pakai tetap masuk. Pesan *Kata sandi saat ini salah.* berarti isian pertama keliru. Setelah terlalu banyak percobaan, tunggu beberapa menit.
+> 💡 Setelah berhasil, sesi di perangkat lain ditutup; perangkat yang sedang Anda pakai tetap masuk. Pesan *Kata sandi saat ini salah.* berarti isian pertama keliru. Setelah terlalu banyak percobaan, tunggu beberapa menit. Kata sandi lama yang lebih pendek dari 12 karakter tetap dapat dipakai untuk masuk sampai Anda menggantinya.
+
+| Pesan | Yang perlu diperbaiki |
+|-------|------------------------|
+| Kata sandi minimal 12 karakter. | Perpanjang kata sandi |
+| Kata sandi tidak boleh memuat nama pengguna. | Jangan memakai bagian dari nama Anda |
+| Kata sandi tidak boleh memuat bagian depan alamat email (sebelum tanda @). | Jangan memakai bagian depan email Anda |
+| Kata sandi ini terlalu umum dan mudah ditebak. Pilih kata sandi lain. | Pilih kata sandi yang tidak umum |
+| Konfirmasi kata sandi tidak sama. | Ketik ulang kata sandi baru yang sama persis |
 
 Akun yang hanya masuk dengan Google tidak memiliki kata sandi SIMSA, sehingga kartu ini hanya menampilkan keterangan tanpa formulir. Bila perlu masuk dengan email dan kata sandi, atau lupa kata sandi saat ini, minta Super Admin memakai [Atur Ulang Kata Sandi](user-management.md#atur-ulang-kata-sandi).
 

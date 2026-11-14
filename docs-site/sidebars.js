@@ -5,6 +5,7 @@ const sidebars = {
     'mulai-inventaris-internal',
     'profil-aplikasi-internal',
     'panduan-pengguna',
+    'perubahan-november-2026',
     {
       type: 'category',
       label: '🔐 Akses SIMSA',
