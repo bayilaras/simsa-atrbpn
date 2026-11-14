@@ -133,7 +133,7 @@ Alat `scripts/operations-recovery-reupload.mjs` mengunggah setiap PDF dari folde
    ```
 
    Pada jalur "dokumen dari backup" (database utuh), connection string menunjuk database produksi. Bila password `simsa_migration` produksi tidak disimpan (alur `rotate-migrate`), tetapkan dulu password baru dengan `rilis-neon.ps1 -Action rotate-role -Role simsa_migration` ([rotasi](RUNBOOK_KREDENSIAL_DATABASE.md#simsa_migration)).
-3. **Periksa ringkasannya.** Ringkasan memuat database dan store tujuan, jumlah dokumen, jumlah lokasi yang akan diubah per kolom, dan kode rencana. Perhatikan juga baris berikut:
+3. **Periksa ringkasannya.** Ringkasan memuat database dan store tujuan, jumlah dokumen di folder backup dan jumlah yang dapat dipulihkan (yang masih punya baris database), jumlah lokasi yang akan diubah per kolom, dan kode rencana. Perhatikan juga baris berikut:
    - *Tanpa salinan di backup ini*: lokasi berkas yang tidak ada di backup, misalnya PDF yang diunggah sesudah snapshot. Lokasinya tidak diubah. Daftar tabel dan ID-nya ada di laporan rinci (`plan.missingCopies`); minta pengunggahnya mengunggah ulang dari berkas asli.
    - *Referensi unggahan yang belum selesai*: lease unggahan langsung, batch unggah massal, dan antrean pembersihan yang menunjuk store lama. Objeknya tidak pernah masuk backup. Baris ini tidak diubah.
    - *Baris DAFTAR-DOKUMEN tanpa baris database*: dokumen di backup yang barisnya sudah tidak ada di database. Dokumen itu dilewati.
@@ -162,6 +162,8 @@ Alat `scripts/operations-recovery-reupload.mjs` mengunggah setiap PDF dari folde
 | login database ini bukan pemilik tabel | Pakai connection string `simsa_migration` |
 | database menolak perintah (kode …) | Semua perubahan dibatalkan. Kode `55P03` berarti tabel sedang dipakai; hentikan pencatatan atau coba lagi |
 | rencana tidak dapat dibuat: ada baris database yang tidak cocok dengan backup | Database dan backup berasal dari snapshot berbeda. Baca `plan.problems` di laporan, lalu pakai dump dari artefak yang sama |
+| ada lokasi dokumen yang berubah sejak uji kering | Ada baris yang berubah atau baris baru yang menunjuk dokumen yang sedang dipindahkan. Semua perubahan dibatalkan; hentikan pencatatan, lalu jalankan uji kering lagi |
+| PERHATIAN: perubahan sudah tersimpan, tetapi laporan rinci tidak dapat ditulis | Pemulihan berhasil. Simpan ringkasan di layar; jejak perubahan ada di Audit Log. Periksa ruang kosong dan izin folder dokumen |
 
 ## 6. Pindahkan layanan
 
@@ -183,7 +185,7 @@ Lakukan berurutan. Layanan baru dinyatakan pulih setelah semua langkah lulus.
 4. Jalankan Operations Monitor secara manual dan pastikan hijau. Run ini juga meminta backend membangunkan pemindai, yang perlu memperbarui verifikasinya pada deployment baru.
 5. Super Admin masuk dan membuka **Administrasi → Monitoring Operasional**. Semua kartu harus **Sehat**.
 6. Buka satu PDF dari setiap jenis yang ada: surat masuk, surat keluar, lampiran arsip, dan sumber klasifikasi atau JRA. Pratinjau dan unduhan harus berhasil.
-7. Cocokkan jumlah dokumen di ringkasan alat dengan `BACA-SAYA.txt`. Jumlah catatan audit `system:operations-recovery-reupload` di menu **Audit Log** harus sama dengan jumlah lokasi yang ditulis ulang.
+7. Jumlah *Dokumen di folder backup* pada ringkasan alat harus sama dengan jumlah dokumen di `BACA-SAYA.txt`. Selisihnya dengan *Dokumen yang dapat dipulihkan* adalah dokumen yang barisnya sudah tidak ada di database (baris *Baris DAFTAR-DOKUMEN tanpa baris database*). Jumlah catatan audit `system:operations-recovery-reupload` di menu **Audit Log** harus sama dengan jumlah lokasi yang ditulis ulang.
 8. Umumkan kepada staf bahwa layanan pulih, sebutkan waktu snapshot, dan minta pencatatan sesudah waktu itu diulang dari berkas fisik atau surel. Serahkan daftar berkas tanpa salinan kepada Super Admin.
 
 ## 8. Setelah pulih

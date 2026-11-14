@@ -4,7 +4,7 @@ Halaman ini adalah titik awal bagi siapa pun yang mengoperasikan SIMSA: apa yang
 
 Perbarui halaman ini setiap kali ada rilis, perubahan jadwal, atau perubahan akun. Bila isinya berbeda dengan berkas konfigurasi di repositori (`.github/workflows/`, `backend/vercel.json`, `frontend/vercel.mjs`), berkas konfigurasi yang berlaku; perbaiki halaman ini. Repositori bersifat publik: jangan menulis nama host database, ID project atau deployment, nilai rahasia, maupun nama orang di sini.
 
-**Per 13 November 2026:** produksi menjalankan backend C75 dan frontend C68 dari `main` `8abfdf7`. Journal database berisi 54 migrasi, terakhir `0053_list_audit_attachment_indexes`. Laporan setiap rilis ada di [`docs/rilis/`](rilis/README.md).
+**Per 13 November 2026:** produksi menjalankan backend C75 dan frontend C68 dari `main` `8abfdf7`. Journal database berisi 54 migrasi, terakhir `0053_list_audit_attachment_indexes`. Laporan rilis disimpan di [`docs/rilis/`](rilis/README.md). Laporan C75/C68 (`HASIL_RILIS_C75_C68_2026-11-13.md`) diajukan lewat pull request tersendiri dan baru ada di folder itu setelah pull request tersebut digabung.
 
 ## Apa yang berjalan di mana
 
@@ -34,7 +34,7 @@ WIB = UTC+7. Jadwal GitHub Actions bersifat *best-effort*: run sering dimulai te
 | Pembaruan dependensi | Mingguan, Senin 02:00 WIB | Dependabot (`.github/dependabot.yml`) | Pull request |
 | Pemeriksaan kode | Setiap pull request dan push | `ci.yml` | Status check pada PR |
 
-Selain jadwal, pemindai juga dibangunkan oleh setiap unggahan, tombol **Lanjutkan pemeriksaan** pada berkas yang menunggu, dan run monitor. Cron dan monitor membangunkan pemindai bila verifikasi definisinya hampir habis atau bila ada berkas yang menunggu pemindaian.
+Selain jadwal, pemindai juga dibangunkan oleh setiap unggahan, tombol **Lanjutkan pemeriksaan** pada berkas yang menunggu, dan run monitor. Cron dan monitor membangunkan pemindai bila verifikasi definisinya hilang atau tersisa kurang dari 13 jam, atau bila ada berkas yang sudah menunggu pemindaian lebih dari 10 menit.
 
 ## Apa yang dipantau
 
