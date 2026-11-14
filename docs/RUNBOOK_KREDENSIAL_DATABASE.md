@@ -94,7 +94,7 @@ Wrapper memeriksa dependensi ini **sebelum** prompt muncul dan mencetak perintah
 ## Prosedur rilis
 
 1. **Pra-cek.** PR sudah di-merge ke `main` dan kelima check wajib hijau pada commit merge. Run `operations-recovery.yml` terakhir sukses. Produksi sehat (Operations Monitor).
-2. **Bila rilis memuat migrasi.** Merge ke `main` membuat backup harian gagal sampai migrasi diterapkan, karena rantai journal berbeda. Ini sudah diperkirakan. Sebelum migrasi:
+2. **Bila rilis memuat migrasi.** Backup harian tetap berjalan setelah merge ke `main` selama migrasi belum diterapkan, karena riwayat produksi sama dengan bagian awal journal. Sebelum migrasi:
    - buat branch Neon `pra-00xx-<tanggal>` dari branch produksi (Neon Console → Branches). Pada *Automatically delete branch after*, pilih 7 hari, karena bawaannya 1 hari;
    - pastikan backup terakhir dari rantai lama ada.
 
@@ -155,7 +155,7 @@ PostgreSQL hanya mengenal satu password per role, dan kebijakan role yang sudah 
 
 ### simsa_backup
 
-Tidak ada gangguan bagi pengguna. Hindari jendela backup terjadwal (cron 00:15 UTC; run aktual sering baru mulai sekitar 04:40 UTC).
+Tidak ada gangguan bagi pengguna. Hindari jendela backup terjadwal (cron 15:30 UTC atau 22:30 WIB; GitHub sering baru memulainya beberapa jam kemudian).
 
 1. Jalankan `rilis-neon.ps1 -Action rotate-role -Role simsa_backup`. Output menampilkan `rotasi simsa_backup: ok` dan `login simsa_backup dengan password baru: ok`.
 2. **Segera** perbarui secret `NEON_BACKUP_DATABASE_URL` di env `production-recovery` dengan connection string dari password manager. Format: `postgresql://simsa_backup:<password ter-URL-encode>@<host direct>/<db>?sslmode=verify-full`. Hanya `sslmode=verify-full` dan opsional `channel_binding=require` yang diterima.

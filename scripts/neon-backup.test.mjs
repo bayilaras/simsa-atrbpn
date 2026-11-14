@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { runBackupCommand, assertNeonWindowsPrivateAcl } from './neon-backup-runtime.mjs';
-import { parseNeonBackupOperation, sealNeonBundle, openNeonBundle, loadNeonEvidenceSql } from './neon-backup-core.mjs';
+import { parseNeonBackupOperation, sealNeonBundle, openNeonBundle, loadNeonEvidenceSql, appliedMigrationCount, appliedMigrations } from './neon-backup-core.mjs';
+import { loadMigrations } from '../backend/scripts/migrate-database.mjs';
 
 const env = { NEON_EXPECTED_HOST: 'ep-test.ap-southeast-1.aws.neon.tech', NEON_EXPECTED_DATABASE: 'simsa_cloud', NEON_EXPECTED_ADMIN: 'neon_admin',
   NEON_BACKUP_DATABASE_URL: 'postgresql://simsa_backup:synthetic-password-only-00000000000000@ep-test.ap-southeast-1.aws.neon.tech/simsa_cloud?sslmode=verify-full' };
@@ -46,6 +48,43 @@ test('bundle authenticates metadata and both payloads before releasing bytes', (
   }
   const tampered = structuredClone(bundle.manifest); tampered.body.source.database = 'another_database';
   assert.throws(() => openNeonBundle({ ...bundle, manifest: tampered }, key));
+});
+test('a source with the whole journal or only its first part is backed up; any divergence is refused', () => {
+  const migrations = loadMigrations();
+  const rows = migrations.map(m => ({ hash: m.hash, created_at: String(m.timestamp) }));
+  // Equal: production runs the release that is on main.
+  assert.equal(appliedMigrationCount(rows, migrations), migrations.length);
+  // Prefix: a migration is merged to main but not yet applied in production.
+  assert.equal(appliedMigrationCount(rows.slice(0, -1), migrations), migrations.length - 1);
+  assert.equal(appliedMigrationCount(rows.slice(0, -3), migrations), migrations.length - 3);
+  // Historical migrations keep their reviewed legacy hash.
+  assert.equal(appliedMigrationCount([{ ...rows[0], hash: migrations[0].acceptedHashes[1] }, ...rows.slice(1, 5)], migrations), 5);
+  const refused = /Source migration history differs from this release/;
+  const at = (index, change) => rows.slice(0, -1).map((row, i) => i === index ? { ...row, ...change } : row);
+  assert.throws(() => appliedMigrationCount(at(rows.length - 2, { hash: 'f'.repeat(64) }), migrations), refused);
+  assert.throws(() => appliedMigrationCount(at(3, { created_at: String(migrations[3].timestamp + 1) }), migrations), refused);
+  assert.throws(() => appliedMigrationCount([rows[0], rows[2]], migrations), refused);
+  assert.throws(() => appliedMigrationCount([...rows, { hash: 'a'.repeat(64), created_at: String(migrations.at(-1).timestamp + 1) }], migrations), refused);
+  assert.throws(() => appliedMigrationCount([], migrations), refused);
+});
+test('capture records how far the source got instead of requiring the whole journal', async () => {
+  const source = await readFile(new URL('./neon-backup.mjs', import.meta.url), 'utf8');
+  const capture = source.slice(source.indexOf('export async function captureNeonSnapshot'), source.indexOf('async function createBackup'));
+  assert.match(capture, /const appliedMigrations=appliedMigrationCount\(applied\);/);
+  assert.match(capture, /applied_migration_count:appliedMigrations/);
+  assert.doesNotMatch(source, /validateAppliedMigrations/);
+  assert.match(source, /migrations:migrationManifest\(\),applied_migration_count:plain\.applied_migration_count/);
+});
+test('bundle states the applied migrations and rejects an impossible count', () => {
+  const key = randomBytes(32), runId = randomBytes(16).toString('hex');
+  const journal = [{ tag: '0000_a' }, { tag: '0001_b' }, { tag: '0002_c' }];
+  const seal = extra => sealNeonBundle({ key, runId, archive: Buffer.from('PGDMPsynthetic'), evidence: Buffer.from('evidence'), metadata: {
+    source: { host: env.NEON_EXPECTED_HOST, database: 'simsa_cloud', role: 'simsa_backup', major: 18 }, snapshot_at: new Date().toISOString(),
+    helpers: { collector: 'a'.repeat(64) }, migrations: journal, ...extra } });
+  assert.deepEqual(appliedMigrations(openNeonBundle(seal({ applied_migration_count: 2 }), key).body), journal.slice(0, 2));
+  // Bundles written before the count existed came from a source equal to the journal.
+  assert.deepEqual(appliedMigrations(openNeonBundle(seal({}), key).body), journal);
+  for (const count of [0, 4, 1.5, '2', null]) assert.throws(() => openNeonBundle(seal({ applied_migration_count: count }), key), /Unsupported backup manifest/);
 });
 test('Neon evidence reuses all canonical fingerprint queries without the GCP principal assumptions', async () => {
   const { sql, hash } = await loadNeonEvidenceSql();

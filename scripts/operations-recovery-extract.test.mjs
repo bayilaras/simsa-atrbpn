@@ -16,12 +16,12 @@ const attachment = { id: '00000000-0000-4000-8000-000000000001', entity_type: 's
   file_name: 'Undangan Rapat: 10/2026.pdf', file_url: 'https://teststore123.private.blob.vercel-storage.com/surat-masuk/abc.pdf',
   sha256: sha256(pdf), size_bytes: String(pdf.length), storage_access: 'private' };
 
-async function syntheticDelivery() {
+async function syntheticDelivery(metadata = {}) {
   const root = await mkdtemp(join(tmpdir(), 'simsa-extract-unit-')), directory = join(root, 'artifact');
   const runId = 'c'.repeat(32), databaseKey = randomBytes(32), documentKey = randomBytes(32), archiveSha256 = sha256(archive);
   const bundle = sealNeonBundle({ runId, key: databaseKey, archive, evidence: Buffer.from('table_count\tx\t1\n'), metadata: {
     source: { host: 'ep-synthetic-123456.us-east-2.aws.neon.tech', database: 'simsa_test', role: 'simsa_backup', major: 18 },
-    snapshot_at: '2026-10-09T00:15:00.000Z', migrations: [{ tag: '0050_example' }, { tag: '0051_example' }], helpers: { 'scripts/x.mjs': 'd'.repeat(64) } } });
+    snapshot_at: '2026-10-09T00:15:00.000Z', migrations: [{ tag: '0050_example' }, { tag: '0051_example' }], helpers: { 'scripts/x.mjs': 'd'.repeat(64) }, ...metadata } });
   await mkdir(join(directory, 'database'), { recursive: true });
   await writeFile(join(directory, 'database/manifest.json'), JSON.stringify(bundle.manifest));
   await writeFile(join(directory, 'database/database.dump.aesgcm'), bundle.archive);
@@ -47,6 +47,13 @@ test('extracts the database dump and every PDF with verified hashes, outside the
   for (const line of (await readFile(join(output, 'MANIFEST.sha256'), 'utf8')).trim().split('\n')) {
     const [hash, file] = line.split('  '); assert.equal(sha256(await readFile(join(output, ...file.split('/')))), hash);
   }
+});
+
+test('a backup of a database behind the checkout journal names its own last migration', async () => {
+  const { root, directory } = await syntheticDelivery({ applied_migration_count: 1 }), output = join(root, 'hasil');
+  const summary = await extractDelivery({ directory, output, passphrase });
+  assert.deepEqual([summary.migrations, summary.lastMigration], [1, '0050_example']);
+  assert.match(await readFile(join(output, 'BACA-SAYA.txt'), 'utf8'), /Migrasi terakhir {8}: 0050_example \(1 migrasi\)/);
 });
 
 test('wrong passphrase writes nothing', async () => {

@@ -5,7 +5,7 @@ import { resolve,join,isAbsolute } from 'node:path';
 import { randomBytes,scryptSync } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
-import { parseNeonBackupOperation } from './neon-backup-core.mjs';
+import { parseNeonBackupOperation,appliedMigrations } from './neon-backup-core.mjs';
 import { runNeonBackup } from './neon-backup.mjs';
 import { makeBackupWorkspace } from './neon-backup-runtime.mjs';
 import { authenticatedDatabaseBundle,restoreDatabaseProof } from './operations-recovery-database.mjs';
@@ -78,7 +78,7 @@ export async function runRecovery(environment){
   stage='database_snapshot';const backup=await runNeonBackup(operation);
   const workspace=await makeBackupWorkspace(pgBin,join(parent,'verification'));
   stage='authenticate_database';plain=await authenticatedDatabaseBundle(backup,workspace);
-  report.sourceSnapshotAt=plain.body.snapshot_at;report.archiveSha256=sha256(plain.archive);report.migrations=plain.body.migrations.length;report.backup.databaseVerified=true;
+  report.sourceSnapshotAt=plain.body.snapshot_at;report.archiveSha256=sha256(plain.archive);report.migrations=appliedMigrations(plain.body).length;report.backup.databaseVerified=true;
   // Persist encrypted database and recoverable wrapped keys before later phases,
   // so a failed document fetch/restore cannot erase a valid database capture.
   documentKey=randomBytes(32);targetKey=randomBytes(32);

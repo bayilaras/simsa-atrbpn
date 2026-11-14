@@ -4,7 +4,7 @@ Alur baru ada di `scripts/operations-recovery.mjs`. Alur ini membaca sumber Neon
 
 ## Bukti yang diwajibkan
 
-Database menggunakan snapshot konsisten, autentikasi bundle, hash helper, dan jurnal migrasi persis sesuai checkout. Verifikasi pemulihan membandingkan semua hitungan tabel, hash isi, schema, constraints, indexes, triggers, routines, sequences, extensions, grants, locale, serta jurnal. Role API terbatas juga diuji. Role `simsa_worker` dipulihkan dengan batas izin existing dan password baru dalam RAM. Daftar login target restore (`RESTORE_LOGIN_ROLES` di `scripts/neon-database-policy.mjs`) dipakai bersama oleh pemulihan operasional dan `neon-backup.mjs restore-verify`, sehingga keduanya tidak dapat berbeda lagi.
+Database menggunakan snapshot konsisten, autentikasi bundle, hash helper, dan riwayat migrasi yang sama dengan jurnal checkout atau sama dengan bagian awalnya. Verifikasi pemulihan membandingkan semua hitungan tabel, hash isi, schema, constraints, indexes, triggers, routines, sequences, extensions, grants, locale, serta jurnal. Role API terbatas juga diuji. Role `simsa_worker` dipulihkan dengan batas izin existing dan password baru dalam RAM. Daftar login target restore (`RESTORE_LOGIN_ROLES` di `scripts/neon-database-policy.mjs`) dipakai bersama oleh pemulihan operasional dan `neon-backup.mjs restore-verify`, sehingga keduanya tidak dapat berbeda lagi.
 
 Dokumen mencakup seluruh `file_attachments` dan sumber privat `regulatory_rule_sets`. Lease unggahan bukan salinan dokumen tambahan; database tetap menyimpan seluruh metadata lease. Hash dan ukuran existing wajib cocok. Dokumen dengan hash null ditolak secara default. Operator dapat memilih `OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES=true` untuk mencatat hash byte pertama dalam manifest cadangan: ini **tidak mengubah database dan tidak membuktikan integritas historis yang sebelumnya tidak dicatat**. Hash malformed atau berbeda tetap ditolak.
 
@@ -113,7 +113,7 @@ File workflow telah disiapkan, tetapi merge ke protected default branch, aktivas
 
 ## Bukti database dalam bundle
 
-Bundle database mengikat hash helper dan seluruh jurnal migrasi checkout. Selama rantai jurnal di `main` berbeda dengan rantai database produksi, backup terjadwal gagal; rapatkan jarak antara merge migrasi dan penerapannya, atau ambil backup manual dengan checkout yang cocok.
+Bundle database mengikat hash helper dan seluruh jurnal migrasi checkout, serta mencatat berapa migrasi jurnal itu yang sudah diterapkan di database sumber (`applied_migration_count`). Selama migrasi baru sudah di-merge ke `main` tetapi belum diterapkan di produksi, riwayat produksi sama dengan bagian awal jurnal dan backup terjadwal tetap berjalan; `migrations` pada laporan run dan bukti `restore-delivery` berisi jumlah migrasi yang benar-benar ada di database, dan `BACA-SAYA.txt` menyebut migrasi terakhirnya. Riwayat yang berbeda (hash atau waktu lain, migrasi yang terlewat, atau lebih banyak dari jurnal) tetap ditolak.
 
 Collector `.github/scripts/collect-backup-evidence.sql` mengenal profil migrasi berikut:
 
