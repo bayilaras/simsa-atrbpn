@@ -5,7 +5,8 @@ import {
     getBlobStorageConfigurationStatus,
 } from '../config/blob-storage.js';
 import { buildEmailConfig, getEmailConfigurationStatus } from '../config/email.js';
-import { EmailService, escapeEmailHtml } from '../services/email.service.js';
+import { EmailService } from '../services/email.service.js';
+import { escapeHtml } from '../utils/escape-html.js';
 
 describe('operational integration configuration', () => {
     it('fails production startup when canonical private Blob is unavailable', () => {
@@ -152,7 +153,7 @@ describe('operational integration configuration', () => {
         expect(html).not.toContain('<img');
         expect(html).toContain('&lt;script&gt;');
         expect(html).toContain('&amp;y=2');
-        expect(escapeEmailHtml(`&<>"'`)).toBe('&amp;&lt;&gt;&quot;&#39;');
+        expect(escapeHtml(`&<>"'`)).toBe('&amp;&lt;&gt;&quot;&#39;');
     });
 
     it('rejects non-HTTP approval action links', async () => {

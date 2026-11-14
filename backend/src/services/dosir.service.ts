@@ -1,6 +1,7 @@
 import { db } from '../config/database';
 import { auditLog, dosir, dosirSuratMasuk, dosirSuratKeluar, suratMasuk, suratKeluar, Dosir } from '../db/schema';
 import { eq, and, desc, asc, ilike, or, sql, inArray, exists } from 'drizzle-orm';
+import { cocokTeksCari } from '../utils/cari-teks.js';
 import { klasifikasiInSql } from './access/visibility-spec.js';
 import {
     scopedRecordByIdWhere,
@@ -343,9 +344,9 @@ export const dosirService = {
         if (search) {
             conditions.push(
                 or(
-                    ilike(dosir.judul, `%${search}%`),
-                    ilike(dosir.kode, `%${search}%`),
-                    ilike(dosir.deskripsi, `%${search}%`)
+                    cocokTeksCari(dosir.judul, search),
+                    cocokTeksCari(dosir.kode, search),
+                    cocokTeksCari(dosir.deskripsi, search)
                 )
             );
         }

@@ -251,7 +251,7 @@ export default function DosirDetail() {
                             </h1>
 
                             {dosir.deskripsi && (
-                                <p className="text-white/80 text-sm md:text-base max-w-3xl leading-relaxed">
+                                <p className="text-white/80 text-sm md:text-base max-w-3xl leading-relaxed whitespace-pre-line">
                                     {dosir.deskripsi}
                                 </p>
                             )}

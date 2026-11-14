@@ -448,7 +448,7 @@ export default function SuratKeluarDetail() {
                                     <Sparkles className="h-3 w-3" />
                                     Perihal
                                 </label>
-                                <p className="text-lg font-semibold text-foreground dark:text-white mt-1 leading-relaxed">
+                                <p className="text-lg font-semibold text-foreground dark:text-white mt-1 leading-relaxed whitespace-pre-line">
                                     {surat.perihal}
                                 </p>
                             </div>
@@ -747,7 +747,7 @@ export default function SuratKeluarDetail() {
                                                     <span className="text-muted-foreground">{formatDate(item.createdAt)}</span>
                                                 </div>
                                                 <p>{item.userName || item.userRole || '-'}</p>
-                                                {item.notes && <p className="mt-1 text-muted-foreground">{item.notes}</p>}
+                                                {item.notes && <p className="mt-1 text-muted-foreground whitespace-pre-line">{item.notes}</p>}
                                             </div>
                                         ))}
                                     </div>

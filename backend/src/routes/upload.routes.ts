@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { fileAttachmentService } from '../services/file-attachment.service';
+import { sanitizeMultipartInput } from '../middlewares/sanitize.middleware.js';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { uploadLimiter, sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
@@ -91,6 +92,7 @@ router.post(
         next();
     },
     upload.single('file'),
+    sanitizeMultipartInput,
     verifyFileContent,
     async (req: AuthRequest, res: Response, next: NextFunction) => {
         try {

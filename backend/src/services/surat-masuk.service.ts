@@ -1,6 +1,7 @@
 import { db } from '../config/database';
 import { suratMasuk, NewSuratMasuk, SuratMasuk } from '../db/schema';
-import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull, getTableColumns } from 'drizzle-orm';
+import { eq, and, desc, asc, like, sql, gte, lte, or, isNull, getTableColumns } from 'drizzle-orm';
+import { cocokTeksCari } from '../utils/cari-teks.js';
 import { ConflictError, DatabaseError } from '../utils/errors';
 import { denganRetryDeadlock } from '../utils/deadlock-retry.js';
 import { pastikanBelumBerubah } from '../utils/versi-rekaman.js';
@@ -128,12 +129,11 @@ export class SuratMasukService {
 
         // Search across multiple fields using ILIKE (case-insensitive)
         if (search && search.trim()) {
-            const searchPattern = `%${search.trim()}%`;
             conditions.push(
                 or(
-                    ilike(suratMasuk.perihal, searchPattern),
-                    ilike(suratMasuk.nomorSurat, searchPattern),
-                    ilike(suratMasuk.dari, searchPattern)
+                    cocokTeksCari(suratMasuk.perihal, search),
+                    cocokTeksCari(suratMasuk.nomorSurat, search),
+                    cocokTeksCari(suratMasuk.dari, search)
                 )!
             );
         }

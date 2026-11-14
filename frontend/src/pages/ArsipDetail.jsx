@@ -243,7 +243,7 @@ function RuleHistoryEntry({ entry, current }) {
             </div>
 
             {entry.reason && (
-                <div className="mt-3 rounded-lg bg-muted/60 p-3 text-sm">
+                <div className="mt-3 rounded-lg bg-muted/60 p-3 text-sm whitespace-pre-line">
                     <span className="font-medium">Alasan: </span>{entry.reason}
                 </div>
             )}
@@ -690,7 +690,7 @@ export default function ArsipDetail() {
                                         <EnhancedInfoField icon={FileText} label="Uraian Klasifikasi" value={arsip.klasifikasiArsip} className="sm:col-span-2" />
                                         <EnhancedInfoField icon={Layers} label="Jenis Arsip" value={jenisLabel} badge variant="secondary" />
                                         <EnhancedInfoField icon={Calendar} label="Tahun" value={arsip.tahun?.toString()} />
-                                        <EnhancedInfoField icon={FileText} label="Uraian Berkas" value={arsip.uraianBerkas} className="sm:col-span-2" />
+                                        <EnhancedInfoField icon={FileText} label="Uraian Berkas" value={arsip.uraianBerkas} className="sm:col-span-2 whitespace-pre-line" />
                                         <EnhancedInfoField icon={Calendar} label="Tanggal Arsip" value={formatDate(arsip.tanggalArsip)} />
                                         <EnhancedInfoField icon={Clock} label="Kurun Waktu" value={arsip.kurunWaktu} />
                                         <EnhancedInfoField icon={Info} label="Unit Pengolah" value={arsip.unitPengolah} className="sm:col-span-2 lg:col-span-4" />
@@ -978,7 +978,7 @@ export default function ArsipDetail() {
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         <EnhancedInfoField icon={Shield} label="Klasifikasi Keamanan" value={arsip.klasifikasiKeamanan} badge variant="outline" />
                                         <EnhancedInfoField icon={User} label="Person In Charge (PIC)" value={arsip.personInCharge} />
-                                        <EnhancedInfoField icon={FileText} label="Keterangan" value={arsip.keterangan} className="sm:col-span-2" />
+                                        <EnhancedInfoField icon={FileText} label="Keterangan" value={arsip.keterangan} className="sm:col-span-2 whitespace-pre-line" />
                                     </div>
                                 </CardContent>
                             </Card>

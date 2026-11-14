@@ -633,7 +633,7 @@ export default function RetentionGovernance() {
                         <div className="space-y-4">
                             <div className="rounded border p-3 text-sm">
                                 <p><b>Arsip:</b> <Link className="text-primary underline" to={`/arsip/detail/${selectedAppraisal.arsipId}`}>{selectedAppraisal.arsipId}</Link></p>
-                                <p><b>Alasan:</b> {selectedAppraisal.reason}</p>
+                                <p className="whitespace-pre-line"><b>Alasan:</b> {selectedAppraisal.reason}</p>
                                 <p><b>Usulan:</b> <OutcomeBadge value={selectedAppraisal.proposedOutcome} /></p>
                                 <p><b>Pertimbangan:</b> {selectedAppraisal.proposedRationale}</p>
                                 <p className="mt-2 text-xs text-muted-foreground">Assessor: {selectedAppraisal.assessorId} · dibuat {formatTimestamp(selectedAppraisal.createdAt)}</p>
@@ -900,7 +900,7 @@ export default function RetentionGovernance() {
                                             <Badge variant={request.status === 'approved' ? 'danger' : request.status === 'rejected' ? 'muted' : 'warning'}>{request.status === 'approved' ? 'Disetujui' : request.status === 'rejected' ? 'Ditolak' : 'Menunggu telaah'}</Badge>
                                             <span className="text-xs text-muted-foreground">{formatTimestamp(request.requestedAt)}</span>
                                         </div>
-                                        <p className="mt-2"><b>Alasan:</b> {request.reason}</p>
+                                        <p className="mt-2 whitespace-pre-line"><b>Alasan:</b> {request.reason}</p>
                                         <p className="mt-1 font-mono text-[11px] text-muted-foreground">Pemohon: {request.requestedBy}</p>
                                         {request.reviewNote && <p className="mt-2"><b>Catatan reviewer:</b> {request.reviewNote}</p>}
                                         {request.reviewedBy && <p className="mt-1 font-mono text-[11px] text-muted-foreground">Reviewer: {request.reviewedBy} · {formatTimestamp(request.reviewedAt)}</p>}

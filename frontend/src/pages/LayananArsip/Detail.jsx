@@ -134,7 +134,7 @@ export default function LayananArsipDetail() {
                             {data.keterangan && (
                                 <div>
                                     <Label className="text-muted-foreground">Keterangan Tambahan</Label>
-                                    <p className="mt-1 text-sm">{data.keterangan}</p>
+                                    <p className="mt-1 text-sm whitespace-pre-line">{data.keterangan}</p>
                                 </div>
                             )}
                         </CardContent>
@@ -182,7 +182,7 @@ export default function LayananArsipDetail() {
                                 {data.catatanPersetujuan && (
                                     <div className="flex items-start gap-4 p-3 bg-yellow-50 dark:bg-yellow-500/15 rounded-md">
                                         <MessageSquare className="h-5 w-5 text-yellow-600 mt-0.5" />
-                                        <p className="text-sm text-yellow-800 dark:text-yellow-300">{data.catatanPersetujuan}</p>
+                                        <p className="text-sm text-yellow-800 dark:text-yellow-300 whitespace-pre-line">{data.catatanPersetujuan}</p>
                                     </div>
                                 )}
                             </CardContent>

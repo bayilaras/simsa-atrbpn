@@ -722,4 +722,50 @@ describe('surat and attachment route security policy', () => {
         const response = await request(app).get(url).expect(200);
         expect(response.body.data.berkasHanyaTayang).toBe(hanyaTayang);
     });
+
+    // Aplikasi ini tidak memasang sanitizeInput global, sama seperti badan multipart
+    // yang diurai multer setelah penyaring global: rute sendiri yang menyaring.
+    const pdf = () => [Buffer.from('%PDF-1.7\nrequest'), { filename: 'request.pdf', contentType: 'application/pdf' }] as const;
+
+    it('surat masuk berberkas (multipart) disaring seperti badan JSON, termasuk disposisi bersarang', async () => {
+        mocks.blobUpload.mockResolvedValue({ url: 'https://store.private.blob.vercel-storage.com/surat-masuk/request-created.pdf' });
+        mocks.suratMasuk.create.mockImplementation(async (payload: any) => ({ id: '550e8400-e29b-41d4-a716-446655440030', ...payload }));
+
+        await request(app).post('/api/surat-masuk')
+            .field({
+                ...validSuratMasuk,
+                perihal: 'Permohonan <b>data</b>   lahan\r\nTahap  2',
+                dari: 'Budi <budi@contoh.go.id>',
+                keterangan: 'Luas < 5 ha\n<img src=x onerror=alert(1)>dan > 2 ha',
+                // Tanda '<' ditulis sebagai escape JSON (<), jadi hanya terlihat setelah JSON diurai.
+                disposisi: JSON.stringify({ targets: [{ unitKerjaId: 'dir_bppt' }], instruksi: 'Tindak <i>lanjuti</i>\n<script>alert(1)</script>segera' })
+                    .replace(/</g, '\\u003c'),
+            })
+            .attach('file', ...pdf())
+            .expect(201);
+
+        const [data] = mocks.suratMasuk.create.mock.calls[0];
+        expect(data).toMatchObject({
+            perihal: 'Permohonan data lahan\nTahap 2',
+            dari: 'Budi <budi@contoh.go.id>',
+            keterangan: 'Luas < 5 ha\ndan > 2 ha',
+            disposisi: { targets: [{ unitKerjaId: 'dir_bppt' }], instruksi: 'Tindak lanjuti\nsegera' },
+        });
+    });
+
+    it('surat keluar berberkas (multipart) disaring saat dibuat dan saat diubah', async () => {
+        const id = '550e8400-e29b-41d4-a716-446655440010';
+        mocks.blobUpload.mockResolvedValue({ url: 'https://store.private.blob.vercel-storage.com/surat-keluar/request-created.pdf' });
+        mocks.suratKeluar.create.mockImplementation(async (payload: any) => ({ id, ...payload }));
+        mocks.suratKeluar.findById.mockResolvedValue({ id, unitKerjaId: 'sesditjen', isArchived: false, approvalStatus: 'draft', filePath: null });
+        mocks.suratKeluar.update.mockImplementation(async (_id: string, payload: any) => ({ id, ...payload }));
+        const isian = { perihal: 'Undangan <Rapat Koordinasi>\n<svg onload=alert(1)>Tahap <b>II</b>', kepada: 'Kepala   Kantor <x-foo onclick=a>Pertanahan' };
+
+        await request(app).post('/api/surat-keluar').field({ ...validSuratKeluar, ...isian }).attach('file', ...pdf()).expect(201);
+        await request(app).put(`/api/surat-keluar/${id}`).field(isian).attach('file', ...pdf()).expect(200);
+
+        const disaring = { perihal: 'Undangan <Rapat Koordinasi>\nTahap II', kepada: 'Kepala Kantor Pertanahan' };
+        expect(mocks.suratKeluar.create.mock.calls[0][0]).toMatchObject(disaring);
+        expect(mocks.suratKeluar.update.mock.calls[0][1]).toMatchObject(disaring);
+    });
 });

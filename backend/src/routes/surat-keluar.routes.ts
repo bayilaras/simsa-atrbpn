@@ -36,6 +36,7 @@ import { badanPerluPersetujuan, rekamanPerluPersetujuan } from '../services/acce
 import { approvalService } from '../services/approval.service.js';
 import { berkasHanyaTayang } from '../services/access/berkas-akses.js';
 import { fileValidationMiddleware } from '../middlewares/file-validation.middleware.js';
+import { sanitizeMultipartInput } from '../middlewares/sanitize.middleware.js';
 
 const log = createLogger('SuratKeluarRoutes');
 
@@ -236,6 +237,8 @@ router.get('/:id', validateIdParam(), async (req: AuthRequest, res, next) => {
 router.post('/',
     canWriteMiddleware(),
     upload.single('file'),
+    // sanitizeInput global berjalan sebelum multer; isi multipart disaring di sini.
+    sanitizeMultipartInput,
     fileValidationMiddleware,
     async (req: AuthRequest, res, next) => {
         let requestCreatedBlobUrl: string | null = null;
@@ -346,6 +349,8 @@ router.post('/',
 router.put('/:id', validateIdParam(),
     canWriteMiddleware(),
     upload.single('file'),
+    // sanitizeInput global berjalan sebelum multer; isi multipart disaring di sini.
+    sanitizeMultipartInput,
     fileValidationMiddleware,
     async (req: AuthRequest, res, next) => {
         let requestCreatedBlobUrl: string | null = null;

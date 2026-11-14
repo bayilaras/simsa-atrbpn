@@ -1,6 +1,7 @@
 import { Router, type NextFunction, type Response } from 'express';
 import multer from 'multer';
 import { authMiddleware, type AuthRequest } from '../middlewares/auth.middleware';
+import { sanitizeMultipartInput } from '../middlewares/sanitize.middleware.js';
 import { roleMiddleware } from '../middlewares/role.middleware';
 import { uploadLimiter } from '../middlewares/rate-limiter.middleware';
 import {
@@ -224,6 +225,7 @@ router.post(
     superAdminOnly,
     uploadLimiter,
     receiveSourceDocument,
+    sanitizeMultipartInput,
     async (req: AuthRequest, res: Response, next) => {
         try {
             if (!req.file) {

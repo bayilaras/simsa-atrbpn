@@ -17,7 +17,8 @@ import {
     type StorageLocation,
     archiveLending,
 } from '../db/schema';
-import { eq, and, desc, sql, ilike, or, isNotNull, isNull, ne, inArray, getTableColumns, type SQL } from 'drizzle-orm';
+import { eq, and, desc, sql, or, isNotNull, isNull, ne, inArray, getTableColumns, type SQL } from 'drizzle-orm';
+import { cocokTeksCari } from '../utils/cari-teks.js';
 import { AppError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors';
 import {
     PESAN_BOKS_TUJUAN_SEDANG_DIPINJAM,
@@ -28,6 +29,7 @@ import {
 import { hasPermission, type Role } from '../config/permissions';
 import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-lock';
 import { pastikanBelumBerubah } from '../utils/versi-rekaman.js';
+import { jakartaTanggalPanjang } from '../utils/jakarta-date.js';
 import { isAllowedForClassification, recordAccessService } from './record-access.service';
 import { barisDari, kelasSumberSurat, normalizeSecurityClassification, rankKelas } from './access/visibility-spec';
 import { alasanArsipTerkunci } from './access/arsip-aksi';
@@ -409,10 +411,10 @@ export class ArsipService {
         if (search) {
             conditions.push(
                 or(
-                    ilike(arsip.nomorBerkas, `%${search}%`),
-                    ilike(arsip.uraianBerkas, `%${search}%`),
-                    ilike(arsip.nomorSuratOriginal, `%${search}%`),
-                    ilike(arsip.perihalOriginal, `%${search}%`)
+                    cocokTeksCari(arsip.nomorBerkas, search),
+                    cocokTeksCari(arsip.uraianBerkas, search),
+                    cocokTeksCari(arsip.nomorSuratOriginal, search),
+                    cocokTeksCari(arsip.perihalOriginal, search)
                 )!
             );
         }
@@ -1993,7 +1995,6 @@ export class ArsipService {
             );
         }
 
-        const now = new Date();
         const [unit] = await db
             .select({ name: unitKerja.name })
             .from(unitKerja)
@@ -2005,7 +2006,8 @@ export class ArsipService {
         return {
             draf: true as const,
             reportNumber: null,
-            tanggal: now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
+            // Tanggal naskah mengikuti WIB, bukan zona waktu server (UTC).
+            tanggal: jakartaTanggalPanjang(),
             unitKerjaId,
             unitKerja: unit?.name || unitKerjaId,
             totalBerkas: archives.length,

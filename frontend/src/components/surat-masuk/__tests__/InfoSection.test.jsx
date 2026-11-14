@@ -60,6 +60,12 @@ describe('InfoSection', () => {
         expect(screen.queryByRole('list', { name: 'Disposisi' })).not.toBeInTheDocument();
     });
 
+    it('menampilkan perihal multi-baris dengan baris barunya', () => {
+        render(<InfoSection surat={{ ...mockSurat, perihal: 'Undangan\nRapat Koordinasi' }} />);
+
+        expect(screen.getByText(/Rapat Koordinasi/)).toHaveClass('whitespace-pre-line');
+    });
+
     it('menampilkan keterangan multi-baris bila ada', () => {
         render(<InfoSection surat={{ ...mockSurat, keterangan: 'Baris satu\nBaris dua' }} />);
 

@@ -49,6 +49,16 @@ describe('jumlah arsip dan tautan daftar arsip per lokasi', () => {
             .toHaveAttribute('href', `/arsip/keluar?lokasi=${GEDUNG}&unit=ditjen`)
     })
 
+    it('detail lokasi menampilkan keterangan multi-baris dengan baris barunya', async () => {
+        mocks.getById.mockResolvedValue({ ...boks, unitKerjaId: 'ditjen', description: 'Lemari besi lantai 2\nRak paling atas' })
+        render(<MemoryRouter initialEntries={[`/storage-locations/${BOKS}`]}><Routes>
+            <Route path="/storage-locations/:id" element={<StorageLocationDetail />} />
+        </Routes></MemoryRouter>)
+        const nilai = (await screen.findByText('Keterangan')).nextElementSibling
+        expect(nilai).toHaveTextContent('Rak paling atas')
+        expect(nilai).toHaveClass('whitespace-pre-line')
+    })
+
     it('detail lokasi dengan satu jenis arsip memakai satu tautan ke tab yang berisi', async () => {
         mocks.getById.mockResolvedValue({ ...boks, unitKerjaId: 'ditjen' })
         render(<MemoryRouter initialEntries={[`/storage-locations/${BOKS}`]}><Routes>
