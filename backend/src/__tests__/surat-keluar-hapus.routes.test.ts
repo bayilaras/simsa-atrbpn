@@ -57,4 +57,14 @@ describe('DELETE /api/surat-keluar/:id mencatat alasan penghapusan', () => {
         await request(app).delete(`/api/surat-keluar/${ID}`).send({ alasan: 'salah' }).expect(404);
         expect(mocks.del).not.toHaveBeenCalled();
     });
+
+    it.each([
+        ['surat tidak ada', () => mocks.findById.mockResolvedValue(null)],
+        ['surat tidak boleh diubah', () => mocks.check.mockResolvedValue({ exists: true, mutable: false })],
+        ['surat sudah terhapus saat ditulis', () => mocks.del.mockResolvedValue(undefined)],
+    ])('404 karena %s membawa pesan berbahasa Indonesia', async (_label, siapkan) => {
+        siapkan();
+        const res = await request(app).delete(`/api/surat-keluar/${ID}`).send({ alasan: 'Draf ganda, sudah dibuat ulang' }).expect(404);
+        expect(res.body).toEqual({ error: 'Surat keluar not found', message: 'Surat tidak ditemukan atau sudah dihapus. Muat ulang daftar.' });
+    });
 });

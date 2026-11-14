@@ -71,3 +71,12 @@ it('hapus yang ditolak server menampilkan pesan server, bukan nama kelas galat',
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ description: pesan, variant: 'destructive' })))
     expect(mocks.toast).not.toHaveBeenCalledWith(expect.objectContaining({ description: 'ConflictError' }))
 })
+
+it('surat yang sudah tidak ada (404) menampilkan pesan Indonesia dari server', async () => {
+    const pesan = 'Surat tidak ditemukan atau sudah dihapus. Muat ulang daftar.'
+    mocks.del.mockRejectedValue(galatApi(404, { error: 'Surat masuk not found', message: pesan }))
+    await bukaDialogHapus()
+    fireEvent.change(screen.getByLabelText(/^Alasan penghapusan/), { target: { value: 'Surat ganda, sudah dicatat ulang' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Hapus' }))
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ description: pesan, variant: 'destructive' })))
+})

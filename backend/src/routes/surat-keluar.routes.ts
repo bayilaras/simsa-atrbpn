@@ -29,7 +29,7 @@ import {
     normalizeSecurityClassification,
     recordAccessService,
 } from '../services/record-access.service.js';
-import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_LOKASI_SIMPAN_TIDAK_SESUAI } from '../constants/pesan-akses.js';
+import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_LOKASI_SIMPAN_TIDAK_SESUAI, PESAN_SURAT_HAPUS_TIDAK_DITEMUKAN } from '../constants/pesan-akses.js';
 import auditLogService from '../services/audit-log.service.js';
 import { suratAksiPayload } from '../services/rangkaian/aksi.js';
 import { badanPerluPersetujuan, rekamanPerluPersetujuan } from '../services/access/perlu-persetujuan.js';
@@ -496,11 +496,11 @@ router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthR
         const unitScope = resolveRecordUnitScope(req);
         const existing = await suratKeluarService.findById(id, unitScope);
         if (!existing) {
-            return res.status(404).json({ error: 'Surat keluar not found' });
+            return res.status(404).json({ error: 'Surat keluar not found', message: PESAN_SURAT_HAPUS_TIDAK_DITEMUKAN });
         }
         const access = await recordAccessService.check(req.user, 'surat_keluar', id);
         if (!access.exists || !access.mutable) {
-            return res.status(404).json({ error: 'Surat keluar not found' });
+            return res.status(404).json({ error: 'Surat keluar not found', message: PESAN_SURAT_HAPUS_TIDAK_DITEMUKAN });
         }
         if (existing.isArchived) {
             return res.status(409).json({
@@ -524,7 +524,7 @@ router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthR
         }, { alasan: badan.data.alasan });
 
         if (!result) {
-            return res.status(404).json({ error: 'Surat keluar not found' });
+            return res.status(404).json({ error: 'Surat keluar not found', message: PESAN_SURAT_HAPUS_TIDAK_DITEMUKAN });
         }
 
         res.json({ success: true, message: 'Surat keluar deleted successfully' });
