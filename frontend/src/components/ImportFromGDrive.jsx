@@ -465,7 +465,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                     </table>
                                 </div>
 
-                                <ImportRowIssues issues={previewData.rowIssues ?? previewData.dateIssues} duplicates={previewData.duplicates} totalRows={previewData.totalRows} />
+                                <ImportRowIssues issues={previewData.rowIssues ?? previewData.dateIssues} duplicates={previewData.duplicates} otherSenderRows={previewData.otherSenderRows} totalRows={previewData.totalRows} />
 
                                 <ImportSyncOption type={type} checked={sinkron} onChange={setSinkron} />
 

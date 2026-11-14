@@ -10,7 +10,7 @@ import { ValidationError } from '../utils/errors.js';
 import { publicErrorResponse } from '../utils/public-error.js';
 import { currentRequestId } from '../utils/request-context.js';
 import { createLogger } from '../utils/logger.js';
-import { DuplicateSuratImportError, type SuratImportIdentityKey } from './surat-import-identity.js';
+import { DuplicateSuratImportError, sameImportIdentity, type SuratImportIdentityKey } from './surat-import-identity.js';
 import { assertImportResumable, importPrefixHash, type ImportResume } from './import-resume.js';
 import { normalizeSifatSurat, sifatSuratMasukSumber } from './sifat-surat.js';
 import { assertImportedKelasSuratMasuk, assertSifatSuratMasukDapatDisimpan, type ImportAuditContext } from './import-plafon-kelas.js';
@@ -169,6 +169,8 @@ async function runImport(
     const found = keyed.length && existingSurat ? await existingSurat(keyed.map(({ key }) => key)) : [];
     const recorded = new Set(keyed.flatMap(({ entry }, index) => found[index] ? [entry] : []));
     const seen = new Set<string>();
+    // Surat rows accepted so far, compared as the canonical create compares them (a missing sender included).
+    const seenKeys: SuratImportIdentityKey[] = [];
     for (const [offset, entry] of prepared.entries()) {
         // Every part handles at least one record, so a continuation always advances.
         if (resume && offset > 0 && Date.now() >= resume.deadlineAt) { result.nextRow = start + offset; break; }
@@ -177,7 +179,7 @@ async function runImport(
         try {
             if ('error' in entry) throw entry.error;
             const { item } = entry;
-            if (seen.has(item.identity) || recorded.has(entry) || ('exists' in item && (await item.exists()).length > 0)) {
+            if (seen.has(item.identity) || ('key' in item && seenKeys.some(key => sameImportIdentity(key, item.key))) || recorded.has(entry) || ('exists' in item && (await item.exists()).length > 0)) {
                 diagnostic.status = 'duplicate';
                 diagnostic.message = 'Rekod dengan identitas yang sama sudah ada pada unit/tahun ini atau di berkas CSV.';
                 result.duplicates++;
@@ -203,6 +205,7 @@ async function runImport(
                 result.imported++;
             }
             seen.add(item.identity);
+            if ('key' in item) seenKeys.push(item.key);
             diagnostic.status = result.dryRun ? 'valid' : 'imported';
         } catch (error) {
             const failure = publicErrorResponse(error, currentRequestId());

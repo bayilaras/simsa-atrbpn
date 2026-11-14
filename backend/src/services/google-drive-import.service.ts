@@ -84,6 +84,8 @@ export interface ImportPreview {
     rowIssues?: ImportRowIssues;
     /** With an importer: rows the import will skip as duplicates. */
     duplicates?: ImportPreviewDuplicates;
+    /** With a destination unit: rows that will become a new letter although their number and year are recorded there under another sender. */
+    otherSenderRows?: number;
 }
 
 export interface ImportDateIssues {
@@ -154,6 +156,7 @@ type ImportSyncSource = { values: Record<string, string>; counterpart: ImportCou
 
 const REPORTED_PERIHAL_LENGTH = 200;
 const ALREADY_RECORDED = 'Sudah tercatat di SIMSA pada unit ini.';
+const OTHER_SENDER = 'Nomor dan tahun sama dengan surat yang sudah tercatat, tetapi pengirimnya berbeda; dicatat sebagai surat baru. Periksa penulisan pengirim bila surat itu sama.';
 const EMPTY_ROW = 'Nomor surat dan perihal kosong.';
 const EMPTY_DATE = 'Tanggal surat kosong.';
 const PREVIEW_DATE_ISSUES = 10;
@@ -270,7 +273,8 @@ export class GoogleDriveImportService {
             admission => this.rowChecks(dataRows, admission, check.unitKerjaId !== undefined));
         return { headers, rows: dataRows.slice(0, maxRows), totalRows: dataRows.length,
             importType, headerRow: headerRowIndex + 1, mapping, dateIssues: this.dateIssues(dataRows, columnMap),
-            ...(checks ? { rowIssues: checks.issues, duplicates: checks.duplicates } : {}) };
+            ...(checks ? { rowIssues: checks.issues, duplicates: checks.duplicates } : {}),
+            ...(checks?.otherSenderRows === undefined ? {} : { otherSenderRows: checks.otherSenderRows }) };
     }
 
     /**
@@ -284,7 +288,7 @@ export class GoogleDriveImportService {
      * Empty rows are skipped by the import and left out here, as in dateIssues.
      */
     private async rowChecks<T>(dataRows: string[][], admission: RowAdmission<T>, lookup: boolean):
-        Promise<{ issues: ImportRowIssues; duplicates: ImportPreviewDuplicates }> {
+        Promise<{ issues: ImportRowIssues; duplicates: ImportPreviewDuplicates; otherSenderRows?: number }> {
         const { prepared, firstRowOf } = this.prepareRows(dataRows, admission);
         const keyed = prepared.flatMap(item => item && 'key' in item ? [item] : []);
         const matches = lookup && keyed.length ? await admission.target.importMatches(keyed.map(item => item.key)) : [];
@@ -295,6 +299,8 @@ export class GoogleDriveImportService {
             issues.total++;
             if (issues.rows.length < PREVIEW_ROW_ISSUES) issues.rows.push({ row: index + 1, reason: this.rowFailure(error, index + 1, false).message });
         };
+        const otherSender = lookup ? await this.otherSenderRows(admission.target, keyed, matchOf) : new Set();
+        let otherSenderRows = 0;
         // The identities rows of this source would create, which the canonical create would then find.
         const created: SuratImportIdentityKey[] = [];
         prepared.forEach((item, index) => {
@@ -307,10 +313,11 @@ export class GoogleDriveImportService {
                 return;
             }
             try { admission.admitInsert?.(item.record); } catch (error) { reject(index, error); return; }
-            if (created.some(key => sameImportIdentity(key, item.key))) duplicates.source++;
-            else created.push(item.key);
+            if (created.some(key => sameImportIdentity(key, item.key))) { duplicates.source++; return; }
+            created.push(item.key);
+            if (otherSender.has(item)) otherSenderRows++;
         });
-        return { issues, duplicates: lookup ? duplicates : { source: duplicates.source } };
+        return lookup ? { issues, duplicates, otherSenderRows } : { issues, duplicates: { source: duplicates.source } };
     }
 
     /** The rows whose date the import will not accept; rows it skips as empty are left out. */
@@ -506,6 +513,24 @@ export class GoogleDriveImportService {
     }
 
     /**
+     * The rows that will become a new letter although a letter with their
+     * number and year is recorded in the unit under another sender: after a
+     * sender was corrected in the source, that is the same letter twice. One
+     * more lookup, only for numbered rows that name a sender and matched
+     * nothing; like the first, it never sees a row the importer may not write.
+     */
+    private async otherSenderRows<T>(target: ImportTarget<T>, items: PreparedRecord<T>[],
+        matchOf: Map<PreparedRecord<T>, SuratImportMatch[]>): Promise<Set<PreparedRecord<T>>> {
+        const candidates = items.filter(item => item.key.by === 'nomor' && item.key.pengirim && !matchOf.get(item)?.length);
+        if (!candidates.length) return new Set();
+        const found = await target.importMatches(candidates.map(({ key }) => {
+            const { pengirim: _pengirim, ...numbered } = key as Extract<SuratImportIdentityKey, { by: 'nomor' }>;
+            return numbered;
+        }));
+        return new Set(candidates.filter((_item, index) => found[index]?.some(letter => !letter.isDeleted)));
+    }
+
+    /**
      * Every data row as the import reads and admits it, before any lookup or
      * write: null for an empty row, an error for a row rejected before any
      * write, otherwise the record and its import identity. firstRowOf gives
@@ -593,8 +618,13 @@ export class GoogleDriveImportService {
             if (first !== undefined) return { duplicate: 'source', reason: sameAsEarlierRow(item.key, first + 1) };
             const letters = matchOf.get(item) ?? [];
             if (letters.length && letters.every(letter => letter.isDeleted)) return { duplicate: 'deleted', reason: SYNC_REASONS.deleted };
+            // Nothing was recorded before this import, so the letter the canonical create found came from an
+            // earlier row: one the database reads as the same letter, such as a row without a sender.
+            const same = letters.length ? -1 : prepared.findIndex((other, index) => index < i && other !== null && 'key' in other && sameImportIdentity(other.key, item.key));
+            if (same >= 0) return { duplicate: 'source', reason: sameAsEarlierRow(item.key, same + 1) };
             return { duplicate: 'recorded', reason: ALREADY_RECORDED };
         };
+        const otherSender = await this.otherSenderRows(target, recorded, matchOf);
         let importedRows = 0;
         let skippedRows = 0;
         let duplicateRows = 0;
@@ -636,7 +666,7 @@ export class GoogleDriveImportService {
                 admitInsert?.(item.record);
                 await target.createImported(item.record, auditContext, options);
                 importedRows++;
-                report(i, 'imported');
+                report(i, 'imported', otherSender.has(item) ? { reason: OTHER_SENDER } : {});
             } catch (error) {
                 if (error instanceof DuplicateSuratImportError) {
                     duplicateRows++; report(i, 'duplicate', duplicateOf(item as PreparedRecord<T>, i)); continue;

@@ -223,7 +223,7 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
                     </tr>)}</tbody>
                 </table>
             </div>
-            <ImportRowIssues issues={preview.rowIssues ?? preview.dateIssues} duplicates={preview.duplicates} totalRows={preview.totalRows} />
+            <ImportRowIssues issues={preview.rowIssues ?? preview.dateIssues} duplicates={preview.duplicates} otherSenderRows={preview.otherSenderRows} totalRows={preview.totalRows} />
             <ImportSyncOption type={type} checked={sinkron} onChange={setSinkron} disabled={busy} />
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button variant="outline" onClick={() => { version.current++; setPreview(null); setError(''); setStep('file') }} disabled={busy}>Kembali</Button>

@@ -232,7 +232,7 @@ it('shows in the preview every row the import will reject and the rows it will s
     const ceiling = 'Klasifikasi keamanan melebihi kewenangan pengguna. Kelas Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin.';
     api.post.mockImplementation(async (_endpoint, body) => ({ ...preview(body.type), totalRows: 4, dateIssues: { total: 0, rows: [] },
         rowIssues: { total: 2, rows: [{ row: 2, reason: ceiling }, { row: 4, reason: 'Sifat surat tidak dikenal.' }] },
-        duplicates: { source: 1, recorded: 0, deleted: 0 } }));
+        duplicates: { source: 1, recorded: 0, deleted: 0 }, otherSenderRows: 3 }));
     render(<ImportFromGDrive {...props} type="surat-masuk" />);
     open();
     await discover();
@@ -242,6 +242,7 @@ it('shows in the preview every row the import will reject and the rows it will s
     expect(within(notice).getAllByRole('listitem').map(item => item.textContent)).toEqual([
         `Baris data ke-2: ${ceiling}`, 'Baris data ke-4: Sifat surat tidak dikenal.']);
     expect(screen.getByRole('list', { name: 'Baris yang akan dilewati' })).toHaveTextContent('1 baris ganda di sumber akan dilewati.');
+    expect(screen.getByRole('note')).toHaveTextContent('3 baris bernomor sama dengan surat yang sudah tercatat tetapi pengirimnya berbeda');
     expect(screen.getByRole('button', { name: 'Impor 4 baris' })).toBeEnabled();
 });
 

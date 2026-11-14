@@ -167,12 +167,13 @@ describe('CSV/XLSX import dialog', () => {
         await choose(csv())
         const ceiling = 'Klasifikasi keamanan melebihi kewenangan pengguna. Kelas Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin.'
         mocks.post.mockResolvedValueOnce(preview({ format: 'csv', sheet: null, importType: 'surat-masuk',
-            dateIssues: { total: 0, rows: [] }, rowIssues: { total: 1, rows: [{ row: 2, reason: ceiling }] }, duplicates: { source: 0, recorded: 1, deleted: 0 } }))
+            dateIssues: { total: 0, rows: [] }, rowIssues: { total: 1, rows: [{ row: 2, reason: ceiling }] }, duplicates: { source: 0, recorded: 1, deleted: 0 }, otherSenderRows: 1 }))
         click('Pratinjau')
         const notice = await screen.findByRole('alert')
         expect(notice).toHaveTextContent('1 dari 3 baris akan ditolak')
         expect(notice).toHaveTextContent(`Baris data ke-2: ${ceiling}`)
         expect(screen.getByRole('list', { name: 'Baris yang akan dilewati' })).toHaveTextContent('1 baris sudah tercatat di SIMSA pada unit ini')
+        expect(screen.getByRole('note')).toHaveTextContent('1 baris bernomor sama dengan surat yang sudah tercatat tetapi pengirimnya berbeda')
         expect(fields(mocks.post.mock.calls[0])).toMatchObject({ unitKerjaId: 'unit-a' })
         expect(screen.getByRole('button', { name: 'Impor 3 baris' })).toBeEnabled()
     })

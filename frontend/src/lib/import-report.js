@@ -17,11 +17,13 @@ export function importMappingLabel(item) {
 
 /**
  * Rows that need action: rejected rows, rows whose letter could not be updated,
- * rows repeating an earlier source row, and rows matching a deleted letter. A
- * letter already recorded (with nothing to change) needs none.
+ * rows repeating an earlier source row, rows matching a deleted letter, and
+ * rows stored with a note (a recorded letter has their number under another
+ * sender). A letter already recorded (with nothing to change) needs none.
  */
 export function importRowsNeedingReview(rows) {
-    return rows.filter(row => REVIEW_STATUSES.has(row.status) || (row.status === 'duplicate' && row.duplicate !== 'recorded'))
+    return rows.filter(row => REVIEW_STATUSES.has(row.status) || (row.status === 'duplicate' && row.duplicate !== 'recorded')
+        || (row.status === 'imported' && Boolean(row.reason)))
 }
 
 const DUPLICATE_LINES = [

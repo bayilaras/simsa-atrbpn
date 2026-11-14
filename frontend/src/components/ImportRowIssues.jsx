@@ -7,9 +7,9 @@ import { previewDuplicateLines } from '@/lib/import-report'
  * server judges only the date), and the rows it will skip as duplicates. The
  * import stays available; the other rows are stored.
  */
-export default function ImportRowIssues({ issues, duplicates, totalRows }) {
+export default function ImportRowIssues({ issues, duplicates, otherSenderRows, totalRows }) {
     const lines = previewDuplicateLines(duplicates)
-    if (!issues?.total && !lines.length) return null
+    if (!issues?.total && !lines.length && !(otherSenderRows > 0)) return null
     const more = issues?.total ? issues.total - (issues.rows?.length || 0) : 0
     return <div className="space-y-2">
         {issues?.total > 0 && <div role="alert" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
@@ -23,6 +23,9 @@ export default function ImportRowIssues({ issues, duplicates, totalRows }) {
                 </ul>
             </div>
         </div>}
+        {otherSenderRows > 0 && <p role="note" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
+            {`${otherSenderRows} baris bernomor sama dengan surat yang sudah tercatat tetapi pengirimnya berbeda; baris ini akan dicatat sebagai surat baru. Periksa penulisan pengirim bila surat itu sama.`}
+        </p>}
         {lines.length > 0 && <ul aria-label="Baris yang akan dilewati" className="space-y-0.5 rounded-lg border p-3 text-sm text-muted-foreground">
             {lines.map(line => <li key={line}>{line}</li>)}
         </ul>}

@@ -74,6 +74,13 @@ describe('row outcomes across resumable parts', () => {
     })
 })
 
+describe('rows stored with a note', () => {
+    it('are among the rows to check', () => {
+        const noted = { row: 9, status: 'imported', reason: 'Nomor dan tahun sama dengan surat yang sudah tercatat, tetapi pengirimnya berbeda; dicatat sebagai surat baru.' }
+        expect(importRowsNeedingReview([{ row: 8, status: 'imported' }, noted])).toEqual([noted])
+    })
+})
+
 describe('column mapping of the preview', () => {
     it('says when a recognised column is not stored', () => {
         expect(importMappingLabel({ field: 'status', label: 'Status sumber', stored: false })).toBe('Status sumber (tidak disimpan)')

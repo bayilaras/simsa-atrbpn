@@ -28,6 +28,11 @@ describe('preview notice for rows the import will reject or skip', () => {
         expect(screen.getAllByRole('listitem').at(-1)).toHaveTextContent('dan 23 baris lainnya.')
     })
 
+    it('says how many rows will become a new letter although their number is recorded under another sender', () => {
+        render(<ImportRowIssues totalRows={40} issues={{ total: 0, rows: [] }} duplicates={{ source: 0, recorded: 0, deleted: 0 }} otherSenderRows={2} />)
+        expect(screen.getByRole('note')).toHaveTextContent('2 baris bernomor sama dengan surat yang sudah tercatat tetapi pengirimnya berbeda; baris ini akan dicatat sebagai surat baru. Periksa penulisan pengirim bila surat itu sama.')
+    })
+
     it('lists the rows the import will skip as duplicates, by kind', () => {
         render(<ImportRowIssues totalRows={40} issues={{ total: 0, rows: [] }} duplicates={{ source: 1, recorded: 12, deleted: 2 }} />)
         expect(screen.queryByRole('alert')).not.toBeInTheDocument()

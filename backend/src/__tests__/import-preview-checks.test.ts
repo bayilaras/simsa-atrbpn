@@ -15,7 +15,7 @@ vi.mock('../services/surat-keluar.service.js', async () => {
 });
 vi.mock('../utils/logger', () => ({ createLogger: () => ({ warn: vi.fn() }) }));
 import { GoogleDriveImportService } from '../services/google-drive-import.service.js';
-import { DuplicateSuratImportError, suratImportIdentityKey } from '../services/surat-import-identity.js';
+import { DuplicateSuratImportError, sameImportIdentity, suratImportIdentityKey } from '../services/surat-import-identity.js';
 import { PESAN_KELAS_MELEBIHI_KEWENANGAN, PESAN_SIFAT_TIDAK_DIKENAL } from '../constants/pesan-akses.js';
 
 const importer = (role: string) => ({ userId: '11111111-1111-4111-8111-111111111111', role });
@@ -64,9 +64,11 @@ describe('import preview judges every row as the import does, without writing', 
         expect(preview.duplicates).toEqual({ source: 1, recorded: 1, deleted: 0 });
         expect(preview.rows).toHaveLength(3);
         expect(mocks.incoming).not.toHaveBeenCalled();
-        // One lookup, as the import makes; a row it rejects before writing is never looked up.
-        expect(mocks.matches).toHaveBeenCalledOnce();
-        expect(lookedUp()).toEqual(['SM-1/2026', 'SM-6/2026', 'SM-1/2026', 'SM-9/2026']);
+        // The lookups the import makes: identities, then the unmatched numbers without their sender.
+        // A row it rejects before writing is in neither.
+        expect(mocks.matches).toHaveBeenCalledTimes(2);
+        expect(lookedUp()).toEqual(['SM-1/2026', 'SM-6/2026', 'SM-1/2026', 'SM-9/2026', 'SM-1/2026', 'SM-6/2026', 'SM-1/2026']);
+        expect(preview.otherSenderRows).toBe(0);
 
         const result = await service.importRows('surat-masuk', register, 'unit-a', adminUnit);
         expect(result.rows?.filter(row => row.status === 'invalid').map(row => ({ row: row.row, reason: row.reason }))).toEqual(rejected);
@@ -100,6 +102,41 @@ describe('import preview judges every row as the import does, without writing', 
         const rows = [header, ['1', 'SM-5/2026', '05/01/2026', 'Dari A', 'Kantah A', 'Biasa'],
             ['2', 'SM-5/2026', '06/01/2026', 'Tanpa pengirim', '', 'Biasa'], ['3', 'SM-5/2026', '07/01/2026', 'Dari B', 'Kantah B', 'Biasa']];
         expect((await service.previewRows(rows, 3, 'surat-masuk', { importer: adminUnit })).duplicates).toEqual({ source: 1 });
+    });
+
+    it('names an earlier row of the same source when the canonical create finds it, also across a missing sender', async () => {
+        // The create compares as the database does: a missing sender matches any sender of that number.
+        const created: Array<ReturnType<typeof suratImportIdentityKey>> = [];
+        mocks.incoming.mockImplementation(async (record: Parameters<typeof suratImportIdentityKey>[1]) => {
+            const key = suratImportIdentityKey('masuk', record);
+            if (created.some(other => sameImportIdentity(other, key))) throw new DuplicateSuratImportError();
+            created.push(key);
+        });
+        mocks.matches.mockImplementation(async (keys: unknown[]) => keys.map(() => []));
+        const rows = [header, ['1', '001/2026', '05/01/2026', 'Dari A', 'Instansi A', 'Biasa'], ['2', '001/2026', '06/01/2026', 'Tanpa pengirim', '', 'Biasa']];
+        expect((await service.previewRows(rows, 2, 'surat-masuk', { importer: adminUnit, unitKerjaId: 'unit-a' })).duplicates).toMatchObject({ source: 1, recorded: 0 });
+        const result = await service.importRows('surat-masuk', rows, 'unit-a', adminUnit);
+        expect(result.rows?.map(row => [row.status, row.duplicate, row.reason])).toEqual([['imported', undefined, undefined],
+            ['duplicate', 'source', 'Nomor surat dan tahun sama dengan baris data ke-1 pada sumber ini.']]);
+    });
+
+    it('counts, and notes in the import report, a new row whose number is recorded in the unit under another sender', async () => {
+        // Recorded: 010/2026 from "Kantah Lama". The lookup without a sender finds it; the one with the sender does not.
+        mocks.matches.mockImplementation(async (keys: Array<{ nomorSurat: string; pengirim?: string }>) =>
+            recordedMatches(keys.map(key => key.nomorSurat === '010/2026' && (!key.pengirim || key.pengirim === 'kantah lama'))));
+        const rows = [header, ['1', '010/2026', '05/01/2026', 'Pengirim dikoreksi', 'Kantah Baru', 'Biasa'],
+            ['2', '010/2026', '05/01/2026', 'Tetap', 'Kantah Lama', 'Biasa'], ['3', '011/2026', '05/01/2026', 'Baru', 'Kantah Baru', 'Biasa'],
+            ['4', '010/2026', '05/01/2026', 'Rahasia', 'Kantah Lain', 'Rahasia']];
+        const preview = await service.previewRows(rows, 4, 'surat-masuk', { importer: adminUnit, unitKerjaId: 'unit-a' });
+        expect(preview).toMatchObject({ otherSenderRows: 1, duplicates: { source: 0, recorded: 1, deleted: 0 }, rowIssues: { total: 1 } });
+        // The row above the importer's ceiling is in no lookup.
+        expect(mocks.matches.mock.calls.flatMap(([keys]) => keys.map((key: { pengirim?: string }) => key.pengirim))).not.toContain('kantah lain');
+        expect(await service.previewRows(rows, 4, 'surat-masuk', { importer: adminUnit })).not.toHaveProperty('otherSenderRows');
+
+        const result = await service.importRows('surat-masuk', rows, 'unit-a', adminUnit);
+        expect(result.rows?.map(row => [row.status, row.reason])).toEqual([
+            ['imported', 'Nomor dan tahun sama dengan surat yang sudah tercatat, tetapi pengirimnya berbeda; dicatat sebagai surat baru. Periksa penulisan pengirim bila surat itu sama.'],
+            ['duplicate', 'Sudah tercatat di SIMSA pada unit ini.'], ['imported', undefined], ['invalid', PESAN_KELAS_MELEBIHI_KEWENANGAN]]);
     });
 
     it('lists at most twenty rejected rows and counts them all', async () => {

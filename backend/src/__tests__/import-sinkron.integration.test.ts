@@ -302,6 +302,28 @@ describe('import identity of numbered letters', () => {
         expect([await count(), await auditRows()]).toEqual([lettersBefore, auditBefore]);
     });
 
+    it('reports a row without a sender as a repeat of the earlier row of its number in the same source, as the preview counts it', async () => {
+        const rows = [header, ['008/2026', '02/03/2026', 'Dari A', 'Instansi A'], ['008/2026', '03/03/2026', 'Tanpa pengirim', '']];
+        expect((await importer.previewRows(rows, 10, 'surat-masuk', { importer: audit, unitKerjaId: 'dir_bppt' })).duplicates)
+            .toEqual({ source: 1, recorded: 0, deleted: 0 });
+        const result = await importer.importRows('surat-masuk', rows, 'dir_bppt', audit);
+        expect(result.rows?.map(row => [row.status, row.duplicate, row.reason])).toEqual([['imported', undefined, undefined],
+            ['duplicate', 'source', 'Nomor surat dan tahun sama dengan baris data ke-1 pada sumber ini.']]);
+        expect(await letters('008/2026')).toEqual([{ dari: 'Instansi A', perihal: 'Dari A' }]);
+    });
+
+    it('says in the preview and in the report when a new row has the number of a recorded letter of another sender', async () => {
+        await importer.importRows('surat-masuk', [header, ['009/2026', '02/03/2026', 'Tercatat', 'Kantah Lama']], 'dir_bppt', audit);
+        const rows = [header, ['009/2026', '02/03/2026', 'Pengirim dikoreksi', 'Kantah Baru'], ['010/2026', '02/03/2026', 'Baru', 'Kantah Baru']];
+        const preview = await importer.previewRows(rows, 10, 'surat-masuk', { importer: audit, unitKerjaId: 'dir_bppt' });
+        expect(preview).toMatchObject({ otherSenderRows: 1, duplicates: { source: 0, recorded: 0, deleted: 0 } });
+        expect((await importer.previewRows(rows, 10, 'surat-masuk', { importer: audit, unitKerjaId: 'dir_ptep' })).otherSenderRows).toBe(0);
+        const result = await importer.importRows('surat-masuk', rows, 'dir_bppt', audit);
+        expect(result.rows?.map(row => [row.status, row.reason])).toEqual([
+            ['imported', 'Nomor dan tahun sama dengan surat yang sudah tercatat, tetapi pengirimnya berbeda; dicatat sebagai surat baru. Periksa penulisan pengirim bila surat itu sama.'],
+            ['imported', undefined]]);
+    });
+
     it('keeps identifying a numbered surat keluar by its number and year only', async () => {
         const rows = [['Nomor Surat', 'Tanggal Surat', 'Hal', 'Kepada'],
             ['SK-9/2026', '02/03/2026', 'Undangan', 'Instansi A'], ['SK-9/2026', '03/03/2026', 'Undangan lain', 'Instansi B']];
