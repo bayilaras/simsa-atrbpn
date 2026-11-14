@@ -1,6 +1,7 @@
 import { db } from '../config/database';
 import { suratKeluar, NewSuratKeluar, SuratKeluar, suratMasuk } from '../db/schema';
-import { eq, and, desc, sql, gte, lte, like, or, ilike, isNull, inArray, getTableColumns } from 'drizzle-orm';
+import { eq, and, desc, sql, gte, lte, like, or, isNull, inArray, getTableColumns } from 'drizzle-orm';
+import { cocokTeksCari } from '../utils/cari-teks.js';
 import { ConflictError, DatabaseError, ValidationError } from '../utils/errors';
 import {
     scopedRecordByIdWhere,
@@ -114,12 +115,11 @@ export class SuratKeluarService {
             conditions.push(like(suratKeluar.klasifikasiSubstantif, `%${klasifikasiSubstantif}%`));
         }
         if (search && search.trim()) {
-            const pattern = `%${search.trim()}%`;
             conditions.push(
                 or(
-                    ilike(suratKeluar.perihal, pattern),
-                    ilike(suratKeluar.nomorSurat, pattern),
-                    ilike(suratKeluar.kepada, pattern)
+                    cocokTeksCari(suratKeluar.perihal, search),
+                    cocokTeksCari(suratKeluar.nomorSurat, search),
+                    cocokTeksCari(suratKeluar.kepada, search)
                 )!
             );
         }
