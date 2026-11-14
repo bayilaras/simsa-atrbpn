@@ -257,7 +257,7 @@ describe('Super Admin password reset', () => {
         expect((await currentSession(cookieHeader(fresh)))?.user?.id).toBe(USER.unit);
 
         const audit = await database.query<{ user_id: string; action: string; entity_type: string; changes: any }>(
-            `SELECT user_id, action, entity_type, changes FROM audit_log WHERE entity_id = $1`, [USER.unit],
+            `SELECT user_id, action, entity_type, changes FROM audit_log WHERE entity_id = $1 AND action = 'update'`, [USER.unit],
         );
         expect(audit.rows).toHaveLength(1);
         expect(audit.rows[0]).toMatchObject({
@@ -324,7 +324,7 @@ describe('Super Admin password reset', () => {
         expect((await signIn(EMAIL.upperCase, PASSWORD.reset)).status).toBe(200);
 
         const audit = await database.query<{ changes: any }>(
-            'SELECT changes FROM audit_log WHERE entity_id = $1', [USER.upperCase],
+            "SELECT changes FROM audit_log WHERE entity_id = $1 AND action = 'update'", [USER.upperCase],
         );
         expect(audit.rows).toHaveLength(1);
         expect(audit.rows[0].changes.after).toMatchObject({ credentialAccount: 'diperbarui' });

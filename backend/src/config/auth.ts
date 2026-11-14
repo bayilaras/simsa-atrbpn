@@ -11,6 +11,7 @@ import { createRateLimiterStore, usesSharedRateLimits } from './rate-limits.js';
 import { betterAuthIpOptions } from '../middlewares/better-auth-ip.middleware.js';
 import * as schema from '../db/schema';
 import { archiveAccessProvisioningIssue } from '../services/identity-user.service.js';
+import { recordAuthEvent, rememberSigningOutUser } from '../services/auth-audit.service.js';
 
 const deployedRuntime = usesSharedRateLimits();
 const googleConfig = buildGoogleOAuthConfig();
@@ -86,7 +87,14 @@ function idleLimitedSignIn(ctx: AuthHookContext) {
 
 const beforeAuthRequest = createAuthMiddleware(async (ctx) => {
     await guardOrigin(ctx);
+    await rememberSigningOutUser(ctx);
     return idleLimitedSignIn(ctx);
+});
+
+// Sign-ins (email and Google), failed email sign-ins, sign-outs and changes
+// of one's own password reach the Audit Log.
+const afterAuthRequest = createAuthMiddleware(async (ctx) => {
+    await recordAuthEvent(ctx);
 });
 
 export const auth = betterAuth({
@@ -201,6 +209,7 @@ export const auth = betterAuth({
     },
     hooks: {
         before: beforeAuthRequest,
+        after: afterAuthRequest,
     },
     databaseHooks: {
         user: {

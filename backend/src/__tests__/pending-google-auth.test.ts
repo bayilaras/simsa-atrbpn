@@ -13,6 +13,7 @@ import { getPublicCapabilities } from '../config/public-capabilities';
 const databaseState=vi.hoisted(()=>({db:null as any}));
 vi.mock('../config/database', () => ({ db: {
     select:(...args:any[])=>databaseState.db.select(...args),
+    insert:(...args:any[])=>databaseState.db.insert(...args),
     transaction:(...args:any[])=>databaseState.db.transaction(...args),
 } }));
 vi.mock('../config/rate-limits.js', async original => ({
@@ -191,9 +192,11 @@ it('revokes the old native cookie in the real approval transaction and requires 
         const approved=await userManagementService.updateUser(original.user.id,{role:'admin_unit',unitKerjaId:'ditjen'},{userId:administrator.id,userEmail:administrator.email});
         expect(approved).toMatchObject({role:'admin_unit',unitKerjaId:'ditjen',isActive:true});
         expect(await (await readOldSession()).json()).toBeNull();
-        const audited=(await database.query('SELECT changes FROM audit_log')).rows;
+        const audited=(await database.query("SELECT changes FROM audit_log WHERE action='update'")).rows;
         expect(audited).toHaveLength(1);
         expect(audited[0].changes).toMatchObject({before:{role:'user',unitKerjaId:null},after:{role:'admin_unit',unitKerjaId:'ditjen'}});
+        const signIns=(await database.query("SELECT user_id,user_email,entity_id,changes FROM audit_log WHERE action='sign_in'")).rows;
+        expect(signIns).toEqual([{user_id:original.user.id,user_email:'approval-pending@example.test',entity_id:original.user.id,changes:{after:{metode:'google'}}}]);
         const freshLogin=await login(auth,'approval-pending@example.test');
         expect(freshLogin.status).toBe(200);
         const freshSession=await auth.handler(new Request(`${origin}/api/auth/get-session`,{headers:{Cookie:cookie(freshLogin)}}));
