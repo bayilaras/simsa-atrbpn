@@ -4,11 +4,6 @@
       "count": 1
     }
   },
-  "src/components/ArchiveLifecycleWidget.jsx": {
-    "react-hooks/immutability": {
-      "count": 1
-    }
-  },
   "src/components/GlobalSearch.jsx": {
     "react-hooks/set-state-in-effect": {
       "count": 1

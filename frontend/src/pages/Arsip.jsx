@@ -330,7 +330,7 @@ export default function Arsip() {
                 <TabsContent value="retensi" className="space-y-4 outline-none animate-in fade-in slide-in-from-bottom-2 duration-300">
                     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                         <div className="md:col-span-2 lg:col-span-2">
-                            <ArchiveLifecycleWidget />
+                            <ArchiveLifecycleWidget unitKerjaId={resolvedUnitKerjaId} perluPilihUnit={isSuperAdmin && !resolvedUnitKerjaId} />
                         </div>
                         <Card className="h-fit">
                             <CardHeader className="bg-muted/30 pb-3">
