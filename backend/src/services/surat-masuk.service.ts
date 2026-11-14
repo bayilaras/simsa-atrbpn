@@ -1,5 +1,5 @@
 import { db } from '../config/database';
-import { suratMasuk, NewSuratMasuk, SuratMasuk, unitKerja } from '../db/schema';
+import { suratMasuk, NewSuratMasuk, SuratMasuk } from '../db/schema';
 import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull, getTableColumns } from 'drizzle-orm';
 import { ConflictError, DatabaseError } from '../utils/errors';
 import { denganRetryDeadlock } from '../utils/deadlock-retry.js';
@@ -137,7 +137,8 @@ export class SuratMasukService {
         const data = await db
             .select({
                 ...getTableColumns(suratMasuk),
-                unitKerjaNama: sql<string | null>`(SELECT ${unitKerja.name} FROM ${unitKerja} WHERE ${unitKerja.id} = ${suratMasuk.unitKerjaId})`,
+                // Rujukan baris luar ditulis lengkap: kolom di sql pilihan satu tabel ditulis Drizzle tanpa nama tabel.
+                unitKerjaNama: sql<string | null>`(SELECT uk.name FROM unit_kerja uk WHERE uk.id = surat_masuk.unit_kerja_id)`,
             })
             .from(suratMasuk)
             .where(and(...conditions))
