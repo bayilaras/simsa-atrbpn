@@ -47,6 +47,13 @@ function sameSenderSql(source: SQL): SQL {
     return sql`(${source} = '' OR ${senderSql(suratMasuk.dari)} = '' OR ${senderSql(suratMasuk.dari)} = ${senderSql(source)})`;
 }
 
+/** Whether two identities name the same letter as suratImportIdentityWhere compares them, a missing sender included. */
+export function sameImportIdentity(a: SuratImportIdentityKey, b: SuratImportIdentityKey): boolean {
+    if (a.by !== 'nomor' || b.by !== 'nomor') return JSON.stringify(a) === JSON.stringify(b);
+    return a.unitKerjaId === b.unitKerjaId && a.tahun === b.tahun && a.nomorSurat === b.nomorSurat
+        && (!a.pengirim || !b.pengirim || a.pengirim === b.pengirim);
+}
+
 /** Validate and build the identity before writing. */
 export function suratImportIdentityKey(
     type: 'masuk' | 'keluar',

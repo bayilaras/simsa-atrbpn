@@ -11,7 +11,7 @@ import { currentRequestId } from '../utils/request-context.js';
 import { GOOGLE_SHEETS_LIMITS, GoogleSheetsAccessError, GoogleSheetsSource, assertSheetName, assertSpreadsheetId, parseBoundedSheetCsv, parseSheetTabs, type GoogleSheetsRequestOptions, type SheetTab } from './google-sheets-source.js';
 
 import { isWebAddress, resolveSheetMapping, type GoogleSheetsImportType, type SheetColumnMapping } from './google-sheets-import-mapping.js';
-import { DuplicateSuratImportError, type SuratImportIdentityKey, type SuratImportMatch } from './surat-import-identity.js';
+import { DuplicateSuratImportError, sameImportIdentity, type SuratImportIdentityKey, type SuratImportMatch } from './surat-import-identity.js';
 import { assertImportResumable, importPrefixHash, type ImportResume } from './import-resume.js';
 import { normalizeSifatSurat, sifatSuratMasukSumber } from './sifat-surat.js';
 import { importDateProblem, parseImportDate } from './import-tanggal.js';
@@ -296,20 +296,19 @@ export class GoogleDriveImportService {
             if (issues.rows.length < PREVIEW_ROW_ISSUES) issues.rows.push({ row: index + 1, reason: this.rowFailure(error, index + 1, false).message });
         };
         // The identities rows of this source would create, which the canonical create would then find.
-        const created = new Set<string>();
+        const created: SuratImportIdentityKey[] = [];
         prepared.forEach((item, index) => {
             if (!item) return;
             if ('error' in item) { reject(index, item.error); return; }
-            const identity = JSON.stringify(item.key);
             const letters = matchOf.get(item) ?? [];
             if (letters.length) {
-                const first = firstRowOf.get(identity);
+                const first = firstRowOf.get(JSON.stringify(item.key));
                 duplicates[first !== undefined && first < index ? 'source' : letters.every(letter => letter.isDeleted) ? 'deleted' : 'recorded']++;
                 return;
             }
             try { admission.admitInsert?.(item.record); } catch (error) { reject(index, error); return; }
-            if (created.has(identity)) duplicates.source++;
-            else created.add(identity);
+            if (created.some(key => sameImportIdentity(key, item.key))) duplicates.source++;
+            else created.push(item.key);
         });
         return { issues, duplicates: lookup ? duplicates : { source: duplicates.source } };
     }

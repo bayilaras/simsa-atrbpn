@@ -96,6 +96,12 @@ describe('import preview judges every row as the import does, without writing', 
         expect((await service.importRows('surat-masuk', rows, 'unit-a', adminUnit)).rows?.[0]).toMatchObject({ status: 'duplicate', duplicate: 'deleted' });
     });
 
+    it('counts a numbered row without a sender as a repeat of an earlier row with that number, as the database compares them', async () => {
+        const rows = [header, ['1', 'SM-5/2026', '05/01/2026', 'Dari A', 'Kantah A', 'Biasa'],
+            ['2', 'SM-5/2026', '06/01/2026', 'Tanpa pengirim', '', 'Biasa'], ['3', 'SM-5/2026', '07/01/2026', 'Dari B', 'Kantah B', 'Biasa']];
+        expect((await service.previewRows(rows, 3, 'surat-masuk', { importer: adminUnit })).duplicates).toEqual({ source: 1 });
+    });
+
     it('lists at most twenty rejected rows and counts them all', async () => {
         const rows = [header, ...Array.from({ length: 25 }, (_, i) => [String(i + 1), `SM-${i + 1}/2026`, '05/01/2026', `Surat ${i + 1}`, 'Kantah A', 'Rahasia'])];
         const { rowIssues } = await service.previewRows(rows, 10, 'surat-masuk', { importer: adminUnit });

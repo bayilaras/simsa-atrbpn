@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { resolveSheetMapping } from '../services/google-sheets-import-mapping.js';
-import { DuplicateSuratImportError, suratImportIdentity, suratImportIdentityKey } from '../services/surat-import-identity.js';
+import { DuplicateSuratImportError, sameImportIdentity, suratImportIdentity, suratImportIdentityKey } from '../services/surat-import-identity.js';
 
 // The bulk lookup is advisory; by default it finds nothing so every row reaches the canonical create.
 const mocks = vi.hoisted(() => ({ incoming: vi.fn(), outgoing: vi.fn(), existing: vi.fn(),
@@ -316,6 +316,15 @@ describe('import identity of a numbered incoming letter', () => {
     it('leaves the sender out when the row names none, and for every outgoing letter', () => {
         expect(key('masuk', { dari: ' ' })).toEqual({ by: 'nomor', unitKerjaId: 'unit-a', tahun: 2026, nomorSurat: '001/2026' });
         expect(key('keluar', { dari: 'Instansi A', kepada: 'Instansi B' })).toEqual({ by: 'nomor', unitKerjaId: 'unit-a', tahun: 2026, nomorSurat: '001/2026' });
+    });
+
+    it('treats a missing sender as any sender of the same number and year, as the database comparison does', () => {
+        const a = key('masuk', { dari: 'Instansi A' });
+        const none = key('masuk', { dari: '' });
+        expect(sameImportIdentity(a, key('masuk', { dari: 'INSTANSI  a' }))).toBe(true);
+        expect(sameImportIdentity(a, key('masuk', { dari: 'Instansi B' }))).toBe(false);
+        expect([sameImportIdentity(a, none), sameImportIdentity(none, a)]).toEqual([true, true]);
+        expect(sameImportIdentity(a, { ...a, tahun: 2025 })).toBe(false);
     });
 
     it('compares the recorded sender in SQL only for an incoming letter that names one', () => {
