@@ -6,6 +6,7 @@ import { canAccessUnit, type Role } from '../config/permissions.js';
 import { z } from 'zod';
 import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import { AppError } from '../utils/errors.js';
+import { stripDriveConfig } from '../utils/unit-kerja-publik.js';
 
 const log = createLogger('SettingsRoutes');
 
@@ -50,14 +51,6 @@ function handleRouteError(
     log.error({ err: error }, logMessage);
     res.status(500).json({ error: publicMessage });
 }
-
-// Legacy Drive folder columns remain in the database only for migration history.
-// Private Vercel Blob is the sole canonical bitstream store, so these values are
-// never exposed or accepted by the API.
-const stripDriveConfig = (unit: any) => {
-    const { driveFolderId, driveUploadFolderId, ...rest } = unit;
-    return rest;
-};
 
 function resolveTemplateUnit(req: Request, res: Response, requestedUnit: unknown): string | null {
     const user = (req as AuthRequest).user;
