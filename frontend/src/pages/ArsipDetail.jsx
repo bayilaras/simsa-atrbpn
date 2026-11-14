@@ -28,6 +28,12 @@ import {
     statusAksiArsip,
 } from '@/components/arsip/edit-arsip-form'
 import { namaJalurLokasi } from '@/components/arsip/lokasi-simpan'
+import {
+    formatTahun,
+    kemajuanRetensiAktif,
+    keteranganRetensiKosong,
+    PESAN_MENUNGGU_PEMICU_RETENSI,
+} from '@/components/arsip/retensi-arsip'
 import { arsipService } from '@/services/arsip.service'
 import { useAuth } from '@/context/AuthContext'
 import { PerluPersetujuanAkses } from '@/components/PerluPersetujuanAkses'
@@ -58,7 +64,7 @@ function formatRelative(dateStr) {
 
 // ─── Sub-Components ─────────────────────────────────────────
 
-function EnhancedInfoField({ icon: Icon, label, value, badge, variant = 'secondary', className = '' }) {
+function EnhancedInfoField({ icon: Icon, label, value, badge, variant = 'secondary', className = '', teksKosong = '—' }) {
     return (
         <div className={`group relative p-4 rounded-xl border border-border transition-all duration-200 hover:shadow-md hover:border-emerald-200 hover:bg-emerald-50/30 ${className}`}>
             <div className="flex items-center gap-2 mb-2">
@@ -73,7 +79,7 @@ function EnhancedInfoField({ icon: Icon, label, value, badge, variant = 'seconda
                 <Badge variant={variant} className="mt-0.5">{value}</Badge>
             ) : (
                 <p className={`text-sm font-semibold break-words ${!value ? 'text-muted-foreground italic font-normal' : 'text-foreground'}`}>
-                    {value || '—'}
+                    {value || teksKosong}
                 </p>
             )}
         </div>
@@ -500,9 +506,9 @@ export default function ArsipDetail() {
     const retensiAktifYears = parseInt(arsip.retensiAktif) || 0
     const retensiInaktifYears = parseInt(arsip.retensiInaktif) || 0
     const totalRetensi = retensiAktifYears + retensiInaktifYears
-    const daysSinceArchived = arsip.createdAt ? differenceInDays(new Date(), new Date(arsip.createdAt)) : 0
-    const yearsSinceArchived = daysSinceArchived / 365
-    const progressAktif = retensiAktifYears > 0 ? Math.min((yearsSinceArchived / retensiAktifYears) * 100, 100) : 0
+    // Retensi berjalan sejak pemicu terverifikasi, bukan sejak rekod dibuat di SIMSA.
+    const kemajuan = kemajuanRetensiAktif(arsip)
+    const keteranganRetensi = keteranganRetensiKosong(arsip)
 
     const daysUntilExpiry = arsip.tanggalKadaluarsa ? differenceInDays(new Date(arsip.tanggalKadaluarsa), new Date()) : null
 
@@ -809,25 +815,33 @@ export default function ArsipDetail() {
                                         <EnhancedInfoField icon={FileText} label="Uraian JRA" value={arsip.jraUraian} />
                                         <EnhancedInfoField icon={Clock} label="Retensi Aktif" value={arsip.retensiAktif} />
                                         <EnhancedInfoField icon={Clock} label="Retensi Inaktif" value={arsip.retensiInaktif} />
-                                        <EnhancedInfoField icon={Info} label="Hasil Akhir" value={arsip.hasilAkhir} badge variant={arsip.hasilAkhir === 'Permanen' ? 'default' : 'destructive'} />
-                                        <EnhancedInfoField icon={Calendar} label="Tanggal Kadaluarsa" value={formatDate(arsip.tanggalKadaluarsa)} />
+                                        <EnhancedInfoField icon={Info} label="Hasil Akhir" value={arsip.hasilAkhir} teksKosong={keteranganRetensi || undefined} badge variant={arsip.hasilAkhir === 'Permanen' ? 'default' : 'destructive'} />
+                                        <EnhancedInfoField icon={Calendar} label="Tanggal Kadaluarsa" value={arsip.tanggalKadaluarsa ? formatDate(arsip.tanggalKadaluarsa) : null} teksKosong={keteranganRetensi || undefined} />
                                         <EnhancedInfoField icon={Info} label="Status Disposal" value={arsip.disposalStatus} badge variant={statusColor} className="sm:col-span-2" />
                                     </div>
+                                    {keteranganRetensi === PESAN_MENUNGGU_PEMICU_RETENSI && (
+                                        <p className="mt-3 text-xs text-muted-foreground">
+                                            Hasil akhir, tanggal kedaluwarsa, dan kemajuan retensi baru dihitung setelah pemicu retensi dicatat dan diverifikasi petugas berbeda melalui Tata Kelola Retensi.
+                                        </p>
+                                    )}
 
                                     {/* Progress Visual */}
-                                    {retensiAktifYears > 0 && (
+                                    {kemajuan && (
                                         <>
                                             <Separator className="my-4" />
                                             <div className="space-y-3">
                                                 <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                                                    <Clock className="h-4 w-4 text-orange-500" /> Progress Retensi Aktif
+                                                    <Clock className="h-4 w-4 text-orange-500" /> Kemajuan Masa Aktif
                                                 </h4>
                                                 <div>
                                                     <div className="flex justify-between text-xs mb-1.5 text-muted-foreground">
-                                                        <span>{Math.min(yearsSinceArchived, retensiAktifYears).toFixed(1)} dari {retensiAktifYears} tahun</span>
-                                                        <span className="font-semibold text-foreground">{Math.round(progressAktif)}%</span>
+                                                        <span>{formatTahun(kemajuan.tahunBerjalan)} dari {formatTahun(kemajuan.tahunAktif, 0)} tahun</span>
+                                                        <span className="font-semibold text-foreground">{Math.round(kemajuan.persen)}%</span>
                                                     </div>
-                                                    <Progress value={progressAktif} className="h-2.5" />
+                                                    <Progress value={kemajuan.persen} aria-label="Kemajuan masa aktif" className="h-2.5" />
+                                                    <p className="mt-1.5 text-xs text-muted-foreground">
+                                                        Dihitung sejak tanggal pemicu retensi {formatDate(kemajuan.tanggalPemicu)}.
+                                                    </p>
                                                 </div>
                                                 {daysUntilExpiry !== null && (
                                                     <div className={`flex items-center gap-2 text-sm p-3 rounded-lg ${daysUntilExpiry <= 30
@@ -1082,21 +1096,25 @@ export default function ArsipDetail() {
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="pt-0 space-y-3">
-                                <div>
-                                    <div className="flex justify-between text-xs mb-1">
-                                        <span className="text-muted-foreground">Aktif</span>
-                                        <span className="font-medium">{Math.round(progressAktif)}%</span>
-                                    </div>
-                                    <Progress value={progressAktif} className="h-2" />
-                                    <p className="text-xs text-muted-foreground mt-1">
-                                        {Math.min(yearsSinceArchived, retensiAktifYears).toFixed(1)} / {retensiAktifYears} tahun
-                                    </p>
-                                </div>
-                                <Separator />
+                                {kemajuan && (
+                                    <>
+                                        <div>
+                                            <div className="flex justify-between text-xs mb-1">
+                                                <span className="text-muted-foreground">Aktif</span>
+                                                <span className="font-medium">{Math.round(kemajuan.persen)}%</span>
+                                            </div>
+                                            <Progress value={kemajuan.persen} aria-label="Kemajuan masa aktif" className="h-2" />
+                                            <p className="text-xs text-muted-foreground mt-1">
+                                                {formatTahun(kemajuan.tahunBerjalan)} / {formatTahun(kemajuan.tahunAktif, 0)} tahun
+                                            </p>
+                                        </div>
+                                        <Separator />
+                                    </>
+                                )}
                                 <div className="flex items-center gap-2 text-xs">
                                     <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
                                     <span className="text-muted-foreground">
-                                        Kadaluarsa: <strong className="text-foreground">{formatDate(arsip.tanggalKadaluarsa)}</strong>
+                                        Kadaluarsa: <strong className="text-foreground">{arsip.tanggalKadaluarsa ? formatDate(arsip.tanggalKadaluarsa) : (keteranganRetensi || '-')}</strong>
                                     </span>
                                 </div>
                                 {arsip.hasilAkhir && (
