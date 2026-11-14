@@ -31,7 +31,6 @@ beforeEach(() => {
     state.listUsers.mockResolvedValue({ data: users, pagination: { total: users.length, totalPages: 1 } })
     state.getRoles.mockResolvedValue({ data: [{ value: 'super_admin', label: 'Super Admin' }, { value: 'admin_unit', label: 'Admin Unit Kerja' }] })
     state.getUnitKerja.mockResolvedValue({ data: [{ id: 'ditjen', name: 'Ditjen' }] })
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     vi.spyOn(window, 'alert').mockImplementation(() => {})
     vi.spyOn(console, 'error').mockImplementation(() => {})
 })
@@ -47,12 +46,14 @@ describe('pesan galat pengelolaan pengguna', () => {
     it('menonaktifkan yang ditolak menampilkan pesan server, bukan nama kelas galat', async () => {
         state.deactivateUser.mockRejectedValue(galatApi(409, { success: false, error: 'ConflictError', message: 'Minimal satu super admin aktif harus tetap tersedia.', code: 'CONFLICT' }))
         await menu('sa2@example.test', /Nonaktifkan/)
+        fireEvent.click(await screen.findByRole('button', { name: 'Nonaktifkan' }))
         await waitFor(() => expect(window.alert).toHaveBeenCalledWith('Minimal satu super admin aktif harus tetap tersedia.'))
     })
 
     it('mengaktifkan yang ditolak menampilkan pesan server', async () => {
         state.updateUser.mockRejectedValue(galatApi(409, { success: false, error: 'ConflictError', message: 'Akun masih menunggu persetujuan. Setujui akses pengguna terlebih dahulu.', code: 'CONFLICT' }))
         await menu('off@example.test', /Aktifkan/)
+        fireEvent.click(await screen.findByRole('button', { name: 'Aktifkan' }))
         await waitFor(() => expect(window.alert).toHaveBeenCalledWith('Akun masih menunggu persetujuan. Setujui akses pengguna terlebih dahulu.'))
     })
 
@@ -61,5 +62,24 @@ describe('pesan galat pengelolaan pengguna', () => {
         await menu('off@example.test', /Ubah Peran\/Unit/)
         fireEvent.click(await screen.findByRole('button', { name: /Simpan Perubahan/ }))
         await waitFor(() => expect(window.alert).toHaveBeenCalledWith('Unit kerja wajib untuk admin unit.'))
+    })
+})
+
+describe('konfirmasi status akun memakai dialog aplikasi', () => {
+    it('menonaktifkan hanya setelah tombol Nonaktifkan di dialog dipilih; Batal tidak mengubah apa pun', async () => {
+        const confirm = vi.spyOn(window, 'confirm')
+        state.deactivateUser.mockResolvedValue({})
+        await menu('sa2@example.test', /Nonaktifkan/)
+        const dialog = await screen.findByRole('alertdialog', { name: 'Nonaktifkan pengguna?' })
+        expect(dialog).toHaveTextContent('Akun Super Admin Dua tidak dapat dipakai untuk masuk sampai diaktifkan kembali.')
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Batal' }))
+        await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+        expect(state.deactivateUser).not.toHaveBeenCalled()
+
+        const row = screen.getByText('sa2@example.test').closest('tr')
+        fireEvent.click(within(row).getByRole('menuitem', { name: /Nonaktifkan/ }))
+        fireEvent.click(await screen.findByRole('button', { name: 'Nonaktifkan' }))
+        await waitFor(() => expect(state.deactivateUser).toHaveBeenCalledWith('sa-2'))
+        expect(confirm).not.toHaveBeenCalled()
     })
 })

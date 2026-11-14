@@ -45,16 +45,16 @@ export function UserAccessApprovalDialog({ user, unitKerjaList, onClose, onAppro
                 </div>
                 {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
                 <div className="space-y-2">
-                    <Label>Peran</Label>
+                    <Label htmlFor="approval-role">Peran</Label>
                     <Select value={role} onValueChange={value => { setRole(value); if (value === 'super_admin') setUnitKerjaId('') }} disabled={saving}>
-                        <SelectTrigger aria-label="Peran untuk persetujuan"><SelectValue placeholder="Pilih peran" /></SelectTrigger>
+                        <SelectTrigger id="approval-role" aria-label="Peran untuk persetujuan"><SelectValue placeholder="Pilih peran" /></SelectTrigger>
                         <SelectContent>{ASSIGNABLE_ROLE_OPTIONS.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
                     </Select>
                 </div>
                 <div className="space-y-2">
-                    <Label>Unit kerja</Label>
+                    <Label htmlFor="approval-unit">Unit kerja</Label>
                     <Select value={unitKerjaId} onValueChange={setUnitKerjaId} disabled={saving || role !== 'admin_unit'}>
-                        <SelectTrigger aria-label="Unit kerja untuk persetujuan"><SelectValue placeholder="Pilih unit kerja" /></SelectTrigger>
+                        <SelectTrigger id="approval-unit" aria-label="Unit kerja untuk persetujuan"><SelectValue placeholder="Pilih unit kerja" /></SelectTrigger>
                         <SelectContent>{unitKerjaList.map(unit => <SelectItem key={unit.id} value={unit.id}>{unit.name}</SelectItem>)}</SelectContent>
                     </Select>
                     <p className="text-sm text-muted-foreground">{role === 'super_admin' ? 'Super Admin memiliki akses lintas unit tanpa unit kerja tersimpan.' : 'Admin Unit Kerja wajib ditetapkan pada satu unit kerja.'}</p>
