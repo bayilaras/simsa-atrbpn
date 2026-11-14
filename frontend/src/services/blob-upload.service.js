@@ -17,11 +17,25 @@ function isRegulatorySource({ folder, purpose } = {}) {
     return (purpose || (folder === 'regulatory-sources' ? 'regulatory_source' : undefined)) === 'regulatory_source';
 }
 
-function directUploadError(file, options = {}) {
-    if (!isRegulatorySource(options)) return archiveUploadError(file);
-    if (!RULE_SET_ID.test(options.ruleSetId || '')) return 'ruleSetId yang valid wajib untuk upload dokumen sumber regulasi.';
-    if (options.folder && options.folder !== 'regulatory-sources') return 'Folder PDF sumber harus regulatory-sources.';
+// Server menolak token unggah langsung untuk nama berkas yang memuat ".." atau
+// garis miring terbalik (client-upload.routes.ts); tolak lebih awal dengan
+// petunjuk yang dapat diikuti.
+export const PESAN_NAMA_BERKAS_TIDAK_DIDUKUNG =
+    'Nama berkas tidak dapat dipakai karena memuat dua titik berurutan ("..") atau garis miring terbalik. Ganti nama berkas, lalu coba lagi.';
+export const PESAN_UNGGAH_DITOLAK =
+    'Berkas tidak dapat diunggah ke penyimpanan. Pastikan berkas berformat PDF, tidak melebihi batas ukuran, dan namanya tidak memuat dua titik berurutan (".."), lalu coba lagi. Jika tetap gagal, hubungi administrator.';
+
+function regulatoryUploadError(file, options) {
+    if (!RULE_SET_ID.test(options.ruleSetId || '')) return 'Versi aturan tidak dikenali. Muat ulang halaman sebelum mengunggah PDF sumber regulasi.';
+    if (options.folder && options.folder !== 'regulatory-sources') return 'Tujuan unggah PDF sumber regulasi tidak valid. Muat ulang halaman, lalu coba lagi.';
     return regulatorySourceUploadError(file);
+}
+
+function directUploadError(file, options = {}) {
+    const galat = isRegulatorySource(options) ? regulatoryUploadError(file, options) : archiveUploadError(file);
+    if (galat) return galat;
+    const nama = file?.name || '';
+    return nama.includes('..') || nama.includes('\\') ? PESAN_NAMA_BERKAS_TIDAK_DIDUKUNG : null;
 }
 
 function abortError() {
@@ -178,6 +192,10 @@ async function uploadFileToVercelBlob(file, { folder = 'uploads', purpose, ruleS
                 const connectionError = new Error('Unggah berkas gagal terhubung ke penyimpanan. Periksa koneksi internet dan muat ulang halaman sebelum mencoba lagi.');
                 connectionError.code = 'UPLOAD_CONNECTION_FAILED';
                 throw connectionError;
+            }
+            // Galat SDK penyimpanan berbahasa Inggris ("Vercel Blob: ..."); staf melihat pesan Indonesia.
+            if (/^Vercel Blob:/.test(error?.message || '')) {
+                throw Object.assign(new Error(PESAN_UNGGAH_DITOLAK, { cause: error }), { code: 'UPLOAD_REJECTED' });
             }
             throw error;
         }
