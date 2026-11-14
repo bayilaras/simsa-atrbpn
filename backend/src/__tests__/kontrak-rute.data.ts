@@ -241,6 +241,8 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'GET /probe': 'bukan-rekaman',
         'POST /scanner-wake': 'bukan-rekaman',
         'GET /scanner-wake': 'bukan-rekaman',
+        // Cron: hanya lease unggahan langsung yang kedaluwarsa tanpa dipakai.
+        'GET /upload-reconcile': 'bukan-rekaman',
         'POST /storage-latency': 'bukan-rekaman',
         'GET /status': 'bukan-rekaman',
         'GET /metrics': 'bukan-rekaman',
@@ -486,6 +488,7 @@ export const TANPA_SESI: Record<string, Record<string, string>> = {
         'GET /probe': 'token otomasi (Bearer), bukan sesi',
         'POST /scanner-wake': 'token otomasi (Bearer), bukan sesi',
         'GET /scanner-wake': 'token otomasi (Bearer), bukan sesi',
+        'GET /upload-reconcile': 'token otomasi (Bearer), bukan sesi',
         'POST /storage-latency': 'token otomasi (Bearer), bukan sesi',
     },
 };

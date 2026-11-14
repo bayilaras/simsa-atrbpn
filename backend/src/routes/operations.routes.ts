@@ -12,6 +12,7 @@ import { scheduleMalwareScanWake } from '../services/malware-scan-dispatch.servi
 import { MALWARE_DEFINITION_REFRESH_BEFORE_MS } from '../services/malware-scanner.service.js';
 import { getObjectStorageConfigurationStatus } from '../config/blob-storage.js';
 import { measureStorageLatency, vercelBlobLatencyClient } from '../services/storage-latency.service.js';
+import { clientBlobUploadService } from '../services/client-blob-upload.service.js';
 
 const router = Router();
 // Dedicated automation credentials, never an application session.
@@ -81,6 +82,30 @@ router.get('/scanner-wake', async (req, res) => {
         return;
     }
     await wakeScannerIfDue(res);
+});
+// Daily Vercel Cron, authenticated like the scanner-wake cron. Deletes direct
+// uploads whose lease expired without the letter, archive or rule set being
+// saved; the service reserves each lease first, so a claimed upload is never
+// touched. Expired bulk-upload batches stay with their own cleanup.
+const UPLOAD_RECONCILE_BATCH = 100;
+router.get('/upload-reconcile', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (!bearerAuthorized(req.get('authorization') || '', process.env.CRON_SECRET || '')) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+    }
+    const storage = getObjectStorageConfigurationStatus();
+    if (storage.provider !== 'vercel-blob-private' || !storage.ready) {
+        res.json({ status: 'not_supported' });
+        return;
+    }
+    try {
+        const { examined, deleted, failed } = await clientBlobUploadService.cleanupExpired(UPLOAD_RECONCILE_BATCH);
+        // A failed deletion keeps its lease and is retried on a later run.
+        res.status(failed ? 503 : 200).json({ status: failed ? 'incomplete' : 'reconciled', examined, deleted, failed });
+    } catch {
+        res.status(503).json({ status: 'failed' });
+    }
 });
 // Operator-dispatched measurement (Operations Monitor input), never scheduled:
 // each run writes, reads and deletes six small private probe objects.
