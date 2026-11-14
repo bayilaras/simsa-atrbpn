@@ -21,6 +21,9 @@ export interface LogActionData {
     ipAddress?: string;
 }
 
+/** Sign-in, sign-out and own-password entries written by the Better Auth hooks (auth-audit.service). */
+export const AUTHENTICATION_AUDIT_ACTIONS = ['sign_in', 'sign_in_failed', 'sign_out', 'change_password'] as const;
+
 export interface AuditLogFilters {
     entityType?: string;
     entityId?: string;
