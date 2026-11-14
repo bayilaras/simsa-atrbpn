@@ -1,6 +1,7 @@
 import { CATATAN_LAMPIRAN_OPSIONAL, PETUNJUK_LAMPIRAN_MENYUSUL, buildSuratFormPayload, linkDokumenError } from '@/lib/surat-form-payload'
 import { buildSuratArchiveSelection, readSuratArchiveSelection, selectedSuratArchiveRules, validateSuratArchiveSelection } from '@/lib/surat-archive-selection'
 import { archiveUploadError } from '@/lib/archive-upload';
+import { JENIS_NASKAH_DINAS } from '@/lib/jenis-naskah';
 import { createElement, useCallback, useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -69,55 +70,6 @@ import {
     CheckCircle2,
     Clock
 } from 'lucide-react';
-
-// Jenis Surat options
-const JENIS_SURAT_OPTIONS = [
-    'Keputusan',
-    'Surat Tugas',
-    'Surat Perintah',
-    'Nota Dinas',
-    'Memorandum',
-    'Surat Dinas',
-    'Surat Undangan',
-    'Surat Perjanjian/MoU',
-    'Surat Kuasa',
-    'Berita Acara',
-    'Surat Keterangan',
-    'Surat Pengantar',
-    'Pemberitahuan',
-    'Pengumuman',
-    'Laporan',
-    'Telaahan Staf',
-    'Piagam',
-    'Umum',
-    'Naskah Dinas Arahan',
-    'Naskah Dinas Korespondensi',
-    'Naskah Dinas Khusus',
-    'Naskah Dinas Lainnya',
-    'Peraturan',
-    'Pedoman',
-    'Petunjuk Pelaksanaan',
-    'Instruksi',
-    'Prosedur Tetap (Protap)',
-    'Surat Edaran',
-    'Pengaduan',
-    'Tindak Lanjut Pengaduan',
-    'Surat Keputusan Hak Milik',
-    'Surat Keputusan Hak Guna Usaha',
-    'Surat Keputusan Hak Guna Bangunan',
-    'Surat Keputusan Hak Pakai',
-    'Surat Keputusan Hak Pengelolaan',
-    'Surat Keputusan Hak Rumah Susun',
-    'Surat Keputusan Hak Wakaf',
-    'Permohonan Hak Milik',
-    'Permohonan Hak Guna Usaha',
-    'Permohonan Hak Guna Bangunan',
-    'Permohonan Hak Pakai',
-    'Permohonan Hak Pengelolaan',
-    'Permohonan Hak Rumah Susun',
-    'Permohonan Hak Wakaf',
-    'Pembatalan Hak',
-];
 
 // Sifat Surat options with colors. Terbatas, Rahasia, dan Sangat Rahasia adalah
 // kelas keamanan; saringOpsiKelas menyembunyikan yang di atas plafon peran.
@@ -747,7 +699,7 @@ export default function TambahSuratMasuk() {
                                     aria-invalid={Boolean(fieldErrors.jenisSurat)}
                                     aria-describedby={fieldErrors.jenisSurat ? 'jenis-surat-error' : undefined}
                                     disabled={saveLocked}
-                                    options={JENIS_SURAT_OPTIONS}
+                                    options={JENIS_NASKAH_DINAS}
                                     value={formData.jenisSurat}
                                     onValueChange={(v) => handleChange('jenisSurat', v)}
                                     placeholder="Pilih jenis naskah dinas..."

@@ -1,6 +1,7 @@
 import { CATATAN_LAMPIRAN_OPSIONAL, PETUNJUK_LAMPIRAN_MENYUSUL_KELUAR, buildSuratFormPayload, linkDokumenError } from '@/lib/surat-form-payload'
 import { buildSuratArchiveSelection, readSuratArchiveSelection, selectedSuratArchiveRules, validateSuratArchiveSelection } from '@/lib/surat-archive-selection'
 import { archiveUploadError } from '@/lib/archive-upload';
+import { JENIS_NASKAH_DINAS } from '@/lib/jenis-naskah';
 import { createElement, useCallback, useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -65,55 +66,6 @@ import {
     Zap,
 } from 'lucide-react';
 
-// Naskah Dinas options
-const NASKAH_DINAS_OPTIONS = [
-    'Keputusan',
-    'Surat Tugas',
-    'Surat Perintah',
-    'Nota Dinas',
-    'Memorandum',
-    'Surat Dinas',
-    'Surat Undangan',
-    'Surat Perjanjian/MoU',
-    'Surat Kuasa',
-    'Berita Acara',
-    'Surat Keterangan',
-    'Surat Pengantar',
-    'Pemberitahuan',
-    'Pengumuman',
-    'Laporan',
-    'Telaahan Staf',
-    'Piagam',
-    'Umum',
-    'Naskah Dinas Arahan',
-    'Naskah Dinas Korespondensi',
-    'Naskah Dinas Khusus',
-    'Naskah Dinas Lainnya',
-    'Peraturan',
-    'Pedoman',
-    'Petunjuk Pelaksanaan',
-    'Instruksi',
-    'Prosedur Tetap (Protap)',
-    'Surat Edaran',
-    'Pengaduan',
-    'Tindak Lanjut Pengaduan',
-    'Surat Keputusan Hak Milik',
-    'Surat Keputusan Hak Guna Usaha',
-    'Surat Keputusan Hak Guna Bangunan',
-    'Surat Keputusan Hak Pakai',
-    'Surat Keputusan Hak Pengelolaan',
-    'Surat Keputusan Hak Rumah Susun',
-    'Surat Keputusan Hak Wakaf',
-    'Permohonan Hak Milik',
-    'Permohonan Hak Guna Usaha',
-    'Permohonan Hak Guna Bangunan',
-    'Permohonan Hak Pakai',
-    'Permohonan Hak Pengelolaan',
-    'Permohonan Hak Rumah Susun',
-    'Permohonan Hak Wakaf',
-    'Pembatalan Hak',
-];
-
 const KLASIFIKASI_KEAMANAN_OPTIONS = [
     { value: 'biasa', label: 'Biasa / Terbuka' },
     { value: 'terbatas', label: 'Terbatas' },
@@ -133,7 +85,7 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
     const location = useLocation();
     const [searchParams] = useSearchParams();
     const mode = modeProp === 'inisiatif' ? 'inisiatif' : undefined;
-    const naskahDariQuery = mode === 'inisiatif' && NASKAH_DINAS_OPTIONS.includes(searchParams.get('naskah') || '')
+    const naskahDariQuery = mode === 'inisiatif' && JENIS_NASKAH_DINAS.includes(searchParams.get('naskah') || '')
         ? searchParams.get('naskah') : '';
     const fileInputRef = useRef(null);
     const errorRef = useRef(null);
@@ -693,7 +645,7 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
                                 aria-invalid={Boolean(fieldErrors.naskahDinas)}
                                 aria-describedby={fieldErrors.naskahDinas ? 'naskah-dinas-error' : undefined}
                                 disabled={saveLocked}
-                                options={NASKAH_DINAS_OPTIONS}
+                                options={JENIS_NASKAH_DINAS}
                                 value={formData.naskahDinas}
                                 onValueChange={(v) => handleChange('naskahDinas', v)}
                                 placeholder="Pilih jenis naskah dinas..."
