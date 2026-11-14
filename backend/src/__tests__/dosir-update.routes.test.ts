@@ -83,7 +83,7 @@ describe('dosir update request and error boundaries', () => {
             dosirId, { judul: 'Revisi sintetis' }, 'unit-a', expect.objectContaining({ userId: 'synthetic-user' }),
         );
         expect(response.status).toBe(404);
-        expect(response.body).toEqual({ success: false, error: 'Dosir not found' });
+        expect(response.body).toEqual({ success: false, error: 'Dosir tidak ditemukan atau sudah dihapus.' });
     });
 });
 

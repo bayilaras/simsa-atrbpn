@@ -215,7 +215,7 @@ router.put('/:id', canWriteMiddleware(), validateBody(updateDosirSchema), async 
         });
 
         if (!data) {
-            res.status(404).json({ success: false, error: 'Dosir not found' });
+            res.status(404).json({ success: false, error: 'Dosir tidak ditemukan atau sudah dihapus.' });
             return;
         }
 
