@@ -480,12 +480,11 @@ export function AppHeader() {
                             </div>
                         </DropdownMenuLabel>
                         <DropdownMenuSeparator />
-                        {isSuperAdmin && (
-                            <DropdownMenuItem onSelect={() => navigate('/settings')} className="cursor-pointer rounded-md">
-                                <Settings className="mr-2 h-4 w-4 text-muted-foreground" />
-                                Pengaturan
-                            </DropdownMenuItem>
-                        )}
+                        {/* Every role changes its own password and profile there. */}
+                        <DropdownMenuItem onSelect={() => navigate('/settings')} className="cursor-pointer rounded-md">
+                            <Settings className="mr-2 h-4 w-4 text-muted-foreground" />
+                            Pengaturan
+                        </DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => navigate('/panduan')} className="cursor-pointer rounded-md">
                             <BookOpen className="mr-2 h-4 w-4 text-muted-foreground" />
                             Panduan Pengguna

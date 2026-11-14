@@ -47,6 +47,21 @@ async function openReset(email = 'unit@example.test') {
     return within(await screen.findByRole('dialog', { name: ACTION }))
 }
 
+describe('unit names in user management', () => {
+    it('names the unit a legacy role is bound to instead of showing its code', async () => {
+        state.getUnitKerja.mockResolvedValue({ data: [{ id: 'ditjen', name: 'Direktorat Jenderal PTPP' }] })
+        state.listUsers.mockResolvedValue({
+            data: [{ id: 'lama-1', email: 'lama@example.test', name: 'Admin Lama', role: 'admin_dirjen', unitKerjaId: 'ditjen', isActive: true }],
+            pagination: { total: 1, totalPages: 1 },
+        })
+        render(<UserManagement />)
+        await waitFor(() => expect(state.getUnitKerja).toHaveBeenCalled())
+        fireEvent.click(within(await row('lama@example.test')).getByRole('menuitem', { name: 'Ubah Peran/Unit' }))
+        expect(await screen.findByText('Unit Direktorat Jenderal PTPP ditetapkan otomatis oleh mandat peran.')).toBeInTheDocument()
+        expect(screen.queryByText(/Unit ditjen ditetapkan/)).not.toBeInTheDocument()
+    })
+})
+
 describe('Super Admin password reset', () => {
     it('offers the action for other approved accounts only', async () => {
         render(<UserManagement />)

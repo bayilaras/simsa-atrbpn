@@ -304,6 +304,8 @@ export default function UserManagement() {
 
     const editMandatedUnitKerjaId = getRoleMandatedUnitKerjaId(editData.role);
     const addMandatedUnitKerjaId = getRoleMandatedUnitKerjaId(addData.role);
+    // Staff see the unit's name, never its internal code.
+    const editMandatedUnitName = unitKerjaList.find(unit => unit.id === editMandatedUnitKerjaId)?.name || '';
     const editUnitLocked = editData.role === 'super_admin' || Boolean(editMandatedUnitKerjaId);
     const addUnitLocked = addData.role === 'super_admin' || Boolean(addMandatedUnitKerjaId);
 
@@ -686,7 +688,7 @@ export default function UserManagement() {
                                 {editData.role === 'super_admin'
                                     ? 'Super admin bekerja lintas unit dan tidak memiliki unit kerja tersimpan.'
                                     : editMandatedUnitKerjaId
-                                    ? `Unit ${editMandatedUnitKerjaId} ditetapkan otomatis oleh mandat peran.`
+                                    ? `${editMandatedUnitName ? `Unit ${editMandatedUnitName}` : 'Unit kerja'} ditetapkan otomatis oleh mandat peran.`
                                     : 'Unit kerja wajib dipilih untuk Admin Unit Kerja; akses dibatasi ke unit ini.'}
                             </p>
                         </div>
