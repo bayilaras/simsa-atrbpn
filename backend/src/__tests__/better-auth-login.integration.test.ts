@@ -161,6 +161,15 @@ describe('Better Auth sign-in on an account table migrated by 0052', () => {
         await request(app).post('/api/auth/verify-password')
             .set('Origin', ORIGIN).set('Cookie', cookie).set('Content-Type', 'application/json')
             .send(JSON.stringify({ password: PASSWORD })).expect(404);
+
+        // Recovery is a Super Admin reset; the reset-email endpoints are off.
+        await request(app).post('/api/auth/request-password-reset')
+            .set('Origin', ORIGIN).set('Content-Type', 'application/json')
+            .send(JSON.stringify({ email: 'kredensial@example.test', redirectTo: '/login' })).expect(404);
+        await request(app).post('/api/auth/reset-password')
+            .set('Origin', ORIGIN).set('Content-Type', 'application/json')
+            .send(JSON.stringify({ newPassword: 'synthetic-new-password-0052', token: 'synthetic-token' })).expect(404);
+        await request(app).get('/api/auth/reset-password/synthetic-token?callbackURL=%2Flogin').expect(404);
     });
 
     it('keeps signing in and counting per account when the JSON body was already parsed', async () => {

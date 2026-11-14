@@ -82,7 +82,7 @@ describe('autentikasi PDF route', () => {
 
         await request(app)
             .get('/autentikasi/20000000-0000-4000-8000-000000000001/pdf')
-            .expect(404, { error: 'PDF not found' });
+            .expect(404, { error: 'PDF not found', message: 'Berkas PDF berita acara tidak ditemukan.' });
     });
 
     it('hashes a PDF verification upload from memory without exposing a local path', async () => {

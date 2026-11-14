@@ -16,6 +16,11 @@ describe('preservation evidence presentation', () => {
         expect(await screen.findByText(/Catatan lama: pelaksanaan dan bukti belum diverifikasi/)).toBeInTheDocument()
         expect(screen.getByText('{unfinished JSON')).toBeInTheDocument()
     })
+    it('shows multi-line notes with their line breaks', async () => {
+        mocks.get.mockResolvedValue([{ ...event, recordingMode: 'external_activity_recorded', notes: 'Format diubah ke PDF/A\nHasil diperiksa petugas' }])
+        render(<PreservationHistory arsipId="e1" />)
+        expect(await screen.findByText(/Hasil diperiksa petugas/)).toHaveClass('whitespace-pre-line')
+    })
     it('distinguishes a real mismatch from a recorded external conversion and refreshes new events', async () => {
         mocks.get.mockResolvedValueOnce([{ ...event, action: 'integrity_check', recordingMode: 'system_integrity_check', evidenceSnapshot: { result: 'mismatch' } }])
         const view = render(<PreservationHistory arsipId="e1" refreshVersion={0} />)

@@ -1,6 +1,7 @@
 import { db } from '../config/database';
 import { suratKeluar, NewSuratKeluar, SuratKeluar, suratMasuk } from '../db/schema';
-import { eq, and, desc, sql, gte, lte, like, or, ilike, isNull, inArray, getTableColumns } from 'drizzle-orm';
+import { eq, and, desc, sql, gte, lte, like, or, isNull, inArray, getTableColumns } from 'drizzle-orm';
+import { cocokTeksCari } from '../utils/cari-teks.js';
 import { ConflictError, DatabaseError, ValidationError } from '../utils/errors';
 import {
     scopedRecordByIdWhere,
@@ -28,10 +29,14 @@ import {
     type SuratNumberPreview,
 } from '../utils/surat-numbering.js';
 import { denganRetryDeadlock } from '../utils/deadlock-retry.js';
+import { pastikanBelumBerubah } from '../utils/versi-rekaman.js';
 import type { TindakLanjutInput } from '../validators/schemas.js';
 import { afterSuratKeluarChanged, afterSuratKeluarInsert } from './rangkaian/tindak-lanjut.hook.js';
 import type { RecordUser } from './record-access.service.js';
 import { resolveKonteksBaca, visibleSql, type KonteksBaca } from './access/visibility-spec.js';
+import { urutanDaftarSuratSql } from './urutan-daftar-surat.js';
+import type { UrutanDaftarSurat } from './urutan-daftar-surat.constants.js';
+import { kunciTemplatBilaPindahTahun, pindahUrutanTahun, tentukanNomorUrut } from './surat-nomor-urut.js';
 
 export interface SuratKeluarFilters {
     unitKerjaId?: string | null;
@@ -44,6 +49,7 @@ export interface SuratKeluarFilters {
     search?: string;
     /** menunggu_saya: menunggu keputusan pembaca; draft_saya: buatan pembaca yang belum diajukan. */
     persetujuan?: 'menunggu_saya' | 'draft_saya';
+    urutan?: UrutanDaftarSurat;
     page?: number;
     limit?: number;
     /** Legacy outgoing rows are treated as Terbatas until reclassified. */
@@ -67,14 +73,21 @@ function kolomDaftarPembaca(ctx: KonteksBaca) {
 
 type CreateSuratKeluarInput = Omit<NewSuratKeluar, 'noUrut' | 'tahun'> & {
     tahun?: number;
+    /** No. Urut yang diminta; tanpa nilai, nomor tertinggi + 1 di unit dan tahun itu. */
+    noUrut?: number | null;
     numberingMode?: 'auto' | 'manual';
     tindakLanjut?: TindakLanjutInput;
     actor?: RecordUser | null;
 };
 
+export type UpdateSuratKeluarInput = Partial<SuratKeluar> & {
+    /** updatedAt the edit form loaded; a different stored value is a 409. */
+    expectedUpdatedAt?: Date;
+};
+
 export class SuratKeluarService {
     async findAll(filters: SuratKeluarFilters) {
-        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif, search, persetujuan, page = 1, limit = 20, securityClassifications, pembaca } = filters;
+        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif, search, persetujuan, urutan, page = 1, limit = 20, securityClassifications, pembaca } = filters;
         const offset = (page - 1) * limit;
 
         const conditions = [
@@ -114,12 +127,11 @@ export class SuratKeluarService {
             conditions.push(like(suratKeluar.klasifikasiSubstantif, `%${klasifikasiSubstantif}%`));
         }
         if (search && search.trim()) {
-            const pattern = `%${search.trim()}%`;
             conditions.push(
                 or(
-                    ilike(suratKeluar.perihal, pattern),
-                    ilike(suratKeluar.nomorSurat, pattern),
-                    ilike(suratKeluar.kepada, pattern)
+                    cocokTeksCari(suratKeluar.perihal, search),
+                    cocokTeksCari(suratKeluar.nomorSurat, search),
+                    cocokTeksCari(suratKeluar.kepada, search)
                 )!
             );
         }
@@ -151,12 +163,17 @@ export class SuratKeluarService {
 
         const count = countResult?.[0]?.count ?? 0;
 
-        const kolom = pembaca ? kolomDaftarPembaca(await resolveKonteksBaca(pembaca, db)) : getTableColumns(suratKeluar);
+        const kolom = {
+            ...(pembaca ? kolomDaftarPembaca(await resolveKonteksBaca(pembaca, db)) : getTableColumns(suratKeluar)),
+            // Nama unit pemilik untuk kolom Unit Kerja pada tampilan semua unit.
+            // Rujukan baris luar ditulis lengkap: kolom di sql pilihan satu tabel ditulis Drizzle tanpa nama tabel.
+            unitKerjaNama: sql<string | null>`(SELECT uk.name FROM unit_kerja uk WHERE uk.id = surat_keluar.unit_kerja_id)`,
+        };
         const data = await db
             .select(kolom)
             .from(suratKeluar)
             .where(and(...conditions))
-            .orderBy(desc(suratKeluar.createdAt))
+            .orderBy(...urutanDaftarSuratSql(suratKeluar, urutan))
             .limit(limit)
             .offset(offset);
 
@@ -221,7 +238,7 @@ export class SuratKeluarService {
         attachment?: RegisterSuratAttachmentData,
         importOptions?: SuratImportOptions,
     ) {
-        const { numberingMode: requestedNumberingMode, tindakLanjut: tindakLanjutInput, actor, ...recordData } = data;
+        const { numberingMode: requestedNumberingMode, tindakLanjut: tindakLanjutInput, actor, noUrut: noUrutDiminta, ...recordData } = data;
         // Pemanggil layanan langsung yang masih memakai balasanUntuk dipetakan ke relasi 'balasan'.
         const tindakLanjut: TindakLanjutInput | undefined = tindakLanjutInput
             ?? (recordData.balasanUntuk
@@ -280,18 +297,11 @@ export class SuratKeluarService {
                     assertImportConnected(importOptions);
                     if (existing) throw new DuplicateSuratImportError();
                 }
-                const [lastSurat] = await tx
-                    .select({ noUrut: suratKeluar.noUrut })
-                    .from(suratKeluar)
-                    .where(and(
-                        eq(suratKeluar.unitKerjaId, recordData.unitKerjaId),
-                        eq(suratKeluar.tahun, tahun)
-                    ))
-                    .orderBy(desc(suratKeluar.noUrut))
-                    .limit(1)
-                    .for('update');
-
-                const noUrut = (lastSurat?.noUrut || 0) + 1;
+                // No. Urut yang diminta (formulir atau sumber impor) diperiksa
+                // di bawah kunci templat yang sama dengan max+1.
+                const noUrut = await tentukanNomorUrut(tx, 'keluar', recordData.unitKerjaId, tahun, noUrutDiminta, {
+                    lanjutBilaTerpakai: Boolean(importOptions),
+                });
                 const generatedNomorSurat = settingsService.generateSuratNumber(
                     templates.keluarFormat,
                     {
@@ -398,7 +408,7 @@ export class SuratKeluarService {
 
     async update(
         id: string,
-        data: Partial<SuratKeluar>,
+        data: UpdateSuratKeluarInput,
         unitScope: RecordUnitScope,
         clientBlobClaim?: ClaimClientBlobUpload,
         auditContext?: CriticalAuditContext,
@@ -436,14 +446,22 @@ export class SuratKeluarService {
             })
             : undefined;
         return denganRetryDeadlock(() => db.transaction(async (tx) => {
-            const current = hasSuratRuleSelection(data)
+            const { expectedUpdatedAt, ...patch } = data;
+            // Tanggal ke tahun lain memindahkan surat ke urutan tahun itu; kunci
+            // templat unit lebih dulu, urutan kunci yang sama dengan create().
+            const templatTerkunci = await kunciTemplatBilaPindahTahun(tx, 'keluar', and(...conditions)!, patch.tanggalSurat);
+            const perluBaris = expectedUpdatedAt !== undefined || patch.tanggalSurat !== undefined || hasSuratRuleSelection(patch);
+            const current = perluBaris
                 ? (await tx.select().from(suratKeluar).where(and(...conditions)).limit(1).for('update'))[0]
                 : undefined;
-            if (hasSuratRuleSelection(data) && !current) return undefined;
-            const ruleSelection = await prepareSuratRuleSelection(tx, 'keluar', data, current);
+            if (perluBaris && !current) return undefined;
+            if (current) pastikanBelumBerubah(current.updatedAt, expectedUpdatedAt);
+            const ruleSelection = await prepareSuratRuleSelection(tx, 'keluar', patch, current);
+            // Pindah tahun: No. Urut berikutnya di tahun baru; nomor surat buatan template ikut dibuat ulang.
+            const pindah = current ? await pindahUrutanTahun(tx, 'keluar', current, patch, templatTerkunci) : null;
             const [result] = await tx
                 .update(suratKeluar)
-                .set({ ...data, ...ruleSelection, updatedAt: new Date() })
+                .set({ ...patch, ...ruleSelection, ...pindah?.sesudah, updatedAt: new Date() })
                 .where(and(...conditions))
                 .returning();
 
@@ -470,6 +488,8 @@ export class SuratKeluarService {
                     entityId: id,
                     changes: {
                         ...auditDetails,
+                        // Pindah tahun: No. Urut dan tahun lama di samping yang baru.
+                        ...(pindah ? { before: { ...(auditDetails?.before as Record<string, unknown> | undefined), ...pindah.sebelum } } : {}),
                         after: {
                             nomorSurat: result.nomorSurat,
                             tanggalSurat: result.tanggalSurat,
@@ -480,8 +500,9 @@ export class SuratKeluarService {
                             unitKerjaId: result.unitKerjaId,
                             fileOriginalName: result.fileOriginalName,
                             hasFile: Boolean(result.filePath),
+                            ...(pindah ? { tahun: result.tahun, noUrut: result.noUrut } : {}),
                         },
-                        fields: Object.keys(data),
+                        fields: [...new Set([...Object.keys(patch), ...(pindah ? Object.keys(pindah.sesudah) : [])])],
                         ruleSelection,
                     },
                 }, tx);
@@ -496,6 +517,7 @@ export class SuratKeluarService {
         deletedByUserId: string | undefined,
         unitScope: RecordUnitScope,
         auditContext?: CriticalAuditContext,
+        options: { alasan?: string } = {},
     ) {
         // Soft delete - mark as deleted instead of permanently removing
         const conditions = [
@@ -529,7 +551,7 @@ export class SuratKeluarService {
                     entityId: id,
                     changes: {
                         before: { isDeleted: false, nomorSurat: result.nomorSurat, perihal: result.perihal },
-                        after: { isDeleted: true, deletedBy: deletedByUserId || null },
+                        after: { isDeleted: true, deletedBy: deletedByUserId || null, alasan: options.alasan ?? null },
                     },
                 }, tx);
             }
@@ -559,8 +581,9 @@ export class SuratKeluarService {
         const templates = await settingsService.getSuratTemplates(unitKerjaId);
         return {
             nextNumber,
+            // A No. Urut typed on the form is the number the template will use.
             nomorSurat: settingsService.generateSuratNumber(templates.keluarFormat, {
-                noUrut: nextNumber,
+                noUrut: normalized.noUrut ?? nextNumber,
                 tahun: calendar.tahun,
                 bulan: calendar.bulan,
                 unitKerja: unitKerjaId,

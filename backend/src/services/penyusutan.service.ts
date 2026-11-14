@@ -655,7 +655,7 @@ class PenyusutanService {
         unitScope: RecordUnitScope = NO_RECORD_UNIT_ACCESS,
         securityClassifications?: string[] | null,
     ) {
-        if (!metadata?.user) throw new ForbiddenError('Authenticated actor is required for a disposition transition');
+        if (!metadata?.user) throw new ForbiddenError('Sesi pengguna diperlukan untuk memproses penyusutan.');
 
         const result = await db.transaction(async (tx: any) => {
             const batch = await tx.select().from(penyusutanArsip).where(and(
@@ -667,12 +667,12 @@ class PenyusutanService {
                 ),
                 batchSecurityCondition(securityClassifications),
             )).for('update');
-            if (!batch[0]) throw new AppError('Penyusutan batch not found', 404);
+            if (!batch[0]) throw new AppError('Batch penyusutan tidak ditemukan.', 404);
             assertLegacyPermanentTransferMutationAllowed(batch[0].jenisPenyusutan);
 
             const currentStatus = batch[0].status as PenyusutanStatus;
             const nextStatus = STATUS_FLOW[currentStatus];
-            if (!nextStatus) throw new ValidationError(`Cannot advance from status: ${currentStatus}`);
+            if (!nextStatus) throw new ValidationError('Batch dengan status ini tidak dapat dilanjutkan ke tahap berikutnya.');
 
             const actor = await lockDispositionActor(tx, metadata.user!, id, batch[0].unitKerjaId);
             const { id: actorId, role, unitKerjaId } = actor;
@@ -689,30 +689,30 @@ class PenyusutanService {
                 || batch[0].unitKerjaId !== unitScope
                 || batch[0].unitKerjaId !== effectiveActorUnitKerjaId
             )) {
-                throw new ForbiddenError('Unauthorized: You can only transition batches for your own unit');
+                throw new ForbiddenError('Anda hanya dapat memproses batch penyusutan milik unit kerja Anda.');
             }
 
             if (currentStatus === 'proposed' && nextStatus === 'reviewed') {
                 if (!['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen'].includes(role)) {
-                    throw new ForbiddenError('Unauthorized: Insufficient role to review');
+                    throw new ForbiddenError('Peran Anda tidak berwenang meninjau batch penyusutan.');
                 }
                 if ([batch[0].createdBy, batch[0].proposedBy].filter(Boolean).includes(actorId)) {
-                    throw new ForbiddenError('Separation of duties: reviewer must differ from creator/proposer');
+                    throw new ForbiddenError('Pemisahan tugas: peninjau harus berbeda dari pembuat dan pengusul batch.');
                 }
             }
 
             if (currentStatus === 'reviewed' && nextStatus === 'approved') {
                 if (role !== 'super_admin') {
-                    throw new ForbiddenError('Unauthorized: Insufficient role to approve');
+                    throw new ForbiddenError('Peran Anda tidak berwenang menyetujui batch penyusutan.');
                 }
                 if ([batch[0].createdBy, batch[0].proposedBy, batch[0].reviewedBy].filter(Boolean).includes(actorId)) {
-                    throw new ForbiddenError('Separation of duties: approver must differ from creator/proposer/reviewer');
+                    throw new ForbiddenError('Pemisahan tugas: penyetuju harus berbeda dari pembuat, pengusul, dan peninjau batch.');
                 }
             }
 
             if (currentStatus === 'approved' && nextStatus === 'executed') {
                 if (role !== 'super_admin') {
-                    throw new ForbiddenError('Unauthorized: Insufficient role to execute');
+                    throw new ForbiddenError('Peran Anda tidak berwenang melaksanakan batch penyusutan.');
                 }
                 if ([
                     batch[0].createdBy,
@@ -720,7 +720,7 @@ class PenyusutanService {
                     batch[0].reviewedBy,
                     batch[0].approvedBy,
                 ].filter(Boolean).includes(actorId)) {
-                    throw new ForbiddenError('Separation of duties: executor must differ from creator/proposer/reviewer/approver');
+                    throw new ForbiddenError('Pemisahan tugas: pelaksana harus berbeda dari pembuat, pengusul, peninjau, dan penyetuju batch.');
                 }
             }
 
@@ -813,7 +813,7 @@ class PenyusutanService {
                 ))
                 .returning();
 
-            if (!updated) throw new ConflictError('Cannot advance: batch status changed concurrently');
+            if (!updated) throw new ConflictError('Status batch berubah saat diproses. Muat ulang halaman, lalu coba lagi.');
 
             // A completed transfer/media operation releases the processing lock.
             // Its immutable batch membership remains the historical evidence.
@@ -886,7 +886,7 @@ class PenyusutanService {
                 scopedRecordByIdWhere(penyusutanArsip.id, id, penyusutanArsip.unitKerjaId, unitScope),
                 batchSecurityCondition(securityClassifications),
             )).limit(1).for('update');
-            if (!batch) throw new AppError('Penyusutan batch not found', 404);
+            if (!batch) throw new AppError('Batch penyusutan tidak ditemukan.', 404);
             if (batch.jenisPenyusutan !== 'pemusnahan' || batch.status !== 'approved') {
                 throw new ConflictError('Unggah bukti hanya tersedia untuk pemusnahan yang telah disetujui.');
             }
@@ -920,7 +920,7 @@ class PenyusutanService {
                 scopedRecordByIdWhere(penyusutanArsip.id, id, penyusutanArsip.unitKerjaId, unitScope),
                 batchSecurityCondition(securityClassifications),
             )).limit(1).for('update');
-            if (!batch) throw new AppError('Penyusutan batch not found', 404);
+            if (!batch) throw new AppError('Batch penyusutan tidak ditemukan.', 404);
             if (batch.jenisPenyusutan !== 'pemusnahan' || batch.status !== 'approved') {
                 throw new ConflictError('Pilihan bukti tersedia untuk pemusnahan yang telah disetujui.');
             }
@@ -961,7 +961,7 @@ class PenyusutanService {
                 scopedRecordByIdWhere(penyusutanArsip.id, id, penyusutanArsip.unitKerjaId, unitScope),
                 batchSecurityCondition(securityClassifications),
             )).limit(1).for('update');
-            if (!batch) throw new AppError('Penyusutan batch not found', 404);
+            if (!batch) throw new AppError('Batch penyusutan tidak ditemukan.', 404);
             if (batch.jenisPenyusutan !== 'pemindahan' || batch.status !== 'executed'
                 || !batch.tanggalPelaksanaan || !batch.executedBy) {
                 throw new ConflictError('Hanya batch pemindahan lama dengan rekam pelaksanaan lengkap dapat ditinjau.');
@@ -1016,9 +1016,9 @@ class PenyusutanService {
                 ),
                 batchSecurityCondition(securityClassifications),
             )).for('update');
-            if (!batch[0]) throw new AppError('Batch not found', 404);
+            if (!batch[0]) throw new AppError('Batch penyusutan tidak ditemukan.', 404);
             assertLegacyPermanentTransferMutationAllowed(batch[0].jenisPenyusutan);
-            if (batch[0].status !== 'draft') throw new ValidationError('Can only add items to draft batches');
+            if (batch[0].status !== 'draft') throw new ValidationError('Arsip hanya dapat ditambahkan ke batch berstatus draf.');
 
             await this.assertArsipEligible(
                 tx,
@@ -1103,9 +1103,9 @@ class PenyusutanService {
                 ),
                 batchSecurityCondition(securityClassifications),
             )).for('update');
-            if (!batch[0]) throw new AppError('Batch not found', 404);
+            if (!batch[0]) throw new AppError('Batch penyusutan tidak ditemukan.', 404);
             assertLegacyPermanentTransferMutationAllowed(batch[0].jenisPenyusutan);
-            if (batch[0].status !== 'draft') throw new ValidationError('Can only remove items from draft batches');
+            if (batch[0].status !== 'draft') throw new ValidationError('Arsip hanya dapat dikeluarkan dari batch berstatus draf.');
 
             await tx.delete(penyusutanItems)
                 .where(and(
@@ -1171,9 +1171,9 @@ class PenyusutanService {
                 ),
                 batchSecurityCondition(securityClassifications),
             )).for('update');
-            if (!batch[0]) throw new AppError('Batch not found', 404);
+            if (!batch[0]) throw new AppError('Batch penyusutan tidak ditemukan.', 404);
             assertLegacyPermanentTransferMutationAllowed(batch[0].jenisPenyusutan);
-            if (batch[0].status !== 'draft') throw new ValidationError('Can only delete draft batches');
+            if (batch[0].status !== 'draft') throw new ValidationError('Hanya batch berstatus draf yang dapat dihapus.');
 
             const items = await tx.select({ arsipId: penyusutanItems.arsipId })
                 .from(penyusutanItems)
@@ -1201,7 +1201,7 @@ class PenyusutanService {
                     eq(penyusutanArsip.status, 'draft'),
                 ))
                 .returning({ id: penyusutanArsip.id });
-            if (!deleted) throw new ConflictError('Cannot delete: batch status changed concurrently');
+            if (!deleted) throw new ConflictError('Status batch berubah saat dihapus. Muat ulang halaman, lalu coba lagi.');
 
             if (auditContext) {
                 await auditLogService.logActionOrThrow({

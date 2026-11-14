@@ -50,7 +50,7 @@ describe('PUT /api/settings/surat-templates — galat validasi', () => {
             .put('/api/settings/surat-templates')
             .send({ unitKerjaId: 'dir_bppt', masukFormat: '{noUrut}/SM/{tahun}' })
             .expect(500);
-        expect(res.body).toEqual({ error: 'Failed to update templates' });
+        expect(res.body).toEqual({ error: 'Format nomor surat gagal disimpan. Silakan coba lagi.' });
     });
 });
 

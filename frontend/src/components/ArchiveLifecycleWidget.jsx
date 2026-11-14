@@ -6,32 +6,48 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Clock, AlertTriangle, Archive, FileWarning, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 import { api } from '@/services/api'
 
+function KartuStatusRetensi({ className, children }) {
+    return (
+        <Card className={className}>
+            <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    Status Retensi Arsip
+                </CardTitle>
+            </CardHeader>
+            <CardContent>{children}</CardContent>
+        </Card>
+    )
+}
+
 /**
  * ArchiveLifecycleWidget - Shows archive status notifications
  * Display counts and lists of archives by lifecycle status
+ *
+ * Server menghitung status per unit kerja; Super Admin wajib memilih unitnya
+ * (perluPilihUnit) karena server tidak melayani semua unit sekaligus.
  */
-export function ArchiveLifecycleWidget({ className = "" }) {
-    const [data, setData] = useState(null)
-    const [loading, setLoading] = useState(true)
+export function ArchiveLifecycleWidget({ className = "", unitKerjaId, perluPilihUnit = false }) {
+    const [hasil, setHasil] = useState({ kunci: null, data: null, gagal: false })
+    const [muatUlang, setMuatUlang] = useState(0)
     const [expandedSections, setExpandedSections] = useState({})
+    // Jawaban hanya dipakai untuk unit dan percobaan yang memintanya.
+    const kunci = `${unitKerjaId ?? ''}|${muatUlang}`
 
     useEffect(() => {
-        fetchLifecycleData()
-    }, [])
-
-    const fetchLifecycleData = async () => {
-        setLoading(true)
-        try {
-            const response = await api.get('/api/arsip-picker/lifecycle')
-            if (response.success) {
-                setData(response.data)
-            }
-        } catch (error) {
+        if (perluPilihUnit) return
+        let aktif = true
+        api.get('/api/arsip-picker/lifecycle', { unitKerjaId }).then(response => {
+            if (!aktif) return
+            if (!response?.success || !response.data?.summary) throw new Error('Data status retensi tidak lengkap.')
+            setHasil({ kunci, data: response.data, gagal: false })
+        }).catch(error => {
+            if (!aktif) return
             console.error('Error fetching lifecycle data:', error)
-        } finally {
-            setLoading(false)
-        }
-    }
+            setHasil({ kunci, data: null, gagal: true })
+        })
+        return () => { aktif = false }
+    }, [kunci, unitKerjaId, perluPilihUnit])
 
     const toggleSection = (section) => {
         setExpandedSections(prev => ({
@@ -40,21 +56,39 @@ export function ArchiveLifecycleWidget({ className = "" }) {
         }))
     }
 
-    if (loading) {
+    if (perluPilihUnit) {
+        return (
+            <KartuStatusRetensi className={className}>
+                <p className="text-sm text-muted-foreground">Pilih unit kerja untuk melihat status retensi.</p>
+            </KartuStatusRetensi>
+        )
+    }
+
+    if (hasil.kunci !== kunci) {
         return (
             <Card className={className}>
                 <CardContent className="py-6">
                     <div className="flex items-center justify-center">
                         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                        <span className="sr-only">Memuat status retensi…</span>
                     </div>
                 </CardContent>
             </Card>
         )
     }
 
-    if (!data) return null
+    if (hasil.gagal) {
+        return (
+            <KartuStatusRetensi className={className}>
+                <div role="alert" className="space-y-3">
+                    <p className="text-sm">Status retensi belum dapat dimuat. Silakan coba lagi.</p>
+                    <Button variant="outline" size="sm" onClick={() => setMuatUlang(nilai => nilai + 1)}>Coba lagi</Button>
+                </div>
+            </KartuStatusRetensi>
+        )
+    }
 
-    const { summary, willBeInactive, alreadyInactive, willExpire, expired } = data
+    const { summary, willBeInactive, alreadyInactive, willExpire, expired } = hasil.data
 
     const sections = [
         {
@@ -159,7 +193,7 @@ export function ArchiveLifecycleWidget({ className = "" }) {
                                                 </p>
                                             </div>
                                             <Badge variant="outline" className="text-xs">
-                                                {item.hasilAkhir || 'N/A'}
+                                                {item.hasilAkhir || '-'}
                                             </Badge>
                                         </div>
                                     ))}

@@ -44,7 +44,11 @@ describe('PUT /api/settings/preferences', () => {
             .put('/api/settings/preferences')
             .send({ ...PREFERENSI, updatedAt: '2026-11-01T02:00:00.000Z' })
             .expect(400);
-        expect(res.body.error).toBe('Invalid preferences');
+        expect(res.body).toMatchObject({
+            code: 'VALIDATION_ERROR',
+            message: 'Data yang dikirim belum valid. Periksa isian berikut.',
+            details: [{ field: '', message: 'Ada isian yang tidak dikenali. Muat ulang halaman, lalu coba lagi.' }],
+        });
         expect(mocks.update).not.toHaveBeenCalled();
     });
 

@@ -6,13 +6,12 @@ import { resolve, join, dirname, relative, isAbsolute, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { getCACertificates } from 'node:tls';
 import { readFile, writeFile, mkdir, mkdtemp } from 'node:fs/promises';
-import { parseNeonBackupOperation, sealNeonBundle, openNeonBundle, loadNeonEvidenceSql, migrationManifest, NEON_BACKUP_FORMAT } from './neon-backup-core.mjs';
+import { parseNeonBackupOperation, sealNeonBundle, openNeonBundle, loadNeonEvidenceSql, migrationManifest, appliedMigrationCount, NEON_BACKUP_FORMAT } from './neon-backup-core.mjs';
 import { assertNeonBackupRole, provisionNeonBackupRole, NEON_RESTORE_OWNERS_SQL } from './neon-backup-role.mjs';
 import { POLICY_ROLES, loadNeonGrantPolicy, assertNeonRoleBoundaries, verifyNeonRuntime, restoreTargetRoles } from './neon-database-policy.mjs';
 import { makeBackupWorkspace, boundedFile, physical, createDisposableBackupTarget } from './neon-backup-runtime.mjs';
 import { MAX_ARCHIVE_BYTES, MAX_EVIDENCE_BYTES, normalizeEvidence, requireCondition as check, sha256 } from './local-backup-drill-core.mjs';
 import { monitorSnapshotConnection, parsePrivateJson } from './local-current-backup-core.mjs';
-import { loadMigrations, validateAppliedMigrations } from '../backend/scripts/migrate-database.mjs';
 
 const requireBackend = createRequire(new URL('../backend/package.json',import.meta.url));
 const { Client } = requireBackend('pg');
@@ -38,7 +37,8 @@ export async function captureNeonSnapshot({client,command,environment,source,sig
     await assertNeonRoleBoundaries(client,{database:source.database,role:'simsa_backup'});
     await assertNeonBackupRole(client,{database:source.database,requireIdentity:true});
     const applied=(await client.query('SELECT hash,created_at FROM drizzle.__drizzle_migrations ORDER BY created_at,id')).rows;
-    check(validateAppliedMigrations(loadMigrations(),applied).length===0,'Source migration history differs from this release');
+    // Equal to, or the first part of, this checkout's journal (production behind main).
+    const appliedMigrations=appliedMigrationCount(applied);
     const snapshot=(await client.query('SELECT pg_export_snapshot() AS id,clock_timestamp() AS taken_at')).rows[0];
     check(/^[0-9A-F]+-[0-9A-F]+-[0-9]+$/.test(snapshot.id),'Unsafe snapshot identifier');
     const collector=await loadNeonEvidenceSql();
@@ -47,7 +47,7 @@ export async function captureNeonSnapshot({client,command,environment,source,sig
     archive=await command('pg_dump',['--no-password','--format=custom','--create','--compress=9','--no-owner','--no-privileges',`--snapshot=${snapshot.id}`,'--lock-wait-timeout=60000'],
       {env:environment,signal:combined,maximum:MAX_ARCHIVE_BYTES,timeoutMs:300000});
     monitor.assertHealthy(); await client.query('COMMIT'); monitor.assertHealthy();
-    return {archive,evidence,snapshot_at:new Date(snapshot.taken_at).toISOString()};
+    return {archive,evidence,snapshot_at:new Date(snapshot.taken_at).toISOString(),applied_migration_count:appliedMigrations};
   } catch(error) {archive?.fill(0);evidence?.fill(0);throw error;}
   finally {await client.end().catch(()=>{});monitor.dispose();}
 }
@@ -70,7 +70,7 @@ async function createBackup(operation,workspace) {
   try {
     plain=await captureNeonSnapshot({client:new Client(c),command,environment:sourceEnvironment,source:operation.source});
     check(JSON.stringify(hashes)===JSON.stringify(await helperHashes()),'Backup helpers changed during capture');
-    const bundle=sealNeonBundle({key,runId,archive:plain.archive,evidence:plain.evidence,metadata:{source:operation.source,snapshot_at:plain.snapshot_at,helpers:hashes,migrations:migrationManifest()}});
+    const bundle=sealNeonBundle({key,runId,archive:plain.archive,evidence:plain.evidence,metadata:{source:operation.source,snapshot_at:plain.snapshot_at,helpers:hashes,migrations:migrationManifest(),applied_migration_count:plain.applied_migration_count}});
     await writeFile(join(directory,'database.dump.aesgcm'),bundle.archive,{flag:'wx',mode:0o600});
     await writeFile(join(directory,'source.evidence.aesgcm'),bundle.evidence,{flag:'wx',mode:0o600});
     // Manifest is the completion marker; incomplete directories are not backups.

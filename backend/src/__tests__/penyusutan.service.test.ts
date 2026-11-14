@@ -531,14 +531,14 @@ describe('PenyusutanService', () => {
             enqueue([]);
             await expect(penyusutanService.updateStatus('missing', {
                 user: { id: 'proposer-1', role: 'admin_dirjen', unitKerjaId: 'u1' },
-            }, 'u1')).rejects.toThrow('Penyusutan batch not found');
+            }, 'u1')).rejects.toThrow('Batch penyusutan tidak ditemukan.');
         });
 
         it('should throw when already at terminal state', async () => {
             enqueue([{ id: 'p1', status: 'executed' }]);
             await expect(penyusutanService.updateStatus('p1', {
                 user: { id: 'proposer-1', role: 'admin_dirjen', unitKerjaId: 'u1' },
-            }, 'u1')).rejects.toThrow('Cannot advance from status: executed');
+            }, 'u1')).rejects.toThrow('Batch dengan status ini tidak dapat dilanjutkan ke tahap berikutnya.');
         });
 
         it('should stop a workflow when an item is placed under legal hold', async () => {
@@ -553,7 +553,7 @@ describe('PenyusutanService', () => {
             enqueue([{ id: 'p1', status: 'proposed', jenisPenyusutan: 'pemusnahan', unitKerjaId: 'ditjen', createdBy: 'creator-1', proposedBy: 'same-user' }]);
             await expect(penyusutanService.updateStatus('p1', {
                 user: { id: 'same-user', role: 'admin_dirjen', unitKerjaId: 'stale-unit' },
-            }, 'ditjen')).rejects.toThrow(/Separation of duties/);
+            }, 'ditjen')).rejects.toThrow(/Pemisahan tugas/);
         });
 
         it('should reject every non-super-admin transition outside the actor unit', async () => {
@@ -563,7 +563,7 @@ describe('PenyusutanService', () => {
             }]);
             await expect(penyusutanService.updateStatus('p1', {
                 user: { id: 'reviewer-1', role: 'admin_dirjen', unitKerjaId: 'u2' },
-            }, 'u1')).rejects.toThrow(/own unit/);
+            }, 'u1')).rejects.toThrow(/milik unit kerja Anda/);
         });
 
         it('should re-check JRA provenance while holding the workflow transaction', async () => {
@@ -604,7 +604,7 @@ describe('PenyusutanService', () => {
             }]);
             await expect(penyusutanService.updateStatus('p1', {
                 user: { id: 'same-user', role: 'super_admin', unitKerjaId: '' },
-            }, null)).rejects.toThrow(/executor must differ from creator\/proposer\/reviewer\/approver/);
+            }, null)).rejects.toThrow(/pelaksana harus berbeda dari pembuat, pengusul, peninjau, dan penyetuju/);
         });
 
         it('should reject a conditional transition when the status changed concurrently', async () => {
@@ -617,7 +617,7 @@ describe('PenyusutanService', () => {
             enqueue([]); // conditional UPDATE did not match the old status
             await expect(penyusutanService.updateStatus('p1', {
                 user: { id: 'proposer-1', role: 'admin_dirjen', unitKerjaId: 'stale-unit' },
-            }, 'ditjen')).rejects.toThrow(/status changed concurrently/);
+            }, 'ditjen')).rejects.toThrow(/Status batch berubah saat diproses/);
         });
 
         it('should reject advancing an empty batch', async () => {
@@ -726,7 +726,7 @@ describe('PenyusutanService', () => {
 
         it('should throw for non-draft batch', async () => {
             enqueue([{ id: 'p1', status: 'proposed' }]);
-            await expect(penyusutanService.addItems('p1', ['a1'], 'u1')).rejects.toThrow('Can only add items to draft batches');
+            await expect(penyusutanService.addItems('p1', ['a1'], 'u1')).rejects.toThrow('Arsip hanya dapat ditambahkan ke batch berstatus draf.');
         });
 
         it('requires a manage grant before adding a controlled archive', async () => {
@@ -842,7 +842,7 @@ describe('PenyusutanService', () => {
 
         it('should throw for non-draft batch', async () => {
             enqueue([{ id: 'p1', status: 'approved' }]);
-            await expect(penyusutanService.removeItems('p1', ['a1'], 'u1')).rejects.toThrow('Can only remove items from draft batches');
+            await expect(penyusutanService.removeItems('p1', ['a1'], 'u1')).rejects.toThrow('Arsip hanya dapat dikeluarkan dari batch berstatus draf.');
         });
     });
 
@@ -867,12 +867,12 @@ describe('PenyusutanService', () => {
 
         it('should throw for non-draft batch', async () => {
             enqueue([{ id: 'p1', status: 'executed' }]);
-            await expect(penyusutanService.deleteBatch('p1', 'u1')).rejects.toThrow('Can only delete draft batches');
+            await expect(penyusutanService.deleteBatch('p1', 'u1')).rejects.toThrow('Hanya batch berstatus draf yang dapat dihapus.');
         });
 
         it('should throw for nonexistent batch', async () => {
             enqueue([]);
-            await expect(penyusutanService.deleteBatch('missing', 'u1')).rejects.toThrow('Batch not found');
+            await expect(penyusutanService.deleteBatch('missing', 'u1')).rejects.toThrow('Batch penyusutan tidak ditemukan.');
         });
     });
 

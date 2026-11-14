@@ -15,6 +15,8 @@ vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({
 }) }))
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }))
 vi.mock('@/services/surat-masuk.service', () => ({ default: { getAll: mocks.getAll, getStats: mocks.getStats } }))
+// Panel filter memuat daftar unit untuk pilihan "Disposisi Ke".
+vi.mock('@/services/settings.service', () => ({ default: { getAllUnitKerja: async () => [] } }))
 vi.mock('@/services/approval.service', () => ({ default: { getPending: async () => [] }, approvalService: { getPending: async () => [] } }))
 vi.mock('@/components/ArchiveDialog', () => ({ ArchiveDialog: () => null }))
 vi.mock('@/components/DistributeDialog', () => ({ DistributeDialog: () => null }))

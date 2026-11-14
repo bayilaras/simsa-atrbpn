@@ -19,6 +19,17 @@ describe('operational monitoring', () => {
         expect(screen.getByText('Gagal')).toBeInTheDocument();
         expect(screen.getByRole('link', { name: /Buka status CI/ })).toHaveAttribute('href', snapshot.ciUrl);
     });
+    it('shares each loaded status with the header indicator', async () => {
+        const heard = [];
+        const listen = event => heard.push(event.detail.status);
+        window.addEventListener('simsa:status-operasional', listen);
+        try {
+            get.mockResolvedValue({ data: snapshot });
+            render(<OperationsMonitoring />);
+            await screen.findByText('Belum ada bukti terverifikasi.');
+            expect(heard).toEqual(['attention']);
+        } finally { window.removeEventListener('simsa:status-operasional', listen); }
+    });
     it('removes old healthy status when refresh fails and offers retry', async () => {
         get.mockResolvedValueOnce({ data: { ...snapshot, status: 'healthy', checks: [{ id: 'database', label: 'Database', status: 'healthy', message: 'Terhubung' }] } })
             .mockRejectedValueOnce(new Error('private credential error'))
@@ -32,6 +43,59 @@ describe('operational monitoring', () => {
         fireEvent.click(screen.getByRole('button', { name: /Perbarui/ }));
         await screen.findByText('Belum ada bukti terverifikasi.');
         await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
+    });
+});
+
+describe('direct uploads left uncleaned', () => {
+    const cleanup = (status, stale) => ({ status: status === 'healthy' ? 'healthy' : 'attention', timestamp: '2026-09-15T00:00:00Z', checks: [
+        { id: 'upload_cleanup', label: 'Pembersihan unggahan langsung', status, message: 'Keadaan pembersihan.', ...(stale === undefined ? {} : { counts: { stale } }) },
+    ] });
+    it('shows how many uploads are still not deleted, with what happens next', async () => {
+        get.mockResolvedValue({ data: cleanup('attention', 3) });
+        render(<OperationsMonitoring />);
+        expect(await screen.findByText('Pembersihan unggahan langsung')).toBeInTheDocument();
+        expect(screen.getByText('Belum terhapus').nextSibling).toHaveTextContent('3');
+        expect(screen.getByText('Berkas yang diunggah tetapi tidak jadi disimpan pada surat atau arsip dihapus otomatis setiap hari setelah masa tunggunya habis. Bila angka ini tidak turun dalam beberapa hari, hubungi pengelola sistem.')).toBeInTheDocument();
+        expect(screen.queryByText('stale')).not.toBeInTheDocument();
+    });
+    it('gives no cleanup explanation where file storage is not enabled', async () => {
+        get.mockResolvedValue({ data: cleanup('disabled') });
+        render(<OperationsMonitoring />);
+        expect(await screen.findByText('Keadaan pembersihan.')).toBeInTheDocument();
+        expect(screen.queryByText(/dihapus otomatis setiap hari/)).not.toBeInTheDocument();
+    });
+});
+
+describe('running the scanner from monitoring', () => {
+    const scanner = status => ({ status: status === 'healthy' ? 'healthy' : 'attention', timestamp: '2026-09-15T00:00:00Z', checks: [
+        { id: 'scanner', label: 'Pemindai keamanan dokumen', status, message: 'Keadaan pemindai.' },
+    ] });
+    it('starts the scanner and says when the waiting files are scanned', async () => {
+        get.mockResolvedValue({ data: scanner('healthy') });
+        post.mockResolvedValue({ success: true, data: { wakeScheduled: true } });
+        render(<OperationsMonitoring />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Jalankan pemindai' }));
+        expect(await screen.findByText('Pemindai dijalankan. Berkas yang menunggu dipindai dalam beberapa menit; status di halaman ini diperbarui setiap menit.')).toBeInTheDocument();
+        expect(post).toHaveBeenCalledWith('/api/operations/scanner-run', {});
+        expect(screen.getByText(/Pemindai berjalan sendiri setelah berkas diunggah\./)).toBeInTheDocument();
+    });
+    it('shows the server explanation when the scanner cannot be run, and never a raw error', async () => {
+        get.mockResolvedValue({ data: scanner('failed') });
+        post.mockRejectedValueOnce(Object.assign(new Error('Pemindai tidak dapat dijalankan dari layanan ini. Hubungi pengelola sistem.'), { status: 503 }))
+            .mockRejectedValueOnce(new Error('ECONNRESET private detail'));
+        render(<OperationsMonitoring />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Jalankan pemindai' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent('Pemindai tidak dapat dijalankan dari layanan ini. Hubungi pengelola sistem.');
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Jalankan pemindai' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Jalankan pemindai' }));
+        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Pemindai belum dapat dijalankan. Coba lagi beberapa saat lagi.'));
+        expect(screen.queryByText(/ECONNRESET/)).not.toBeInTheDocument();
+    });
+    it('offers no scanner run where the scanner is not enabled', async () => {
+        get.mockResolvedValue({ data: scanner('disabled') });
+        render(<OperationsMonitoring />);
+        expect(await screen.findByText('Keadaan pemindai.')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Jalankan pemindai' })).not.toBeInTheDocument();
     });
 });
 

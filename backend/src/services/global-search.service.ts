@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { suratMasuk, suratKeluar, arsip, dosir } from '../db/schema';
-import { sql, or, ilike, desc, and, eq, isNull, inArray } from 'drizzle-orm';
+import { sql, or, ilike, desc, and, eq, isNull, inArray, type AnyColumn } from 'drizzle-orm';
 import { bacaArsipSql, klasifikasiInSql, type PenggunaVisibilitas } from './access/visibility-spec';
 import { escapeLike, LIKE_ESCAPE } from '../utils/nomor-surat';
 
@@ -39,6 +39,8 @@ export interface GlobalSearchResponse {
         page: number;
         limit: number;
         total: number;
+        /** Masih ada hasil sesudah halaman ini dalam jangkauan MAX_SCAN. */
+        hasMore: boolean;
     };
 }
 
@@ -46,6 +48,14 @@ interface ModuleSearchResult {
     items: GlobalSearchResult[];
     total: number;
 }
+
+// Urutan tiap modul memakai waktu input sampai milidetik, sama dengan Date di
+// penggabungan JavaScript; sisa mikrodetik tidak ikut agar pengikat id
+// menentukan urutan yang sama di basis data dan di penggabungan.
+const terbaruDulu = (createdAt: AnyColumn) => desc(sql`date_trunc('milliseconds', ${createdAt})`);
+
+// Pengikat urutan untuk hasil berwaktu input sama dari modul berbeda.
+const URUTAN_JENIS: Record<GlobalSearchResult['type'], number> = { surat_masuk: 0, surat_keluar: 1, arsip: 2, dosir: 3 };
 
 class GlobalSearchService {
     private readonly DEFAULT_LIMIT = 20;
@@ -134,14 +144,19 @@ class GlobalSearchService {
 
         await Promise.all(searchPromises);
 
-        // Sort by relevance (most recent first for now)
-        results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        // Waktu input terbaru lebih dulu; jenis dan id sebagai pengikat agar
+        // halaman berikutnya tidak mengulang atau melewatkan hasil.
+        results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            || URUTAN_JENIS[a.type] - URUTAN_JENIS[b.type]
+            || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
 
         counts.total = counts.surat_masuk + counts.surat_keluar + counts.arsip + counts.dosir;
 
-        // Paginate
+        // Paginate. Tiap modul menyumbang paling banyak MAX_SCAN baris, jadi
+        // hanya MAX_SCAN hasil teratas gabungan yang pasti terurut benar.
         const offset = (effectivePage - 1) * effectiveLimit;
-        const paginatedResults = results.slice(offset, offset + effectiveLimit);
+        const akhir = Math.min(offset + effectiveLimit, this.MAX_SCAN);
+        const paginatedResults = offset < akhir ? results.slice(offset, akhir) : [];
 
         return {
             results: paginatedResults,
@@ -149,7 +164,8 @@ class GlobalSearchService {
             pagination: {
                 page: effectivePage,
                 limit: effectiveLimit,
-                total: counts.total
+                total: counts.total,
+                hasMore: offset + paginatedResults.length < Math.min(counts.total, this.MAX_SCAN),
             }
         };
     }
@@ -242,7 +258,7 @@ class GlobalSearchService {
                 .select()
                 .from(suratMasuk)
                 .where(whereClause)
-                .orderBy(desc(suratMasuk.createdAt))
+                .orderBy(terbaruDulu(suratMasuk.createdAt), desc(suratMasuk.id))
                 .limit(fetchLimit),
         ]);
 
@@ -323,7 +339,7 @@ class GlobalSearchService {
                 .select()
                 .from(suratKeluar)
                 .where(whereClause)
-                .orderBy(desc(suratKeluar.createdAt))
+                .orderBy(terbaruDulu(suratKeluar.createdAt), desc(suratKeluar.id))
                 .limit(fetchLimit),
         ]);
 
@@ -384,7 +400,7 @@ class GlobalSearchService {
                 .select()
                 .from(arsip)
                 .where(whereClause)
-                .orderBy(desc(arsip.createdAt))
+                .orderBy(terbaruDulu(arsip.createdAt), desc(arsip.id))
                 .limit(fetchLimit),
         ]);
 
@@ -440,7 +456,7 @@ class GlobalSearchService {
                 .select()
                 .from(dosir)
                 .where(whereClause)
-                .orderBy(desc(dosir.createdAt))
+                .orderBy(terbaruDulu(dosir.createdAt), desc(dosir.id))
                 .limit(fetchLimit),
         ]);
 
@@ -495,7 +511,7 @@ class GlobalSearchService {
         return {
             results: [],
             counts: { surat_masuk: 0, surat_keluar: 0, arsip: 0, dosir: 0, total: 0 },
-            pagination: { page: 1, limit: 20, total: 0 }
+            pagination: { page: 1, limit: 20, total: 0, hasMore: false }
         };
     }
 }

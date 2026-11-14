@@ -71,7 +71,7 @@ export default function SuratMasukDetail() {
             setPerluAkses(null)
             console.error('Error fetching surat:', error)
             toast({
-                title: 'Error',
+                title: 'Gagal',
                 description: 'Gagal memuat data surat',
                 variant: 'destructive',
             })
@@ -95,7 +95,7 @@ export default function SuratMasukDetail() {
             setAlurVersi((v) => v + 1)
         } catch (error) {
             toast({
-                title: 'Error',
+                title: 'Gagal',
                 description: error.message || 'Gagal mengarsipkan surat',
                 variant: 'destructive',
             })
@@ -110,7 +110,7 @@ export default function SuratMasukDetail() {
             fetchSurat()
             setAlurVersi((v) => v + 1)
         } catch (error) {
-            toast({ title: 'Error', description: error.message || 'Gagal menerima disposisi', variant: 'destructive' })
+            toast({ title: 'Gagal', description: error.message || 'Gagal menerima disposisi', variant: 'destructive' })
         }
     }
     // F-I2: Penyelesaian dibuka langsung di halaman ini dengan disposisi yang
@@ -130,7 +130,7 @@ export default function SuratMasukDetail() {
             }
             setPenyelesaianTarget(distribusi)
         } catch (error) {
-            toast({ title: 'Error', description: error.message || 'Gagal memuat disposisi', variant: 'destructive' })
+            toast({ title: 'Gagal', description: error.message || 'Gagal memuat disposisi', variant: 'destructive' })
         }
     }
     const handlePenyelesaianSelesai = () => {

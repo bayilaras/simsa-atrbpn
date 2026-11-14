@@ -33,7 +33,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
 
         if (!unitKerjaId) {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
             return;
         }
 
@@ -55,7 +55,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         res.json(result);
     } catch (error) {
         log.error({ err: error }, 'Error fetching notifications:');
-        res.status(500).json({ error: 'Failed to fetch notifications' });
+        res.status(500).json({ error: 'Failed to fetch notifications', message: 'Notifikasi gagal dimuat. Silakan coba lagi.' });
     }
 });
 
@@ -64,7 +64,7 @@ router.get('/count', async (req: AuthRequest, res: Response) => {
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
 
         if (!unitKerjaId) {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
             return;
         }
 
@@ -84,7 +84,7 @@ router.get('/count', async (req: AuthRequest, res: Response) => {
         res.json(counts);
     } catch (error) {
         log.error({ err: error }, 'Error fetching notification count:');
-        res.status(500).json({ error: 'Failed to fetch notification count' });
+        res.status(500).json({ error: 'Failed to fetch notification count', message: 'Jumlah notifikasi gagal dimuat. Silakan coba lagi.' });
     }
 });
 
@@ -93,7 +93,7 @@ router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
 
         if (!unitKerjaId) {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
             return;
         }
 
@@ -111,7 +111,7 @@ router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
         res.json({ notifications });
     } catch (error) {
         log.error({ err: error }, 'Error fetching surat masuk notifications:');
-        res.status(500).json({ error: 'Failed to fetch notifications' });
+        res.status(500).json({ error: 'Failed to fetch notifications', message: 'Notifikasi gagal dimuat. Silakan coba lagi.' });
     }
 });
 
@@ -121,7 +121,7 @@ router.get('/arsip', async (req: AuthRequest, res: Response) => {
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
 
         if (!unitKerjaId) {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
             return;
         }
 
@@ -140,7 +140,7 @@ router.get('/arsip', async (req: AuthRequest, res: Response) => {
         res.json({ notifications });
     } catch (error) {
         log.error({ err: error }, 'Error fetching arsip notifications:');
-        res.status(500).json({ error: 'Failed to fetch notifications' });
+        res.status(500).json({ error: 'Failed to fetch notifications', message: 'Notifikasi gagal dimuat. Silakan coba lagi.' });
     }
 });
 
@@ -164,7 +164,7 @@ router.patch(
         }
         const unitKerjaId = resolveValidatedNotificationUnit(req, res);
         if (!unitKerjaId) {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
             return;
         }
 
@@ -175,7 +175,7 @@ router.patch(
             userRole: req.user?.role || 'user',
             user: req.user,
         }, [parsedId.data]);
-        res.json({ success: true, message: 'Notification marked as read' });
+        res.json({ success: true, message: 'Notifikasi ditandai sudah dibaca.' });
     } catch (error) {
         next(error);
     }
@@ -198,7 +198,7 @@ router.patch(
 
         const unitKerjaId = resolveValidatedNotificationUnit(req, res);
         if (!unitKerjaId) {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
             return;
         }
 
@@ -209,7 +209,7 @@ router.patch(
             userRole: req.user?.role || 'user',
             user: req.user,
         }, notificationIds);
-        res.json({ success: true, message: 'All notifications marked as read' });
+        res.json({ success: true, message: 'Semua notifikasi ditandai sudah dibaca.' });
     } catch (error) {
         next(error);
     }

@@ -1,6 +1,11 @@
 // Every import writes into one concrete unit; shown where an import cannot start yet.
 export const IMPORT_UNIT_REQUIRED = 'Pilih unit kerja terlebih dahulu';
 
+// The server reads a sheet without a Google account, so the sheet must be open to
+// anyone with its link while it is imported. Shown before and after the import.
+export const PENGINGAT_BERBAGI_LINK = 'Aktifkan berbagi link hanya selama impor, lalu matikan kembali setelah impor selesai. '
+    + 'Register yang memuat surat Terbatas atau lebih tinggi jangan dibagikan lewat link: unduh sebagai Microsoft Excel (.xlsx), lalu impor dengan Impor CSV/XLSX.';
+
 export function buildGoogleSheetsImportPayload(spreadsheetUrl, gid, unitKerjaId) {
     if (!unitKerjaId) throw new Error(IMPORT_UNIT_REQUIRED);
     return { spreadsheetUrl, gid, unitKerjaId };
@@ -9,6 +14,12 @@ export function buildGoogleSheetsImportPayload(spreadsheetUrl, gid, unitKerjaId)
 // The server stops starting rows after ~25 s per part; allow for the sheet
 // download, the last row and a cold start before calling a part unconfirmed.
 export const IMPORT_PART_TIMEOUT_MS = 120_000;
+
+// An uploaded import file (CSV/XLSX surat, CSV arsip) travels in the body of one
+// request; the server refuses a larger one (IMPORT_FILE_LIMITS.bytes), and the
+// platform rejects a body above 4.5 MB before it reaches the server.
+export const IMPORT_FILE_MAX_BYTES = 4 * 1024 * 1024;
+export const IMPORT_FILE_TOO_LARGE = 'Berkas melebihi batas 4 MiB. Pecah data menjadi beberapa berkas.';
 const MAX_REPORTED_ERRORS = 20;
 
 export function emptyImportTotals(totalRows) {

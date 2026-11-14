@@ -21,3 +21,6 @@ export const PESAN_SIFAT_TIDAK_DIKENAL =
 // pengguna tetapi belum punya persetujuan akses.
 export const PESAN_PERLU_PERSETUJUAN_AKSES =
     'Rekaman ini berkelas keamanan terkendali dan baru dapat dibuka setelah permohonan akses Anda disetujui Super Admin.';
+
+// 404 hapus surat masuk/keluar: `message` dibaca toast daftar (pesanGalat), `error` tetap untuk klien lama.
+export const PESAN_SURAT_HAPUS_TIDAK_DITEMUKAN = 'Surat tidak ditemukan atau sudah dihapus. Muat ulang daftar.';

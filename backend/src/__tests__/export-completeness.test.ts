@@ -4,7 +4,7 @@ import ExcelJS from 'exceljs';
 const queries = vi.hoisted(() => ({ masuk: vi.fn(), keluar: vi.fn(), arsip: vi.fn() }));
 vi.mock('../services/surat-masuk.service', () => ({ suratMasukService: { findAll: queries.masuk } }));
 vi.mock('../services/surat-keluar.service', () => ({ suratKeluarService: { findAll: queries.keluar } }));
-vi.mock('../services/export-unit-pengolah', () => ({ namaUnitPengolah: async () => 'Unit Uji' }));
+vi.mock('../services/export-unit-pengolah', () => ({ namaUnitPengolah: async () => 'Unit Uji', namaUnitPerBaris: async () => null, namaUnitBaris: () => '-' }));
 vi.mock('../services/arsip.service', () => ({ arsipService: { findAll: queries.arsip, itemPerArsip: async () => new Map() } }));
 const { exportService } = await import('../services/export.service');
 const { requireCompleteExport } = await import('../services/export-completeness');

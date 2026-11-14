@@ -187,12 +187,14 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
     },
     'file-import.routes.ts': {
         'POST /lembar': 'bukan-rekaman',
-        'POST /preview': 'bukan-rekaman',
+        // Hitungan baris yang sudah tercatat di unit tujuan (resolveImportUnit), seperti impornya.
+        'POST /preview': proyeksi('fileImportService.preview'),
         'POST /surat-${kind}': check('fileImportService.importSurat'),
     },
     'google-drive-import.routes.ts': {
         'GET /google-drive/sheets': 'bukan-rekaman',
-        'POST /google-drive/preview': 'bukan-rekaman',
+        // Hitungan baris yang sudah tercatat di unit tujuan (resolveImportUnit), seperti impornya.
+        'POST /google-drive/preview': proyeksi('googleDriveImportService.previewData'),
         'POST /google-drive/surat-${kind}': check('googleDriveImportService.importSurat'),
     },
     'jra.routes.ts': {
@@ -241,6 +243,8 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'GET /probe': 'bukan-rekaman',
         'POST /scanner-wake': 'bukan-rekaman',
         'GET /scanner-wake': 'bukan-rekaman',
+        // Cron: hanya lease unggahan langsung yang kedaluwarsa tanpa dipakai.
+        'GET /upload-reconcile': 'bukan-rekaman',
         'POST /storage-latency': 'bukan-rekaman',
         'GET /status': 'bukan-rekaman',
         'GET /metrics': 'bukan-rekaman',
@@ -248,6 +252,8 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'GET /scan-failures': 'bukan-rekaman',
         'POST /scan-failures/requeue': 'bukan-rekaman',
         'POST /scan-failures/:attachmentId/requeue': 'bukan-rekaman',
+        // Super Admin saja: membangunkan pemindai, tanpa membaca atau mengubah berkas.
+        'POST /scanner-run': 'bukan-rekaman',
     },
     'penyusutan.routes.ts': {
         'GET /print/daftar-arsip-aktif': proyeksi('printTemplateService.generateDaftarArsipAktif'),
@@ -437,6 +443,10 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'GET /:id/balasan': checkRead('recordAccessService.check'),
         'GET /:id/with-links': checkRead('recordAccessService.check'),
     },
+    'surat-terhapus.routes.ts': {
+        'GET /:jenis': proyeksi('suratTerhapusService.daftar'),
+        'POST /:jenis/:id/pulihkan': check('suratTerhapusService.pulihkan'),
+    },
     'tunjuk-silang.routes.ts': {
         'GET /': proyeksi('tunjukSilangService.findAll'),
         'GET /stats': proyeksi('tunjukSilangService.getStats'),
@@ -484,6 +494,7 @@ export const TANPA_SESI: Record<string, Record<string, string>> = {
         'GET /probe': 'token otomasi (Bearer), bukan sesi',
         'POST /scanner-wake': 'token otomasi (Bearer), bukan sesi',
         'GET /scanner-wake': 'token otomasi (Bearer), bukan sesi',
+        'GET /upload-reconcile': 'token otomasi (Bearer), bukan sesi',
         'POST /storage-latency': 'token otomasi (Bearer), bukan sesi',
     },
 };

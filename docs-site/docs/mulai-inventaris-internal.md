@@ -11,7 +11,7 @@ Mulai dari daftar surat dan arsip fisik yang memang menjadi tanggung jawab unit 
 
 Buka `https://simsa-frontend.vercel.app` di browser.
 
-Masukkan **Email kedinasan** dan **Kata sandi**, lalu klik **Masuk**. Google hanya digunakan bila sudah dikonfigurasi. Gunakan akun pribadi; akun uji tidak dipakai bersama untuk pekerjaan resmi.
+Masukkan **Email kedinasan** dan **Kata sandi**, lalu klik **Masuk**. Google hanya digunakan bila sudah dikonfigurasi. Gunakan akun pribadi; akun uji tidak dipakai bersama untuk pekerjaan resmi. Setelah masuk pertama kali, ganti kata sandi awal di **Pengaturan › Profil** (menu akun di kanan atas). SIMSA keluar otomatis setelah 30 menit tanpa aktivitas; isian surat yang belum disimpan dapat dipulihkan di tab yang sama setelah masuk kembali.
 
 Super Admin menyiapkan akun melalui **Administrasi → Manajemen Pengguna → Tambah Pengguna**, termasuk kata sandi, peran, unit kerja, dan status aktif. **Admin Unit Kerja** mencatat dan mengelola surat serta arsip pada unit yang ditetapkan; **Super Admin** bekerja lintas unit. Lihat [pengelolaan akun](./administrasi/user-management.md).
 
@@ -23,7 +23,7 @@ Jika sudah memiliki daftar dalam CSV atau Excel (.xlsx):
 
 1. Buka daftar surat yang sesuai. Super Admin memilih **satu unit kerja**, bukan Semua Unit Kerja (selama Semua Unit Kerja terpilih, tombol impor nonaktif).
 2. Klik **Impor CSV/XLSX**, pilih **Berkas CSV atau XLSX**, lalu **Pratinjau**. Untuk XLSX dengan beberapa lembar, pilih lembar kerja lalu **Pratinjau** lagi.
-3. Periksa pemetaan kolom, contoh baris, dan kotak peringatan tanggal bila ada. Judul kolom dikenali seperti impor Google Sheets; bila kolom wajib belum ditemukan, perbaiki judul pada berkas sumber.
+3. Periksa pemetaan kolom, contoh baris, dan kotak peringatan bila ada. Pratinjau memeriksa setiap baris seperti impor dan menyebut baris yang akan ditolak beserta alasannya. Judul kolom dikenali seperti impor Google Sheets; bila kolom wajib belum ditemukan, perbaiki judul pada berkas sumber.
 4. Klik **Impor**. Berkas panjang diimpor per bagian; periksa hasil sebelum mengulang. Baris yang berhasil tetap tersimpan walaupun baris lain gagal, dan baris yang sudah tersimpan dikenali sebagai duplikat saat impor ulang.
 5. Periksa **Rincian hasil impor per baris** (filter "Perlu dicek" menampilkan baris yang ganda di sumber, cocok dengan surat yang sudah dihapus, atau ditolak, beserta alasannya) atau simpan dengan **Unduh laporan (CSV)**, lalu perbaiki baris yang ditolak pada sumbernya.
 
@@ -33,14 +33,18 @@ Bila sumber diubah setelah diimpor (misalnya perihal diperbaiki), centang **Sink
 
 Kolom wajib surat: nomor surat, tanggal surat, perihal (`Hal` juga dikenali), dan pengirim untuk surat masuk. Maksimal 1.000 baris data dan 4 MiB per berkas. Jangan mengganti tanggal yang belum diketahui dengan tanggal hari ini.
 
-Tanggal selalu dibaca dengan urutan **hari, bulan, tahun**: `03/11/2026`, `3-11-2026`, `3.11.2026`, `03/11/26`, `3 November 2026`, `3 Nov 2026`, atau `03-Nov-26`. Penulisan `2026-11-03` dan sel tanggal Excel juga diterima. Tahun dua angka 00–69 dibaca 2000-an dan 70–99 dibaca 1900-an. Baris yang tanggalnya tidak dapat dibaca **ditolak, tidak ditebak**: tanggal yang jelas ditulis bulan lebih dulu (misalnya `11/25/2026`), tanggal yang tidak ada di kalender (misalnya `31/02/2026`), tahun di luar 1920 sampai 2199, dan angka tanpa pemisah seperti `031126`. Bila ada baris seperti itu, pratinjau menampilkan kotak peringatan *n dari total baris akan ditolak karena tanggalnya* beserta daftar *Baris data ke-…* dan alasannya. Baris lain tetap dapat diimpor; perbaiki tanggal di sumber data, lalu buat pratinjau lagi agar baris itu ikut tersimpan.
+Kolom **No**, **No. Agenda**, atau **Nomor Agenda** pada register disimpan sebagai nomor agenda (surat masuk) atau nomor urut (surat keluar) bila nomor itu belum dipakai di unit dan tahun yang sama. **Impor register lama lebih dahulu, sebelum mencatat surat baru untuk tahun itu.** Bila tidak, baris yang nomornya sudah terpakai mendapat nomor berikutnya, dan keterangannya menyebut, misalnya, *Nomor agenda sumber 12 sudah dipakai; diberi nomor 57.* Surat masuk bernomor dianggap sama bila nomor, tahun, dan pengirimnya sama.
+
+Untuk impor dari Google Sheets, aktifkan berbagi link hanya selama impor, lalu matikan kembali. Register yang memuat surat Terbatas atau lebih tinggi jangan dibagikan lewat link: unduh sebagai Microsoft Excel (.xlsx), lalu gunakan **Impor CSV/XLSX**.
+
+Tanggal selalu dibaca dengan urutan **hari, bulan, tahun**: `03/11/2026`, `3-11-2026`, `3.11.2026`, `03/11/26`, `3 November 2026`, `3 Nov 2026`, atau `03-Nov-26`. Penulisan `2026-11-03` dan sel tanggal Excel juga diterima. Tahun dua angka 00–69 dibaca 2000-an dan 70–99 dibaca 1900-an. Baris yang tanggalnya tidak dapat dibaca **ditolak, tidak ditebak**: tanggal yang jelas ditulis bulan lebih dulu (misalnya `11/25/2026`), tanggal yang tidak ada di kalender (misalnya `31/02/2026`), tahun di luar 1920 sampai 2199, dan angka tanpa pemisah seperti `031126`. Bila ada baris seperti itu, pratinjau menampilkan kotak peringatan *n dari total baris akan ditolak* beserta daftar *Baris data ke-…* dan alasannya. Baris lain tetap dapat diimpor; perbaiki tanggal di sumber data, lalu buat pratinjau lagi agar baris itu ikut tersimpan.
 
 ## 3. Buat inventaris arsip fisik
 
 Pilih alur sesuai sumber data:
 
 - **Surat yang sudah tercatat:** buka detail surat yang selesai diproses, lalu **Arsipkan**. Isi Nomor Berkas, uraian, klasifikasi/JRA yang sesuai, item, jumlah, serta **No. Filing Cabinet**, **No. Laci**, dan **No. Folder** sesuai lokasi fisik. Bila daftar lokasi sudah dibuat, pilih juga **Lokasi Simpan** (gedung, ruang, rak, atau boks). Surat keluar harus disetujui admin lain sebelum dapat diarsipkan. Pengarsipan bersifat permanen: surat terkunci, berkas PDF tidak dapat lagi ditambahkan dari halaman surat, dan arsip tidak dapat dihapus, sehingga lengkapi hasil pindai sebelum mengarsipkan dan centang pernyataan di dialog sebelum **Simpan Arsip**.
-- **Daftar arsip yang sudah ada:** buka **Siklus Hidup Arsip → Arsip Aktif → Arsip Surat Masuk** atau **Arsip Surat Keluar**, pilih unit kerja, lalu **Impor CSV**. Kolom utama: `Nomor Berkas`, `Tanggal`, `Uraian`, `Jenis Arsip`; isi jenis dengan `masuk` atau `keluar`. Klik **Pratinjau**, perbaiki baris yang ditolak pada CSV sumber, centang pernyataan bahwa impor ini permanen, lalu **Impor data valid**. Arsip yang diimpor tidak dapat dihapus dari aplikasi dan impor tidak dapat dibatalkan.
+- **Daftar arsip yang sudah ada:** buka **Siklus Hidup Arsip → Arsip Aktif → Arsip Surat Masuk** atau **Arsip Surat Keluar**, pilih unit kerja, lalu **Impor CSV**. Kolom utama: `Nomor Berkas`, `Tanggal`, `Uraian`, `Jenis Arsip`; isi jenis dengan `masuk` atau `keluar`. Tanggal ditulis dengan urutan hari, bulan, tahun seperti pada impor surat. Pemisah kolom boleh koma, titik koma, atau tab, dan CSV biasa dari Excel dapat dibaca; maksimal 1.000 rekod dan 4 MiB per berkas. Klik **Pratinjau**, perbaiki baris yang ditolak pada CSV sumber, centang pernyataan bahwa impor ini permanen, lalu **Impor data valid**. Arsip yang diimpor tidak dapat dihapus dari aplikasi dan impor tidak dapat dibatalkan.
 
 Impor arsip saat ini belum memetakan kolom lokasi terstruktur. Catatan lokasi dari daftar lama dapat dimasukkan pada kolom `Keterangan`; pertahankan daftar sumber agar informasinya dapat dicocokkan. Jangan menganggap kolom lokasi tambahan di CSV otomatis masuk ke Filing Cabinet/Laci/Folder.
 

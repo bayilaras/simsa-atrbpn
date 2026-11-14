@@ -25,6 +25,7 @@ import {
 import dosirService from '@/services/dosir.service'
 import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/hooks/use-toast'
+import { pesanGalat } from '@/lib/pesan-galat'
 import { TimelineItem } from '@/components/surat/TimelineItem'
 import { TambahSuratDosirDialog } from '@/components/dosir/TambahSuratDosirDialog'
 import { format, parseISO, formatDistanceToNow } from 'date-fns'
@@ -131,13 +132,23 @@ export default function DosirDetail() {
         }
     }
 
-    const handleRemoveSurat = async (type, suratId) => {
+    const handleRemoveSurat = async (type, surat) => {
         if (!confirm('Hapus surat dari dosir ini?')) return
         try {
-            await dosirService.removeSurat(id, type, suratId)
-            fetchData()
+            await dosirService.removeSurat(id, type, surat.id)
+            const label = surat.nomorSurat || surat.perihal
+            toast({
+                title: 'Surat dilepas dari dosir',
+                description: `${type === 'keluar' ? 'Surat keluar' : 'Surat masuk'}${label ? ` ${label}` : ''} tidak lagi tercatat di dosir ini.`,
+            })
+            fetchData({ silent: true })
         } catch (error) {
             console.error('Error removing surat:', error)
+            toast({
+                title: 'Surat gagal dilepas dari dosir',
+                description: pesanGalat(error, 'Surat belum dapat dilepas dari dosir. Silakan coba lagi.'),
+                variant: 'destructive',
+            })
         }
     }
 
@@ -240,13 +251,14 @@ export default function DosirDetail() {
                             </h1>
 
                             {dosir.deskripsi && (
-                                <p className="text-white/80 text-sm md:text-base max-w-3xl leading-relaxed">
+                                <p className="text-white/80 text-sm md:text-base max-w-3xl leading-relaxed whitespace-pre-line">
                                     {dosir.deskripsi}
                                 </p>
                             )}
                         </div>
 
                         <div className="flex flex-row md:flex-col gap-3 w-full md:w-auto shrink-0">
+                            {canAddSurat && (
                             <Dialog open={editing} onOpenChange={open => { setEditing(open); setSaveError('') }}>
                                 <DialogTrigger asChild>
                                     <Button className="bg-card text-indigo-700 dark:text-indigo-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/15 w-full md:w-auto shadow-lg hover:shadow-xl transition-all">
@@ -343,6 +355,7 @@ export default function DosirDetail() {
                                     </DialogFooter>
                                 </DialogContent>
                             </Dialog>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -361,7 +374,7 @@ export default function DosirDetail() {
                     </div>
                     <div className="flex items-center gap-2">
                         <Clock className="h-4 w-4 text-amber-300" />
-                        <span className="text-white/70">Terakhir Update:</span>
+                        <span className="text-white/70">Terakhir Diperbarui:</span>
                         <span className="font-semibold text-white">
                             {formatDistanceToNow(parseISO(dosir.updatedAt), { addSuffix: true, locale: idLocale })}
                         </span>
@@ -444,6 +457,11 @@ export default function DosirDetail() {
                                                     <p className="text-sm text-muted-foreground mt-1">
                                                         No: {sm.nomorSurat} • Dari: {sm.dari}
                                                     </p>
+                                                    {sm.notes && (
+                                                        <p className="mt-2 whitespace-pre-line break-words text-sm text-foreground/80">
+                                                            <span className="font-medium">Catatan:</span> {sm.notes}
+                                                        </p>
+                                                    )}
                                                     <p className="text-xs text-muted-foreground mt-2">
                                                         {format(parseISO(sm.createdAt), 'dd MMM yyyy')}
                                                     </p>
@@ -452,9 +470,11 @@ export default function DosirDetail() {
                                                     <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-emerald-600" onClick={() => navigate(`/surat/masuk/${sm.id}`)}>
                                                         <ExternalLink className="h-4 w-4" />
                                                     </Button>
-                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-red-600 dark:hover:text-red-400" onClick={() => handleRemoveSurat('masuk', sm.id)}>
+                                                    {canAddSurat && (
+                                                    <Button size="icon" variant="ghost" aria-label="Lepas dari dosir" title="Lepas dari dosir" className="h-8 w-8 text-muted-foreground hover:text-red-600 dark:hover:text-red-400" onClick={() => handleRemoveSurat('masuk', sm)}>
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))
@@ -482,6 +502,11 @@ export default function DosirDetail() {
                                                     <p className="text-sm text-muted-foreground mt-1">
                                                         No: {sk.nomorSurat} • Kepada: {sk.kepada}
                                                     </p>
+                                                    {sk.notes && (
+                                                        <p className="mt-2 whitespace-pre-line break-words text-sm text-foreground/80">
+                                                            <span className="font-medium">Catatan:</span> {sk.notes}
+                                                        </p>
+                                                    )}
                                                     <p className="text-xs text-muted-foreground mt-2">
                                                         {format(parseISO(sk.createdAt), 'dd MMM yyyy')}
                                                     </p>
@@ -490,9 +515,11 @@ export default function DosirDetail() {
                                                     <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-blue-600" onClick={() => navigate(`/surat/keluar/${sk.id}`)}>
                                                         <ExternalLink className="h-4 w-4" />
                                                     </Button>
-                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-red-600 dark:hover:text-red-400" onClick={() => handleRemoveSurat('keluar', sk.id)}>
+                                                    {canAddSurat && (
+                                                    <Button size="icon" variant="ghost" aria-label="Lepas dari dosir" title="Lepas dari dosir" className="h-8 w-8 text-muted-foreground hover:text-red-600 dark:hover:text-red-400" onClick={() => handleRemoveSurat('keluar', sk)}>
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))

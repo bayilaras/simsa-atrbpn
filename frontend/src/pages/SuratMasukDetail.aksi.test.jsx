@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 // dan handlePenyelesaian (kini dialog di halaman detail, F-I2; semula navigasi, kontrak
 // Produces Task 19) sebelumnya tidak punya test yang bisa gagal.
 const mocks = vi.hoisted(() => ({ getById: vi.fn(), receive: vi.fn(), toast: vi.fn(), getDistribusi: vi.fn(), kandidat: vi.fn(), process: vi.fn() }))
+vi.mock('@/hooks/use-nama-unit-kerja', () => ({ useNamaUnitKerja: () => '' }))
 vi.mock('@/components/tunjuk-silang/KartuTunjukSilang', () => ({ KartuTunjukSilang: ({ tipe, id }) => <div data-testid="kartu-tunjuk-silang">{`${tipe}:${id}`}</div> }))
 vi.mock('@/services/surat-masuk.service', () => ({ default: { getById: mocks.getById, archive: vi.fn() } }))
 vi.mock('@/services/distribution.service', () => ({ default: { receive: mocks.receive, getById: mocks.getDistribusi, getKandidatPenyelesaian: mocks.kandidat, process: mocks.process } }))

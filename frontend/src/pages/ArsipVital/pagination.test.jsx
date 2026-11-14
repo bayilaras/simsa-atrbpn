@@ -35,7 +35,7 @@ describe('vital archive API pagination contract', () => {
         render(<ArsipVital />)
         await screen.findByText('VITAL-HALAMAN-1')
         expect(screen.getByText('Halaman 1 dari 2')).toBeVisible()
-        fireEvent.click(screen.getByLabelText('Go to next page'))
+        fireEvent.click(screen.getByLabelText('Ke halaman berikutnya'))
         expect(await screen.findByText('VITAL-HALAMAN-2')).toBeVisible()
         await waitFor(() => expect(mocks.findAll).toHaveBeenLastCalledWith(expect.objectContaining({ unitKerjaId: 'ditjen', page: 2, limit: 10 })))
         expect(screen.getByText('Halaman 2 dari 2')).toBeVisible()

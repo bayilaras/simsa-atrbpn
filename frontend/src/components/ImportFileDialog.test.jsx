@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ImportFileDialog from './ImportFileDialog'
 import { CATATAN_KELAS_IMPOR_SURAT_MASUK } from '@/lib/kelas-keamanan'
@@ -54,7 +54,7 @@ describe('CSV/XLSX import dialog', () => {
         expect(listCall[0]).toBe('/api/import/berkas/lembar')
         expect(fields(listCall)).toEqual({})
         expect(previewCall[0]).toBe('/api/import/berkas/preview')
-        expect(fields(previewCall)).toEqual({ type: 'surat-keluar', sheet: '2025', maxRows: '10' })
+        expect(fields(previewCall)).toEqual({ type: 'surat-keluar', sheet: '2025', maxRows: '10', unitKerjaId: 'unit-a' })
         expect(previewCall[1].get('file')).toBe(file)
 
         mocks.post.mockResolvedValueOnce(part({ importedRows: 3, nextRow: null, startRow: 0 }))
@@ -108,7 +108,7 @@ describe('CSV/XLSX import dialog', () => {
         expect(onImportComplete).toHaveBeenCalledOnce()
     })
 
-    // The preview judges no row, so the class ceiling is stated before Impor.
+    // The class ceiling of incoming letters is stated before Impor.
     it.each([['surat-masuk', 1], ['surat-keluar', 0]])('%s preview shows the incoming-letter class note %i time(s)', async (type, count) => {
         await open(type)
         await choose(csv())
@@ -144,9 +144,37 @@ describe('CSV/XLSX import dialog', () => {
             { row: 2, value: '11/25/2026', reason: 'Tanggal "11/25/2026" tampaknya ditulis dengan bulan lebih dulu, sehingga tidak dipakai.' }] } }))
         click('Pratinjau')
         const notice = await screen.findByRole('alert')
-        expect(notice).toHaveTextContent('1 dari 3 baris akan ditolak karena tanggalnya')
+        expect(notice).toHaveTextContent('1 dari 3 baris akan ditolak')
         expect(notice).toHaveTextContent('Baris data ke-2: Tanggal "11/25/2026" tampaknya ditulis dengan bulan lebih dulu')
         expect(screen.getByText(/ditulis dengan urutan hari, bulan, tahun \(misalnya 03\/11\/2026 atau 3 November 2026\)/)).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Impor 3 baris' })).toBeEnabled()
+    })
+
+    it('marks the columns the server recognises but does not store', async () => {
+        await open('surat-masuk')
+        await choose(csv())
+        mocks.post.mockResolvedValueOnce(preview({ format: 'csv', sheet: null, importType: 'surat-masuk', mapping: [
+            { field: 'nomorSurat', label: 'Nomor surat', columnIndex: 1, header: 'Nomor Surat' },
+            { field: 'status', label: 'Status sumber', columnIndex: 6, header: 'Status', stored: false }] }))
+        click('Pratinjau')
+        const mapping = await screen.findByRole('table', { name: 'Pemetaan kolom ke data SIMSA' })
+        expect(within(mapping).getByText('Status sumber (tidak disimpan)')).toBeInTheDocument()
+        expect(within(mapping).getByText('Nomor surat')).toBeInTheDocument()
+    })
+
+    it('shows before Impor every row the server will reject and the rows it will skip, judged for the destination unit', async () => {
+        await open('surat-masuk')
+        await choose(csv())
+        const ceiling = 'Klasifikasi keamanan melebihi kewenangan pengguna. Kelas Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin.'
+        mocks.post.mockResolvedValueOnce(preview({ format: 'csv', sheet: null, importType: 'surat-masuk',
+            dateIssues: { total: 0, rows: [] }, rowIssues: { total: 1, rows: [{ row: 2, reason: ceiling }] }, duplicates: { source: 0, recorded: 1, deleted: 0 }, otherSenderRows: 1 }))
+        click('Pratinjau')
+        const notice = await screen.findByRole('alert')
+        expect(notice).toHaveTextContent('1 dari 3 baris akan ditolak')
+        expect(notice).toHaveTextContent(`Baris data ke-2: ${ceiling}`)
+        expect(screen.getByRole('list', { name: 'Baris yang akan dilewati' })).toHaveTextContent('1 baris sudah tercatat di SIMSA pada unit ini')
+        expect(screen.getByRole('note')).toHaveTextContent('1 baris bernomor sama dengan surat yang sudah tercatat tetapi pengirimnya berbeda')
+        expect(fields(mocks.post.mock.calls[0])).toMatchObject({ unitKerjaId: 'unit-a' })
         expect(screen.getByRole('button', { name: 'Impor 3 baris' })).toBeEnabled()
     })
 
@@ -156,7 +184,7 @@ describe('CSV/XLSX import dialog', () => {
         mocks.post.mockResolvedValueOnce({ format: 'xlsx', sheets: [{ name: 'Data', hidden: false }] }).mockResolvedValueOnce(preview({ sheet: 'Data' }))
         click('Pratinjau')
         expect(await screen.findByRole('table', { name: 'Pemetaan kolom ke data SIMSA' })).toBeInTheDocument()
-        expect(fields(mocks.post.mock.calls[1])).toEqual({ type: 'surat-keluar', sheet: 'Data', maxRows: '10' })
+        expect(fields(mocks.post.mock.calls[1])).toEqual({ type: 'surat-keluar', sheet: 'Data', maxRows: '10', unitKerjaId: 'unit-a' })
         expect(screen.queryByRole('radio')).not.toBeInTheDocument()
     })
 
@@ -167,7 +195,7 @@ describe('CSV/XLSX import dialog', () => {
         click('Pratinjau')
         await screen.findByRole('table', { name: 'Pemetaan kolom ke data SIMSA' })
         expect(mocks.post.mock.calls[0][0]).toBe('/api/import/berkas/preview')
-        expect(fields(mocks.post.mock.calls[0])).toEqual({ type: 'surat-masuk', maxRows: '10' })
+        expect(fields(mocks.post.mock.calls[0])).toEqual({ type: 'surat-masuk', maxRows: '10', unitKerjaId: 'unit-a' })
         mocks.post.mockResolvedValueOnce(part({ importedRows: 1, duplicateRows: 2, nextRow: null }))
         click('Impor 3 baris')
         await screen.findByText('Impor berhasil!')

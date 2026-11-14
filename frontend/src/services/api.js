@@ -1,6 +1,16 @@
 // API Configuration
 import { clearOfflineStorage } from '../lib/offline-storage';
 import { API_BASE_URL } from '../lib/api-url';
+import { alamatMasukSetelahSesiDitolak, catatKontakServer } from '../lib/sesi-masuk';
+import { gabungPesanValidasi } from '../lib/pesan-galat';
+
+// Cadangan bila server tidak mengirim pesan; tidak menampilkan kode HTTP.
+function pesanStatusHttp(status) {
+    if (status === 404) return 'Data atau alamat yang diminta tidak ditemukan.';
+    if (status === 409) return 'Data sudah berubah. Muat ulang halaman, lalu coba lagi.';
+    if (status === 413) return 'Ukuran data melebihi batas yang diizinkan.';
+    return 'Permintaan tidak dapat diproses. Periksa isian Anda, lalu coba lagi.';
+}
 
 export { API_BASE_URL };
 
@@ -293,12 +303,14 @@ export class ApiClient {
             // 401 Unauthorized — session expired or invalid
             if (response.status === 401) {
                 console.warn('[API] Session expired — redirecting to login');
+                // The login page explains a session that ended for lack of use.
+                const loginUrl = alamatMasukSetelahSesiDitolak();
                 // Purge legacy offline data before handing the workstation to a
                 // subsequent user. This also covers server-side session expiry.
                 try {
                     await scope.run(() => clearOfflineStorage());
                 } finally {
-                    window.location.href = '/login';
+                    window.location.href = loginUrl;
                 }
                 throw createApiError('Sesi telah berakhir. Silakan login kembali.', response, errorBody);
             }
@@ -330,13 +342,17 @@ export class ApiClient {
             }
 
             // Other errors. Preserve structured validation details so forms can
-            // show actionable item-level feedback returned by the API.
+            // show actionable item-level feedback returned by the API; the
+            // message itself names those fields for callers that only show text.
             throw createApiError(
-                errorBody.message || errorBody.error || `HTTP ${response.status}`,
+                gabungPesanValidasi(errorBody.message || errorBody.error, errorBody.details)
+                    || pesanStatusHttp(response.status),
                 response,
                 errorBody,
             );
         }
+
+        catatKontakServer();
 
         // File consumers sometimes need Content-Disposition or a bounded stream.
         // Return it only after applying the same auth/error handling as JSON.

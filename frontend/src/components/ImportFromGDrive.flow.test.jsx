@@ -41,13 +41,13 @@ it.each(['surat-masuk', 'surat-keluar'])('shows server mapping for %s and sends 
     await discover();
     await showPreview();
     expect(api.post).toHaveBeenCalledWith('/api/import/google-drive/preview', {
-        spreadsheetUrl: url, gid: '0', maxRows: 10, type,
+        spreadsheetUrl: url, gid: '0', maxRows: 10, type, unitKerjaId: 'unit-a',
     });
     const mapping = screen.getByRole('table', { name: 'Pemetaan kolom ke data SIMSA' });
     expect(within(mapping).getByText('Kolom 2: No. Surat')).toBeInTheDocument();
     expect(within(mapping).getByText('Nomor Surat')).toBeInTheDocument();
     expect(screen.getByText(/baris data ke-3 \(baris kosong tidak dihitung\)/)).toBeInTheDocument();
-    // Only the sifat of an incoming letter is its security class; the preview judges no row.
+    // Only the sifat of an incoming letter is its security class.
     expect(screen.queryAllByText(CATATAN_KELAS_IMPOR_SURAT_MASUK)).toHaveLength(type === 'surat-masuk' ? 1 : 0);
     let finish;
     api.post.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
@@ -60,6 +60,32 @@ it.each(['surat-masuk', 'surat-keluar'])('shows server mapping for %s and sends 
     await act(async () => { finish({ importedRows: 1, totalRows: 1 }); });
     expect(screen.getByText('Impor berhasil!')).toBeInTheDocument();
     expect(completed).toHaveBeenCalledTimes(1);
+});
+
+it('asks to open link sharing only for the import, and reminds to close it again once the import is done', async () => {
+    const reminder = 'Aktifkan berbagi link hanya selama impor, lalu matikan kembali setelah impor selesai. '
+        + 'Register yang memuat surat Terbatas atau lebih tinggi jangan dibagikan lewat link: unduh sebagai Microsoft Excel (.xlsx), lalu impor dengan Impor CSV/XLSX.';
+    render(<ImportFromGDrive {...props} />);
+    open();
+    expect(screen.getByLabelText('URL Google Spreadsheet')).toHaveAccessibleDescription(
+        `Impor hanya dapat membaca lembar yang akses umumnya “Siapa saja yang memiliki link”. ${reminder}`);
+    await discover();
+    await showPreview();
+    fireEvent.click(screen.getByRole('button', { name: 'Impor 1 baris' }));
+    expect(await screen.findByText('Impor berhasil!')).toBeInTheDocument();
+    expect(screen.getByRole('note')).toHaveTextContent(`Periksa pengaturan berbagi lembar ini. ${reminder}`);
+});
+
+it('marks the columns the server recognises but does not store', async () => {
+    api.post.mockImplementation(async (_endpoint, body) => ({ ...preview(body.type), mapping: [...preview(body.type).mapping,
+        { field: 'id', label: 'ID sumber', columnIndex: 4, header: 'ID', stored: false }] }));
+    render(<ImportFromGDrive {...props} />);
+    open();
+    await discover();
+    await showPreview();
+    const mapping = screen.getByRole('table', { name: 'Pemetaan kolom ke data SIMSA' });
+    expect(within(mapping).getByText('ID sumber (tidak disimpan)')).toBeInTheDocument();
+    expect(within(mapping).getByText('Perihal')).toBeInTheDocument();
 });
 
 describe('a sheet imported in parts', () => {
@@ -196,9 +222,27 @@ it('warns in the preview about rows the import will reject for their date', asyn
     await discover();
     await showPreview();
     const notice = screen.getByRole('alert');
-    expect(notice).toHaveTextContent('1 dari 4 baris akan ditolak karena tanggalnya');
+    expect(notice).toHaveTextContent('1 dari 4 baris akan ditolak');
     expect(notice).toHaveTextContent('Baris data ke-3: Tanggal "31/02/2026" tidak ada di kalender. Periksa hari, bulan, dan tahunnya.');
     expect(screen.getByText(/ditulis dengan urutan hari, bulan, tahun \(misalnya 03\/11\/2026 atau 3 November 2026\)/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Impor 4 baris' })).toBeEnabled();
+});
+
+it('shows in the preview every row the import will reject and the rows it will skip', async () => {
+    const ceiling = 'Klasifikasi keamanan melebihi kewenangan pengguna. Kelas Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin.';
+    api.post.mockImplementation(async (_endpoint, body) => ({ ...preview(body.type), totalRows: 4, dateIssues: { total: 0, rows: [] },
+        rowIssues: { total: 2, rows: [{ row: 2, reason: ceiling }, { row: 4, reason: 'Sifat surat tidak dikenal.' }] },
+        duplicates: { source: 1, recorded: 0, deleted: 0 }, otherSenderRows: 3 }));
+    render(<ImportFromGDrive {...props} type="surat-masuk" />);
+    open();
+    await discover();
+    await showPreview();
+    const notice = screen.getByRole('alert');
+    expect(notice).toHaveTextContent('2 dari 4 baris akan ditolak');
+    expect(within(notice).getAllByRole('listitem').map(item => item.textContent)).toEqual([
+        `Baris data ke-2: ${ceiling}`, 'Baris data ke-4: Sifat surat tidak dikenal.']);
+    expect(screen.getByRole('list', { name: 'Baris yang akan dilewati' })).toHaveTextContent('1 baris ganda di sumber akan dilewati.');
+    expect(screen.getByRole('note')).toHaveTextContent('3 baris bernomor sama dengan surat yang sudah tercatat tetapi pengirimnya berbeda');
     expect(screen.getByRole('button', { name: 'Impor 4 baris' })).toBeEnabled();
 });
 

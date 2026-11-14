@@ -215,7 +215,7 @@ describe('ArsipDetail - Ubah Metadata', () => {
         fireEvent.change(screen.getByLabelText(/^Nomor Berkas/), { target: { value: 'B-009/2026' } })
         fireEvent.click(screen.getByRole('button', { name: 'Simpan' }))
 
-        await waitFor(() => expect(mocks.update).toHaveBeenCalledWith('arsip-1', { nomorBerkas: 'B-009/2026' }))
+        await waitFor(() => expect(mocks.update).toHaveBeenCalledWith('arsip-1', { nomorBerkas: 'B-009/2026', expectedUpdatedAt: rekod.updatedAt }))
         await waitFor(() => expect(mocks.getById).toHaveBeenCalledTimes(2))
         expect(mocks.toast).toHaveBeenCalledWith({ title: 'Metadata arsip diperbarui' })
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
@@ -238,7 +238,7 @@ describe('ArsipDetail - Ubah Metadata', () => {
             description: expect.stringMatching(/memerlukan persetujuan akses/),
         })))
         expect(screen.queryByText('Arsip Tidak Ditemukan')).not.toBeInTheDocument()
-        expect(screen.getAllByText('terbatas').length).toBeGreaterThan(0)
+        expect(screen.getAllByText('Terbatas').length).toBeGreaterThan(0)
     })
 
     it('mengunci tombol bila muat ulang ditolak 404 setelah kelas dinaikkan', async () => {
@@ -300,7 +300,7 @@ describe('ArsipDetail - Ubah Metadata', () => {
         fireEvent.change(screen.getByLabelText(/^No\. Filing Cabinet/), { target: { value: 'FC-02' } })
         fireEvent.click(screen.getByRole('button', { name: 'Simpan' }))
 
-        await waitFor(() => expect(mocks.update).toHaveBeenCalledWith('arsip-1', { lokasiFc: 'FC-02', klasifikasiKeamanan: 'terbatas' }))
+        await waitFor(() => expect(mocks.update).toHaveBeenCalledWith('arsip-1', { lokasiFc: 'FC-02', klasifikasiKeamanan: 'terbatas', expectedUpdatedAt: rekod.updatedAt }))
         await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
             title: 'Data terbaru belum dapat dimuat',
             description: expect.stringContaining(PESAN_ITEM_BELUM_TERMUAT),

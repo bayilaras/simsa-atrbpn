@@ -3,6 +3,7 @@ import { users, unitKerja, sessions, accounts, suratKeluar } from '../db/schema'
 import { eq, ilike, or, and, desc, sql } from 'drizzle-orm';
 import { hashPassword } from 'better-auth/crypto';
 import { hashCredentialPassword } from '../config/password-hashing.js';
+import { newPasswordProblem } from '../config/password-policy.js';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 import { ROLE_MANDATED_UNIT_KERJA } from '../utils/resolve-unit-kerja.js';
 import {
@@ -28,7 +29,12 @@ export interface UpdateUserData {
     isActive?: boolean;
     jabatan?: string | null;
     nip?: string | null;
+    /** Sent only by the approval dialog after the owner of the email was confirmed. */
+    ownerConfirmed?: boolean;
 }
+
+export const PENDING_APPROVAL_CONFIRMATION_MESSAGE =
+    'Setujui akun ini melalui Setujui akses setelah memastikan langsung kepada pemilik emailnya.';
 
 export interface CreateUserData {
     email: string;
@@ -64,7 +70,7 @@ export function normalizeUserUnitAssignment(
 
     const normalized = unitKerjaId?.trim() || null;
     if (explicitUnit && normalized !== mandatedUnit) {
-        throw new ValidationError(`Invalid unitKerjaId for ${role}: expected ${mandatedUnit}`);
+        throw new ValidationError('Peran ini memakai unit kerja yang sudah ditetapkan dan tidak dapat diganti.');
     }
 
     return mandatedUnit;
@@ -142,7 +148,7 @@ async function validateCreatePrerequisites(
             .from(unitKerja)
             .where(eq(unitKerja.id, normalizedUnitKerjaId))
             .limit(1);
-        if (!unit) throw new ValidationError(`Invalid unitKerjaId: ${normalizedUnitKerjaId}`);
+        if (!unit) throw new ValidationError('Unit kerja tidak dikenali.');
     }
 }
 
@@ -220,7 +226,7 @@ export const userManagementService = {
         const normalizedEmail = data.email.trim().toLowerCase();
         // Validate role
         if (!(ASSIGNABLE_ROLES as readonly string[]).includes(data.role)) {
-            throw new ValidationError(`Invalid role: ${data.role}`);
+            throw new ValidationError('Peran tidak dikenali.');
         }
         const normalizedUnitKerjaId = normalizeUserUnitAssignment(
             data.role as Role,
@@ -332,7 +338,7 @@ export const userManagementService = {
     ) {
         // Validate role if provided
         if (data.role !== undefined && !(ASSIGNABLE_ROLES as readonly string[]).includes(data.role)) {
-            throw new ValidationError(`Invalid role: ${data.role}`);
+            throw new ValidationError('Peran tidak dikenali.');
         }
 
         const updateData: any = {
@@ -370,7 +376,14 @@ export const userManagementService = {
             if (data.role === 'admin_unit' && !data.unitKerjaId?.trim()) {
                 throw new ValidationError('Unit kerja wajib dipilih saat menyetujui Admin Unit.');
             }
+            // Anyone can sign up with a Google account; granting a role is an
+            // approval and needs the confirmation the approval dialog asks for.
+            if (data.role !== undefined && data.role !== 'user' && data.ownerConfirmed !== true) {
+                throw new ValidationError(PENDING_APPROVAL_CONFIRMATION_MESSAGE);
+            }
         }
+        const approvesPendingAccount = existingUser.role === 'user'
+            && data.role !== undefined && data.role !== 'user';
 
         if (auditContext?.userId === userId) {
             if (data.isActive === false && existingUser.isActive) {
@@ -450,7 +463,7 @@ export const userManagementService = {
                 .from(unitKerja)
                 .where(eq(unitKerja.id, nextUnitKerjaId))
                 .limit(1);
-            if (!unit) throw new ValidationError(`Invalid unitKerjaId: ${nextUnitKerjaId}`);
+            if (!unit) throw new ValidationError('Unit kerja tidak dikenali.');
         }
 
         const [updatedUser] = await tx
@@ -487,7 +500,8 @@ export const userManagementService = {
                     jabatan: updatedUser.jabatan,
                     nip: updatedUser.nip,
                 },
-                fields: Object.keys(data),
+                fields: Object.keys(data).filter(field => field !== 'ownerConfirmed'),
+                ...(approvesPendingAccount ? { pemilikEmailDikonfirmasi: true } : {}),
             },
         }, tx);
 
@@ -517,12 +531,17 @@ export const userManagementService = {
             const actor = await requireActiveSuperAdminActor(tx, auditContext);
 
             const [target] = await tx
-                .select({ id: users.id, role: users.role, isActive: users.isActive })
+                .select({ id: users.id, role: users.role, isActive: users.isActive, email: users.email, name: users.name })
                 .from(users)
                 .where(eq(users.id, userId))
                 .limit(1)
                 .for('update');
             if (!target) return null;
+
+            // Same rules as the request validation, now with the account's
+            // own email and name.
+            const passwordProblem = newPasswordProblem(newPassword, target);
+            if (passwordProblem) throw new ValidationError(passwordProblem);
 
             // The uuid lookup ignores case but accounts.account_id is text:
             // compare and write the stored id, never the id as requested.

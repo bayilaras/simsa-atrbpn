@@ -1,10 +1,20 @@
 import { ValidationError } from '../utils/errors.js';
 
 export type GoogleSheetsImportType = 'surat-masuk' | 'surat-keluar';
-type Column = { label: string; aliases: string[] };
+/**
+ * stored false: recognised, so the column is never taken for another one, but the import does not keep its value.
+ * `keterangan` is shown with the label in the preview mapping, not in error messages.
+ */
+type Column = { label: string; aliases: string[]; stored?: false; keterangan?: string };
+// An agenda-number title wins over a plain "No" row counter in the same sheet.
+const NOMOR_AGENDA_ALIASES = ['no agenda', 'nomor agenda'];
+// The source number becomes the letter's own No. Agenda / No. Urut when that number is still free.
+const nomorUrut = (label: string): Column => ({
+    label, aliases: ['no', 'nomor urut', 'no urut', ...NOMOR_AGENDA_ALIASES], keterangan: 'disimpan bila belum dipakai',
+});
 const common: Record<string, Column> = {
-    id: { label: 'ID sumber', aliases: ['id'] },
-    noUrut: { label: 'Nomor urut sumber', aliases: ['no', 'nomor urut', 'no urut'] },
+    id: { label: 'ID sumber', aliases: ['id'], stored: false },
+    noUrut: nomorUrut('No. Urut'),
     nomorSurat: { label: 'Nomor surat', aliases: ['nomor surat', 'no surat', 'nomor'] },
     tanggalSurat: { label: 'Tanggal surat', aliases: ['tanggal surat', 'tgl surat', 'tanggal', 'tgl'] },
     perihal: { label: 'Perihal', aliases: ['perihal', 'subject', 'hal'] },
@@ -13,10 +23,12 @@ const common: Record<string, Column> = {
 const columns: Record<GoogleSheetsImportType, Record<string, Column>> = {
     'surat-masuk': {
         ...common,
+        noUrut: nomorUrut('No. Agenda'),
         jenisSurat: { label: 'Jenis surat', aliases: ['jenis surat', 'jenis naskah', 'naskah dinas', 'jenis'] },
         sifatSurat: { label: 'Sifat surat', aliases: ['sifat surat', 'sifat', 'urgency'] },
         dari: { label: 'Pengirim', aliases: ['dari', 'asal', 'pengirim', 'from'] },
-        status: { label: 'Status sumber', aliases: ['status', 'disposisi status'] },
+        // An imported letter always starts as not yet answered.
+        status: { label: 'Status sumber', aliases: ['status', 'disposisi status'], stored: false },
         disposisi: { label: 'Disposisi', aliases: ['disposisi'] },
     },
     'surat-keluar': {
@@ -39,7 +51,13 @@ export function normalizeSheetHeader(value: string): string {
     return value.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 
-export interface SheetColumnMapping { field: string; label: string; columnIndex: number; header: string }
+export interface SheetColumnMapping {
+    field: string; label: string; columnIndex: number; header: string;
+    /** Present (false) only for a recognised column whose value the import does not store. */
+    stored?: false;
+}
+
+const labelPemetaan = (column: Column) => column.keterangan ? `${column.label} (${column.keterangan})` : column.label;
 
 /** The header is the first of the first five rows with at least three recognised titles; -1 when none. */
 function findHeaderRow(rows: string[][], definitions: Record<string, Column>): number {
@@ -79,14 +97,27 @@ export function resolveSheetMapping(rows: string[][], importType: GoogleSheetsIm
                 !isWebAddress(row[other]) || row[index]?.trim() === row[other].trim())));
             if (covering.length) matches = [covering[0]];
         }
+        // A register with a row counter ("No") and an agenda number ("No. Agenda") keeps the agenda number.
+        if (field === 'noUrut' && matches.length > 1) {
+            const agenda = matches.filter(index => NOMOR_AGENDA_ALIASES.includes(normalized[index]));
+            if (agenda.length === 1) matches = agenda;
+        }
         if (matches.length > 1) throw new ValidationError(
             `Pemetaan ${definition.label} ambigu pada kolom ${matches.map(index => index + 1).join(', ')}. Sisakan satu kolom yang sesuai.`,
         );
         if (matches.length === 1) {
             const columnIndex = matches[0];
             columnMap[field] = columnIndex;
-            mapping.push({ field, label: definition.label, columnIndex, header: headers[columnIndex] });
+            mapping.push({ field, label: labelPemetaan(definition), columnIndex, header: headers[columnIndex], ...(definition.stored === false ? { stored: false } : {}) });
         }
+    }
+    // A classification code and title are stored as fasilitatif or substantif, as the
+    // type column of the row says; without a type column, or with nothing to sort, none is stored.
+    const typed = columnMap.klasifikasiJenis !== undefined;
+    const described = columnMap.klasifikasiArsip !== undefined || columnMap.klasifikasiKode !== undefined;
+    for (const item of mapping) {
+        if ((item.field === 'klasifikasiArsip' || item.field === 'klasifikasiKode') && !typed) item.stored = false;
+        if (item.field === 'klasifikasiJenis' && !described) item.stored = false;
     }
     // A register's title can run into its first header ("SURAT KELUAR 2026 No" in a
     // Google Sheets CSV export). Without an exact sequence title, a first column whose
@@ -94,7 +125,7 @@ export function resolveSheetMapping(rows: string[][], importType: GoogleSheetsIm
     const first = normalized[0] ?? '';
     if (columnMap.noUrut === undefined && / no$/.test(first) && !Object.values(columnMap).includes(0)) {
         columnMap.noUrut = 0;
-        mapping.push({ field: 'noUrut', label: definitions.noUrut.label, columnIndex: 0, header: headers[0] });
+        mapping.push({ field: 'noUrut', label: labelPemetaan(definitions.noUrut), columnIndex: 0, header: headers[0] });
     }
     // Outgoing registers often omit the recipient; incoming letters always need a sender.
     const required = ['nomorSurat', 'tanggalSurat', 'perihal', ...(importType === 'surat-masuk' ? ['dari'] : [])];

@@ -44,6 +44,10 @@
         {
             "path": "/api/operations/scanner-wake",
             "schedule": "7 23 * * *"
+        },
+        {
+            "path": "/api/operations/upload-reconcile",
+            "schedule": "37 18 * * *"
         }
     ],
     "rewrites": [

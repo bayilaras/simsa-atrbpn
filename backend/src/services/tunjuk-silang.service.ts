@@ -144,20 +144,20 @@ class TunjukSilangService {
      */
     async create(data: NewTunjukSilang, auditContext?: CriticalAuditContext) {
         if (!VALID_ENTITY_TYPES.includes(data.sourceType as typeof VALID_ENTITY_TYPES[number])) {
-            throw new ValidationError(`Invalid sourceType: ${data.sourceType}`);
+            throw new ValidationError('Jenis data sumber tidak dikenali.');
         }
         if (!VALID_ENTITY_TYPES.includes(data.targetType as typeof VALID_ENTITY_TYPES[number])) {
-            throw new ValidationError(`Invalid targetType: ${data.targetType}`);
+            throw new ValidationError('Jenis data tujuan tidak dikenali.');
         }
         if (!VALID_RELASI_TYPES.includes(data.jenisRelasi as typeof VALID_RELASI_TYPES[number])) {
-            throw new ValidationError(`Invalid jenisRelasi: ${data.jenisRelasi}`);
+            throw new ValidationError('Jenis hubungan tidak dikenali.');
         }
         requireUuid(data.sourceId, 'sourceId');
         requireUuid(data.targetId, 'targetId');
         requireUuid(data.createdBy, 'createdBy');
 
         if (data.sourceType === data.targetType && data.sourceId === data.targetId) {
-            throw new ValidationError('A record cannot reference itself.');
+            throw new ValidationError('Data tidak dapat dirujuk ke dirinya sendiri.');
         }
         if (data.keterangan !== undefined && data.keterangan !== null &&
             (typeof data.keterangan !== 'string' || data.keterangan.length > 2000)) {
@@ -207,7 +207,7 @@ class TunjukSilangService {
      */
     async findByEntity(entityType: string, entityId: string) {
         if (!VALID_ENTITY_TYPES.includes(entityType as typeof VALID_ENTITY_TYPES[number])) {
-            throw new ValidationError(`Invalid entityType: ${entityType}`);
+            throw new ValidationError('Jenis data tidak dikenali.');
         }
         requireUuid(entityId, 'entityId');
 

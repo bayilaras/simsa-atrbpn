@@ -61,7 +61,7 @@ async function assertDraft(
 ) {
     const ruleSet = await resolveRuleSet(instrumentType, ruleSetId, executor, true);
     if (ruleSet.status !== 'draft') {
-        throw new ConflictError('Versi yang sudah dipublikasikan bersifat immutable. Buat atau kloning versi draft terlebih dahulu.');
+        throw new ConflictError('Versi yang sudah dipublikasikan tidak dapat diubah. Buat atau salin versi draf terlebih dahulu.');
     }
     return ruleSet;
 }

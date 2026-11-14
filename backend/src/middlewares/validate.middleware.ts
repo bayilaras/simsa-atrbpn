@@ -1,8 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import { ZodSchema, ZodError } from 'zod';
 import { createLogger } from '../utils/logger';
+import { badanGalatValidasi } from '../utils/galat-validasi.js';
 
 const log = createLogger('Validation');
+
+/** Alamat halaman memuat kode data yang tidak dikenali (biasanya tautan terpotong). */
+export const PESAN_ID_TIDAK_VALID = 'Alamat data tidak valid. Buka kembali data dari daftarnya.';
 
 /**
  * Validation middleware factory
@@ -25,16 +29,7 @@ export function validate<T>(schema: ZodSchema<T>, source: 'body' | 'query' | 'pa
             next();
         } catch (error) {
             if (error instanceof ZodError) {
-                const errors = error.issues.map((issue) => ({
-                    field: issue.path.join('.'),
-                    message: issue.message,
-                }));
-
-                return res.status(400).json({
-                    success: false,
-                    error: 'Validation failed',
-                    details: errors,
-                });
+                return res.status(400).json(badanGalatValidasi(error.issues));
             }
             // Log unexpected errors for debugging
             log.error({ err: error }, 'Validation middleware error:');
@@ -77,7 +72,7 @@ export function validateIdParam(paramName: string = 'id') {
             return res.status(400).json({
                 success: false,
                 error: 'Invalid ID format',
-                message: `Parameter '${paramName}' must be a valid UUID`,
+                message: PESAN_ID_TIDAK_VALID,
             });
         }
         next();
@@ -95,7 +90,7 @@ export function uuidParamValidator(req: Request, res: Response, next: NextFuncti
         return res.status(400).json({
             success: false,
             error: 'Invalid ID format',
-            message: 'Parameter must be a valid UUID',
+            message: PESAN_ID_TIDAK_VALID,
         });
     }
     next();

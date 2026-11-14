@@ -13,6 +13,7 @@ import { getPublicCapabilities } from '../config/public-capabilities';
 const databaseState=vi.hoisted(()=>({db:null as any}));
 vi.mock('../config/database', () => ({ db: {
     select:(...args:any[])=>databaseState.db.select(...args),
+    insert:(...args:any[])=>databaseState.db.insert(...args),
     transaction:(...args:any[])=>databaseState.db.transaction(...args),
 } }));
 vi.mock('../config/rate-limits.js', async original => ({
@@ -65,8 +66,8 @@ async function login(auth:ReturnType<typeof fixture>['auth'],email='new@example.
         body:JSON.stringify({provider:'google',idToken:{token:token(email,verified)},role:'super_admin',unitKerjaId:'ditjen',isActive:true})}));
 }
 function cookie(response:Response) { return response.headers.getSetCookie().map(value=>value.split(';')[0]).join('; '); }
-async function callbackLogin(auth:ReturnType<typeof fixture>['auth'],email:string,verified=true) {
-    const start=await auth.handler(new Request(`${origin}/api/auth/sign-in/social`,{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({provider:'google',callbackURL:`${origin}/dashboard`})}));
+async function callbackLogin(auth:ReturnType<typeof fixture>['auth'],email:string,verified=true,startBody:Record<string,unknown>={}) {
+    const start=await auth.handler(new Request(`${origin}/api/auth/sign-in/social`,{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({provider:'google',callbackURL:`${origin}/dashboard`,...startBody})}));
     expect(start.status).toBe(200);
     const authorizationURL=new URL((await start.json()).url);
     expect(authorizationURL.origin).toBe('https://accounts.google.com');
@@ -163,6 +164,28 @@ it.each(['unverified','disabled'])('does not create a pending identity through a
     expect(data.user).toEqual([]);
     expect(data.session).toEqual([]);
 });
+it.each([
+    ['an unverified Google email', undefined, false, true, 'GOOGLE_EMAIL_VERIFICATION_REQUIRED'],
+    ['closed sign-up', undefined, true, false, 'signup_disabled'],
+    ['a deactivated account', {role:'admin_unit',unitKerjaId:'ditjen',isActive:false}, true, true, 'unable_to_create_session'],
+])('returns a Google sign-in refused for %s to the login page with its error code',async(_label,existing,verified,enabled,code)=>{
+    const {auth,data}=fixture(existing,enabled);
+    const email=existing?'existing@example.test':'refused@example.test';
+    for (const startBody of [{}, {errorCallbackURL:`${origin}/login`}]) {
+        const response=await callbackLogin(auth,email,verified,startBody);
+        expect(response.status).toBe(302);
+        const location=new URL(response.headers.get('location')!);
+        expect(location.origin+location.pathname).toBe(`${origin}/login`);
+        expect(location.searchParams.get('error')).toBe(code);
+    }
+    expect(data.session).toEqual([]);
+});
+it('sends the generic auth error page to the login page as well',async()=>{
+    const {auth}=fixture();
+    const response=await auth.handler(new Request(`${origin}/api/auth/error?error=state_not_found`));
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe(`${origin}/login?error=state_not_found`);
+});
 it.each(['/list-accounts','/list-sessions'])('denies pending native account administration at %s',async path=>{
     const {auth}=fixture({role:'user',unitKerjaId:null,emailVerified:true});
     const signedIn=await login(auth,'existing@example.test');
@@ -188,12 +211,14 @@ it('revokes the old native cookie in the real approval transaction and requires 
         const [administrator]=await db.insert(schema.users).values({email:'approver@example.test',name:'Approver',role:'super_admin',unitKerjaId:null,isActive:true}).returning();
         await db.insert(schema.unitKerja).values({id:'ditjen',name:'Ditjen',code:'DITJEN'});
         const {userManagementService}=await import('../services/user-management.service');
-        const approved=await userManagementService.updateUser(original.user.id,{role:'admin_unit',unitKerjaId:'ditjen'},{userId:administrator.id,userEmail:administrator.email});
+        const approved=await userManagementService.updateUser(original.user.id,{role:'admin_unit',unitKerjaId:'ditjen',ownerConfirmed:true},{userId:administrator.id,userEmail:administrator.email});
         expect(approved).toMatchObject({role:'admin_unit',unitKerjaId:'ditjen',isActive:true});
         expect(await (await readOldSession()).json()).toBeNull();
-        const audited=(await database.query('SELECT changes FROM audit_log')).rows;
+        const audited=(await database.query("SELECT changes FROM audit_log WHERE action='update'")).rows;
         expect(audited).toHaveLength(1);
         expect(audited[0].changes).toMatchObject({before:{role:'user',unitKerjaId:null},after:{role:'admin_unit',unitKerjaId:'ditjen'}});
+        const signIns=(await database.query("SELECT user_id,user_email,entity_id,changes FROM audit_log WHERE action='sign_in'")).rows;
+        expect(signIns).toEqual([{user_id:original.user.id,user_email:'approval-pending@example.test',entity_id:original.user.id,changes:{after:{metode:'google'}}}]);
         const freshLogin=await login(auth,'approval-pending@example.test');
         expect(freshLogin.status).toBe(200);
         const freshSession=await auth.handler(new Request(`${origin}/api/auth/get-session`,{headers:{Cookie:cookie(freshLogin)}}));

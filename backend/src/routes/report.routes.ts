@@ -10,6 +10,7 @@ import { exportLimiter } from '../middlewares/rate-limiter.middleware';
 import { ExportCompletenessError } from '../services/export-completeness.js';
 import { auditExport } from '../services/export-audit';
 import { keteranganPeriodeLaporan, periodeLaporanArsip, periodeLaporanSurat } from '../services/laporan-periode';
+import { jakartaDate } from '../utils/jakarta-date.js';
 
 const log = createLogger('ReportRoutes');
 
@@ -27,7 +28,7 @@ router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
         const { year, month, tanggalDari, tanggalSampai, period, page, limit } = req.query;
 
         if (!unitKerjaId) {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
             return;
         }
 
@@ -47,7 +48,7 @@ router.get('/surat-masuk', async (req: AuthRequest, res: Response) => {
         res.json(report);
     } catch (error) {
         log.error({ err: error }, 'Error getting surat masuk report:');
-        res.status(500).json({ error: 'Failed to generate report' });
+        res.status(500).json({ error: 'Failed to generate report', message: 'Laporan gagal dibuat. Silakan coba lagi.' });
     }
 });
 
@@ -61,7 +62,7 @@ router.get('/surat-keluar', async (req: AuthRequest, res: Response) => {
         const { year, tanggalDari, tanggalSampai, period, page, limit } = req.query;
 
         if (!unitKerjaId) {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
             return;
         }
 
@@ -80,7 +81,7 @@ router.get('/surat-keluar', async (req: AuthRequest, res: Response) => {
         res.json(report);
     } catch (error) {
         log.error({ err: error }, 'Error getting surat keluar report:');
-        res.status(500).json({ error: 'Failed to generate report' });
+        res.status(500).json({ error: 'Failed to generate report', message: 'Laporan gagal dibuat. Silakan coba lagi.' });
     }
 });
 
@@ -94,7 +95,7 @@ router.get('/arsip', async (req: AuthRequest, res: Response) => {
         const { type, mediaType, daysAhead, year, page, limit } = req.query;
 
         if (!unitKerjaId) {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
             return;
         }
 
@@ -113,7 +114,7 @@ router.get('/arsip', async (req: AuthRequest, res: Response) => {
         res.json(report);
     } catch (error) {
         log.error({ err: error }, 'Error getting arsip report:');
-        res.status(500).json({ error: 'Failed to generate report' });
+        res.status(500).json({ error: 'Failed to generate report', message: 'Laporan gagal dibuat. Silakan coba lagi.' });
     }
 });
 
@@ -127,7 +128,7 @@ router.get('/lending', async (req: AuthRequest, res: Response) => {
         const { status, tanggalDari, tanggalSampai, page, limit } = req.query;
 
         if (!unitKerjaId) {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
             return;
         }
 
@@ -145,7 +146,7 @@ router.get('/lending', async (req: AuthRequest, res: Response) => {
         res.json(report);
     } catch (error) {
         log.error({ err: error }, 'Error getting lending report:');
-        res.status(500).json({ error: 'Failed to generate report' });
+        res.status(500).json({ error: 'Failed to generate report', message: 'Laporan gagal dibuat. Silakan coba lagi.' });
     }
 });
 
@@ -159,7 +160,7 @@ router.get('/summary', async (req: AuthRequest, res: Response) => {
         const { year } = req.query;
 
         if (!unitKerjaId) {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
             return;
         }
 
@@ -171,7 +172,7 @@ router.get('/summary', async (req: AuthRequest, res: Response) => {
         res.json(report);
     } catch (error) {
         log.error({ err: error }, 'Error getting summary report:');
-        res.status(500).json({ error: 'Failed to generate report' });
+        res.status(500).json({ error: 'Failed to generate report', message: 'Laporan gagal dibuat. Silakan coba lagi.' });
     }
 });
 
@@ -186,12 +187,12 @@ router.get('/export/:type/:format', exportLimiter, permissionMiddleware('reports
         const { year, tanggalDari, tanggalSampai, arsipType, mediaType } = req.query;
 
         if (!unitKerjaId) {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'Unit kerja wajib dipilih.' });
             return;
         }
 
         if (!['surat-masuk', 'surat-keluar', 'arsip'].includes(type) || !['excel', 'pdf'].includes(format)) {
-            res.status(400).json({ error: 'Invalid report type' });
+            res.status(400).json({ error: 'Jenis laporan tidak dikenal.' });
             return;
         }
         // The arsip report filters (Akan Kadaluarsa/Permanen/Musnah, media) are
@@ -206,7 +207,7 @@ router.get('/export/:type/:format', exportLimiter, permissionMiddleware('reports
         }
 
         let buffer: Buffer;
-        const filename = `laporan-${type}-${new Date().toISOString().split('T')[0]}`;
+        const filename = `laporan-${type}-${jakartaDate()}`;
 
         // Periode dihitung dengan fungsi yang sama dengan tabel laporan, supaya
         // isi berkas sama dengan yang tampil di layar.
@@ -254,7 +255,7 @@ router.get('/export/:type/:format', exportLimiter, permissionMiddleware('reports
                 res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
             }
         } else {
-            res.status(400).json({ error: 'Invalid report type' });
+            res.status(400).json({ error: 'Jenis laporan tidak dikenal.' });
             return;
         }
 
@@ -268,7 +269,7 @@ router.get('/export/:type/:format', exportLimiter, permissionMiddleware('reports
             return;
         }
         log.error({ err: error }, 'Error exporting report:');
-        res.status(500).json({ error: 'Failed to export report' });
+        res.status(500).json({ error: 'Gagal mengekspor laporan. Silakan coba lagi.' });
     }
 });
 

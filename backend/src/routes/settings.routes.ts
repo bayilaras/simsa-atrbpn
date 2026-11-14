@@ -6,6 +6,8 @@ import { canAccessUnit, type Role } from '../config/permissions.js';
 import { z } from 'zod';
 import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import { AppError } from '../utils/errors.js';
+import { stripDriveConfig } from '../utils/unit-kerja-publik.js';
+import { badanGalatValidasi } from '../utils/galat-validasi.js';
 
 const log = createLogger('SettingsRoutes');
 
@@ -51,14 +53,6 @@ function handleRouteError(
     res.status(500).json({ error: publicMessage });
 }
 
-// Legacy Drive folder columns remain in the database only for migration history.
-// Private Vercel Blob is the sole canonical bitstream store, so these values are
-// never exposed or accepted by the API.
-const stripDriveConfig = (unit: any) => {
-    const { driveFolderId, driveUploadFolderId, ...rest } = unit;
-    return rest;
-};
-
 function resolveTemplateUnit(req: Request, res: Response, requestedUnit: unknown): string | null {
     const user = (req as AuthRequest).user;
     const requested = typeof requestedUnit === 'string' ? requestedUnit.trim() : '';
@@ -70,7 +64,7 @@ function resolveTemplateUnit(req: Request, res: Response, requestedUnit: unknown
     );
 
     if (!unitKerjaId) {
-        res.status(400).json({ error: 'unitKerjaId is required' });
+        res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
         return null;
     }
 
@@ -103,13 +97,13 @@ router.get('/profile', async (req: Request, res: Response, next: NextFunction) =
         const profile = await settingsService.getProfile(userId);
 
         if (!profile) {
-            res.status(404).json({ error: 'Profile not found' });
+            res.status(404).json({ error: 'Profile not found', message: 'Profil tidak ditemukan.' });
             return;
         }
 
         res.json(profile);
     } catch (error) {
-        handleRouteError(error, res, next, 'Error getting profile:', 'Failed to get profile');
+        handleRouteError(error, res, next, 'Error getting profile:', 'Profil gagal dimuat. Silakan coba lagi.');
     }
 });
 
@@ -141,13 +135,13 @@ router.put('/profile', async (req: Request, res: Response, next: NextFunction) =
         });
 
         if (!updated) {
-            res.status(404).json({ error: 'Profile not found' });
+            res.status(404).json({ error: 'Profile not found', message: 'Profil tidak ditemukan.' });
             return;
         }
 
         res.json(updated);
     } catch (error) {
-        handleRouteError(error, res, next, 'Error updating profile:', 'Failed to update profile');
+        handleRouteError(error, res, next, 'Error updating profile:', 'Profil gagal disimpan. Silakan coba lagi.');
     }
 });
 
@@ -167,7 +161,7 @@ router.get('/unit-kerja', async (req: Request, res: Response, next: NextFunction
             : units;
         res.json(visibleUnits.map(stripDriveConfig));
     } catch (error) {
-        handleRouteError(error, res, next, 'Error getting unit kerja:', 'Failed to get unit kerja');
+        handleRouteError(error, res, next, 'Error getting unit kerja:', 'Data unit kerja gagal dimuat. Silakan coba lagi.');
     }
 });
 
@@ -177,13 +171,13 @@ router.get('/unit-kerja/:id', async (req: Request, res: Response, next: NextFunc
         const unit = await settingsService.getUnitKerjaSettings(id as string);
 
         if (!unit) {
-            res.status(404).json({ error: 'Unit kerja not found' });
+            res.status(404).json({ error: 'Unit kerja not found', message: 'Unit kerja tidak ditemukan.' });
             return;
         }
 
         res.json(stripDriveConfig(unit));
     } catch (error) {
-        handleRouteError(error, res, next, 'Error getting unit kerja:', 'Failed to get unit kerja');
+        handleRouteError(error, res, next, 'Error getting unit kerja:', 'Data unit kerja gagal dimuat. Silakan coba lagi.');
     }
 });
 
@@ -193,7 +187,7 @@ router.put('/unit-kerja/:id', async (req: Request, res: Response, next: NextFunc
 
         // Organisation master data is global system administration.
         if (userRole !== 'super_admin') {
-            res.status(403).json({ error: 'Forbidden: Super admin access required' });
+            res.status(403).json({ error: 'Forbidden: Super admin access required', message: 'Hanya Super Admin yang dapat mengubah data unit kerja.' });
             return;
         }
 
@@ -209,7 +203,7 @@ router.put('/unit-kerja/:id', async (req: Request, res: Response, next: NextFunc
         }
         const { name, description, canReceiveDistribution, isUnitPengawas } = req.body;
         if (isUnitPengawas !== undefined && typeof isUnitPengawas !== 'boolean') {
-            res.status(400).json({ error: 'isUnitPengawas harus bernilai boolean' });
+            res.status(400).json({ error: 'Penanda unit pengawas harus berupa pilihan ya atau tidak.' });
             return;
         }
         let unitName: string | undefined;
@@ -232,13 +226,13 @@ router.put('/unit-kerja/:id', async (req: Request, res: Response, next: NextFunc
         });
 
         if (!updated) {
-            res.status(404).json({ error: 'Unit kerja not found' });
+            res.status(404).json({ error: 'Unit kerja not found', message: 'Unit kerja tidak ditemukan.' });
             return;
         }
 
         res.json(updated);
     } catch (error) {
-        handleRouteError(error, res, next, 'Error updating unit kerja:', 'Failed to update unit kerja');
+        handleRouteError(error, res, next, 'Error updating unit kerja:', 'Unit kerja gagal disimpan. Silakan coba lagi.');
     }
 });
 
@@ -247,14 +241,14 @@ router.post('/unit-kerja', async (req: Request, res: Response, next: NextFunctio
         const userRole = (req as any).user?.role;
 
         if (userRole !== 'super_admin') {
-            res.status(403).json({ error: 'Forbidden: Super admin access required' });
+            res.status(403).json({ error: 'Forbidden: Super admin access required', message: 'Hanya Super Admin yang dapat mengubah data unit kerja.' });
             return;
         }
 
         const { id, name, description, parentId, unitType } = req.body;
 
         if (!id || !name) {
-            res.status(400).json({ error: 'ID and name are required' });
+            res.status(400).json({ error: 'ID and name are required', message: 'Kode dan nama unit kerja wajib diisi.' });
             return;
         }
 
@@ -271,7 +265,7 @@ router.post('/unit-kerja', async (req: Request, res: Response, next: NextFunctio
 
         res.status(201).json(created);
     } catch (error) {
-        handleRouteError(error, res, next, 'Error creating unit kerja:', 'Failed to create unit kerja');
+        handleRouteError(error, res, next, 'Error creating unit kerja:', 'Unit kerja gagal dibuat. Silakan coba lagi.');
     }
 });
 
@@ -284,7 +278,7 @@ router.get('/surat-templates', async (req: Request, res: Response, next: NextFun
         const templates = await settingsService.getSuratTemplates(unitKerjaId);
         res.json(templates);
     } catch (error) {
-        handleRouteError(error, res, next, 'Error getting surat templates:', 'Failed to get templates');
+        handleRouteError(error, res, next, 'Error getting surat templates:', 'Format nomor surat gagal dimuat. Silakan coba lagi.');
     }
 });
 
@@ -293,7 +287,7 @@ router.put('/surat-templates', async (req: Request, res: Response, next: NextFun
         const userRole = (req as any).user?.role;
 
         if (!ADMIN_ROLES.includes(userRole)) {
-            res.status(403).json({ error: 'Forbidden: Admin access required' });
+            res.status(403).json({ error: 'Forbidden: Admin access required', message: 'Hanya admin yang dapat mengubah format nomor surat.' });
             return;
         }
 
@@ -312,7 +306,7 @@ router.put('/surat-templates', async (req: Request, res: Response, next: NextFun
 
         res.json(updated);
     } catch (error) {
-        handleRouteError(error, res, next, 'Error updating surat templates:', 'Failed to update templates');
+        handleRouteError(error, res, next, 'Error updating surat templates:', 'Format nomor surat gagal disimpan. Silakan coba lagi.');
     }
 });
 
@@ -328,7 +322,7 @@ router.get('/preferences', async (req: Request, res: Response, next: NextFunctio
 
         res.json(await settingsService.getUserPreferences(userId));
     } catch (error) {
-        handleRouteError(error, res, next, 'Error getting user preferences:', 'Failed to get preferences');
+        handleRouteError(error, res, next, 'Error getting user preferences:', 'Preferensi gagal dimuat. Silakan coba lagi.');
     }
 });
 
@@ -342,13 +336,7 @@ router.put('/preferences', async (req: Request, res: Response, next: NextFunctio
 
         const parsed = preferenceUpdateSchema.safeParse(req.body);
         if (!parsed.success) {
-            res.status(400).json({
-                error: 'Invalid preferences',
-                details: parsed.error.issues.map(issue => ({
-                    field: issue.path.join('.'),
-                    message: issue.message,
-                })),
-            });
+            res.status(400).json(badanGalatValidasi(parsed.error.issues));
             return;
         }
 
@@ -357,7 +345,7 @@ router.put('/preferences', async (req: Request, res: Response, next: NextFunctio
             userId: user?.id, userEmail: user?.email, ipAddress: req.ip,
         }));
     } catch (error) {
-        handleRouteError(error, res, next, 'Error updating user preferences:', 'Failed to update preferences');
+        handleRouteError(error, res, next, 'Error updating user preferences:', 'Preferensi gagal disimpan. Silakan coba lagi.');
     }
 });
 

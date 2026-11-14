@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addImportPart, emptyImportTotals } from '@/lib/google-sheets-import'
-import { importReportCsv, importReportFileName, importResultSummary, importRowsNeedingReview } from '@/lib/import-report'
+import { importMappingLabel, importReportCsv, importReportFileName, importResultSummary, importRowsNeedingReview } from '@/lib/import-report'
 
 const rows = [
     { row: 1, no: '1', nomorSurat: '1/UND/I/2026', tanggal: '05/01/2026', perihal: 'Undangan rapat', status: 'imported' },
@@ -71,5 +71,19 @@ describe('row outcomes across resumable parts', () => {
     it('has no rows from a server that does not report them', () => {
         expect(addImportPart(emptyImportTotals(3), { success: true, totalRows: 3, importedRows: 3, duplicateRows: 0, skippedRows: 0, errors: [] }).rows)
             .toEqual([])
+    })
+})
+
+describe('rows stored with a note', () => {
+    it('are among the rows to check', () => {
+        const noted = { row: 9, status: 'imported', reason: 'Nomor dan tahun sama dengan surat yang sudah tercatat, tetapi pengirimnya berbeda; dicatat sebagai surat baru.' }
+        expect(importRowsNeedingReview([{ row: 8, status: 'imported' }, noted])).toEqual([noted])
+    })
+})
+
+describe('column mapping of the preview', () => {
+    it('says when a recognised column is not stored', () => {
+        expect(importMappingLabel({ field: 'status', label: 'Status sumber', stored: false })).toBe('Status sumber (tidak disimpan)')
+        expect(importMappingLabel({ field: 'perihal', label: 'Perihal' })).toBe('Perihal')
     })
 })

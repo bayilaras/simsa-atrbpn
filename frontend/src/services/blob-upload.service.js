@@ -8,7 +8,14 @@ import { STORAGE_PROVIDER } from '../lib/cloud-provider-config';
 import { api } from './api';
 import { archiveUploadError, regulatorySourceUploadError } from '../lib/archive-upload';
 
-const BLOB_UPLOAD_TIMEOUT_MS = 2 * 60 * 1000;
+// Business PDFs (at most 10 MiB) get a deadline that follows the file size:
+// one minute for the token and confirmation plus the transfer at an assumed
+// slow 32 KiB/s, kept between two and ten minutes. A 10 MiB PDF gets about
+// six and a half minutes instead of a flat two.
+const BLOB_UPLOAD_MIN_TIMEOUT_MS = 2 * 60 * 1000;
+const BLOB_UPLOAD_MAX_TIMEOUT_MS = 10 * 60 * 1000;
+const BLOB_UPLOAD_BASE_MS = 60 * 1000;
+const BLOB_UPLOAD_SLOW_BYTES_PER_SECOND = 32 * 1024;
 const REGULATORY_BLOB_UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
 const BLOB_CONFIRMATION_TIMEOUT_MS = 30 * 1000;
 const RULE_SET_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -17,11 +24,42 @@ function isRegulatorySource({ folder, purpose } = {}) {
     return (purpose || (folder === 'regulatory-sources' ? 'regulatory_source' : undefined)) === 'regulatory_source';
 }
 
-function directUploadError(file, options = {}) {
-    if (!isRegulatorySource(options)) return archiveUploadError(file);
-    if (!RULE_SET_ID.test(options.ruleSetId || '')) return 'ruleSetId yang valid wajib untuk upload dokumen sumber regulasi.';
-    if (options.folder && options.folder !== 'regulatory-sources') return 'Folder PDF sumber harus regulatory-sources.';
+// Server menolak token unggah langsung untuk nama berkas yang memuat ".." atau
+// garis miring terbalik (client-upload.routes.ts); tolak lebih awal dengan
+// petunjuk yang dapat diikuti.
+export const PESAN_NAMA_BERKAS_TIDAK_DIDUKUNG =
+    'Nama berkas tidak dapat dipakai karena memuat dua titik berurutan ("..") atau garis miring terbalik. Ganti nama berkas, lalu coba lagi.';
+export const PESAN_UNGGAH_DITOLAK =
+    'Berkas tidak dapat diunggah ke penyimpanan. Pastikan berkas berformat PDF, tidak melebihi batas ukuran, dan namanya tidak memuat dua titik berurutan (".."), lalu coba lagi. Jika tetap gagal, hubungi administrator.';
+
+function regulatoryUploadError(file, options) {
+    if (!RULE_SET_ID.test(options.ruleSetId || '')) return 'Versi aturan tidak dikenali. Muat ulang halaman sebelum mengunggah PDF sumber regulasi.';
+    if (options.folder && options.folder !== 'regulatory-sources') return 'Tujuan unggah PDF sumber regulasi tidak valid. Muat ulang halaman, lalu coba lagi.';
     return regulatorySourceUploadError(file);
+}
+
+function directUploadError(file, options = {}) {
+    const galat = isRegulatorySource(options) ? regulatoryUploadError(file, options) : archiveUploadError(file);
+    if (galat) return galat;
+    const nama = file?.name || '';
+    return nama.includes('..') || nama.includes('\\') ? PESAN_NAMA_BERKAS_TIDAK_DIDUKUNG : null;
+}
+
+export function businessUploadTimeoutMs(sizeBytes) {
+    const size = Number.isFinite(sizeBytes) && sizeBytes > 0 ? sizeBytes : 0;
+    const estimate = BLOB_UPLOAD_BASE_MS + Math.ceil(size / BLOB_UPLOAD_SLOW_BYTES_PER_SECOND) * 1000;
+    return Math.min(BLOB_UPLOAD_MAX_TIMEOUT_MS, Math.max(BLOB_UPLOAD_MIN_TIMEOUT_MS, estimate));
+}
+
+const PESAN_UNGGAH_LEWAT_WAKTU = 'Unggah berkas melewati batas waktu. Periksa koneksi internet, lalu coba unggah kembali.';
+// Only business PDFs (at most 10 MiB) carry the advice to make the file smaller.
+const SARAN_KECILKAN_PDF = ' Bila berkas PDF berukuran besar, kecilkan ukurannya terlebih dahulu (misalnya dengan fitur kompres PDF), lalu unggah kembali.';
+
+function uploadTimeoutError(regulatorySource = false) {
+    return Object.assign(
+        new Error(regulatorySource ? PESAN_UNGGAH_LEWAT_WAKTU : PESAN_UNGGAH_LEWAT_WAKTU + SARAN_KECILKAN_PDF),
+        { code: 'UPLOAD_TIMEOUT' },
+    );
 }
 
 function abortError() {
@@ -56,8 +94,7 @@ async function withUploadDeadline(operation, { signal, timeoutMs, getTimeoutErro
     };
     globalThis.document?.addEventListener('securitypolicyviolation', onPolicyViolation);
     const timer = setTimeout(() => {
-        const error = getTimeoutError ? getTimeoutError()
-            : Object.assign(new Error('Unggah berkas melewati batas waktu. Periksa koneksi internet, lalu coba unggah kembali.'), { code: 'UPLOAD_TIMEOUT' });
+        const error = getTimeoutError ? getTimeoutError() : uploadTimeoutError(true);
         stop(error);
     }, timeoutMs);
     try {
@@ -146,7 +183,7 @@ async function uploadFileToVercelBlob(file, { folder = 'uploads', purpose, ruleS
     const clientPayload = regulatorySource
         ? JSON.stringify({ purpose: 'regulatory-source', ruleSetId: ruleSetId.toLowerCase() })
         : undefined;
-    const timeoutMs = regulatorySource ? REGULATORY_BLOB_UPLOAD_TIMEOUT_MS : BLOB_UPLOAD_TIMEOUT_MS;
+    const timeoutMs = regulatorySource ? REGULATORY_BLOB_UPLOAD_TIMEOUT_MS : businessUploadTimeoutMs(file.size);
     const deadline = Date.now() + timeoutMs;
     let waitingForConfirmation = false;
     const blob = await withUploadDeadline(async (uploadSignal) => {
@@ -179,12 +216,15 @@ async function uploadFileToVercelBlob(file, { folder = 'uploads', purpose, ruleS
                 connectionError.code = 'UPLOAD_CONNECTION_FAILED';
                 throw connectionError;
             }
+            // Galat SDK penyimpanan berbahasa Inggris ("Vercel Blob: ..."); staf melihat pesan Indonesia.
+            if (/^Vercel Blob:/.test(error?.message || '')) {
+                throw Object.assign(new Error(PESAN_UNGGAH_DITOLAK, { cause: error }), { code: 'UPLOAD_REJECTED' });
+            }
             throw error;
         }
     }, {
         signal, timeoutMs,
-        getTimeoutError: () => waitingForConfirmation ? uploadConfirmationTimeout()
-            : Object.assign(new Error('Unggah berkas melewati batas waktu. Periksa koneksi internet, lalu coba unggah kembali.'), { code: 'UPLOAD_TIMEOUT' }),
+        getTimeoutError: () => waitingForConfirmation ? uploadConfirmationTimeout() : uploadTimeoutError(regulatorySource),
     });
 
     return {

@@ -5,13 +5,14 @@ import { httpMetrics } from '../services/http-metrics.service.js';
 import { pool } from '../config/database.js';
 import { timingSafeEqual } from 'node:crypto';
 import { getOperationsStatus, invalidateOperationsStatus } from '../services/operations-status.service.js';
-import { listFailedScans, requeueFailedScans } from '../services/malware-scan-requeue.service.js';
+import { hasWaitingScanWork, listFailedScans, recordScannerRun, requeueFailedScans } from '../services/malware-scan-requeue.service.js';
 import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware.js';
 import { getReadiness } from '../services/readiness.service.js';
 import { scheduleMalwareScanWake } from '../services/malware-scan-dispatch.service.js';
 import { MALWARE_DEFINITION_REFRESH_BEFORE_MS } from '../services/malware-scanner.service.js';
 import { getObjectStorageConfigurationStatus } from '../config/blob-storage.js';
 import { measureStorageLatency, vercelBlobLatencyClient } from '../services/storage-latency.service.js';
+import { clientBlobUploadService } from '../services/client-blob-upload.service.js';
 
 const router = Router();
 // Dedicated automation credentials, never an application session.
@@ -36,7 +37,9 @@ router.get('/probe', async (req, res) => {
 });
 // Acceleration only, like an upload: it never changes queue or quarantine
 // state. Wakes once less than the refresh margin of the 24-hour antivirus
-// definition lease remains, so the woken scanner renews it before it lapses.
+// definition lease remains, so the woken scanner renews it before it lapses,
+// and whenever a file has waited for its scan longer than an upload's own
+// wake should take (that wake may have failed or been cut short).
 async function wakeScannerIfDue(res: Response) {
     let worker: { state?: unknown; required?: unknown; definitionsExpiresAt?: unknown } = {};
     try {
@@ -49,8 +52,12 @@ async function wakeScannerIfDue(res: Response) {
     }
     const expires = typeof worker.definitionsExpiresAt === 'string' ? Date.parse(worker.definitionsExpiresAt) : NaN;
     if (worker.state === 'ready' && expires - Date.now() > MALWARE_DEFINITION_REFRESH_BEFORE_MS) {
-        res.json({ status: 'fresh' });
-        return;
+        // An unreadable queue is treated as waiting work, never as an empty one.
+        const waiting = await hasWaitingScanWork().catch(() => true);
+        if (!waiting) {
+            res.json({ status: 'fresh' });
+            return;
+        }
     }
     if (!scheduleMalwareScanWake()) {
         res.status(503).json({ status: 'unavailable' });
@@ -75,6 +82,30 @@ router.get('/scanner-wake', async (req, res) => {
         return;
     }
     await wakeScannerIfDue(res);
+});
+// Daily Vercel Cron, authenticated like the scanner-wake cron. Deletes direct
+// uploads whose lease expired without the letter, archive or rule set being
+// saved; the service reserves each lease first, so a claimed upload is never
+// touched. Expired bulk-upload batches stay with their own cleanup.
+const UPLOAD_RECONCILE_BATCH = 100;
+router.get('/upload-reconcile', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (!bearerAuthorized(req.get('authorization') || '', process.env.CRON_SECRET || '')) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+    }
+    const storage = getObjectStorageConfigurationStatus();
+    if (storage.provider !== 'vercel-blob-private' || !storage.ready) {
+        res.json({ status: 'not_supported' });
+        return;
+    }
+    try {
+        const { examined, deleted, failed } = await clientBlobUploadService.cleanupExpired(UPLOAD_RECONCILE_BATCH);
+        // A failed deletion keeps its lease and is retried on a later run.
+        res.status(failed ? 503 : 200).json({ status: failed ? 'incomplete' : 'reconciled', examined, deleted, failed });
+    } catch {
+        res.status(503).json({ status: 'failed' });
+    }
 });
 // Operator-dispatched measurement (Operations Monitor input), never scheduled:
 // each run writes, reads and deletes six small private probe objects.
@@ -146,6 +177,34 @@ async function requeueScans(req: AuthRequest, res: Response, attachmentId?: stri
 router.post('/scan-failures/requeue', sensitiveLimiter, (req: AuthRequest, res) => requeueScans(req, res));
 router.post('/scan-failures/:attachmentId/requeue', sensitiveLimiter,
     (req: AuthRequest, res) => requeueScans(req, res, String(req.params.attachmentId)));
+// "Jalankan pemindai": wakes the on-demand scanner now, as an upload does. It
+// never changes queue or quarantine state. The request is audited first, so
+// no run starts without its audit record.
+router.post('/scanner-run', sensitiveLimiter, async (req: AuthRequest, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (Object.keys(req.query).length || (req.body != null
+        && (typeof req.body !== 'object' || Array.isArray(req.body) || Object.keys(req.body).length))) {
+        res.status(400).json({ success: false, message: 'Permintaan menjalankan pemindai tidak valid.' });
+        return;
+    }
+    const audit = { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip };
+    try {
+        await recordScannerRun(audit);
+    } catch {
+        res.status(503).json({ success: false, message: 'Pemindai belum dapat dijalankan. Coba lagi beberapa saat lagi.' });
+        return;
+    }
+    let wakeScheduled = false;
+    try { wakeScheduled = scheduleMalwareScanWake(); } catch { /* reported below */ }
+    // The outcome is a second audit record. If it cannot be written, the
+    // request record alone stands and does not claim that a run started.
+    await recordScannerRun(audit, { wakeScheduled }).catch(() => {});
+    if (!wakeScheduled) {
+        res.status(503).json({ success: false, message: 'Pemindai tidak dapat dijalankan dari layanan ini. Hubungi pengelola sistem.' });
+        return;
+    }
+    res.json({ success: true, data: { wakeScheduled } });
+});
 router.get('/metrics', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     const memory = process.memoryUsage();

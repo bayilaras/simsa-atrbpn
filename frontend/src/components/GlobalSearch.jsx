@@ -9,6 +9,15 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import searchService from '@/services/search.service';
 import { lacakHref, lacakQueryForResult } from '@/lib/lacak-link';
 import { LACAK_MIN_CHARS } from '@/lib/lacak-cache';
+import { useAppConfig } from '@/context/app-config-context';
+
+// Jumlah hasil per permintaan; "Tampilkan lebih banyak" meminta halaman berikutnya.
+const UKURAN_HALAMAN = 10;
+
+// Kotak ini mencari data yang dicatat (nomor, perihal, pengirim/tujuan,
+// keterangan, uraian), bukan teks di dalam berkas. Kalimat ditampilkan saat
+// modul OCR massal tidak aktif, seperti di produksi.
+const KETERANGAN_CAKUPAN = 'Pencarian mencakup data surat dan arsip yang dicatat, tidak termasuk isi PDF hasil pindaian.';
 
 // Type icons mapping
 const TYPE_ICONS = {
@@ -37,12 +46,18 @@ const LACAK_TYPES = new Set(['surat_masuk', 'surat_keluar']);
 
 export function GlobalSearch({ open, onOpenChange }) {
     const navigate = useNavigate();
+    const { capabilities } = useAppConfig();
+    const tampilkanCakupan = capabilities?.bulkOcr === false;
     const inputRef = useRef(null);
     const searchSequenceRef = useRef(0);
+    // Kata kunci yang menghasilkan daftar sekarang; halaman berikutnya memakai kata yang sama.
+    const resultQueryRef = useRef('');
     const [query, setQuery] = useState('');
     const [results, setResults] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [searchError, setSearchError] = useState('');
+    const [moreError, setMoreError] = useState('');
     const [selectedIndex, setSelectedIndex] = useState(0);
 
     // Focus input when dialog opens
@@ -53,7 +68,9 @@ export function GlobalSearch({ open, onOpenChange }) {
             setQuery('');
             setResults(null);
             setLoading(false);
+            setLoadingMore(false);
             setSearchError('');
+            setMoreError('');
             setSelectedIndex(0);
         }
     }, [open]);
@@ -65,7 +82,9 @@ export function GlobalSearch({ open, onOpenChange }) {
             searchSequenceRef.current += 1;
             setResults(null);
             setLoading(false);
+            setLoadingMore(false);
             setSearchError('');
+            setMoreError('');
             return;
         }
 
@@ -73,10 +92,13 @@ export function GlobalSearch({ open, onOpenChange }) {
         setResults(null);
         setSelectedIndex(0);
         setSearchError('');
+        setMoreError('');
+        setLoadingMore(false);
         setLoading(true);
         try {
-            const data = await searchService.search(normalizedQuery, { limit: 10 });
+            const data = await searchService.search(normalizedQuery, { limit: UKURAN_HALAMAN });
             if (requestSequence === searchSequenceRef.current) {
+                resultQueryRef.current = normalizedQuery;
                 setResults(data);
             }
         } catch (error) {
@@ -90,6 +112,32 @@ export function GlobalSearch({ open, onOpenChange }) {
             }
         }
     }, []);
+
+    // Halaman berikutnya untuk kata kunci yang sama, ditambahkan di bawah hasil yang sudah tampil.
+    const loadMore = async () => {
+        if (!results || loadingMore) return;
+        const requestSequence = searchSequenceRef.current;
+        const nextPage = (results.pagination?.page || 1) + 1;
+        setLoadingMore(true);
+        setMoreError('');
+        try {
+            const data = await searchService.search(resultQueryRef.current, { limit: UKURAN_HALAMAN, page: nextPage });
+            if (requestSequence !== searchSequenceRef.current) return;
+            setResults((current) => {
+                const shown = new Set(current.results.map((result) => `${result.type}-${result.id}`));
+                return { ...data, results: [...current.results, ...data.results.filter((result) => !shown.has(`${result.type}-${result.id}`))] };
+            });
+        } catch (error) {
+            if (requestSequence === searchSequenceRef.current) {
+                console.error('Search error:', error);
+                setMoreError('Hasil berikutnya gagal dimuat. Coba lagi.');
+            }
+        } finally {
+            if (requestSequence === searchSequenceRef.current) {
+                setLoadingMore(false);
+            }
+        }
+    };
 
     // Debounce input
     useEffect(() => {
@@ -123,6 +171,9 @@ export function GlobalSearch({ open, onOpenChange }) {
     const trimmedQuery = query.trim();
     const selectedResult = results?.results?.[selectedIndex] ?? null;
     const selectedLacakQuery = lacakQueryFor(selectedResult);
+    const shownCount = results?.results?.length ?? 0;
+    const totalCount = results?.counts?.total ?? 0;
+    const hasMore = Boolean(results?.pagination?.hasMore);
 
     // Keyboard navigation
     const handleKeyDown = (e) => {
@@ -193,6 +244,12 @@ export function GlobalSearch({ open, onOpenChange }) {
                                         {TYPE_LABELS[type]}: {count}
                                     </Badge>
                                 ))}
+                                {shownCount > 0 && shownCount < totalCount && (
+                                    <span className="w-full text-xs text-muted-foreground">
+                                        Menampilkan {shownCount} dari {totalCount} hasil.
+                                        {!hasMore && ' Persempit kata pencarian untuk melihat hasil lainnya.'}
+                                    </span>
+                                )}
                             </div>
 
                             {/* Result List */}
@@ -248,10 +305,22 @@ export function GlobalSearch({ open, onOpenChange }) {
                                             </Button>
                                         </div>
                                     )}
+                                    {hasMore && (
+                                        <div className="px-1 pt-1">
+                                            <Button type="button" variant="outline" size="sm" className="w-full" onClick={loadMore} disabled={loadingMore}>
+                                                {loadingMore && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                                                Tampilkan lebih banyak
+                                            </Button>
+                                        </div>
+                                    )}
+                                    {moreError && (
+                                        <p role="alert" className="px-3 pt-2 text-sm text-destructive">{moreError}</p>
+                                    )}
                                 </>
                             ) : query.length >= 2 ? (
                                 <div className="text-center py-8 text-muted-foreground" role="status">
                                     Tidak ada hasil untuk "{query}"
+                                    {tampilkanCakupan && <p className="text-xs mt-1">{KETERANGAN_CAKUPAN}</p>}
                                 </div>
                             ) : null}
                         </div>
@@ -272,6 +341,7 @@ export function GlobalSearch({ open, onOpenChange }) {
                             <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
                             <p>Ketik minimal 2 karakter untuk mencari</p>
                             <p className="text-xs mt-1">Telusuri surat masuk, surat keluar, arsip, dan dosir</p>
+                            {tampilkanCakupan && <p className="text-xs mt-1">{KETERANGAN_CAKUPAN}</p>}
                         </div>
                     )}
                 </ScrollArea>

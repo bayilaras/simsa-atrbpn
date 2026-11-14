@@ -122,7 +122,7 @@ function ArchivePreviewContent({ archiveId, onRetry }) {
         <Button type="button" variant="outline" onClick={onRetry}><RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />Coba lagi</Button>
     </div>
     return <div className="min-w-0 space-y-5 p-5">
-        <p className="break-words font-semibold [overflow-wrap:anywhere]">{archive.uraianBerkas || archive.perihalOriginal || 'Arsip tanpa uraian'}</p>
+        <p className="break-words font-semibold [overflow-wrap:anywhere] whitespace-pre-line">{archive.uraianBerkas || archive.perihalOriginal || 'Arsip tanpa uraian'}</p>
         <section className="min-w-0 space-y-3" aria-label="Berkas digital">
             <h3 className="text-sm font-semibold">Berkas digital</h3>
             {!capabilities.files ? <p className="text-sm text-muted-foreground">Penyimpanan berkas digital belum diaktifkan. Metadata arsip tetap tersedia.</p>

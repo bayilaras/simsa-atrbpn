@@ -24,7 +24,7 @@ function resolveConcreteDistributionUnit(req: AuthRequest, res: Response): strin
     const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId || '';
     if (!unitKerjaId) {
         if (req.user?.role === 'super_admin') {
-            res.status(400).json({ error: 'unitKerjaId is required' });
+            res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
         } else {
             // An unprovisioned scoped account must not learn whether a
             // distribution exists in the caller-supplied unit.
@@ -142,14 +142,14 @@ router.get('/surat/:suratId', async (req: AuthRequest, res, next) => {
         const suratId = req.params.suratId as string;
         const sourceAccess = await recordAccessService.check(req.user, 'surat_masuk', suratId);
         if (!sourceAccess.exists || !sourceAccess.allowed) {
-            return res.status(404).json({ error: 'Distribution history not found' });
+            return res.status(404).json({ error: 'Distribution history not found', message: 'Riwayat disposisi tidak ditemukan.' });
         }
         const history = await distributionService.getHistoryBySurat(
             suratId,
             resolveRecordUnitScope(req),
         );
         if (history.length === 0) {
-            return res.status(404).json({ error: 'Distribution history not found' });
+            return res.status(404).json({ error: 'Distribution history not found', message: 'Riwayat disposisi tidak ditemukan.' });
         }
         res.json({ success: true, data: history });
     } catch (error) {

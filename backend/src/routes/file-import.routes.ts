@@ -54,6 +54,8 @@ const previewInput = z.object({
     sheet,
     maxRows: z.string().regex(/^\d{1,3}$/).transform(Number)
         .pipe(z.number().int().min(1).max(GOOGLE_SHEETS_LIMITS.previewRows)).default(10),
+    // The destination unit; with it the preview also finds the rows already recorded there.
+    unitKerjaId: z.string().trim().max(50).optional(),
 }).strict();
 const importInput = z.object({
     sheet,
@@ -76,7 +78,10 @@ router.post('/lembar', importDiscoveryLimiter, canWriteMiddleware(), receiveFile
 router.post('/preview', importPreviewLimiter, canWriteMiddleware(), receiveFile, validateBody(previewInput), async (req: AuthRequest, res, next) => {
     try {
         const { type, sheet: name, maxRows } = req.body;
-        res.json(await fileImportService.preview(uploaded(req), name, maxRows, type));
+        // Rows are judged for the importing user; a named unit is resolved and authorized as the import resolves it.
+        const unitKerjaId = req.body.unitKerjaId === undefined ? undefined : resolveImportUnit(req, res);
+        if (unitKerjaId === null) return;
+        res.json(await fileImportService.preview(uploaded(req), name, maxRows, type, { importer: importAuditContext(req), unitKerjaId }));
     } catch (error) { next(error); }
 });
 

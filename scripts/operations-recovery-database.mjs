@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join,dirname } from 'node:path';
 import { createRequire } from 'node:module';
 import { boundedFile } from './neon-backup-runtime.mjs';
-import { openNeonBundle,migrationManifest,loadNeonEvidenceSql } from './neon-backup-core.mjs';
+import { openNeonBundle,migrationManifest,loadNeonEvidenceSql,appliedMigrations } from './neon-backup-core.mjs';
 import { neonBackupHelperHashes } from './neon-backup.mjs';
 import { POLICY_ROLES,loadNeonGrantPolicy,verifyNeonRuntime,restoreTargetRoles } from './neon-database-policy.mjs';
 import { NEON_RESTORE_OWNERS_SQL } from './neon-backup-role.mjs';
@@ -34,7 +34,7 @@ export async function restoreDatabaseProof(plain,workspace,{targetFactory=create
   const collector=await loadNeonEvidenceSql(),actual=normalizeEvidence(await target.query(`BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; ${collector.sql} COMMIT;`,database));
   check(actual.equals(expected),'RECOVERY_FINGERPRINT_MISMATCH');proof.fingerprintMatch=true;proof.evidenceSha256=sha256(actual);
   proof.tableCountChecks=actual.toString().split('\n').filter(row=>row.startsWith('table_count\t')).length;proof.tableDataHashChecks=actual.toString().split('\n').filter(row=>row.startsWith('critical_rows\t')).length;
-  proof.migrations=plain.body.migrations.length;proof.evidenceLines=actual.toString().trimEnd().split('\n').length;
+  proof.migrations=appliedMigrations(plain.body).length;proof.evidenceLines=actual.toString().trimEnd().split('\n').length;
   const api=new Client({host:'127.0.0.1',port:target.target.port,database,user:'simsa_api',password:passwords.simsa_api,connectionTimeoutMillis:5000});api.on('error',()=>{});
   try{await api.connect();await verifyNeonRuntime(api,{database});proof.apiRoleVerified=true;}finally{await api.end().catch(()=>{});}
   check(JSON.stringify(plain.body.helpers)===JSON.stringify(await neonBackupHelperHashes()),'HELPERS_CHANGED_DURING_RESTORE');

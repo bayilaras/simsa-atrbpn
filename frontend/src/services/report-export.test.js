@@ -24,4 +24,25 @@ describe('report export authentication', () => {
         }));
         expect(revokeObjectURL).toHaveBeenCalledWith('blob:report');
     });
+
+    it('memberi nama berkas dengan tanggal WIB, bukan tanggal UTC', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        // Pukul 01.30 WIB tanggal 14, masih tanggal 13 menurut UTC.
+        vi.setSystemTime(new Date('2026-11-13T18:30:00Z'));
+        try {
+            const blob = new Blob(['report'], { type: 'application/pdf' });
+            vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, blob: async () => blob }));
+            vi.stubGlobal('URL', class extends URL {
+                static createObjectURL = vi.fn().mockReturnValue('blob:report');
+                static revokeObjectURL = vi.fn();
+            });
+            const namaBerkas = [];
+            vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function klik() { namaBerkas.push(this.download); });
+
+            await reportService.exportReport('surat-masuk', 'excel', { unitKerjaId: 'unit-a' });
+            expect(namaBerkas).toEqual(['laporan-surat-masuk-2026-11-14.xlsx']);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
 });

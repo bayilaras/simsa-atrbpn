@@ -43,7 +43,6 @@ beforeEach(async () => {
     await clearOfflineStorage()
     Element.prototype.scrollIntoView = vi.fn()
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
     mocks.masuk.getNextNumber.mockResolvedValue({ nomorSurat: '001/SM/2026' })
     mocks.masuk.getById.mockResolvedValue(tersimpan)
@@ -77,6 +76,7 @@ describe('galat validasi server pada formulir surat masuk', () => {
         fireEvent.change(screen.getByLabelText(/^Dari \(Pengirim\)/), { target: { value: 'Pemda Sintetis' } })
         fireEvent.change(screen.getByLabelText(/^Kepada \(Penerima\)/), { target: { value: 'Direktur Jenderal' } })
         fireEvent.submit(view.container.querySelector('form'))
+        fireEvent.click(await screen.findByRole('button', { name: 'Simpan tanpa disposisi' }))
 
         const ringkasan = await screen.findByRole('alert')
         expect(ringkasan).toHaveTextContent('Surat belum dapat disimpan. Periksa isian berikut: Perihal maksimal 2000 karakter; Pengirim maksimal 255 karakter; Tanggal tidak valid; Batas waktu tidak boleh sebelum hari ini')

@@ -7,8 +7,8 @@ const state = vi.hoisted(() => ({ role: null as string | null }));
 const status = vi.hoisted(() => vi.fn(async () => ({ status: 'attention', checks: [], timestamp: '2026-09-15T00:00:00Z' })));
 const invalidate = vi.hoisted(() => vi.fn());
 vi.mock('../services/operations-status.service.js', () => ({ getOperationsStatus: status, invalidateOperationsStatus: invalidate }));
-const scans = vi.hoisted(() => ({ list: vi.fn(), requeue: vi.fn(), wake: vi.fn(), limited: vi.fn() }));
-vi.mock('../services/malware-scan-requeue.service.js', () => ({ listFailedScans: scans.list, requeueFailedScans: scans.requeue }));
+const scans = vi.hoisted(() => ({ list: vi.fn(), requeue: vi.fn(), wake: vi.fn(), limited: vi.fn(), audit: vi.fn() }));
+vi.mock('../services/malware-scan-requeue.service.js', () => ({ listFailedScans: scans.list, requeueFailedScans: scans.requeue, recordScannerRun: scans.audit }));
 vi.mock('../services/malware-scan-dispatch.service.js', () => ({ scheduleMalwareScanWake: scans.wake }));
 vi.mock('../middlewares/rate-limiter.middleware.js', () => ({ sensitiveLimiter: (_req: any, _res: any, next: any) => { scans.limited(); next(); } }));
 vi.mock('../middlewares/auth.middleware.js', () => ({ authMiddleware: (req: any, res: any, next: any) => {
@@ -139,4 +139,61 @@ describe('requeueing failed document scans', () => {
         const list = await request(app).get('/api/operations/scan-failures').expect(503);
         expect(JSON.stringify([failed.body, list.body])).not.toContain('private');
     });
+});
+
+describe('running the scanner from monitoring', () => {
+    afterEach(() => { Object.values(scans).forEach(mock => mock.mockReset()); });
+    it.each([null, 'user', 'staff', 'admin_unit', 'admin_dirjen', 'admin_sesditjen', 'auditor'])('keeps the action from role %s', async role => {
+        state.role = role;
+        await request(app).post('/api/operations/scanner-run').send({}).expect(role ? 403 : 401);
+        expect(scans.audit).not.toHaveBeenCalled();
+        expect(scans.wake).not.toHaveBeenCalled();
+    });
+    it('records who asked before waking the scanner, rate limited and without caching', async () => {
+        state.role = 'super_admin';
+        const order: string[] = [];
+        scans.audit.mockImplementation(async () => { order.push('audit'); });
+        scans.wake.mockImplementation(() => { order.push('wake'); return true; });
+        const response = await request(app).post('/api/operations/scanner-run').send({}).expect(200);
+        expect(response.body).toEqual({ success: true, data: { wakeScheduled: true } });
+        expect(response.headers['cache-control']).toBe('no-store');
+        const who = expect.objectContaining({ userId: 'test-user', userEmail: 'admin@example.test' });
+        // Request first, then the outcome as a second record.
+        expect(scans.audit.mock.calls).toEqual([[who], [who, { wakeScheduled: true }]]);
+        expect(order).toEqual(['audit', 'wake', 'audit']);
+        expect(scans.limited).toHaveBeenCalledOnce();
+    });
+    it('does not wake the scanner when the audit record cannot be written', async () => {
+        state.role = 'super_admin';
+        scans.audit.mockRejectedValue(new Error('private connection string'));
+        const response = await request(app).post('/api/operations/scanner-run').send({}).expect(503);
+        expect(response.body.message).toBe('Pemindai belum dapat dijalankan. Coba lagi beberapa saat lagi.');
+        expect(JSON.stringify(response.body)).not.toContain('private');
+        expect(scans.wake).not.toHaveBeenCalled();
+        expect(scans.audit).toHaveBeenCalledOnce();
+    });
+    it('still answers after a started run when only the outcome record cannot be written', async () => {
+        state.role = 'super_admin';
+        scans.audit.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('private connection string'));
+        scans.wake.mockReturnValue(true);
+        const response = await request(app).post('/api/operations/scanner-run').send({}).expect(200);
+        expect(response.body).toEqual({ success: true, data: { wakeScheduled: true } });
+    });
+    it.each([['returns false', () => false], ['throws', () => { throw new Error('private wake detail'); }]])(
+        'says plainly that the scanner cannot be run when the wake %s', async (_label, wake) => {
+            state.role = 'super_admin';
+            scans.audit.mockResolvedValue(undefined);
+            scans.wake.mockImplementation(wake);
+            const response = await request(app).post('/api/operations/scanner-run').send({}).expect(503);
+            expect(response.body).toEqual({ success: false, message: 'Pemindai tidak dapat dijalankan dari layanan ini. Hubungi pengelola sistem.' });
+            // The audit trail tells this request apart from a run that started.
+            expect(scans.audit).toHaveBeenLastCalledWith(expect.objectContaining({ userId: 'test-user' }), { wakeScheduled: false });
+        });
+    it.each([['/api/operations/scanner-run?force=1', {}], ['/api/operations/scanner-run', { files: ['x'] }]])(
+        'rejects a malformed request %s before auditing or waking', async (path, body) => {
+            state.role = 'super_admin';
+            await request(app).post(path).send(body).expect(400);
+            expect(scans.audit).not.toHaveBeenCalled();
+            expect(scans.wake).not.toHaveBeenCalled();
+        });
 });

@@ -110,7 +110,7 @@ describe('arsip rule reconciliation routes', () => {
 
         const response = await request(app).put(`/arsip/${ARCHIVE_ID}`).send(patch).expect(200);
 
-        expect(mocks.arsip.update).toHaveBeenCalledWith(ARCHIVE_ID, patch, expect.any(Object));
+        expect(mocks.arsip.update).toHaveBeenCalledWith(ARCHIVE_ID, patch, expect.any(Object), { expectedUpdatedAt: undefined });
         expect(mocks.isAllowedForClassification).not.toHaveBeenCalled();
         expect(response.body.data).toMatchObject({ ...stored, ...patch });
     });

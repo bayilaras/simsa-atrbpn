@@ -49,6 +49,12 @@ function passFocusRefreshInterval() {
 async function show() { render(<MemoryRouter><Dashboard /></MemoryRouter>); await screen.findByRole('heading', { name: 'Halo, Siti' }) }
 
 describe('dashboard daily workflow', () => {
+    it('shows the assigned unit by name, never by its code', async () => {
+        mocks.user.role = 'admin_unit'
+        await show()
+        expect(await screen.findByText('Unit A')).toBeInTheDocument()
+        expect(screen.queryByText(/unit-a/i)).toBeNull()
+    })
     it('tells an approver how many outgoing letters wait for a decision and links to the filtered list', async () => {
         mocks.user.role = 'admin_unit'
         persetujuan.total = 12

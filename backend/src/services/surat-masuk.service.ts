@@ -1,8 +1,10 @@
 import { db } from '../config/database';
 import { suratMasuk, NewSuratMasuk, SuratMasuk } from '../db/schema';
-import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull } from 'drizzle-orm';
+import { eq, and, desc, asc, like, sql, gte, lte, or, isNull, getTableColumns } from 'drizzle-orm';
+import { cocokTeksCari } from '../utils/cari-teks.js';
 import { ConflictError, DatabaseError } from '../utils/errors';
 import { denganRetryDeadlock } from '../utils/deadlock-retry.js';
+import { pastikanBelumBerubah } from '../utils/versi-rekaman.js';
 import { createLogger } from '../utils/logger';
 import {
     scopedRecordByIdWhere,
@@ -29,15 +31,30 @@ import {
     type SuratNumberContext,
     type SuratNumberPreview,
 } from '../utils/surat-numbering.js';
-import { afterSuratMasukInsert, afterSuratMasukMutation, guardSuratMasukMutation } from './rangkaian/tindak-lanjut.hook.js';
+import { afterSuratMasukInsert, afterSuratMasukMutation, guardSuratMasukMutation, identitasDikunciBerkas } from './rangkaian/tindak-lanjut.hook.js';
 import type { DisposisiRoutingInput } from '../validators/schemas.js';
 import type { RecordUser } from './record-access.service.js';
 import { klasifikasiInSql, sifatKunciSql } from './access/visibility-spec.js';
+import { disposisiKeUnitSql, disposisiLabelSql } from './disposisi-filter.js';
+import { urutanDaftarSuratSql } from './urutan-daftar-surat.js';
+import type { UrutanDaftarSurat } from './urutan-daftar-surat.constants.js';
+import { ALASAN_NOMOR_PINDAH_TAHUN, kunciTemplatBilaPindahTahun, pindahUrutanTahun, tentukanNomorUrut } from './surat-nomor-urut.js';
 
-export type CreateSuratMasukInput = Omit<NewSuratMasuk, 'disposisi'> & {
+export type CreateSuratMasukInput = Omit<NewSuratMasuk, 'disposisi' | 'noUrut'> & {
+    /** No. Agenda yang diminta; tanpa nilai, nomor tertinggi + 1 di unit dan tahun itu. */
+    noUrut?: number | null;
     disposisi?: string[] | DisposisiRoutingInput | null;
     referensi?: { jenis: 'surat_keluar'; id: string };
     actor?: RecordUser | null;
+};
+
+/** A source row: its No. Agenda is kept when free, otherwise the next number is given. */
+export type ImportedSuratMasuk = Omit<NewSuratMasuk, 'noUrut'> & { noUrut?: number | null };
+
+export type UpdateSuratMasukInput = Partial<SuratMasuk> & {
+    alasan?: string;
+    /** updatedAt the edit form loaded; a different stored value is a 409. */
+    expectedUpdatedAt?: Date;
 };
 
 export interface SuratMasukFilters {
@@ -48,8 +65,12 @@ export interface SuratMasukFilters {
     jenisSurat?: string;
     sifatSurat?: string;
     status?: string;
+    /** Label disposisi tanpa unit (mis. label Kabag). */
     disposisi?: string;
+    /** Unit tujuan disposisi; lihat disposisiKeUnitSql. */
+    disposisiUnitId?: string;
     search?: string;
+    urutan?: UrutanDaftarSurat;
     page?: number;
     limit?: number;
     /** null means all classes (super_admin); [] fails closed. */
@@ -64,7 +85,7 @@ function securityClassificationCondition(classes: string[] | null | undefined) {
 
 export class SuratMasukService {
     async findAll(filters: SuratMasukFilters) {
-        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, search, page = 1, limit = 20, securityClassifications } = filters;
+        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, disposisiUnitId, search, urutan, page = 1, limit = 20, securityClassifications } = filters;
         const offset = (page - 1) * limit;
 
         // Build where conditions
@@ -100,17 +121,19 @@ export class SuratMasukService {
             conditions.push(eq(suratMasuk.status, status));
         }
         if (disposisi) {
-            conditions.push(sql`${suratMasuk.disposisi} @> ARRAY[${disposisi}]`);
+            conditions.push(disposisiLabelSql(disposisi));
+        }
+        if (disposisiUnitId) {
+            conditions.push(disposisiKeUnitSql(disposisiUnitId));
         }
 
         // Search across multiple fields using ILIKE (case-insensitive)
         if (search && search.trim()) {
-            const searchPattern = `%${search.trim()}%`;
             conditions.push(
                 or(
-                    ilike(suratMasuk.perihal, searchPattern),
-                    ilike(suratMasuk.nomorSurat, searchPattern),
-                    ilike(suratMasuk.dari, searchPattern)
+                    cocokTeksCari(suratMasuk.perihal, search),
+                    cocokTeksCari(suratMasuk.nomorSurat, search),
+                    cocokTeksCari(suratMasuk.dari, search)
                 )!
             );
         }
@@ -123,12 +146,16 @@ export class SuratMasukService {
 
         const count = countResult?.[0]?.count ?? 0;
 
-        // Get data
+        // Get data; nama unit pemilik untuk kolom Unit Kerja pada tampilan semua unit.
         const data = await db
-            .select()
+            .select({
+                ...getTableColumns(suratMasuk),
+                // Rujukan baris luar ditulis lengkap: kolom di sql pilihan satu tabel ditulis Drizzle tanpa nama tabel.
+                unitKerjaNama: sql<string | null>`(SELECT uk.name FROM unit_kerja uk WHERE uk.id = surat_masuk.unit_kerja_id)`,
+            })
             .from(suratMasuk)
             .where(and(...conditions))
-            .orderBy(desc(suratMasuk.createdAt))
+            .orderBy(...urutanDaftarSuratSql(suratMasuk, urutan))
             .limit(limit)
             .offset(offset);
 
@@ -163,7 +190,7 @@ export class SuratMasukService {
         return result ? (await hydrateSuratRuleSelections(db, [result], 'masuk'))[0] : null;
     }
 
-    async createImported(data: NewSuratMasuk, auditContext: CriticalAuditContext, options: SuratImportOptions = {}) {
+    async createImported(data: ImportedSuratMasuk, auditContext: CriticalAuditContext, options: SuratImportOptions = {}) {
         return this.create(data as CreateSuratMasukInput, auditContext, undefined, undefined, options);
     }
 
@@ -197,11 +224,11 @@ export class SuratMasukService {
         attachment?: RegisterSuratAttachmentData,
         importOptions?: SuratImportOptions,
     ) {
-        const { disposisi: disposisiInput, referensi, actor, ...rest } = input;
+        const { disposisi: disposisiInput, referensi, actor, noUrut: noUrutDiminta, ...rest } = input;
         const routing = disposisiInput && !Array.isArray(disposisiInput) ? disposisiInput : undefined;
         // Label text[] hanya berisi label lama/Kabag; nama unit ditambahkan oleh distribute().
         const labels = Array.isArray(disposisiInput) ? disposisiInput : routing?.labelTambahan;
-        const data = { ...rest, ...(labels ? { disposisi: labels } : {}) } as NewSuratMasuk;
+        const data = { ...rest, ...(labels ? { disposisi: labels } : {}) } as Omit<NewSuratMasuk, 'noUrut'>;
         const calendar = resolveSuratCalendar({
             tahun: data.tahun,
             tanggalSurat: data.tanggalSurat,
@@ -240,18 +267,11 @@ export class SuratMasukService {
                     assertImportConnected(importOptions);
                     if (existing) throw new DuplicateSuratImportError();
                 }
-                const [lastSurat] = await tx
-                    .select({ noUrut: suratMasuk.noUrut })
-                    .from(suratMasuk)
-                    .where(and(
-                        eq(suratMasuk.unitKerjaId, data.unitKerjaId),
-                        eq(suratMasuk.tahun, tahun)
-                    ))
-                    .orderBy(desc(suratMasuk.noUrut))
-                    .limit(1)
-                    .for('update');
-
-                const noUrut = (lastSurat?.noUrut || 0) + 1;
+                // No. Agenda yang diminta (formulir atau sumber impor) diperiksa
+                // di bawah kunci templat yang sama dengan max+1.
+                const noUrut = await tentukanNomorUrut(tx, 'masuk', data.unitKerjaId, tahun, noUrutDiminta, {
+                    lanjutBilaTerpakai: Boolean(importOptions),
+                });
                 const generatedNomorSurat = settingsService.generateSuratNumber(
                     templates.masukFormat,
                     {
@@ -346,7 +366,7 @@ export class SuratMasukService {
 
     async update(
         id: string,
-        data: Partial<SuratMasuk> & { alasan?: string },
+        data: UpdateSuratMasukInput,
         unitScope: RecordUnitScope,
         clientBlobClaim?: ClaimClientBlobUpload,
         auditContext?: CriticalAuditContext,
@@ -385,17 +405,38 @@ export class SuratMasukService {
 
         // C-4: hanya transaksi yang diulang; prepareExisting dan unggahan rute tetap di luar.
         return denganRetryDeadlock(() => db.transaction(async (tx) => {
-            const { alasan, ...patch } = data;
-            // G-LOCK: kunci surat_masuk → rangkaian sebelum UPDATE (T13-1).
-            const guard = await guardSuratMasukMutation(tx, { suratMasukId: id, perubahan: patch, alasan, audit: auditContext });
-            const current = hasSuratRuleSelection(patch)
+            const { alasan, expectedUpdatedAt, ...patch } = data;
+            // Tanggal ke tahun lain memindahkan surat ke urutan tahun itu; kunci
+            // templat unit lebih dulu, urutan kunci yang sama dengan create().
+            const templatTerkunci = await kunciTemplatBilaPindahTahun(tx, 'masuk', and(...conditions)!, patch.tanggalSurat);
+            // Baris dikunci sebelum guard (urutan tetap surat_masuk → rangkaian)
+            // bila versi, tahun urutan, atau pilihan klasifikasi perlu dibaca.
+            const perluBaris = expectedUpdatedAt !== undefined || patch.tanggalSurat !== undefined || hasSuratRuleSelection(patch);
+            const current = perluBaris
                 ? (await tx.select().from(suratMasuk).where(and(...conditions)).limit(1).for('update'))[0]
                 : undefined;
-            if (hasSuratRuleSelection(patch) && !current) return undefined;
+            if (perluBaris && !current) return undefined;
+            if (current) pastikanBelumBerubah(current.updatedAt, expectedUpdatedAt);
+            // Pindah tahun: No. Agenda berikutnya di tahun baru; nomor surat buatan
+            // template ikut dibuat ulang, kecuali surat dalam berkas yang sudah
+            // diberkaskan (nomornya dikunci, §5).
+            const pindah = current ? await pindahUrutanTahun(tx, 'masuk', current, patch, templatTerkunci) : null;
+            if (pindah?.sesudah.nomorSurat && await identitasDikunciBerkas(tx, id)) {
+                delete pindah.sesudah.nomorSurat;
+                delete pindah.sebelum.nomorSurat;
+            }
+            // G-LOCK: kunci surat_masuk → rangkaian sebelum UPDATE (T13-1). Nomor
+            // surat yang dibuat ulang mengikuti aturan rangkaian yang sama.
+            const guard = await guardSuratMasukMutation(tx, {
+                suratMasukId: id, perubahan: patch, alasan, audit: auditContext,
+                ...(pindah?.sesudah.nomorSurat
+                    ? { perubahanOtomatis: { nomorSurat: pindah.sesudah.nomorSurat }, alasanOtomatis: ALASAN_NOMOR_PINDAH_TAHUN }
+                    : {}),
+            });
             const ruleSelection = await prepareSuratRuleSelection(tx, 'masuk', patch, current);
             const [result] = await tx
                 .update(suratMasuk)
-                .set({ ...patch, ...ruleSelection, updatedAt: new Date() })
+                .set({ ...patch, ...ruleSelection, ...pindah?.sesudah, updatedAt: new Date() })
                 .where(and(...conditions))
                 .returning();
 
@@ -422,6 +463,8 @@ export class SuratMasukService {
                     entityId: id,
                     changes: {
                         ...auditDetails,
+                        // Pindah tahun: No. Agenda dan tahun lama di samping yang baru.
+                        ...(pindah ? { before: { ...(auditDetails?.before as Record<string, unknown> | undefined), ...pindah.sebelum } } : {}),
                         after: {
                             nomorSurat: result.nomorSurat,
                             tanggalSurat: result.tanggalSurat,
@@ -433,8 +476,9 @@ export class SuratMasukService {
                             unitKerjaId: result.unitKerjaId,
                             fileOriginalName: result.fileOriginalName,
                             hasFile: Boolean(result.filePath),
+                            ...(pindah ? { tahun: result.tahun, noUrut: result.noUrut } : {}),
                         },
-                        fields: Object.keys(patch),
+                        fields: [...new Set([...Object.keys(patch), ...(pindah ? Object.keys(pindah.sesudah) : [])])],
                         ruleSelection,
                     },
                 }, tx);
@@ -515,8 +559,9 @@ export class SuratMasukService {
         const templates = await settingsService.getSuratTemplates(unitKerjaId);
         return {
             nextNumber,
+            // A No. Agenda typed on the form is the number the template will use.
             nomorSurat: settingsService.generateSuratNumber(templates.masukFormat, {
-                noUrut: nextNumber,
+                noUrut: normalized.noUrut ?? nextNumber,
                 tahun: calendar.tahun,
                 bulan: calendar.bulan,
                 unitKerja: unitKerjaId,

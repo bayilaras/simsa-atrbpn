@@ -5,6 +5,7 @@ import { AuthProvider } from './context/AuthContext'
 import { AppConfigProvider } from './context/AppConfigContext'
 import { ThemeProvider } from './components/theme-provider'
 import { RuntimeConfigurationGate } from './components/RuntimeConfigurationGate'
+import { PemberitahuanVersiBaru } from './components/PemberitahuanVersiBaru'
 // Bundled so the PWA keeps its typography offline and the shell is not
 // blocked on a font CDN that government networks often filter.
 import '@fontsource-variable/inter'
@@ -12,6 +13,7 @@ import './index.css'
 import App from './App.jsx'
 import appConfig from './lib/app-config'
 import { authService } from './services/auth.service'
+import { pembaruanAplikasi } from './lib/pembaruan-aplikasi'
 
 document.title = appConfig.name
 
@@ -21,13 +23,10 @@ document.title = appConfig.name
 // Auth build; vite.config.js rejects anything else.
 authService.prefetchSession()
 
-// Register the PWA service worker. registerType 'autoUpdate' activates a new
-// version and reloads the page on its own; there is no update prompt.
-registerSW({
-  onRegisterError(error) {
-    console.error('Service Worker registration error:', error)
-  }
-})
+// Register the PWA service worker. registerType 'prompt': a new version waits
+// until the user presses Muat ulang on the notice, so a form with unsaved
+// input is never reloaded on its own (lib/pembaruan-aplikasi.js).
+pembaruanAplikasi.daftarkan(registerSW)
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
@@ -39,6 +38,7 @@ createRoot(document.getElementById('root')).render(
           </AuthProvider>
         </RuntimeConfigurationGate>
       </AppConfigProvider>
+      <PemberitahuanVersiBaru />
     </ThemeProvider>
   </StrictMode>,
 )

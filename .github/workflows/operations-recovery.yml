@@ -2,7 +2,10 @@ name: Verified database and private document recovery
 
 on:
   schedule:
-    - cron: '15 0 * * *'
+    # 22:30 WIB, after office hours, so the snapshot holds the whole working
+    # day. GitHub has started this run 6 to 7 hours late; even then it runs
+    # before the next office day begins.
+    - cron: '30 15 * * *'
   workflow_dispatch:
 
 permissions:

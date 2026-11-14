@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { pesanCabangUnion } from './pesan-zod.js';
 import { LEGACY_PERMANENT_TRANSFER_READ_ONLY_MESSAGE } from '../utils/permanent-transfer-policy';
 import {
     MAX_NOTIFICATION_ID_LENGTH,
@@ -6,10 +7,12 @@ import {
     NOTIFICATION_ID_PATTERN,
 } from '../utils/notification-id.js';
 import { jakartaDate } from '../utils/jakarta-date.js';
+import { parseJsonObjectString } from '../utils/json-objek-teks.js';
 import { KATEGORI_PERLU_DILENGKAPI } from '../services/perlu-dilengkapi.constants.js';
+import { URUTAN_DAFTAR_SURAT } from '../services/urutan-daftar-surat.constants.js';
 
 // Common schemas
-export const uuidSchema = z.string().uuid('Invalid UUID format');
+export const uuidSchema = z.string().uuid();
 export const dateSchema = z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Tanggal harus berformat TTTT-BB-HH, misalnya 2026-01-31')
     .refine((value) => {
@@ -22,6 +25,25 @@ const optionalNomorSuratSchema = z.preprocess(
     value => typeof value === 'string' && value.trim() === '' ? undefined : value,
     z.string('Nomor surat tidak valid').trim().min(1, 'Nomor surat wajib diisi')
         .max(255, 'Nomor surat maksimal 255 karakter').optional(),
+);
+
+/**
+ * No. Agenda / No. Urut typed on a create form (surat-nomor-urut.ts). Blank
+ * means automatic numbering; the bound matches the import reader's.
+ */
+const nomorUrutManualSchema = (label: string) => z.preprocess(
+    value => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    z.coerce.number(`${label} harus berupa angka`).int(`${label} harus berupa bilangan bulat`)
+        .min(1, `${label} harus antara 1 dan 999999`).max(999_999, `${label} harus antara 1 dan 999999`).optional(),
+);
+
+/**
+ * The updatedAt an edit form loaded (optimistic concurrency). Optional, so a
+ * browser still running the previous release saves as before.
+ */
+const updatedAtDimuatSchema = z.preprocess(
+    value => value === null || value === '' ? undefined : value,
+    z.coerce.date('Versi data tidak dikenali. Muat ulang halaman, lalu ulangi perubahan Anda.').optional(),
 );
 
 const PESAN_LOKASI_BERKAS_TIDAK_VALID = 'Berkas unggahan tidak dapat dikenali. Unggah ulang berkas.';
@@ -84,24 +106,17 @@ export const nextSuratNumberQuerySchema = z.object({
     tahun: z.coerce.number().int().min(2000).max(2100).optional(),
     tanggalSurat: dateSchema.optional(),
     naskahDinas: z.string().trim().max(100).optional(),
+    // No. Agenda / No. Urut typed on the form; the preview number uses it.
+    noUrut: z.coerce.number().int().min(1).max(999_999).optional(),
 }).strict();
 
 // ==================== Rangkaian surat (P3) ====================
 
-/** Multipart mengirim objek bersarang sebagai JSON string; bentuk JSON diterima, selain itu apa adanya. */
-function parseJsonObjectString(value: unknown) {
-    if (typeof value !== 'string') return value;
-    const trimmed = value.trim();
-    if (!trimmed.startsWith('{')) return value;
-    try {
-        return JSON.parse(trimmed);
-    } catch {
-        return value;
-    }
-}
 
 const alasanText = z.string('Alasan wajib diisi').trim().min(10, 'Alasan minimal 10 karakter').max(2000, 'Alasan maksimal 2000 karakter');
 export const alasanSchema = z.object({ alasan: alasanText }).strict();
+/** Badan DELETE surat: alasan boleh kosong untuk klien lama; bila dikirim, aturannya sama dengan alasan lain. */
+export const hapusSuratSchema = z.object({ alasan: alasanText.optional() });
 
 const batasWaktuSchema = dateSchema.refine((value) => value >= jakartaDate(), 'Batas waktu tidak boleh sebelum hari ini');
 
@@ -159,8 +174,7 @@ export type TindakLanjutInput = z.infer<typeof tindakLanjutInputSchema>;
 // Fields must match database schema in db/schema/surat-masuk.ts
 export const createSuratMasukSchema = z.object({
     unitKerjaId: z.string('Unit kerja wajib diisi').min(1, 'Unit kerja wajib diisi').max(50, 'Unit kerja tidak valid'),
-    noUrut: z.coerce.number('Nomor urut harus berupa angka').int('Nomor urut harus berupa bilangan bulat')
-        .positive('Nomor urut harus lebih dari 0').optional(), // Auto-generated if not provided
+    noUrut: nomorUrutManualSchema('No. Agenda'), // Auto-generated if not provided
     tahun: z.coerce.number('Tahun harus berupa angka').int('Tahun harus berupa bilangan bulat')
         .min(2000, 'Tahun harus antara 2000 dan 2100').max(2100, 'Tahun harus antara 2000 dan 2100').optional(), // Defaults to current year
     jenisSurat: teksMaks('Jenis surat', 100).optional(),
@@ -171,9 +185,10 @@ export const createSuratMasukSchema = z.object({
     dari: z.string('Pengirim wajib diisi').min(1, 'Pengirim wajib diisi').max(255, 'Pengirim maksimal 255 karakter'), // Field name is 'dari' in DB
     kepada: teksMaks('Penerima', 255).optional(),
     status: z.enum(['belum_dibalas', 'sudah_dibalas'], 'Status surat tidak valid').optional().default('belum_dibalas'),
+    // Bila isi disposisi berbentuk objek, pesan aturannya (mis. batas 10 unit) yang ditampilkan.
     disposisi: z.preprocess(parseJsonObjectString, z.union(
         [disposisiRoutingSchema, legacyDisposisiLabels],
-        'Disposisi tidak valid. Periksa unit tujuan dan batas waktunya.',
+        { error: (isu) => pesanCabangUnion(isu) ?? 'Disposisi tidak valid. Periksa unit tujuan dan batas waktunya.' },
     )).optional(),
     referensi: z.preprocess(parseJsonObjectString, z.object({
         jenis: z.literal('surat_keluar', 'Surat rujukan tidak valid'),
@@ -193,13 +208,15 @@ export const createSuratMasukSchema = z.object({
 });
 
 // Zod 4 applies inner defaults even through partial(). Status surat masuk kini
-// diturunkan server (§8), sehingga tidak lagi dapat diubah lewat PUT.
+// diturunkan server (§8), sehingga tidak lagi dapat diubah lewat PUT. Tahun dan
+// No. Agenda mengikuti tanggal surat di server (pindah tahun), bukan isian klien.
 export const updateSuratMasukSchema = createSuratMasukSchema.partial()
-    .omit({ unitKerjaId: true, status: true, disposisi: true, referensi: true })
+    .omit({ unitKerjaId: true, status: true, disposisi: true, referensi: true, noUrut: true, tahun: true })
     .extend({
         disposisi: z.union([z.string(), z.array(z.string())], 'Disposisi tidak valid')
             .pipe(legacyDisposisiLabels).optional(),
         alasan: alasanText.optional(),
+        expectedUpdatedAt: updatedAtDimuatSchema,
     });
 
 export const querySuratMasukSchema = paginationSchema.extend({
@@ -213,7 +230,16 @@ export const querySuratMasukSchema = paginationSchema.extend({
         'biasa', 'segera', 'sangat_segera', 'terbatas', 'rahasia', 'sangat_rahasia', 'undangan', 'penting',
     ]).optional(),
     status: z.enum(['pending', 'diproses', 'selesai', 'arsip', 'belum_dibalas', 'sudah_dibalas']).optional(),
+    // Label disposisi tanpa unit (mis. label Kabag); unit tujuan lewat disposisiUnitId.
     disposisi: z.string().max(100).optional(),
+    disposisiUnitId: z.string().trim().min(1).max(50).optional(),
+    search: z.string().max(255).optional(),
+    urutan: z.enum(URUTAN_DAFTAR_SURAT).optional(),
+});
+
+/** Daftar Surat Terhapus (Super Admin). */
+export const querySuratTerhapusSchema = paginationSchema.extend({
+    unitKerjaId: z.string().trim().min(1).max(50).optional(),
     search: z.string().max(255).optional(),
 });
 
@@ -254,6 +280,7 @@ export const createSuratKeluarSchema = suratKeluarBaseSchema
         // Older clients remain compatible, but every newly registered record
         // receives an explicit security classification.
         klasifikasiKeamanan: z.enum(['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']).default('biasa'),
+        noUrut: nomorUrutManualSchema('No. Urut'),
     })
     .superRefine((value, ctx) => {
         const effectiveNumberingMode = value.numberingMode
@@ -280,7 +307,7 @@ export const createSuratKeluarSchema = suratKeluarBaseSchema
             ctx.addIssue({ code: 'custom', path: ['tindakLanjut'], message: 'Tindak lanjut memerlukan surat induk' });
         }
         if (value.tindakLanjut && value.balasanUntuk && value.tindakLanjut.suratId !== value.balasanUntuk) {
-            ctx.addIssue({ code: 'custom', path: ['balasanUntuk'], message: 'balasanUntuk harus sama dengan surat induk tindak lanjut' });
+            ctx.addIssue({ code: 'custom', path: ['balasanUntuk'], message: 'Surat yang dibalas harus sama dengan surat induk tindak lanjut' });
         }
     })
     // balasanUntuk lama dipetakan ke relasi 'balasan'; kolom balasan_untuk
@@ -293,10 +320,13 @@ export const createSuratKeluarSchema = suratKeluarBaseSchema
 
 // balasan_untuk is owned by the follow-up (tindak lanjut) service and is
 // cleared only when its relation is cancelled, so an edit never changes it;
-// older clients that still send the field have it stripped.
+// older clients that still send the field have it stripped. Tahun follows the
+// date on the server (moving the letter to that year's sequence), so it is
+// stripped too.
 export const updateSuratKeluarSchema = suratKeluarBaseSchema
-    .omit({ unitKerjaId: true, numberingMode: true, asalNaskah: true, tindakLanjut: true, balasanUntuk: true })
-    .partial();
+    .omit({ unitKerjaId: true, numberingMode: true, asalNaskah: true, tindakLanjut: true, balasanUntuk: true, tahun: true })
+    .partial()
+    .extend({ expectedUpdatedAt: updatedAtDimuatSchema });
 
 export const querySuratKeluarSchema = paginationSchema.extend({
     unitKerjaId: z.string().optional(),
@@ -310,6 +340,7 @@ export const querySuratKeluarSchema = paginationSchema.extend({
     /** Penyaring kerja persetujuan; hanya mempersempit daftar yang sudah boleh dibaca. */
     persetujuan: z.enum(['menunggu_saya', 'draft_saya']).optional(),
     search: z.string().max(255).optional(),
+    urutan: z.enum(URUTAN_DAFTAR_SURAT).optional(),
 });
 
 // Arsip schemas
@@ -458,9 +489,11 @@ export const updateArsipSchema = z.object({
     klasifikasiKeamanan: z.enum(['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']).optional(),
     // Retain explicit workflow guidance for attempted direct retention edits.
     ...retentionMetadataFields,
+    // Ubah Metadata: updatedAt saat dialog dibuka; bukan metadata yang disimpan.
+    expectedUpdatedAt: updatedAtDimuatSchema,
 }).strict()
     .superRefine(rejectDirectRetentionTrigger)
-    .refine(value => Object.values(value).some(field => field !== undefined), {
+    .refine(value => Object.entries(value).some(([field, nilai]) => field !== 'expectedUpdatedAt' && nilai !== undefined), {
         message: 'Sedikitnya satu metadata arsip harus diberikan',
     });
 
@@ -546,7 +579,7 @@ export const createAutentikasiSchema = z.object({
     nomorBeritaAcara: z.string().min(1, 'Nomor berita acara wajib diisi').max(100),
     tanggalAutentikasi: dateSchema,
     kegiatan: z.string().min(1, 'Kegiatan wajib diisi').max(255),
-    itemArsipIds: z.array(uuidSchema).min(1, 'At least one archive must be selected'),
+    itemArsipIds: z.array(uuidSchema).min(1, 'Pilih minimal satu arsip'),
     // Optional overrides for PDF generation if needed
     jabatanPenandaTangan: z.string().max(100).optional(),
     tempatDilakukan: z.string().max(150).optional(),
@@ -633,8 +666,10 @@ export const createDistributionSchema = z.object({
     penanggungJawab: z.boolean().optional(),
     targets: disposisiTargetsSchema.optional(),
 }).superRefine((value, ctx) => {
-    if (Boolean(value.targetUnitId) === Boolean(value.targets)) {
-        ctx.addIssue({ code: 'custom', path: ['targets'], message: 'Isi salah satu: targetUnitId atau targets' });
+    if (!value.targetUnitId && !value.targets) {
+        ctx.addIssue({ code: 'custom', path: ['targets'], message: 'Pilih minimal satu unit tujuan' });
+    } else if (value.targetUnitId && value.targets) {
+        ctx.addIssue({ code: 'custom', path: ['targets'], message: 'Unit tujuan terkirim dua kali. Muat ulang halaman, lalu coba lagi.' });
     }
 }).transform((value) => ({
     suratMasukId: value.suratMasukId,
@@ -773,7 +808,7 @@ export const borrowArchiveSchema = z.object({
         if (data.lendingType === 'box') return !!data.storageLocationId;
         return true;
     },
-    { message: 'arsipId required for arsip lending, storageLocationId required for box lending' }
+    { message: 'Pilih arsip untuk peminjaman arsip, atau box untuk peminjaman box' }
 );
 
 export const extendLendingSchema = z.object({

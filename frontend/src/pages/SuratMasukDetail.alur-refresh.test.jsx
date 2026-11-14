@@ -10,6 +10,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 // ASLI (tidak di-mock) dan memastikan Terima Disposisi memicu getBySurat
 // KEDUA KALI lewat sinyal muatUlangKe yang dikendalikan halaman.
 const mocks = vi.hoisted(() => ({ getById: vi.fn(), getBySurat: vi.fn(), receive: vi.fn(), toast: vi.fn() }))
+vi.mock('@/hooks/use-nama-unit-kerja', () => ({ useNamaUnitKerja: () => '' }))
 vi.mock('@/components/tunjuk-silang/KartuTunjukSilang', () => ({ KartuTunjukSilang: ({ tipe, id }) => <div data-testid="kartu-tunjuk-silang">{`${tipe}:${id}`}</div> }))
 vi.mock('@/components/surat/KoreksiBerkasSection', () => ({ default: () => null }))
 vi.mock('@/services/surat-masuk.service', () => ({ default: { getById: mocks.getById, archive: vi.fn() } }))
