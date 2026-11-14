@@ -126,3 +126,22 @@ describe('urutan daftar surat', () => {
         expect(await urut('tanggal_terlama')).toEqual([SURAT.skBpptBiasa, SURAT.skBpptTunggal, SURAT.skBpptNull]);
     });
 });
+
+describe('nama unit kerja pada baris daftar', () => {
+    it('daftar surat masuk dan keluar membawa nama unit pemilik, bukan hanya kodenya', async () => {
+        const masuk = await suratMasukService.findAll({ unitKerjaId: null, securityClassifications: SEMUA_KELAS, limit: 100 });
+        const namaMasuk = Object.fromEntries(masuk.data.map((row: any) => [row.id, row.unitKerjaNama]));
+        expect(namaMasuk[SURAT.smBiasa]).toBe('Sekretariat Ditjen');
+        expect(namaMasuk[SURAT.smBagian]).toBe('Bagian Umum');
+        const keluar = await suratKeluarService.findAll({ unitKerjaId: null, securityClassifications: SEMUA_KELAS, limit: 100 });
+        const namaKeluar = Object.fromEntries(keluar.data.map((row: any) => [row.id, row.unitKerjaNama]));
+        expect(namaKeluar[SURAT.skBpptBiasa]).toBe('Dit. BPPT');
+        expect(namaKeluar[SURAT.skPtepBiasa]).toBe('Dit. PTEP');
+        // Jalur pembaca (balasanUntuk tersaring) membawa kolom yang sama.
+        const pembaca = await suratKeluarService.findAll({
+            unitKerjaId: 'dir_bppt', securityClassifications: SEMUA_KELAS, limit: 100,
+            pembaca: { id: '10000000-0000-4000-8000-000000000001', role: 'super_admin', unitKerjaId: null },
+        });
+        expect(pembaca.data.every((row: any) => row.unitKerjaNama === 'Dit. BPPT')).toBe(true);
+    });
+});

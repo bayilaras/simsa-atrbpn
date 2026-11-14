@@ -140,6 +140,8 @@ export default function SuratKeluar() {
     const resolvedUnitKerjaId = isSuperAdmin
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
         : (resolveEffectiveUnitKerjaId(user) || undefined);
+    // Pada tampilan semua unit, Super Admin perlu tahu unit pemilik tiap baris.
+    const tampilkanKolomUnit = isSuperAdmin && !resolvedUnitKerjaId;
     const statsScope = JSON.stringify([user?.id, user?.role, resolvedUnitKerjaId]);
     const statsLoading = statsSnapshot.scope !== statsScope || statsSnapshot.status === 'loading';
     const stats = !statsLoading && statsSnapshot.status === 'success' ? statsSnapshot.data : null;
@@ -304,7 +306,7 @@ export default function SuratKeluar() {
         return next;
     });
     const togglePilihSemua = (pilih) => setSelectedIds(pilih ? new Set(barisBisaDipilih.map(row => row.id)) : new Set());
-    const jumlahKolom = isAdmin ? 7 : 6;
+    const jumlahKolom = (isAdmin ? 7 : 6) + (tampilkanKolomUnit ? 1 : 0);
 
     // Applying a filter must restart from the first page
     const applyFilter = (setter) => (value) => {
@@ -725,6 +727,7 @@ export default function SuratKeluar() {
                                         <TableHead className="w-[50px] text-center">No.</TableHead>
                                         <TableHead className="w-[120px]">Tanggal</TableHead>
                                         <TableHead className="w-[160px]">Nomor Surat</TableHead>
+                                        {tampilkanKolomUnit && <TableHead className="w-[180px]">Unit Kerja</TableHead>}
                                         <TableHead>Perihal & Tujuan</TableHead>
                                         <TableHead className="w-[180px]">Status</TableHead>
                                         <TableHead className="w-[100px] text-right">Aksi</TableHead>
@@ -772,6 +775,9 @@ export default function SuratKeluar() {
                                                         {row.nomorSurat}
                                                     </span>
                                                 </TableCell>
+                                                {tampilkanKolomUnit && (
+                                                    <TableCell data-label="Unit Kerja" className="text-sm">{row.unitKerjaNama || '-'}</TableCell>
+                                                )}
                                                 <TableCell data-label="Perihal">
                                                     <div className="flex flex-col gap-1 max-w-[400px]">
                                                         <span className="font-semibold line-clamp-1 group-hover:text-primary transition-colors">{row.perihal}</span>

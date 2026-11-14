@@ -150,6 +150,8 @@ export default function SuratMasuk() {
     const resolvedUnitKerjaId = isSuperAdmin
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
         : (resolveEffectiveUnitKerjaId(user) || undefined);
+    // Pada tampilan semua unit, Super Admin perlu tahu unit pemilik tiap baris.
+    const tampilkanKolomUnit = isSuperAdmin && !resolvedUnitKerjaId;
     const statsScope = JSON.stringify([user?.id, user?.role, resolvedUnitKerjaId]);
     const statsLoading = statsSnapshot.scope !== statsScope || statsSnapshot.status === 'loading';
     const stats = !statsLoading && statsSnapshot.status === 'success' ? statsSnapshot.data : null;
@@ -667,6 +669,7 @@ export default function SuratMasuk() {
                                         <TableHead className="w-[50px] text-center">No.</TableHead>
                                         <TableHead className="w-[120px]">Tanggal</TableHead>
                                         <TableHead className="w-[160px]">Nomor Surat</TableHead>
+                                        {tampilkanKolomUnit && <TableHead className="w-[180px]">Unit Kerja</TableHead>}
                                         <TableHead>Perihal & Pengirim</TableHead>
                                         <TableHead className="w-[180px]">Status</TableHead>
                                         <TableHead className="w-[100px] text-right">Aksi</TableHead>
@@ -675,7 +678,7 @@ export default function SuratMasuk() {
                                 <TableBody>
                                     {data.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={6} className="text-center py-16 text-muted-foreground">
+                                            <TableCell colSpan={tampilkanKolomUnit ? 7 : 6} className="text-center py-16 text-muted-foreground">
                                                 <div className="flex flex-col items-center justify-center gap-2">
                                                     <div className="p-3 bg-muted rounded-full">
                                                         <Inbox className="h-8 w-8 opacity-50" />
@@ -703,6 +706,9 @@ export default function SuratMasuk() {
                                                         {row.nomorSurat}
                                                     </span>
                                                 </TableCell>
+                                                {tampilkanKolomUnit && (
+                                                    <TableCell data-label="Unit Kerja" className="text-sm">{row.unitKerjaNama || '-'}</TableCell>
+                                                )}
                                                 <TableCell data-label="Perihal">
                                                     <div className="flex flex-col gap-1 sm:max-w-[400px] items-end sm:items-start">
                                                         <span className="font-semibold sm:line-clamp-1 group-hover:text-primary transition-colors">{row.perihal}</span>

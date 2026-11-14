@@ -1,5 +1,5 @@
 import { db } from '../config/database';
-import { suratKeluar, NewSuratKeluar, SuratKeluar, suratMasuk } from '../db/schema';
+import { suratKeluar, NewSuratKeluar, SuratKeluar, suratMasuk, unitKerja } from '../db/schema';
 import { eq, and, desc, sql, gte, lte, like, or, ilike, isNull, inArray, getTableColumns } from 'drizzle-orm';
 import { ConflictError, DatabaseError, ValidationError } from '../utils/errors';
 import {
@@ -154,7 +154,11 @@ export class SuratKeluarService {
 
         const count = countResult?.[0]?.count ?? 0;
 
-        const kolom = pembaca ? kolomDaftarPembaca(await resolveKonteksBaca(pembaca, db)) : getTableColumns(suratKeluar);
+        const kolom = {
+            ...(pembaca ? kolomDaftarPembaca(await resolveKonteksBaca(pembaca, db)) : getTableColumns(suratKeluar)),
+            // Nama unit pemilik untuk kolom Unit Kerja pada tampilan semua unit.
+            unitKerjaNama: sql<string | null>`(SELECT ${unitKerja.name} FROM ${unitKerja} WHERE ${unitKerja.id} = ${suratKeluar.unitKerjaId})`,
+        };
         const data = await db
             .select(kolom)
             .from(suratKeluar)

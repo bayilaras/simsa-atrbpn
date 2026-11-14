@@ -95,3 +95,24 @@ describe.each(daftar)('urutan daftar surat $jenis', ({ Component, jenis }) => {
         await waitFor(() => expect(mocks[jenis].getAll.mock.lastCall[0].urutan).toBeUndefined())
     })
 })
+
+describe.each(daftar)('kolom Unit Kerja pada daftar surat $jenis', ({ Component, jenis }) => {
+    it('Super Admin pada Semua Unit Kerja melihat nama unit tiap baris; kolom hilang setelah memilih satu unit', async () => {
+        tampil(Component)
+        await screen.findByText('Perihal uji daftar')
+        expect(screen.getByRole('columnheader', { name: 'Unit Kerja' })).toBeInTheDocument()
+        expect(screen.getByText('Sekretariat Direktorat Jenderal', { selector: 'td' })).toBeInTheDocument()
+        expect(screen.queryByText('sesditjen', { selector: 'td' })).not.toBeInTheDocument()
+        fireEvent.change(await screen.findByLabelText('Unit kerja'), { target: { value: 'sesditjen' } })
+        await waitFor(() => expect(mocks[jenis].getAll).toHaveBeenLastCalledWith(expect.objectContaining({ unitKerjaId: 'sesditjen' })))
+        await screen.findByText('Perihal uji daftar')
+        expect(screen.queryByRole('columnheader', { name: 'Unit Kerja' })).not.toBeInTheDocument()
+    })
+
+    it('peran lain hanya melihat unitnya sendiri, tanpa kolom unit', async () => {
+        mocks.user = { id: 'admin-ses', role: 'admin_unit', unitKerjaId: 'sesditjen' }
+        tampil(Component)
+        await screen.findByText('Perihal uji daftar')
+        expect(screen.queryByRole('columnheader', { name: 'Unit Kerja' })).not.toBeInTheDocument()
+    })
+})

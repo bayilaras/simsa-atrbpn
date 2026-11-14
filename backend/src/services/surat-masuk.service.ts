@@ -1,6 +1,6 @@
 import { db } from '../config/database';
-import { suratMasuk, NewSuratMasuk, SuratMasuk } from '../db/schema';
-import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull } from 'drizzle-orm';
+import { suratMasuk, NewSuratMasuk, SuratMasuk, unitKerja } from '../db/schema';
+import { eq, and, desc, asc, like, sql, gte, lte, or, ilike, isNull, getTableColumns } from 'drizzle-orm';
 import { ConflictError, DatabaseError } from '../utils/errors';
 import { denganRetryDeadlock } from '../utils/deadlock-retry.js';
 import { createLogger } from '../utils/logger';
@@ -133,9 +133,12 @@ export class SuratMasukService {
 
         const count = countResult?.[0]?.count ?? 0;
 
-        // Get data
+        // Get data; nama unit pemilik untuk kolom Unit Kerja pada tampilan semua unit.
         const data = await db
-            .select()
+            .select({
+                ...getTableColumns(suratMasuk),
+                unitKerjaNama: sql<string | null>`(SELECT ${unitKerja.name} FROM ${unitKerja} WHERE ${unitKerja.id} = ${suratMasuk.unitKerjaId})`,
+            })
             .from(suratMasuk)
             .where(and(...conditions))
             .orderBy(...urutanDaftarSuratSql(suratMasuk, urutan))
