@@ -156,7 +156,7 @@ export class SuratKeluarService {
             .select(kolom)
             .from(suratKeluar)
             .where(and(...conditions))
-            .orderBy(desc(suratKeluar.createdAt))
+            .orderBy(desc(suratKeluar.createdAt), desc(suratKeluar.id))
             .limit(limit)
             .offset(offset);
 

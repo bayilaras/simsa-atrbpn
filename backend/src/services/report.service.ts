@@ -170,7 +170,8 @@ class ReportService {
             })
             .from(suratMasuk)
             .where(and(...conditions))
-            .orderBy(desc(suratMasuk.tanggalSurat))
+            // id sebagai pengikat: surat bertanggal sama tidak berpindah halaman.
+            .orderBy(desc(suratMasuk.tanggalSurat), desc(suratMasuk.id))
             .limit(limit)
             .offset(offset);
 
@@ -276,7 +277,7 @@ class ReportService {
             })
             .from(suratKeluar)
             .where(and(...conditions))
-            .orderBy(desc(suratKeluar.tanggalSurat))
+            .orderBy(desc(suratKeluar.tanggalSurat), desc(suratKeluar.id))
             .limit(limit)
             .offset(offset);
 
@@ -418,7 +419,7 @@ class ReportService {
             .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
             .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
             .where(and(...conditions))
-            .orderBy(desc(arsip.createdAt));
+            .orderBy(desc(arsip.createdAt), desc(arsip.id));
 
         const todayIso = now.toISOString().slice(0, 10);
         const futureIso = futureDate.toISOString().slice(0, 10);
@@ -574,7 +575,7 @@ class ReportService {
             .from(arsip)
             .where(and(...conditions))
             .groupBy(arsip.kodeKlasifikasi)
-            .orderBy(desc(sql`count(*)`))
+            .orderBy(desc(sql`count(*)`), arsip.kodeKlasifikasi)
             .limit(10);
 
         // By Media Type
@@ -586,7 +587,7 @@ class ReportService {
             .from(arsip)
             .where(and(...conditions))
             .groupBy(arsip.mediaType)
-            .orderBy(desc(sql`count(*)`));
+            .orderBy(desc(sql`count(*)`), arsip.mediaType);
 
         return {
             summary: { ...(stats[0] || { total: 0, masuk: 0, keluar: 0 }), permanen: permanentCount },
@@ -636,7 +637,7 @@ class ReportService {
             })
             .from(archiveLending)
             .where(whereClause)
-            .orderBy(desc(archiveLending.borrowDate))
+            .orderBy(desc(archiveLending.borrowDate), desc(archiveLending.id))
             .limit(limit)
             .offset(offset);
 

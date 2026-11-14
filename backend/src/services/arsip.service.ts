@@ -434,7 +434,7 @@ export class ArsipService {
             .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
             .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
             .where(and(...conditions))
-            .orderBy(desc(arsip.createdAt))
+            .orderBy(desc(arsip.createdAt), desc(arsip.id))
             .limit(limit)
             .offset(offset);
         const data = rows.map((row) => this.toCanonicalReadModel(row as ArchiveWithRuleSnapshot));
