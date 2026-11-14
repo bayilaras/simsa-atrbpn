@@ -62,6 +62,20 @@ it.each(['surat-masuk', 'surat-keluar'])('shows server mapping for %s and sends 
     expect(completed).toHaveBeenCalledTimes(1);
 });
 
+it('asks to open link sharing only for the import, and reminds to close it again once the import is done', async () => {
+    const reminder = 'Aktifkan berbagi link hanya selama impor, lalu matikan kembali setelah impor selesai. '
+        + 'Register yang memuat surat Terbatas atau lebih tinggi jangan dibagikan lewat link: unduh sebagai Microsoft Excel (.xlsx), lalu impor dengan Impor CSV/XLSX.';
+    render(<ImportFromGDrive {...props} />);
+    open();
+    expect(screen.getByLabelText('URL Google Spreadsheet')).toHaveAccessibleDescription(
+        `Impor hanya dapat membaca lembar yang akses umumnya “Siapa saja yang memiliki link”. ${reminder}`);
+    await discover();
+    await showPreview();
+    fireEvent.click(screen.getByRole('button', { name: 'Impor 1 baris' }));
+    expect(await screen.findByText('Impor berhasil!')).toBeInTheDocument();
+    expect(screen.getByRole('note')).toHaveTextContent(`Periksa pengaturan berbagi lembar ini. ${reminder}`);
+});
+
 it('marks the columns the server recognises but does not store', async () => {
     api.post.mockImplementation(async (_endpoint, body) => ({ ...preview(body.type), mapping: [...preview(body.type).mapping,
         { field: 'id', label: 'ID sumber', columnIndex: 4, header: 'ID', stored: false }] }));

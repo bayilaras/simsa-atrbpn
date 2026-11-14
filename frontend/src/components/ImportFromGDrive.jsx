@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Upload, X, Eye, ChevronDown, FileSpreadsheet, AlertCircle, CheckCircle2 } from 'lucide-react';
 import api from '@/services/api';
-import { addImportPart, buildGoogleSheetsImportPayload, emptyImportTotals, IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import';
+import { addImportPart, buildGoogleSheetsImportPayload, emptyImportTotals, IMPORT_PART_TIMEOUT_MS, PENGINGAT_BERBAGI_LINK } from '@/lib/google-sheets-import';
 import { runResumableImport, unfinishedImportNotice } from '@/lib/resumable-import';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import ImportRowIssues from '@/components/ImportRowIssues';
@@ -326,7 +326,7 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                         className="min-h-11 w-full rounded-lg border border-border px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-ring"
                                     />
                                     <p id="google-spreadsheet-help" className="mt-2 text-xs text-muted-foreground">
-                                        Lembar kerja perlu dapat diakses selama impor. Gunakan hanya data dan tautan yang telah diizinkan untuk dibagikan.
+                                        Impor hanya dapat membaca lembar yang akses umumnya &ldquo;Siapa saja yang memiliki link&rdquo;. {PENGINGAT_BERBAGI_LINK}
                                     </p>
                                 </div>
 
@@ -560,6 +560,10 @@ const ImportFromGDriveFlow = ({ type, unitKerjaId, onImportComplete }) => {
                                         {summary.duplicateLines.map(line => <p key={line} className="text-sm text-blue-600 mt-1">{line}</p>)}
                                     </div>
                                 </div>
+
+                                <p role="note" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+                                    <strong>Periksa pengaturan berbagi lembar ini.</strong> {PENGINGAT_BERBAGI_LINK}
+                                </p>
 
                                 {importResult.rows?.length > 0 ? <ImportRowReport rows={importResult.rows} type={type} />
                                     : importResult.errors && importResult.errors.length > 0 && (

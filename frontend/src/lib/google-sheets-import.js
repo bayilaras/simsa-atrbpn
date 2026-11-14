@@ -1,6 +1,11 @@
 // Every import writes into one concrete unit; shown where an import cannot start yet.
 export const IMPORT_UNIT_REQUIRED = 'Pilih unit kerja terlebih dahulu';
 
+// The server reads a sheet without a Google account, so the sheet must be open to
+// anyone with its link while it is imported. Shown before and after the import.
+export const PENGINGAT_BERBAGI_LINK = 'Aktifkan berbagi link hanya selama impor, lalu matikan kembali setelah impor selesai. '
+    + 'Register yang memuat surat Terbatas atau lebih tinggi jangan dibagikan lewat link: unduh sebagai Microsoft Excel (.xlsx), lalu impor dengan Impor CSV/XLSX.';
+
 export function buildGoogleSheetsImportPayload(spreadsheetUrl, gid, unitKerjaId) {
     if (!unitKerjaId) throw new Error(IMPORT_UNIT_REQUIRED);
     return { spreadsheetUrl, gid, unitKerjaId };
