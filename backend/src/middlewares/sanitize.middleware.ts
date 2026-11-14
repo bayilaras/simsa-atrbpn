@@ -5,20 +5,27 @@ import { parseJsonObjectString } from '../utils/json-objek-teks.js';
 /**
  * Input Sanitization Middleware
  *
- * Membuang markup dari setiap nilai teks di req.body. Yang dibuang:
- * - tag elemen HTML, SVG, atau MathML yang dikenal, atau elemen kustom (nama
- *   bertanda hubung), huruf besar/kecil sama saja, yang namanya diikuti
- *   pemisah, '/' atau '>' (mis. <b>, </div>, <img src=x ...>);
- * - tag bernama lain yang membawa atribut (mis. <xss onmouseover=...>);
- * - elemen script/style beserta isinya, dan komentar HTML.
+ * Membuang markup dari setiap nilai teks di req.body. Nama tag dibaca seperti
+ * peramban: diawali huruf ASCII, lalu berlanjut sampai pemisah, '/' atau '>'.
  * Pemisah adalah setiap karakter spasi (kelas \s JavaScript: termasuk VT, NBSP,
  * U+2028/2029, U+3000, BOM), sebab normalisasi spasi kemudian mengubahnya
- * menjadi spasi biasa. Hasil akhir adalah titik tetap: menyaring ulang tidak
- * mengubahnya, dan tidak tersisa tag elemen yang dikenal.
+ * menjadi spasi biasa. Yang dibuang:
+ * - tag elemen HTML, SVG, atau MathML yang dikenal (huruf besar/kecil sama
+ *   saja) yang namanya diikuti pemisah, '/' atau '>' (mis. <b>, </div>,
+ *   <img src=x ...>), sampai '>' pertama di luar nilai atribut berkutip;
+ * - tag bernama lain (termasuk nama bertanda hubung seperti x-foo) yang
+ *   namanya diikuti pemisah atau '/' dan memuat '=' sebelum '>' berikutnya
+ *   (mis. <xss onmouseover=...>, <x/ onfocus=...>);
+ * - elemen script/style beserta isinya, dan komentar HTML.
+ * Nama elemen yang dikenal yang diikuti pemisah atau '/' tetapi tidak pernah
+ * ditutup '>' tidak dibuang: '<'-nya diberi spasi ("< img src=x"), sehingga
+ * tidak tersimpan awal tag elemen yang dikenal. Nama elemen di akhir teks tanpa
+ * karakter apa pun sesudahnya ("nilai p<q", "teks <img") bukan tag dan tetap.
+ * Hasil akhir adalah titik tetap: menyaring ulang tidak mengubahnya.
  *
  * Teks lain yang memuat '<' dan '>' disimpan apa adanya: perbandingan "a < b",
- * alamat surel "Budi <budi@contoh.go.id>", panah "->", isian seperti "<nama>"
- * atau "Undangan <Rapat Koordinasi>".
+ * alamat surel "Budi <budi@contoh.go.id>", panah "->", isian seperti "<nama>",
+ * "Undangan <Rapat Koordinasi>", "Aplikasi <e-Office>", "Lampiran <PP-24/1997>".
  *
  * Penyaring ini bukan pengaman tampilan: setiap keluaran HTML di luar React
  * wajib meloloskan teks (backend utils/escape-html.ts, frontend lib/escape-html.js).
@@ -47,15 +54,14 @@ const CLOSING_TAG: ReadonlyMap<string, RegExp> = new Map([
  */
 const MAX_PASSES = 10;
 
-const LESS_THAN = 60;
+/** Nama elemen terpanjang di NAMA_ELEMEN_MARKUP jauh lebih pendek dari ini. */
+const MAX_KNOWN_NAME_LENGTH = 32;
+
 const GREATER_THAN = 62;
 const EQUALS = 61;
 const SLASH = 47;
 const DOUBLE_QUOTE = 34;
 const SINGLE_QUOTE = 39;
-
-/** Atribut langsung setelah '/' pada nama tak dikenal, mis. <x/onclick=...>. */
-const ATTRIBUTE_AFTER_SLASH = /\/+[A-Za-z][^\s/<>=]*\s*=/y;
 
 function isAsciiLetter(code: number): boolean {
     return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
@@ -69,9 +75,8 @@ function isSeparator(code: number): boolean {
         || code === 0x2029 || code === 0x202f || code === 0x205f || code === 0x3000 || code === 0xfeff;
 }
 
-/** Nama elemen kustom: diawali huruf dan memuat tanda hubung (mis. x-foo, X-Foo). */
-function isCustomElementName(name: string): boolean {
-    return name.includes('-') && /^[a-z][\w.-]*$/i.test(name);
+function endsTagName(code: number): boolean {
+    return isSeparator(code) || code === SLASH || code === GREATER_THAN;
 }
 
 /**
@@ -91,11 +96,29 @@ class NextChar {
     }
 }
 
+/** Akhir nama tag berikutnya (pemisah, '/' atau '>') mulai `from`, dengan pemakaian ulang yang sama. */
+class NextNameEnd {
+    private found = -2;
+    private scanned = 0;
+
+    constructor(private readonly text: string) {}
+
+    from(position: number): number {
+        if (this.found >= position) return this.found;
+        if (this.found === -1) return -1;
+        let index = Math.max(position, this.scanned);
+        while (index < this.text.length && !endsTagName(this.text.charCodeAt(index))) index += 1;
+        this.scanned = index;
+        this.found = index < this.text.length ? index : -1;
+        return this.found;
+    }
+}
+
 interface PassState {
     text: string;
     nextGreaterThan: NextChar;
     nextEquals: NextChar;
-    nextLessThan: NextChar;
+    nextNameEnd: NextNameEnd;
     lastQuote: Map<number, number>;
     noClosingFrom: Map<string, number>;
 }
@@ -136,44 +159,29 @@ function knownTagEnd(state: PassState, nameEnd: number): number {
 
 function readTag(state: PassState, start: number): TagMatch {
     const { text } = state;
-    let position = start + 1;
-    const closing = text.charCodeAt(position) === SLASH;
-    if (closing) position += 1;
-    if (!isAsciiLetter(text.charCodeAt(position))) return null;
-    const nameStart = position;
-    while (position < text.length) {
-        const code = text.charCodeAt(position);
-        if (isSeparator(code) || code === SLASH || code === GREATER_THAN || code === LESS_THAN) break;
-        position += 1;
-    }
-    if (position >= text.length) return null;
-    const afterName = text.charCodeAt(position);
-    if (afterName === LESS_THAN) return null;
-    const writtenName = text.slice(nameStart, position);
-    const name = writtenName.toLowerCase();
+    let nameStart = start + 1;
+    const closing = text.charCodeAt(nameStart) === SLASH;
+    if (closing) nameStart += 1;
+    if (!isAsciiLetter(text.charCodeAt(nameStart))) return null;
+    // Nama berlanjut melewati '<' seperti di peramban ("<img<1 ..." bernama "img<1").
+    const nameEnd = state.nextNameEnd.from(nameStart);
+    if (nameEnd === -1) return null;
+    const afterName = text.charCodeAt(nameEnd);
+    const name = nameEnd - nameStart <= MAX_KNOWN_NAME_LENGTH ? text.slice(nameStart, nameEnd).toLowerCase() : '';
 
-    if (NAMA_ELEMEN_MARKUP.has(name) || isCustomElementName(writtenName)) {
-        // Tag yang tidak pernah ditutup '>' tidak dibuang; '<'-nya dinetralkan.
-        if (state.nextGreaterThan.from(position) === -1) return 'neutralise';
-        if (closing) return { end: state.nextGreaterThan.from(position) + 1, name, closing };
-        return { end: afterName === GREATER_THAN ? position + 1 : knownTagEnd(state, position), name, closing };
+    if (NAMA_ELEMEN_MARKUP.has(name)) {
+        if (state.nextGreaterThan.from(nameEnd) === -1) return 'neutralise';
+        if (closing) return { end: state.nextGreaterThan.from(nameEnd) + 1, name, closing };
+        return { end: afterName === GREATER_THAN ? nameEnd + 1 : knownTagEnd(state, nameEnd), name, closing };
     }
 
-    // Nama lain hanya dianggap tag bila membawa atribut sebelum '>'; tanpa '>'
-    // sama sekali, atribut sebelum '<' berikutnya membuat '<'-nya dinetralkan.
+    // Nama lain (termasuk nama bertanda hubung) hanya tag bila membawa atribut:
+    // '=' sebelum '>' berikutnya; '/' setelah nama diperlakukan seperti spasi.
     if (closing || afterName === GREATER_THAN) return null;
-    const greaterThan = state.nextGreaterThan.from(position);
-    let hasAttribute: boolean;
-    if (afterName === SLASH) {
-        ATTRIBUTE_AFTER_SLASH.lastIndex = position;
-        hasAttribute = ATTRIBUTE_AFTER_SLASH.test(text);
-    } else {
-        const equals = state.nextEquals.from(position);
-        const limit = greaterThan === -1 ? state.nextLessThan.from(position) : greaterThan;
-        hasAttribute = equals !== -1 && (limit === -1 || equals < limit);
-    }
-    if (!hasAttribute) return null;
-    return greaterThan === -1 ? 'neutralise' : { end: greaterThan + 1, name, closing };
+    const greaterThan = state.nextGreaterThan.from(nameEnd);
+    if (greaterThan === -1) return null;
+    const equals = state.nextEquals.from(nameEnd);
+    return equals !== -1 && equals < greaterThan ? { end: greaterThan + 1, name, closing } : null;
 }
 
 /**
@@ -199,7 +207,7 @@ function stripOnce(text: string): string {
         text,
         nextGreaterThan: new NextChar(text, '>'),
         nextEquals: new NextChar(text, '='),
-        nextLessThan: new NextChar(text, '<'),
+        nextNameEnd: new NextNameEnd(text),
         lastQuote: new Map([[DOUBLE_QUOTE, text.lastIndexOf('"')], [SINGLE_QUOTE, text.lastIndexOf("'")]]),
         noClosingFrom: new Map(),
     };

@@ -102,18 +102,18 @@ describe('sanitizeInput', () => {
 });
 
 /**
- * Tag yang masih hidup: nama elemen dikenal/kustom yang diikuti pemisah, '/' atau
- * '>', atau nama lain yang membawa atribut. Ditulis ulang dengan ekspresi reguler,
- * terpisah dari pemindai yang diuji.
+ * Tag yang masih hidup: nama elemen dikenal yang diikuti pemisah, '/' atau '>',
+ * atau nama lain yang diikuti pemisah atau '/' dan memuat '=' sebelum '>'. Nama
+ * dibaca seperti peramban (berlanjut melewati '<'). Ditulis ulang dengan ekspresi
+ * reguler, terpisah dari pemindai yang diuji; oracle parse5 ada di
+ * sanitize.parse5-oracle.test.ts.
  */
 function tagHidup(teks: string): string[] {
     const temuan: string[] = [];
-    for (const [cocok, nama] of teks.matchAll(/<\/?([A-Za-z][^\s/<>]*)(?=[\s/>])/g)) {
-        if (NAMA_ELEMEN_MARKUP.has(nama.toLowerCase()) || (nama.includes('-') && /^[a-z][\w.-]*$/i.test(nama))) temuan.push(cocok);
+    for (const [cocok, nama] of teks.matchAll(/<\/?([A-Za-z][^\s/>]*)(?=[\s/>])/g)) {
+        if (NAMA_ELEMEN_MARKUP.has(nama.toLowerCase())) temuan.push(cocok);
     }
-    temuan.push(...(teks.match(/<[A-Za-z][^\s/<>]*\s[^>]*=[^>]*>/g) ?? []));
-    temuan.push(...(teks.match(/<[A-Za-z][^\s/<>]*\s[^<>]*=[^>]*$/g) ?? []));
-    temuan.push(...(teks.match(/<[A-Za-z][^\s/<>]*\/+[A-Za-z][^\s/<>=]*\s*=/g) ?? []));
+    temuan.push(...(teks.match(/<[A-Za-z][^\s/>]*[\s/][^>]*=[^>]*>/g) ?? []));
     return temuan;
 }
 
@@ -170,13 +170,27 @@ describe('penyaring tahan terhadap pemisah dan atribut yang tidak lazim', () => 
         // Tag yang tidak pernah ditutup: '<'-nya dinetralkan.
         ['<img src=x onerror=alert(1)', '< img src=x onerror=alert(1)'],
         ['<img src=x onerror=alert(1) x="', '< img src=x onerror=alert(1) x="'],
-        // Nama lain yang membawa atribut, dan elemen kustom berhuruf kapital.
+        // Nama lain (termasuk nama bertanda hubung) yang membawa atribut.
         ['<xss onmouseover=alert(1)>', ''],
         ['<nama onfocus=alert(1) autofocus>', ''],
         ['<X-Foo onclick=alert(1)>', ''],
         ['<x/onclick=alert(1)>', ''],
         ['<img:x src=x onerror=1>', ''],
-        ['Aplikasi <e-Office>', 'Aplikasi'],
+        // Nama dibaca seperti peramban: melewati '<' sampai pemisah, '/' atau '>'.
+        ['<img<1 onfocus=alert(1) autofocus tabindex=1>', ''],
+        ['<x<!-- onfocus=alert(1) autofocus tabindex=1>', ''],
+        ['<img<?onfocus=alert(1) autofocus tabindex=1>', ''],
+        ["<imgx='<' onfocus=1>", ''],
+        // '/' setelah nama tak dikenal diperlakukan seperti spasi.
+        ['<x/ onfocus=alert(1) autofocus tabindex=1>', ''],
+        ['<x/\tonfocus=alert(1) autofocus tabindex=1>', ''],
+        ['<x/=a onfocus=alert(1) autofocus tabindex=1>', ''],
+        ["<x/'a' onfocus=alert(1) autofocus tabindex=1>", ''],
+        ['<x/"x" onfocus=alert(1) autofocus tabindex=1>', ''],
+        ['<x\u0000/ onfocus=alert(1) autofocus tabindex=1>', ''],
+        ['Tautan <http://contoh.go.id/surat?nomor=1> terlampir', 'Tautan terlampir'],
+        // Nama elemen dikenal + pemisah tanpa '>' sesudahnya: '<' diberi spasi.
+        ['a <b dan c', 'a < b dan c'],
     ])('%j menjadi %j', (masukan, hasil) => {
         expect(sanitizeSatuBaris(masukan)).toBe(hasil);
         expect(periksaAman(masukan)).toEqual([]);
@@ -226,7 +240,15 @@ describe('penyaring hanya membuang markup HTML', () => {
         '<<RAHASIA>>',
         'nilai p<q',
         '&lt;img src=x onerror=alert(1)&gt;',
-        '<http://contoh.go.id/surat?nomor=1>',
+        // Nama bertanda hubung tanpa atribut tetap teks.
+        'Aplikasi <e-Office>',
+        'Lampiran <PP-24/1997>',
+        'Lihat <Sub-Bagian TU>',
+        'Kode <A-1> dan <B_2>',
+        '<x-foo>',
+        // Nama elemen di akhir teks bukan tag; nama tak dikenal tanpa '>' tetap.
+        'teks <img',
+        'nilai x <y dan z = 5',
     ];
 
     it.each(teksBiasa)('teks %j disimpan persis', (teks) => {
@@ -286,6 +308,14 @@ describe('penyaring hanya membuang markup HTML', () => {
             'x<<b>b>'.repeat(N / 7),
             ('<a y=">"').repeat(N / 8) + ' x="',
             '<xss a'.repeat(N / 6) + '=>',
+            '<x '.repeat(N / 3) + '=',
+            '<x/ '.repeat(N / 4),
+            '<img<1 a=1 '.repeat(N / 11),
+            '<x<1 a=1'.repeat(N / 8),
+            ('<img a="' + "'" + "<x b='").repeat(N / 15),
+            '<b\n'.repeat(N / 3),
+            '<' + 'a'.repeat(N),
+            '<aa'.repeat(N / 3),
             dalam.repeat(60),
             ' \n'.repeat(N / 2),
         ];
@@ -293,7 +323,9 @@ describe('penyaring hanya membuang markup HTML', () => {
             const mulai = performance.now();
             const hasil = sanitizeSatuBaris(masukan);
             expect(performance.now() - mulai).toBeLessThan(3_000);
-            expect(tagHidup(hasil)).toEqual([]);
+            // Pemeriksa ekspresi reguler tagHidup sendiri tidak linear untuk masukan
+            // sebesar ini; di sini cukup dipastikan hasilnya titik tetap.
+            expect(sanitizeSatuBaris(hasil)).toBe(hasil);
         }
     });
 });
