@@ -191,7 +191,7 @@ describe('Super Admin password reset', () => {
             .expect(403, /CSRF/);
 
         const unitAdmin = await resetRequest(USER.google, unitCookie).expect(403);
-        expect(unitAdmin.body).toMatchObject({ message: 'Super admin access required' });
+        expect(unitAdmin.body).toMatchObject({ message: 'Hanya Super Admin yang dapat mengelola pengguna.' });
 
         expect(await credentialRows(USER.google)).toEqual([]);
     });
