@@ -1,4 +1,5 @@
 import api from './api';
+import { hariIniJakarta } from '@/lib/tindak-lanjut';
 
 const API_BASE = '/api/reports';
 
@@ -36,7 +37,8 @@ export const reportService = {
         const downloadUrl = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = downloadUrl;
-        link.download = `laporan-${type}-${new Date().toISOString().split('T')[0]}.${format === 'excel' ? 'xlsx' : 'pdf'}`;
+        // Tanggal nama berkas menurut WIB, sama dengan tanggal cetak di dalam berkas.
+        link.download = `laporan-${type}-${hariIniJakarta()}.${format === 'excel' ? 'xlsx' : 'pdf'}`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

@@ -10,6 +10,7 @@ import { jenisFormulirArsip, lengkapiJenisPenyusutanLama, saringFormulirArsip } 
 import { barisFormulirArsip, rincianItemDicetak, totalFormulirArsip, uraianFormulir6, type BarisFormulirArsip } from './export-formulir-baris.js';
 import { AppError } from '../utils/errors.js';
 import { loadExcelJS, loadPdfKit } from '../utils/lazy-libraries.js';
+import { tanggalCetakWib, waktuWib } from '../utils/waktu-wib.js';
 
 export const PESAN_FORMULIR6_KOSONG = 'Belum ada arsip inaktif untuk filter ini. Arsip masuk Formulir 6 setelah masa aktifnya berakhir menurut JRA dan pemicu retensi yang terverifikasi, atau setelah pemindahannya dicatat di SIMSA melalui modul Penyusutan. Pemindahan yang dilakukan di luar SIMSA tidak mengubah daftar ini.';
 
@@ -135,7 +136,7 @@ export class ExportService {
                 item.kepada || '',
                 item.status === 'sudah_dibalas' ? 'Sudah Dibalas' : 'Belum Dibalas',
                 Array.isArray(item.disposisi) ? item.disposisi.join(', ') : (item.disposisi || ''),
-                item.createdAt ? new Date(item.createdAt).toLocaleString('id-ID') : '',
+                waktuWib(item.createdAt),
                 item.isArchived ? 'Diarsipkan' : 'Belum',
             ];
 
@@ -228,7 +229,7 @@ export class ExportService {
                 item.perihal || '',
                 item.kepada || '',
                 item.linkDokumen || '',
-                item.createdAt ? new Date(item.createdAt).toLocaleString('id-ID') : '',
+                waktuWib(item.createdAt),
                 balasanLabels.get(item.id) || '',
                 ASAL_NASKAH_LABEL[item.asalNaskah ?? ''] || '',
                 item.klasifikasiFasilitatif || item.klasifikasiSubstantif || '',
@@ -662,7 +663,7 @@ export class ExportService {
             // Header
             doc.fontSize(16).font('Helvetica-Bold').text('DAFTAR SURAT MASUK', { align: 'center' });
             doc.fontSize(10).font('Helvetica').text(unitPengolah, { align: 'center' });
-            doc.fontSize(9).text(`${opsi.keteranganPeriode || `Tahun: ${filters.tahun || 'Semua'}`} | Dicetak: ${new Date().toLocaleDateString('id-ID')}`, { align: 'center' });
+            doc.fontSize(9).text(`${opsi.keteranganPeriode || `Tahun: ${filters.tahun || 'Semua'}`} | Dicetak: ${tanggalCetakWib()}`, { align: 'center' });
             doc.moveDown(1.5);
 
             // Table
@@ -735,7 +736,7 @@ export class ExportService {
 
             doc.fontSize(16).font('Helvetica-Bold').text('DAFTAR SURAT KELUAR', { align: 'center' });
             doc.fontSize(10).font('Helvetica').text(unitPengolah, { align: 'center' });
-            doc.fontSize(9).text(`${opsi.keteranganPeriode || `Tahun: ${filters.tahun || 'Semua'}`} | Dicetak: ${new Date().toLocaleDateString('id-ID')}`, { align: 'center' });
+            doc.fontSize(9).text(`${opsi.keteranganPeriode || `Tahun: ${filters.tahun || 'Semua'}`} | Dicetak: ${tanggalCetakWib()}`, { align: 'center' });
             doc.moveDown(1.5);
 
             const tableTop = doc.y;
@@ -817,7 +818,7 @@ export class ExportService {
                 doc.fontSize(10).font('Helvetica').text(`Unit Pengolah : ${unitPengolah}`, 30);
             }
 
-            doc.fontSize(9).text(`Dicetak: ${new Date().toLocaleDateString('id-ID')}`, { align: 'right' });
+            doc.fontSize(9).text(`Dicetak: ${tanggalCetakWib()}`, { align: 'right' });
             doc.moveDown(1);
 
             const tableTop = doc.y;

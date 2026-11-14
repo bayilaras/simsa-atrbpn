@@ -10,6 +10,7 @@ import { exportLimiter } from '../middlewares/rate-limiter.middleware';
 import { ExportCompletenessError } from '../services/export-completeness.js';
 import { auditExport } from '../services/export-audit';
 import { keteranganPeriodeLaporan, periodeLaporanArsip, periodeLaporanSurat } from '../services/laporan-periode';
+import { jakartaDate } from '../utils/jakarta-date.js';
 
 const log = createLogger('ReportRoutes');
 
@@ -206,7 +207,7 @@ router.get('/export/:type/:format', exportLimiter, permissionMiddleware('reports
         }
 
         let buffer: Buffer;
-        const filename = `laporan-${type}-${new Date().toISOString().split('T')[0]}`;
+        const filename = `laporan-${type}-${jakartaDate()}`;
 
         // Periode dihitung dengan fungsi yang sama dengan tabel laporan, supaya
         // isi berkas sama dengan yang tampil di layar.
