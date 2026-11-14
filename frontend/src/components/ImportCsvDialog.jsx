@@ -126,7 +126,7 @@ function CsvImportForm({ type, unitKerjaId, onImportComplete, onBusyChange }) {
         </p>
         <p className="text-sm text-muted-foreground">
             Pemisah kolom boleh koma, titik koma, atau tab dan dibaca dari baris judul. Sebaiknya simpan sebagai &quot;CSV UTF-8&quot;; CSV biasa dari Excel juga dapat dibaca.
-            Maksimal 1.000 rekod dan 4 MiB per berkas. Gunakan satu header unik untuk setiap kolom; pecah berkas besar sebelum diimpor.
+            Maksimal 1.000 rekod dan 4 MiB per berkas. Beri setiap kolom judul yang berbeda; pecah berkas besar sebelum diimpor.
         </p>
         <p className="break-words rounded-md bg-muted p-3 text-sm">
             Kolom utama: {type === 'arsip' ? 'Nomor Berkas, Tanggal, Uraian, Jenis Arsip (masuk/keluar)' : 'Nomor Surat, Tanggal Surat, Perihal, Dari, Kepada'}.

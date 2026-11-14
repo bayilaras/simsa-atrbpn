@@ -16,7 +16,7 @@ export default function ImportRowIssues({ issues, duplicates, totalRows }) {
             <AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
             <div className="min-w-0 space-y-1">
                 <p className="font-medium">{`${issues.total} dari ${totalRows} baris akan ditolak`}</p>
-                <p>Baris lain tetap dapat diimpor. Baris yang ditolak tidak disimpan; alasannya tercantum di bawah. Setelah sumber data diperbaiki, buat pratinjau lagi.</p>
+                <p>Baris lain tetap dapat diimpor. Baris yang ditolak tidak disimpan; alasannya tercantum di bawah.</p>
                 <ul className="max-h-48 space-y-0.5 overflow-y-auto text-xs">
                     {(issues.rows || []).map(issue => <li key={issue.row} className="break-words">{`Baris data ke-${issue.row}: ${issue.reason}`}</li>)}
                     {more > 0 && <li>{`dan ${more} baris lainnya.`}</li>}

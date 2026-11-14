@@ -18,7 +18,7 @@ describe('preview notice for rows the import will reject or skip', () => {
             { row: 2, reason }, { row: 5, reason: ceiling }, { row: 7, reason: 'Tanggal surat yang valid wajib diisi untuk identitas impor yang stabil.' }] }} />)
         const notice = screen.getByRole('alert')
         expect(notice).toHaveTextContent('3 dari 40 baris akan ditolak')
-        expect(notice).toHaveTextContent('Baris lain tetap dapat diimpor. Baris yang ditolak tidak disimpan; alasannya tercantum di bawah. Setelah sumber data diperbaiki, buat pratinjau lagi.')
+        expect(notice).toHaveTextContent('Baris lain tetap dapat diimpor. Baris yang ditolak tidak disimpan; alasannya tercantum di bawah.')
         expect(within(notice).getAllByRole('listitem').map(item => item.textContent)).toEqual([
             `Baris data ke-2: ${reason}`, `Baris data ke-5: ${ceiling}`, 'Baris data ke-7: Tanggal surat yang valid wajib diisi untuk identitas impor yang stabil.'])
     })
