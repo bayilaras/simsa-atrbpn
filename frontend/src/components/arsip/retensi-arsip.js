@@ -22,6 +22,17 @@ export function keteranganRetensiKosong(arsip) {
     return null
 }
 
+// Teks pendek untuk kolom sempit, mis. Nasib Akhir di daftar arsip; teks
+// lengkapnya tetap dipakai sebagai keterangan saat disorot.
+const KETERANGAN_SINGKAT = {
+    [PESAN_MENUNGGU_PEMICU_RETENSI]: 'Menunggu verifikasi',
+    [PESAN_MENUNGGU_REKONSILIASI_ATURAN]: 'Menunggu rekonsiliasi',
+}
+
+export function keteranganRetensiSingkat(keterangan) {
+    return keterangan ? KETERANGAN_SINGKAT[keterangan] ?? keterangan : null
+}
+
 const SATU_HARI = 86_400_000
 
 function hariKalender(tanggal) {

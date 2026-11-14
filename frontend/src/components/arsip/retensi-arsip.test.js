@@ -3,6 +3,7 @@ import {
     formatTahun,
     kemajuanRetensiAktif,
     keteranganRetensiKosong,
+    keteranganRetensiSingkat,
     PESAN_MENUNGGU_PEMICU_RETENSI,
     PESAN_MENUNGGU_REKONSILIASI_ATURAN,
 } from './retensi-arsip'
@@ -70,6 +71,14 @@ describe('kemajuanRetensiAktif', () => {
                 dates: { tanggalAktifBerakhir: '2024-01-01', tanggalInaktifBerakhir: '2029-01-01', tanggalKadaluarsa: '2029-01-01' },
             },
         })).toBeNull()
+    })
+})
+
+describe('keteranganRetensiSingkat', () => {
+    it('memendekkan keterangan untuk kolom sempit', () => {
+        expect(keteranganRetensiSingkat(PESAN_MENUNGGU_PEMICU_RETENSI)).toBe('Menunggu verifikasi')
+        expect(keteranganRetensiSingkat(PESAN_MENUNGGU_REKONSILIASI_ATURAN)).toBe('Menunggu rekonsiliasi')
+        expect(keteranganRetensiSingkat(null)).toBeNull()
     })
 })
 

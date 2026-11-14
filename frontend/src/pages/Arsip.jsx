@@ -60,9 +60,24 @@ import { arsipService } from '@/services/arsip.service'
 import settingsService from '@/services/settings.service'
 import storageLocationService from '@/services/storage-location.service'
 import { tautanArsipLokasi } from '@/components/arsip/lokasi-simpan'
+import { keteranganRetensiKosong, keteranganRetensiSingkat } from '@/components/arsip/retensi-arsip'
 import { TableSkeleton } from '@/components/skeletons'
 
 const VALID_TABS = ['keluar', 'masuk', 'retensi']
+
+// Server baru mengisi nasib akhir setelah pemicu retensi terverifikasi; sampai
+// itu kolom memakai keterangan yang sama dengan halaman detail, dipendekkan.
+function NasibAkhir({ arsip }) {
+    const keterangan = arsip.hasilAkhir ? null : keteranganRetensiKosong(arsip)
+    if (keterangan) {
+        return <span className="text-[11px] italic leading-tight text-muted-foreground" title={keterangan}>{keteranganRetensiSingkat(keterangan)}</span>
+    }
+    return (
+        <Badge variant={arsip.hasilAkhir === 'Permanen' ? 'default' : arsip.hasilAkhir === 'Musnah' ? 'destructive' : 'secondary'} className="text-[10px] px-2">
+            {arsip.hasilAkhir || '-'}
+        </Badge>
+    )
+}
 
 export default function Arsip() {
     const { tab } = useParams()
@@ -557,9 +572,7 @@ export default function Arsip() {
                                                                 </div>
                                                             </TableCell>
                                                             <TableCell data-label="Nasib Akhir">
-                                                                <Badge variant={row.hasilAkhir === 'Permanen' ? 'default' : row.hasilAkhir === 'Musnah' ? 'destructive' : 'secondary'} className="text-[10px] px-2">
-                                                                    {row.hasilAkhir || '-'}
-                                                                </Badge>
+                                                                <NasibAkhir arsip={row} />
                                                             </TableCell>
                                                             <TableCell className="text-right">
                                                                 <DropdownMenu>
