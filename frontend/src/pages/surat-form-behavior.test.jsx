@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import TambahSuratMasuk from './TambahSuratMasuk';
 import TambahSuratKeluar from './TambahSuratKeluar';
@@ -148,9 +148,13 @@ describe.each(pages)('form surat $kind', page => {
         const file = new File(['test attachment'], 'bukti.pdf', { type: 'application/pdf' });
         fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [file] } });
         fireEvent.click(screen.getByRole('button', { name: 'Batal' }));
-        await waitFor(() => expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('perubahan yang belum disimpan')));
+        const dialog = await screen.findByRole('alertdialog', { name: 'Tinggalkan halaman ini?' });
+        expect(dialog).toHaveTextContent('Anda memiliki perubahan yang belum disimpan.');
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Tetap di halaman' }));
+        await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
         expect(router.state.location.pathname).toBe('/edit/existing-letter');
         expect(screen.getByText('bukti.pdf')).toBeInTheDocument();
+        expect(window.confirm).not.toHaveBeenCalled();
     });
 });
 
@@ -158,7 +162,8 @@ it('protects outgoing text edits when cancel is declined', async () => {
     const { router } = await renderForm(pages[1]);
     fireEvent.change(screen.getByLabelText(/^Perihal/), { target: { value: 'Perubahan penting' } });
     fireEvent.click(screen.getByRole('button', { name: 'Batal' }));
-    await waitFor(() => expect(window.confirm).toHaveBeenCalled());
+    fireEvent.click(await screen.findByRole('button', { name: 'Tetap di halaman' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(router.state.location.pathname).toBe('/edit/existing-letter');
     expect(screen.getByLabelText(/^Perihal/)).toHaveValue('Perubahan penting');
 });
@@ -166,11 +171,14 @@ it('protects outgoing text edits when cancel is declined', async () => {
 it('associates the incoming disposition error with the real multiselect trigger', async () => {
     const { form } = await renderForm(pages[0], { disposisi: [] });
     fireEvent.submit(form);
-    expect(window.confirm).toHaveBeenCalledWith('Surat belum didisposisikan. Simpan tanpa disposisi?');
+    const dialog = await screen.findByRole('alertdialog', { name: 'Simpan tanpa disposisi?' });
+    expect(dialog).toHaveTextContent('Surat belum didisposisikan. Simpan tanpa disposisi?');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Kembali ke formulir' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     const trigger = screen.getByRole('combobox', { name: 'Penerima disposisi' });
     expect(trigger).toHaveAttribute('aria-invalid', 'true');
     expect(trigger).toHaveAccessibleDescription('Disposisi wajib diisi');
-    expect(screen.getByRole('alert')).toHaveFocus();
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveFocus());
 });
 
 it.each([

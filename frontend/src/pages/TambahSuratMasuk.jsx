@@ -11,7 +11,11 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { suratMasukService } from '@/services/surat-masuk.service';
 import { rekamanPerluPersetujuan } from '@/lib/akses-rekaman';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
-import { useAutoSave } from '@/hooks/useAutoSave';
+import { useDrafIsian } from '@/hooks/use-draf-isian';
+import { useKonfirmasi } from '@/hooks/use-konfirmasi';
+import { DialogKonfirmasi } from '@/components/DialogKonfirmasi';
+import { KemajuanUnggah, StatusDrafIsian } from '@/components/surat/DrafIsianFormulir';
+import { permintaanPulihkanDraf } from '@/lib/draf-isian';
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
 import { KlasifikasiPicker } from '@/components/KlasifikasiPicker';
@@ -139,6 +143,7 @@ export default function TambahSuratMasuk() {
     const saveLockedRef = useRef(false);
     const navigationTimerRef = useRef(null);
     const mountedRef = useRef(true);
+    const menungguKonfirmasiRef = useRef(false);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -147,6 +152,8 @@ export default function TambahSuratMasuk() {
     const [success, setSuccess] = useState(false);
     const saveLocked = isSubmitting || success;
     const [selectedFile, setSelectedFile] = useState(null);
+    // Persen unggah berkas saat menyimpan; null bila tidak ada berkas yang diunggah.
+    const [kemajuanUnggah, setKemajuanUnggah] = useState(null);
     const [existingFile, setExistingFile] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
     const [recordUnitKerjaId, setRecordUnitKerjaId] = useState('');
@@ -178,11 +185,16 @@ export default function TambahSuratMasuk() {
         errorRef.current?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' });
     }, [error, fieldErrors, isLoading, reducedMotion]);
 
-    // Unsaved changes warning & auto-save draft
-    const { setDirty, resetDirty } = useUnsavedChanges();
-    const { saveDraft, clearDraft, restoreDraft, saveStatus } = useAutoSave(
-        isEditMode ? `edit-surat-masuk-${id}` : 'tambah-surat-masuk'
-    );
+    // Draf isian di sessionStorage tab ini: bertahan saat sesi berakhir atau
+    // halaman dimuat ulang, dihapus saat tersimpan, Batal, atau keluar.
+    const { simpanDraf, simpanSekarang, bacaDraf, hapusDraf, tandaiDipulihkan, status: statusDraf } = useDrafIsian({
+        userId: user?.id, formulir: 'surat-masuk', idRekod: id,
+    });
+    const { isDirty, setDirty, resetDirty, dialogTinggalkan } = useUnsavedChanges({ onTinggalkan: hapusDraf });
+    const [konfirmasi, dialogKonfirmasi] = useKonfirmasi();
+    // Draf yang ditawarkan untuk dipulihkan; surat baru memeriksanya saat dibuka,
+    // surat yang diubah setelah datanya dimuat.
+    const [tawaranDraf, setTawaranDraf] = useState(() => (isEditMode ? null : bacaDraf()));
 
     // Form state
     const [formData, setFormData] = useState({
@@ -225,22 +237,6 @@ export default function TambahSuratMasuk() {
         && (!isEditMode || normalisasiKelas(sifatSurat) !== normalisasiKelas(sifatTersimpan));
     const bantuanSifat = sifatDiganti || sifatDibatasi || sifatPerluPersetujuan;
     const labelSifat = (value) => SIFAT_SURAT_OPTIONS.find(opt => opt.value === value)?.label ?? value;
-
-    // Restore draft on mount (only for new entries, not edit mode)
-    useEffect(() => {
-        if (!isEditMode) {
-            const draft = restoreDraft();
-            if (draft) {
-                const shouldRestore = window.confirm('Ditemukan draft yang belum disimpan. Muat draft tersebut?');
-                if (shouldRestore) {
-                    setFormData(draft);
-                    setDirty();
-                } else {
-                    clearDraft();
-                }
-            }
-        }
-    }, [clearDraft, isEditMode, restoreDraft, setDirty]);
 
     const fetchSuratData = useCallback(async () => {
         setIsLoading(true);
@@ -307,6 +303,7 @@ export default function TambahSuratMasuk() {
                     name: data.fileOriginalName || (data.filePath.startsWith('blob:') || data.filePath.startsWith('gdrive:') ? 'Dokumen Lampiran' : data.filePath.split('/').pop()),
                 });
             }
+            setTawaranDraf(bacaDraf());
         } catch (err) {
             // Surat berkelas terkendali tanpa persetujuan akses: halaman detail
             // menjelaskan keadaannya dan menyediakan tombol Minta Akses.
@@ -319,7 +316,7 @@ export default function TambahSuratMasuk() {
         } finally {
             setIsLoading(false);
         }
-    }, [id, navigate, toast]);
+    }, [bacaDraf, id, navigate, toast]);
 
     // Fetch existing data for edit mode.
     useEffect(() => {
@@ -380,14 +377,51 @@ export default function TambahSuratMasuk() {
         || formData.sifatSurat !== originalRef.current.sifatSurat
     );
 
+    // Isian yang sudah diubah ditulis ke draf tab ini setelah jeda singkat.
+    // Selama tawaran pemulihan terbuka, draf lama tidak ditimpa.
+    const namaBerkas = selectedFile?.name ?? null;
+    useEffect(() => {
+        if (!isDirty || tawaranDraf || saveLocked) return;
+        simpanDraf({ formData, alasanKoreksi, referensi, namaBerkas, ...(isEditMode ? { dimuat } : {}) });
+    }, [alasanKoreksi, dimuat, formData, isDirty, isEditMode, namaBerkas, referensi, saveLocked, simpanDraf, tawaranDraf]);
+
+    const jawabTawaranDraf = (pulihkan) => {
+        const data = tawaranDraf?.data;
+        setTawaranDraf(null);
+        if (!pulihkan || !data) {
+            hapusDraf();
+            return;
+        }
+        if (data.formData && typeof data.formData === 'object') setFormData(prev => ({ ...prev, ...data.formData }));
+        if (typeof data.alasanKoreksi === 'string') setAlasanKoreksi(data.alasanKoreksi);
+        if (!isEditMode) setReferensi(data.referensi ?? null);
+        // Versi rekod saat isian mulai diubah: bila surat sudah diubah orang lain
+        // sejak itu, server menolak penyimpanan alih-alih menimpanya diam-diam.
+        if (isEditMode && data.dimuat && typeof data.dimuat === 'object') setDimuat(data.dimuat);
+        setDirty();
+        tandaiDipulihkan();
+    };
+
+    // Konfirmasi lewat dialog aplikasi; kiriman lain diabaikan selama dialog terbuka.
+    const tanya = async (permintaan) => {
+        menungguKonfirmasiRef.current = true;
+        try {
+            return await konfirmasi(permintaan);
+        } finally {
+            menungguKonfirmasiRef.current = false;
+        }
+    };
+
+    const batal = () => {
+        // Formulir yang sudah diubah ditanya dulu; drafnya dihapus bila ditinggalkan.
+        if (!isDirty) hapusDraf();
+        navigate('/surat/masuk');
+    };
+
     // Handle input changes
     const handleChange = (field, value) => {
         if (saveLockedRef.current) return;
-        setFormData(prev => {
-            const updated = { ...prev, [field]: value };
-            saveDraft(updated);
-            return updated;
-        });
+        setFormData(prev => ({ ...prev, [field]: value }));
         setError(null);
         setFieldErrors(prev => ({ ...prev, [field]: undefined }));
         setDirty();
@@ -447,18 +481,15 @@ export default function TambahSuratMasuk() {
                 return { field: 'disposisi', message: PESAN_TERKENDALI };
             }
         }
-        if (!formData.disposisi || formData.disposisi.length === 0) {
-            if (!window.confirm('Surat belum didisposisikan. Simpan tanpa disposisi?')) {
-                return { field: 'disposisi', message: 'Disposisi wajib diisi' };
-            }
-        }
         return null;
     };
 
     // Handle form submission
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (saveLockedRef.current) return;
+        if (saveLockedRef.current || menungguKonfirmasiRef.current) return;
+        // Isian terakhir ikut tersimpan di draf bila sesi ternyata sudah berakhir.
+        simpanSekarang();
 
         const validationError = validateForm();
         if (validationError) {
@@ -466,9 +497,30 @@ export default function TambahSuratMasuk() {
             setFieldErrors(validationError.field ? { [validationError.field]: validationError.message } : {});
             return;
         }
+        if (!formData.disposisi || formData.disposisi.length === 0) {
+            const tanpaDisposisi = await tanya({
+                judul: 'Simpan tanpa disposisi?',
+                pesan: 'Surat belum didisposisikan. Simpan tanpa disposisi?',
+                aksi: 'Simpan tanpa disposisi',
+                batal: 'Kembali ke formulir',
+            });
+            if (!mountedRef.current) return;
+            if (!tanpaDisposisi) {
+                setError('Disposisi wajib diisi');
+                setFieldErrors({ disposisi: 'Disposisi wajib diisi' });
+                return;
+            }
+        }
         // Nomor jauh di atas urutan otomatis tidak dapat diturunkan lagi setelah tersimpan.
-        if (!isEditMode && nomorJauhDiAtas(nomorUrutDiketik(formData.noUrut), noAgendaOtomatis)
-            && !window.confirm(konfirmasiNomorJauh(noAgendaOtomatis))) return;
+        if (!isEditMode && nomorJauhDiAtas(nomorUrutDiketik(formData.noUrut), noAgendaOtomatis)) {
+            const lanjut = await tanya({
+                judul: 'Simpan dengan nomor ini?',
+                pesan: konfirmasiNomorJauh(noAgendaOtomatis),
+                aksi: 'Simpan dengan nomor ini',
+                batal: 'Ubah nomor',
+            });
+            if (!lanjut || !mountedRef.current) return;
+        }
 
         // Lock synchronously: consecutive submit events can precede React's next render.
         saveLockedRef.current = true;
@@ -476,6 +528,14 @@ export default function TambahSuratMasuk() {
         setError(null);
         setFieldErrors({});
         setKonflikVersi(false);
+        const berkasDiunggah = filesEnabled && selectedFile ? selectedFile : null;
+        setKemajuanUnggah(berkasDiunggah ? 0 : null);
+        // Opsi unggah hanya dikirim bila ada berkas; tanpa berkas pemanggilan layanan tetap tiga argumen.
+        const opsiUnggah = berkasDiunggah ? [{
+            onProgress: ({ percentage } = {}) => {
+                if (mountedRef.current) setKemajuanUnggah(Math.min(100, Math.max(0, Math.round(Number(percentage) || 0))));
+            },
+        }] : [];
 
         try {
             const dataToSubmit = buildSuratFormPayload({ ...formData, sifatSurat }, resolvedUnitKerjaId, filesEnabled);
@@ -494,7 +554,7 @@ export default function TambahSuratMasuk() {
                     disposisi: pilihan,
                     ...(perluAlasanKoreksi ? { alasan: alasanKoreksi.trim() } : {}),
                     ...versiDimuat(dimuat?.updatedAt),
-                }, filesEnabled ? selectedFile : null);
+                }, berkasDiunggah, ...opsiUnggah);
             } else {
                 // Create new surat
                 const { targets, labels } = pisahkanDisposisi(pilihan);
@@ -514,11 +574,11 @@ export default function TambahSuratMasuk() {
                     ...(referensi ? { referensi: { jenis: 'surat_keluar', id: referensi.suratId } } : {}),
                     ...(noUrut !== undefined ? { noUrut } : {}),
                     tahun: Number(formData.tanggalSurat.slice(0, 4)) || new Date().getFullYear(),
-                }, filesEnabled ? selectedFile : null);
+                }, berkasDiunggah, ...opsiUnggah);
             }
             if (!mountedRef.current) return;
             resetDirty();
-            clearDraft();
+            hapusDraf();
             setSuccess(true);
 
             navigationTimerRef.current = setTimeout(() => {
@@ -534,12 +594,16 @@ export default function TambahSuratMasuk() {
             setFieldErrors(perIsian);
             setKonflikVersi(dataSudahBerubah(err));
         } finally {
-            if (mountedRef.current) setIsSubmitting(false);
+            if (mountedRef.current) {
+                setIsSubmitting(false);
+                setKemajuanUnggah(null);
+            }
         }
     };
 
     // Data diubah orang lain: muat ulang dari server; isian di formulir ini dibuang.
     const muatUlangData = () => {
+        hapusDraf();
         setKonflikVersi(false);
         setError(null);
         setFieldErrors({});
@@ -1061,14 +1125,10 @@ export default function TambahSuratMasuk() {
                                 disabled={saveLocked}
                                 onChange={(kode, klasifikasi, jra) => {
                                     if (saveLockedRef.current) return;
-                                    setFormData(prev => {
-                                        const updated = {
-                                            ...prev,
-                                            ...buildSuratArchiveSelection(kode, klasifikasi, jra),
-                                        };
-                                        saveDraft(updated);
-                                        return updated;
-                                    });
+                                    setFormData(prev => ({
+                                        ...prev,
+                                        ...buildSuratArchiveSelection(kode, klasifikasi, jra),
+                                    }));
                                     setError(null);
                                     setDirty();
                                 }}
@@ -1249,18 +1309,14 @@ export default function TambahSuratMasuk() {
 
                 {/* Floating Action Bar */}
                 <div className="fixed bottom-0 left-0 right-0 p-4 bg-card/80 backdrop-blur-md border-t border-border/50 z-40 flex items-center justify-between sm:justify-end gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-                    <div className="hidden sm:block mr-auto">
-                        {/* Auto-save status indicator */}
-                        {saveStatus && (
-                            <span className="text-xs text-muted-foreground flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted">
-                                {saveStatus === 'saving' && <><Loader2 className="h-3 w-3 animate-spin" /> Menyimpan draft...</>}
-                                {saveStatus === 'saved' && <><CheckCircle2 className="h-3 w-3 text-emerald-500" /> Draft sementara tersimpan</>}
-                                {saveStatus === 'restored' && <><FileText className="h-3 w-3 text-blue-500" /> Draft dimuat</>}
-                            </span>
-                        )}
+                    <div className="mr-auto flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+                        <div className="hidden sm:block">
+                            <StatusDrafIsian status={statusDraf} />
+                        </div>
+                        <KemajuanUnggah persen={kemajuanUnggah} />
                     </div>
 
-                    <Button type="button" variant="outline" size="lg" disabled={saveLocked} onClick={() => navigate('/surat/masuk')} className="rounded-full px-6">
+                    <Button type="button" variant="outline" size="lg" disabled={saveLocked} onClick={batal} className="rounded-full px-6">
                         Batal
                     </Button>
                     <Button
@@ -1272,7 +1328,7 @@ export default function TambahSuratMasuk() {
                         {isSubmitting ? (
                             <>
                                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                Menyimpan...
+                                {kemajuanUnggah !== null && kemajuanUnggah < 100 ? `Mengunggah ${kemajuanUnggah}%` : 'Menyimpan...'}
                             </>
                         ) : (
                             <>
@@ -1284,6 +1340,15 @@ export default function TambahSuratMasuk() {
                 </div>
                 </fieldset>
             </form>
+
+            <DialogKonfirmasi
+                terbuka={Boolean(tawaranDraf)}
+                wajibMemilih
+                permintaan={permintaanPulihkanDraf(tawaranDraf)}
+                onJawab={jawabTawaranDraf}
+            />
+            {dialogKonfirmasi}
+            {dialogTinggalkan}
         </div>
     );
 }

@@ -2,6 +2,7 @@ import { canManageUnit } from '@/lib/role-access';
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { authService } from '../services/auth.service';
 import { clearOfflineStorage } from '../lib/offline-storage';
+import { hapusDrafPenggunaLain, hapusSemuaDrafIsian } from '../lib/draf-isian';
 import { normalizeAuthenticatedUserUnitScope } from '../lib/unit-kerja-scope';
 import {
     catatKontakServer,
@@ -49,7 +50,9 @@ export function AuthProvider({ children }) {
                 if (status === 'aktif') catatKontakServer();
                 else if (status === 'berakhir' && !signingOutRef.current) {
                     if (idle) setSessionNotice(PESAN_SESI_BERAKHIR);
-                    signOut();
+                    // Sesi berakhir, bukan keluar: isian formulir yang belum
+                    // disimpan tetap ditawarkan setelah masuk kembali.
+                    signOut({ pertahankanIsian: true });
                 }
             })
             .finally(() => { sessionRefreshRef.current = false; });
@@ -79,7 +82,7 @@ export function AuthProvider({ children }) {
             console.warn('[Auth] Session idle timeout — auto logout');
             setIdleWarning(false);
             setSessionNotice(PESAN_SESI_BERAKHIR);
-            signOut();
+            signOut({ pertahankanIsian: true });
         }, IDLE_TIMEOUT_MS);
 
         keepServerSessionAlive();
@@ -120,6 +123,8 @@ export function AuthProvider({ children }) {
 
             if (session?.user) {
                 catatKontakServer();
+                // Draf isian pengguna lain di tab ini tidak pernah ditawarkan; hapus.
+                hapusDrafPenggunaLain(session.user.id);
                 setUser(normalizeAuthenticatedUserUnitScope(session.user));
             } else {
                 await clearOfflineStorage();
@@ -183,7 +188,10 @@ export function AuthProvider({ children }) {
         }
     }
 
-    async function signOut() {
+    // Tombol Keluar memanggil signOut dengan event klik; hanya akhir sesi
+    // (tidak aktif 30 menit atau ditolak server) yang mempertahankan draf isian.
+    async function signOut(opsi) {
+        if (opsi?.pertahankanIsian !== true) hapusSemuaDrafIsian();
         if (signingOutRef.current) return;
         signingOutRef.current = true;
         authEpochRef.current += 1;

@@ -51,6 +51,10 @@ import { useAuth } from '@/context/AuthContext'
 import { PESAN_KELAS_TERBATAS_PERAN, adaKelasTersembunyi, bolehMemilihKelas, saringOpsiKelas } from '@/lib/kelas-keamanan'
 import { LokasiSimpanPicker } from '@/components/arsip/LokasiSimpanPicker'
 import { LABEL_LOKASI_SIMPAN, PETUNJUK_LOKASI_SIMPAN, bolehMemilihLokasiUnit } from '@/components/arsip/lokasi-simpan'
+import { DialogKonfirmasi } from '@/components/DialogKonfirmasi'
+import { useDrafIsian } from '@/hooks/use-draf-isian'
+import { permintaanPulihkanDraf } from '@/lib/draf-isian'
+import { tandaiBelumDisimpan } from '@/lib/perubahan-belum-disimpan'
 
 const TINGKAT_PERKEMBANGAN_OPTIONS = [
     { value: 'Asli', label: 'Asli' },
@@ -213,6 +217,14 @@ export function ArchiveDialog({
     // Items state
     const [items, setItems] = useState(() => buildItems({ perihal, tanggalSurat }))
 
+    // Draf isian per surat di sessionStorage tab ini (lib/draf-isian.js): bertahan
+    // saat sesi berakhir, dihapus saat arsip tersimpan, Batal, atau keluar.
+    const { simpanDraf, bacaDraf, hapusDraf } = useDrafIsian({
+        userId: user?.id, formulir: `arsip-surat-${suratType || 'masuk'}`, idRekod: suratData?.id,
+    })
+    const [diubah, setDiubah] = useState(false)
+    const [tawaranDraf, setTawaranDraf] = useState(null)
+
     // Dialog stays mounted between surat, so refill the form from the surat being archived
     useEffect(() => {
         if (!open) return
@@ -222,19 +234,55 @@ export function ArchiveDialog({
         setFormError('')
         setPaham(false)
         setGalatPaham(false)
-    }, [open, sourceData, suratType])
+        setDiubah(false)
+        setTawaranDraf(bacaDraf())
+    }, [bacaDraf, open, sourceData, suratType])
+
+    useEffect(() => {
+        if (!open || !diubah || tawaranDraf || loading) return
+        simpanDraf({ formData, items })
+    }, [diubah, formData, items, loading, open, simpanDraf, tawaranDraf])
+
+    // Dialog yang sedang diisi tidak dimuat ulang oleh pembaruan aplikasi.
+    useEffect(() => {
+        if (!open || !diubah) return undefined
+        const token = {}
+        tandaiBelumDisimpan(token, true)
+        return () => tandaiBelumDisimpan(token, false)
+    }, [diubah, open])
+
+    const jawabTawaranDraf = (pulihkan) => {
+        const data = tawaranDraf?.data
+        setTawaranDraf(null)
+        if (!pulihkan || !data) {
+            hapusDraf()
+            return
+        }
+        if (data.formData && typeof data.formData === 'object') setFormData(prev => ({ ...prev, ...data.formData }))
+        if (Array.isArray(data.items) && data.items.length > 0) setItems(data.items)
+        setDiubah(true)
+    }
+
+    // Batal, tombol tutup, dan Esc membuang isian dialog beserta drafnya.
+    const tutup = () => {
+        hapusDraf()
+        onOpenChange(false)
+    }
 
     const handleChange = (field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }))
+        setDiubah(true)
     }
 
     const handleItemChange = (index, field, value) => {
         const newItems = [...items]
         newItems[index] = { ...newItems[index], [field]: value }
         setItems(newItems)
+        setDiubah(true)
     }
 
     const addItem = () => {
+        setDiubah(true)
         setItems([...items, {
             nomor: String(items.length + 1),
             uraian: '',
@@ -249,6 +297,7 @@ export function ArchiveDialog({
 
     const removeItem = (index) => {
         if (items.length > 1) {
+            setDiubah(true)
             const newItems = items.filter((_, i) => i !== index)
             // Renumber items
             newItems.forEach((item, i) => {
@@ -307,6 +356,8 @@ export function ArchiveDialog({
                 items: items,
             }
             await onArchive(payload)
+            hapusDraf()
+            setDiubah(false)
             onOpenChange(false)
         } catch (error) {
             const detailMessage = Array.isArray(error?.details)
@@ -319,7 +370,7 @@ export function ArchiveDialog({
     }
 
     return (
-        <Dialog open={open} onOpenChange={(nextOpen) => !loading && onOpenChange(nextOpen)}>
+        <Dialog open={open} onOpenChange={(nextOpen) => { if (loading) return; if (nextOpen) onOpenChange(true); else tutup() }}>
             {/* Added: data-[state=open] styling directly here to ensure checks pass, but DialogContent handles animation via class */}
             <DialogContent
                 showCloseButton={false}
@@ -959,7 +1010,7 @@ export function ArchiveDialog({
                         <Button
                             type="button"
                             variant="secondary"
-                            onClick={() => onOpenChange(false)}
+                            onClick={tutup}
                             disabled={loading}
                             className="w-full border border-border bg-card text-foreground shadow-sm hover:bg-muted/50 sm:w-auto sm:min-w-[100px]"
                         >
@@ -982,6 +1033,12 @@ export function ArchiveDialog({
                     </div>
                 </div>
             </DialogContent>
+            <DialogKonfirmasi
+                terbuka={open && Boolean(tawaranDraf)}
+                wajibMemilih
+                permintaan={permintaanPulihkanDraf(tawaranDraf)}
+                onJawab={jawabTawaranDraf}
+            />
         </Dialog>
     )
 }

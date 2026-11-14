@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import TambahSuratMasuk from './TambahSuratMasuk'
 import { PESAN_KELAS_TERBATAS_PERAN, PESAN_SURAT_MASUK_PERLU_PERSETUJUAN } from '@/lib/kelas-keamanan'
-import { memoryDrafts } from '@/lib/memory-drafts'
+import { kunciDrafIsian, tulisDrafIsian } from '@/lib/draf-isian'
 import { readSuratArchiveSelection } from '@/lib/surat-archive-selection'
 
 // Sifat surat masuk memuat kelas keamanan; opsi yang pasti ditolak server
@@ -61,7 +61,13 @@ beforeEach(() => {
     mocks.dist.getOpsi.mockResolvedValue({ instruksi: [], jalurAksesTerkendali: false })
     mocks.lacak.mockResolvedValue({ kelompok: [] })
 })
-afterEach(() => { cleanup(); router?.dispose(); memoryDrafts.clear(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); router?.dispose(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+// Formulir tanpa disposisi menanyakan konfirmasi; dijawab Simpan tanpa disposisi.
+async function kirimTanpaDisposisi(view) {
+    fireEvent.submit(view.container.querySelector('form'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Simpan tanpa disposisi' }))
+}
 
 const opsiSifat = () => [...document.getElementById('sifat-surat').options].map(option => option.value).filter(Boolean)
 
@@ -117,21 +123,20 @@ describe('sifat surat masuk menurut peran', () => {
     })
 
     it('draf berisi Rahasia milik Admin Unit Kerja diganti Biasa dan dikirim sebagai Biasa', async () => {
-        memoryDrafts.set('simsa-draft-tambah-surat-masuk', {
-            timestamp: Date.now(),
-            data: {
+        tulisDrafIsian(kunciDrafIsian({ userId: ADMIN_UNIT.id, formulir: 'surat-masuk' }), {
+            formData: {
                 jenisSurat: 'Nota Dinas', sifatSurat: 'rahasia', nomorSurat: '', tanggalSurat: '2026-09-23',
                 perihal: 'Draf lama', dari: 'Pemda Sintetis', kepada: 'Direktur Jenderal',
                 klasifikasiKode: '', klasifikasiUraian: '', ...readSuratArchiveSelection(), keterangan: '',
                 disposisi: [], disposisiPj: '', disposisiBatasWaktu: '', disposisiInstruksi: '', linkDokumen: '',
             },
         })
-        vi.spyOn(window, 'confirm').mockReturnValue(true)
         const view = tampil()
+        fireEvent.click(await screen.findByRole('button', { name: 'Pulihkan isian' }))
         await waitFor(() => expect(screen.getByLabelText(/^Perihal/)).toHaveValue('Draf lama'))
         expect(document.getElementById('sifat-surat')).toHaveValue('biasa')
         expect(screen.getByText('Sifat Rahasia tidak dapat Anda pilih, sehingga diganti menjadi Biasa.')).toBeInTheDocument()
-        fireEvent.submit(view.container.querySelector('form'))
+        await kirimTanpaDisposisi(view)
         await waitFor(() => expect(mocks.masuk.create).toHaveBeenCalled())
         expect(mocks.masuk.create.mock.calls[0][0].sifatSurat).toBe('biasa')
     })
@@ -181,7 +186,6 @@ describe('sifat surat masuk menurut peran', () => {
         ['Super Admin', SUPER_ADMIN, 'sangat_rahasia'],
     ])('%s mencatat surat baru bersifat %s', async (_peran, user, sifat) => {
         mocks.user = user
-        vi.spyOn(window, 'confirm').mockReturnValue(true)
         const view = tampil()
         isiWajib()
         await screen.findByRole('option', { name: 'Dit. BPPT' })
@@ -190,7 +194,7 @@ describe('sifat surat masuk menurut peran', () => {
         // Pencatat pun memerlukan persetujuan akses untuk membuka surat terkendali.
         expect(document.getElementById('sifat-surat-bantuan')).toHaveTextContent(PESAN_SURAT_MASUK_PERLU_PERSETUJUAN)
         expect(document.getElementById('sifat-surat')).toHaveAttribute('aria-describedby', 'sifat-surat-bantuan')
-        fireEvent.submit(view.container.querySelector('form'))
+        await kirimTanpaDisposisi(view)
         await waitFor(() => expect(mocks.masuk.create).toHaveBeenCalled())
         expect(mocks.masuk.create.mock.calls[0][0].sifatSurat).toBe(sifat)
     })

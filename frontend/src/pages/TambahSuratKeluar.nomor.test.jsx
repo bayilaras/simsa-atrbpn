@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import TambahSuratKeluar from '@/pages/TambahSuratKeluar'
@@ -37,7 +37,6 @@ beforeEach(() => {
     vi.clearAllMocks()
     Element.prototype.scrollIntoView = vi.fn()
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
     mocks.keluar.create.mockResolvedValue({ data: { id: 'sk-baru' } })
     mocks.keluar.update.mockResolvedValue({ id: 'sk-1' })
@@ -74,6 +73,8 @@ describe('No. Urut pada Tambah Surat Keluar dan surat inisiatif', () => {
             expect(await screen.findByText('120/Nota Dinas/09/2026')).toBeInTheDocument()
             expect(mocks.keluar.getNextNumber).toHaveBeenLastCalledWith(expect.objectContaining({ noUrut: 120 }))
             fireEvent.submit(view.container.querySelector('form'))
+            // 120 jauh di atas nomor otomatis berikutnya (4).
+            fireEvent.click(await screen.findByRole('button', { name: 'Simpan dengan nomor ini' }))
             await waitFor(() => expect(mocks.keluar.create).toHaveBeenCalled())
             expect(mocks.keluar.create.mock.calls[0][0]).toMatchObject({ noUrut: 120, numberingMode: 'auto' })
         })
@@ -104,14 +105,16 @@ describe('nomor otomatis berikutnya dan rentang tahun pada surat keluar', () => 
     const PESAN_JAUH = 'Nomor yang diisi jauh di atas nomor otomatis berikutnya (4). Nomor setelahnya akan melanjutkan dari angka ini dan tidak dapat diturunkan lagi. Lanjutkan?'
 
     it('menampilkan nomor otomatis berikutnya; nomor jauh di atasnya meminta konfirmasi', async () => {
-        window.confirm.mockReturnValue(false)
         const view = tampil('/surat/keluar/tambah')
         isiWajib()
         expect(await screen.findByText('Nomor otomatis berikutnya: 4')).toBeInTheDocument()
         fireEvent.change(screen.getByLabelText('No. Urut'), { target: { value: '500' } })
         expect(await screen.findByText('500/Nota Dinas/09/2026')).toBeInTheDocument()
         fireEvent.submit(view.container.querySelector('form'))
-        expect(window.confirm).toHaveBeenCalledWith(PESAN_JAUH)
+        const dialog = await screen.findByRole('alertdialog', { name: 'Simpan dengan nomor ini?' })
+        expect(dialog).toHaveTextContent(PESAN_JAUH)
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Ubah nomor' }))
+        await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
         expect(mocks.keluar.create).not.toHaveBeenCalled()
     })
 
