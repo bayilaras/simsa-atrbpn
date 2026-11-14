@@ -13,13 +13,18 @@ import { NAMA_ELEMEN_MARKUP } from '../constants/nama-elemen-markup';
  * menjalankan apa pun dan harus dibiarkan, sebab kata biasa seperti "Online"
  * pada "<Rapat Online>" terbaca sebagai atribut bernama "online".
  *
- * parse5 adalah dependensi frontend (lewat jsdom). Uji ini berjalan bila
- * frontend/node_modules terpasang (lokal dan job CI yang memasang keduanya);
- * tanpa itu uji dilewati. Kasus tetapnya juga ada di sanitize.middleware.test.ts
- * dengan pemeriksa ekspresi reguler, yang selalu berjalan.
+ * parse5 adalah dependensi frontend (lewat jsdom). Uji ini memakai parse5 dari
+ * backend/node_modules (job CI memasangnya tanpa mengubah package.json) atau
+ * dari frontend/node_modules (lokal). Di CI uji gagal bila parse5 tidak ada,
+ * supaya tidak terlewati diam-diam. Kasus tetapnya juga ada di
+ * sanitize.middleware.test.ts dengan pemeriksa ekspresi reguler.
  */
-const lokasiParse5 = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../frontend/node_modules/parse5/dist/index.js');
-const parse5: any = existsSync(lokasiParse5) ? await import(/* @vite-ignore */ pathToFileURL(lokasiParse5).href) : null;
+const folderUji = path.dirname(fileURLToPath(import.meta.url));
+const lokasiParse5 = ['../../node_modules/parse5/dist/index.js', '../../../frontend/node_modules/parse5/dist/index.js']
+    .map(relatif => path.resolve(folderUji, relatif))
+    .find(lokasi => existsSync(lokasi));
+const parse5: any = lokasiParse5 ? await import(/* @vite-ignore */ pathToFileURL(lokasiParse5).href) : null;
+if (!parse5 && process.env.CI) throw new Error('parse5 tidak terpasang; uji oracle penyaring tidak boleh dilewati di CI.');
 
 const multiBaris = (teks: string): string => {
     const req: any = { body: { perihal: teks } };

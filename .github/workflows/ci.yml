@@ -250,6 +250,10 @@ jobs:
         run: npm ci
         working-directory: backend
 
+      - name: Install the HTML parser used by the sanitizer oracle test
+        run: npm install --no-save --no-package-lock --ignore-scripts parse5@8.0.1
+        working-directory: backend
+
       - name: Run tests
         run: npx vitest run --reporter=verbose
         working-directory: backend
