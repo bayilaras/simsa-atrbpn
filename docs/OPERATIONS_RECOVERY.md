@@ -10,7 +10,7 @@ Dokumen mencakup seluruh `file_attachments` dan sumber privat `regulatory_rule_s
 
 Dokumen dan manifest dienkripsi AES-256-GCM, terikat pada hash arsip database. Pemulihan membaca ulang ciphertext, memeriksa autentikasi dan semua hash, lalu mengenkripsi ulang ke target baru. Gateway recovery loopback menguji unduhan dengan bearer acak, menolak akses anonim, dan dihentikan setelah selesai. Gateway ini tidak mewakili seluruh RBAC atau login Google aplikasi. Pengambilan dokumen melalui API aplikasi, bila dilakukan oleh operator, dicatat terpisah dari verifikasi gateway recovery.
 
-Database sumber pada uji operator 15 September 2026 berasal dari snapshot 14 September 2026 pukul 17:46:45 UTC, jurnal 46 migrasi. Pemulihan PostgreSQL 18.6 di WSL Linux berhasil: 63 hitungan tabel, 63 hash isi, dan keseluruhan 140 baris fingerprint cocok persis; role API dan penghentian target berhasil. Uji ini bukan klaim bahwa scheduler telah aktif.
+Database sumber pada uji operator 15 September 2026 berasal dari snapshot 14 September 2026 pukul 17:46:45 UTC, jurnal 46 migrasi. Pemulihan PostgreSQL 18.6 di WSL Linux berhasil: 63 hitungan tabel, 63 hash isi, dan keseluruhan 140 baris fingerprint cocok persis; role API dan penghentian target berhasil. Sejak itu workflow terjadwal menjalankan backup dan uji pulih yang sama setiap hari; jadwal dan status terkininya ada di [kondisi produksi](KONDISI_PRODUKSI.md). Pemulihan ke layanan produksi mengikuti [runbook pemulihan produksi](RUNBOOK_PEMULIHAN_PRODUKSI.md).
 
 ## Konfigurasi pekerjaan terjadwal
 
@@ -99,7 +99,7 @@ Setiap run terjadwal juga mencatat `documentBudget` di laporan run: jumlah refer
 
 Gunakan checkout yang hash helper dan jurnal migrasinya cocok dengan manifest autentik, runtime Linux PostgreSQL 18 yang kompatibel, dan direktori artefak privat milik operator (0700, tanpa symlink). Isi `OPERATIONS_RECOVERY_BUNDLE` dengan direktori delivery, serta `BACKUP_ENCRYPTION_PASSPHRASE`, `OPERATIONS_RECOVERY_PG_BIN`, dan `OPERATIONS_RECOVERY_PRIVATE_ROOT`. Jalankan `node scripts/operations-recovery.mjs restore-delivery`.
 
-Mode tersebut tidak membaca credential sumber Neon/Blob, tidak terhubung ke produksi, tidak membutuhkan password login pengguna aplikasi, serta selalu memakai target baru. Kunci dibuka di RAM. Salah passphrase, perubahan hash helper/jurnal, ciphertext rusak, locale berbeda, dan izin tidak cocok akan menggagalkan proses. Jangan memulihkan ke cluster produksi memakai helper ini.
+Mode tersebut tidak membaca credential sumber Neon/Blob, tidak terhubung ke produksi, tidak membutuhkan password login pengguna aplikasi, serta selalu memakai target baru. Kunci dibuka di RAM. Salah passphrase, perubahan hash helper/jurnal, ciphertext rusak, locale berbeda, dan izin tidak cocok akan menggagalkan proses. Jangan memulihkan ke cluster produksi memakai helper ini. Untuk menghidupkan layanan dari backup (database Neon baru, unggah ulang dokumen ke store Blob, dan penulisan ulang lokasi dokumen dengan `scripts/operations-recovery-reupload.mjs`), ikuti [runbook pemulihan produksi](RUNBOOK_PEMULIHAN_PRODUKSI.md).
 
 ## Status panel dan aktivasi CI
 
@@ -109,11 +109,11 @@ Mode tersebut tidak membaca credential sumber Neon/Blob, tidak terhubung ke prod
 
 Workflow `.github/workflows/operations-recovery.yml` berjalan pada default branch yang terlindungi dan environment khusus `production-recovery`, satu-satunya environment backup. Environment lama `production-backup` dan `gcp-production-backup` sudah dihapus pada 31 Oktober 2026. Konfigurasi harus memverifikasi pin database dan store privat, menyediakan credential recovery terpisah, serta menyimpan passphrase pemulihan secara privat. Aktivasi memerlukan repository variable `OPERATIONS_RECOVERY_ENABLED=true`, secret/variable environment di tabel, dan pembatasan deployment branch environment. Workflow lama `backup-neon.yml` sudah dihapus dari repository; alur ini satu-satunya backup terjadwal. Waktu selesai backup pada status menggunakan waktu snapshot database; waktu pengambilan byte dicatat terpisah agar umur backup tidak diperpanjang oleh proses restore.
 
-File workflow telah disiapkan, tetapi merge ke protected default branch, aktivasi, dan run GitHub pertama harus diverifikasi tersendiri. Tidak ada public PR dibuat oleh pekerjaan recovery ini. Uji lokal, bukti restore aktual, dan kesiapan konfigurasi tidak boleh dilaporkan sebagai jadwal CI yang sudah berjalan.
+Workflow ini aktif di produksi dan berjalan sekali sehari, sekitar 22:30 WIB (jadwal persisnya di berkas workflow). Bukti setiap run ada di tab Actions dan di panel Super Admin. Setelah variabel aktivasi, environment, atau secret diubah, jalankan workflow secara manual dan pastikan hijau sebelum menganggap jadwal tetap berjalan.
 
 ## Bukti database dalam bundle
 
-Bundle database mengikat hash helper dan seluruh jurnal migrasi checkout. Selama rantai jurnal di `main` berbeda dengan rantai database produksi, backup terjadwal gagal; rapatkan jarak antara merge migrasi dan penerapannya, atau ambil backup manual dengan checkout yang cocok.
+Bundle database mengikat hash helper dan jurnal migrasi. Backup terjadwal tetap berjalan bila database produksi tertinggal dari `main`, yaitu ketika PR bermigrasi sudah di-merge tetapi migrasinya belum diterapkan; riwayat migrasi yang menyimpang dengan cara lain tetap menggagalkan backup. Backup dari masa itu memuat skema lama, jadi terapkan migrasi pada hari yang sama dengan merge.
 
 Collector `.github/scripts/collect-backup-evidence.sql` mengenal profil migrasi berikut:
 
@@ -129,7 +129,7 @@ Fingerprint schema sengaja tidak mencakup owner dan ACL karena dump/restore mema
 
 ## Sebelum migrasi produksi dan saat insiden
 
-Retensi PITR/branch bergantung pada plan dan konfigurasi project Neon yang aktif. Verifikasi nilainya langsung di console dan simpan bukti konfigurasinya; RPO/RTO baru boleh disahkan dari hasil drill terukur.
+Titik pulih dari backup (RPO) sekitar 24 jam, karena backup berjalan sekali sehari; bila satu run terlewat, bisa sampai sekitar 48 jam. Jendela pemulihan titik waktu (PITR) Neon ditetapkan pemilik project di Neon Console; nilainya dicatat di [kondisi produksi](KONDISI_PRODUKSI.md#titik-pulih-dan-jendela-pemulihan), bukan diperkirakan. Waktu pemulihan layanan (RTO) diisi dari latihan [runbook pemulihan produksi](RUNBOOK_PEMULIHAN_PRODUKSI.md#catatan-waktu).
 
 Sebelum migrasi produksi:
 
@@ -138,7 +138,7 @@ Sebelum migrasi produksi:
 3. pastikan pemulihan terisolasi terakhir berhasil; lalu
 4. jalankan migrasi hanya setelah approval operasional.
 
-Saat insiden, pulihkan ke environment terpisah, bandingkan snapshot dengan produksi, dan salin data kembali hanya melalui prosedur yang diaudit. Jangan melakukan restore in-place atau menghapus branch/objek lama sebelum validasi bisnis, fixity, audit, serta persetujuan pemilik data selesai. Pemulihan database yang berhasil tetapi dokumennya tidak dapat diambil atau hash-nya berbeda tetap dihitung sebagai drill gagal.
+Saat insiden, pulihkan ke environment terpisah, bandingkan snapshot dengan produksi, dan salin data kembali hanya melalui prosedur yang diaudit ([runbook pemulihan produksi](RUNBOOK_PEMULIHAN_PRODUKSI.md)). Jangan melakukan restore in-place atau menghapus branch/objek lama sebelum validasi bisnis, fixity, audit, serta persetujuan pemilik data selesai. Pemulihan database yang berhasil tetapi dokumennya tidak dapat diambil atau hash-nya berbeda tetap dihitung sebagai drill gagal.
 
 ## Bukti berkala
 

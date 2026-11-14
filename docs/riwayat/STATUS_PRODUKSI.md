@@ -1,6 +1,6 @@
 # Status penggunaan SIMSA di cloud
 
-> **Snapshot, tidak diperbarui.** Catatan ini merekam keadaan pada tanggal penulisannya. Kondisi produksi terkini ada di [README](../../README.md) dan runbook di `docs/`.
+> **Snapshot, tidak diperbarui.** Catatan ini merekam keadaan pada tanggal penulisannya. Kondisi produksi terkini ada di [kondisi produksi](../KONDISI_PRODUKSI.md), [README](../../README.md), dan runbook di `docs/`.
 
 Diperiksa pada 12 September 2026. Target adalah 1–3 pengguna aplikasi arsip internal, PDF maksimum 10 MiB (10.485.760 byte), anggaran Rp0 dan tanpa komputer operator yang menyala sepanjang hari.
 

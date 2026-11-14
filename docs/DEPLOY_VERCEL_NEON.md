@@ -2,7 +2,7 @@
 
 Jalur ini memakai dua proyek Vercel yang sudah ada: `simsa-frontend` dengan Root Directory `frontend`, serta `simsa-backend` dengan Root Directory `backend`. Frontend meneruskan `/api`, `/health`, `/ready`, dan `/uploads` melalui origin yang sama. Root `vercel.json` tetap menerbitkan dokumentasi; jangan memilih root tersebut sebagai aplikasi SIMSA. Pilih revisi yang memuat perubahan ini, bukan Production lama, dan pertahankan proses verifikasi sebelum promosi domain.
 
-Ini persiapan kompatibilitas, bukan pernyataan bahwa arsip digital lengkap siap Production atau bahwa paket gratis memenuhi kebutuhan instansi. Kelayakan akun/paket, kapasitas, pemantauan, backup/restore, penyimpanan privat, dan pemindai berkas masih harus dibuktikan pada lingkungan tujuan. Jangan mengaktifkan layanan berbayar atau mengandalkan paket gratis sebagai SLA.
+Halaman ini mencatat konfigurasi Vercel dan Neon untuk SIMSA. Produksi berjalan di Vercel paket Pro dan Neon; layanan yang aktif, jadwal, dan pemantauan saat ini dirangkum di [kondisi produksi](KONDISI_PRODUKSI.md). Kapasitas, pemantauan, backup/restore, penyimpanan privat, dan pemindai berkas tetap dibuktikan pada lingkungan tujuan setiap kali konfigurasinya berubah. Kuota dan riwayat pemulihan penyedia bukan SLA.
 
 ## Build dan runtime
 
@@ -14,9 +14,9 @@ Ini persiapan kompatibilitas, bukan pernyataan bahwa arsip digital lengkap siap 
 
 ## Peluncuran awal surat dan arsip manual
 
-Target awal adalah 1–3 pengguna dengan dokumen PDF maksimum **10 MiB (10.485.760 byte)**. Backend memeriksa ekstensi `.pdf`, MIME `application/pdf`, signature `%PDF-`, dan ukuran byte sebenarnya. Surat masuk/keluar, lampiran arsip elektronik, bukti pelaporan, serta lampiran preservasi menggunakan unggah langsung privat dan finalisasi JSON pada Vercel; multipart arsip ditolak sebelum storage I/O. Finalisasi mengulang pemeriksaan akun, unit/grant, legal hold dan status arsip setelah verifikasi byte, lalu mencatat lease, lampiran dan audit dalam satu transaksi.
+Rencana awal menargetkan 1–3 pengguna. Angka itu bukan batas aplikasi; produksi kini dipakai dengan akun per unit kerja. Dokumen PDF maksimum **10 MiB (10.485.760 byte)**. Backend memeriksa ekstensi `.pdf`, MIME `application/pdf`, signature `%PDF-`, dan ukuran byte sebenarnya. Surat masuk/keluar, lampiran arsip elektronik, bukti pelaporan, serta lampiran preservasi menggunakan unggah langsung privat dan finalisasi JSON pada Vercel; multipart arsip ditolak sebelum storage I/O. Finalisasi mengulang pemeriksaan akun, unit/grant, legal hold dan status arsip setelah verifikasi byte, lalu mencatat lease, lampiran dan audit dalam satu transaksi.
 
-Untuk menutup modul opsional yang belum selesai diuji pada hosting gratis, gunakan dua flag **backend** berikut; tidak perlu variabel `VITE_*`:
+Untuk menutup modul opsional yang belum selesai diuji, gunakan dua flag **backend** berikut; tidak perlu variabel `VITE_*`:
 
 ```dotenv
 SIMSA_BULK_OCR_ENABLED=false
@@ -31,7 +31,7 @@ Konfigurasi manual tersebut **masih memerlukan private Blob, database Production
 
 ## Antivirus native sesuai permintaan
 
-Implementasi ini memakai satu fungsi Vercel terpisah untuk satu pekerjaan pemindaian. Belum boleh dinyatakan aktif sebelum uji cloud lengkap lulus. Konfigurasi backend Production untuk jalur ini:
+Implementasi ini memakai satu fungsi Vercel terpisah untuk satu pekerjaan pemindaian. Jalur ini aktif di produksi: pemindai berjalan sesuai permintaan, tanpa server pemindai yang selalu hidup. Setiap perubahan konfigurasinya tetap diuji di cloud sebelum dipromosikan. Konfigurasi backend Production untuk jalur ini:
 
 ```dotenv
 NODE_ENV=production
@@ -123,7 +123,7 @@ Preview memerlukan `SIMSA_PREVIEW_ENABLED=true` serta empat sumber tersendiri: `
 
 Jalankan tes terarah `node --test scripts/vercel-deployment.test.mjs`, tes backend `database-pool-config`, `vercel-preview-runtime`, dan `cloud-platform.config`, serta tes frontend `vercel-config`. Verifikasi artefak `simsa-build.json` menunjukkan `mode=full`, `syntheticDataOnly=false`, `authProvider=better-auth`, `storageProvider=disabled`, dan `api=same-origin`. Kemudian gunakan pemeriksaan HTTP terautentikasi terhadap domain tujuan: session cookie, penolakan tanpa izin, create/read/update metadata, audit, logout, dan penolakan file ketika storage disabled. Tes lokal/build tidak membuktikan deployment cloud berhasil.
 
-Menurut [dokumentasi Node Vercel](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions), Node 24 tersedia. Handler Express default didukung tanpa adapter tambahan dan respons Node dapat di-stream ([panduan Express](https://vercel.com/kb/guide/ship-a-express-app-on-vercel)). Dengan Fluid Compute, Hobby membatasi satu invocation hingga 300 detik; durasi ini sudah ditetapkan pada handler. Batas payload request dan response biasa adalah 4,5 MB, tetapi **respons streaming tidak terkena batas ukuran tersebut**; batas durasi tetap berlaku ([panduan ukuran payload](https://vercel.com/kb/guide/how-to-bypass-vercel-body-size-limit-serverless-functions)).
+Menurut [dokumentasi Node Vercel](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions), Node 24 tersedia. Handler Express default didukung tanpa adapter tambahan dan respons Node dapat di-stream ([panduan Express](https://vercel.com/kb/guide/ship-a-express-app-on-vercel)). Handler API dan fungsi pemindai memakai batas 300 detik per invocation (`maxDuration` di `backend/api/index.js`, `backend/api/internal-malware-scan.js`, dan `backend/vercel.json`); angka itu dipilih saat produksi masih memakai paket Hobby dengan Fluid Compute dan tetap dipakai di paket Pro. Batas payload request dan response biasa adalah 4,5 MB, tetapi **respons streaming tidak terkena batas ukuran tersebut**; batas durasi tetap berlaku ([panduan ukuran payload](https://vercel.com/kb/guide/how-to-bypass-vercel-body-size-limit-serverless-functions)).
 
 Ukuran paket fungsi standar tidak terkompresi adalah 250 MB untuk Node. Vercel juga menyediakan Large Functions beta hingga 5 GB pada runtime/proyek yang memenuhi syarat dengan Fluid Compute dan Active CPU; proyek lama mungkin perlu opt-in. Jadi 250 MB bukan batas universal setiap konfigurasi. Build aktual platform tetap harus membuktikan dukungan, ukuran paket dan dependensi PDF/native; build lokal tidak membuktikan tracing Linux ([batas Functions](https://vercel.com/docs/functions/limitations)).
 
