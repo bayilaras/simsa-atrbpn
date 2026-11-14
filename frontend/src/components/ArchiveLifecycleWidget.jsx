@@ -81,7 +81,7 @@ export function ArchiveLifecycleWidget({ className = "", unitKerjaId, perluPilih
         return (
             <KartuStatusRetensi className={className}>
                 <div role="alert" className="space-y-3">
-                    <p className="text-sm">Status retensi belum dapat dimuat. Periksa koneksi Anda lalu coba lagi.</p>
+                    <p className="text-sm">Status retensi belum dapat dimuat. Silakan coba lagi.</p>
                     <Button variant="outline" size="sm" onClick={() => setMuatUlang(nilai => nilai + 1)}>Coba lagi</Button>
                 </div>
             </KartuStatusRetensi>

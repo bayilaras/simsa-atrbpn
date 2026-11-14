@@ -5,7 +5,7 @@ import { ArchiveLifecycleWidget } from './ArchiveLifecycleWidget'
 const mocks = vi.hoisted(() => ({ get: vi.fn() }))
 vi.mock('@/services/api', () => ({ api: { get: mocks.get } }))
 
-const PESAN_GAGAL = 'Status retensi belum dapat dimuat. Periksa koneksi Anda lalu coba lagi.'
+const PESAN_GAGAL = 'Status retensi belum dapat dimuat. Silakan coba lagi.'
 const statusUnit = total => ({
     success: true,
     data: {
