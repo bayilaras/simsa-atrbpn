@@ -20,6 +20,6 @@ export const tutupMassalDataLamaSchema = z.object({
     expectedCount: z.number().int().min(0).optional(),
 }).strict().superRefine((value, ctx) => {
     if (!value.dryRun && (value.konfirmasi !== true || value.expectedCount === undefined)) {
-        ctx.addIssue({ code: 'custom', message: 'Penerapan membutuhkan konfirmasi dan expectedCount dari pratinjau.' });
+        ctx.addIssue({ code: 'custom', message: 'Penerapan membutuhkan konfirmasi dan jumlah dari pratinjau.' });
     }
 });
