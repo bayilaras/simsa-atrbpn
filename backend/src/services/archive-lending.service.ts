@@ -1,7 +1,7 @@
 import { AppError, ValidationError, ConflictError } from '../utils/errors';
 import { db } from '../config/database';
 import { archiveLending, arsip, storageLocations, users } from '../db/schema';
-import { eq, and, desc, sql, lt, inArray, or, ilike, gte } from 'drizzle-orm';
+import { eq, and, desc, sql, lt, inArray, or, ilike, gte, type SQL } from 'drizzle-orm';
 import type { RecordUnitScope } from '../utils/record-unit-scope.js';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 import { jakartaDate } from '../utils/jakarta-date.js';
@@ -66,20 +66,33 @@ export class ArchiveLendingService {
         return this.scopedWhere(unitKerjaId, readableTarget, ...conditions);
     }
 
+    /**
+     * Syarat penyaring status yang dipakai daftar Peminjaman dan Laporan.
+     * Terlambat dihitung dari jatuh tempo sebelum hari ini (WIB), bukan dari
+     * kolom status: tidak ada proses yang menulis status 'overdue'.
+     */
+    statusConditions(status: string | undefined, today: string): SQL[] {
+        if (status === 'overdue') {
+            return [inArray(archiveLending.status, ['borrowed', 'overdue']), lt(archiveLending.dueDate, today)];
+        }
+        if (status === 'borrowed') {
+            return [inArray(archiveLending.status, ['borrowed', 'overdue']), gte(archiveLending.dueDate, today)];
+        }
+        return status ? [eq(archiveLending.status, status)] : [];
+    }
+
+    /** Status yang ditampilkan: pinjaman belum kembali yang lewat jatuh tempo tampil 'overdue'. */
+    statusTampil(row: { status: string; dueDate: string }, today: string) {
+        return row.status !== 'returned' && row.dueDate < today ? 'overdue' : row.status;
+    }
+
     async findAll(filters: LendingFilters) {
         const { unitKerjaId, securityClassifications = [], status, lendingType, borrowerId, arsipId, storageLocationId, search, page = 1, limit = 20 } = filters;
         const offset = (page - 1) * limit;
         const today = jakartaDate();
 
-        const conditions: any[] = [];
+        const conditions: any[] = [...this.statusConditions(status, today)];
 
-        if (status === 'overdue') {
-            conditions.push(inArray(archiveLending.status, ['borrowed', 'overdue']), lt(archiveLending.dueDate, today));
-        } else if (status === 'borrowed') {
-            conditions.push(inArray(archiveLending.status, ['borrowed', 'overdue']), gte(archiveLending.dueDate, today));
-        } else if (status) {
-            conditions.push(eq(archiveLending.status, status));
-        }
         if (lendingType) {
             conditions.push(eq(archiveLending.lendingType, lendingType));
         }
@@ -134,7 +147,7 @@ export class ArchiveLendingService {
             .offset(offset);
 
         return {
-            data: data.map(d => ({ ...d.lending, status: d.lending.status !== 'returned' && d.lending.dueDate < today ? 'overdue' : d.lending.status, borrower: d.borrower, arsip: d.arsip, storageLocation: d.storageLocation })),
+            data: data.map(d => ({ ...d.lending, status: this.statusTampil(d.lending, today), borrower: d.borrower, arsip: d.arsip, storageLocation: d.storageLocation })),
             pagination: {
                 page,
                 limit,

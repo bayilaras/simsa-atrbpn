@@ -15,6 +15,7 @@ import { eq, and, desc, sql, gte, lte, or, isNull, inArray } from 'drizzle-orm';
 import { klasifikasiInSql } from './access/visibility-spec';
 import { archiveLendingService } from './archive-lending.service';
 import { periodeLaporanArsip, periodeLaporanSurat } from './laporan-periode';
+import { jakartaDate } from '../utils/jakarta-date.js';
 import {
     archiveRuleAssignmentService,
     CURRENT_APPRAISAL_CASE_JOIN,
@@ -600,12 +601,12 @@ class ReportService {
     async getLendingReport(filters: LendingReportFilters) {
         const { unitKerjaId, status = 'all', tanggalDari, tanggalSampai, page = 1, limit = 50, securityClassifications = [] } = filters;
         const offset = (page - 1) * limit;
+        // Status Dipinjam/Terlambat sama dengan daftar Peminjaman: terlambat
+        // berarti belum kembali dan jatuh temponya sebelum hari ini (WIB).
+        const today = jakartaDate();
 
-        const conditions: any[] = [];
+        const conditions: any[] = archiveLendingService.statusConditions(status === 'all' ? undefined : status, today);
 
-        if (status !== 'all') {
-            conditions.push(eq(archiveLending.status, status));
-        }
         if (tanggalDari) {
             conditions.push(gte(archiveLending.borrowDate, tanggalDari));
         }
@@ -642,7 +643,7 @@ class ReportService {
         const stats = await this.getLendingStats(unitKerjaId, securityClassifications);
 
         return {
-            data,
+            data: data.map(row => ({ ...row, status: archiveLendingService.statusTampil(row, today) })),
             stats,
             pagination: {
                 page,
@@ -654,16 +655,17 @@ class ReportService {
     }
 
     async getLendingStats(unitKerjaId?: string, securityClassifications: string[] = []) {
-        const now = new Date().toISOString().split('T')[0];
+        // Sama dengan archiveLendingService.getStats: hari ini menurut WIB.
+        const now = jakartaDate();
         const readable = (...conditions: any[]) =>
             archiveLendingService.readableWhere(unitKerjaId ?? null, securityClassifications, ...conditions);
 
         const stats = await db
             .select({
                 total: sql<number>`count(*)::int`,
-                borrowed: sql<number>`count(*) filter (where ${archiveLending.status} = 'borrowed')::int`,
+                borrowed: sql<number>`count(*) filter (where ${archiveLending.status} in ('borrowed', 'overdue'))::int`,
                 returned: sql<number>`count(*) filter (where ${archiveLending.status} = 'returned')::int`,
-                overdue: sql<number>`count(*) filter (where ${archiveLending.status} = 'borrowed' and ${archiveLending.dueDate} < ${now})::int`,
+                overdue: sql<number>`count(*) filter (where ${archiveLending.status} in ('borrowed', 'overdue') and ${archiveLending.dueDate} < ${now})::int`,
             })
             .from(archiveLending)
             .where(readable());
