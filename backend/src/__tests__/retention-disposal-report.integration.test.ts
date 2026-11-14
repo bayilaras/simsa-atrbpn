@@ -55,4 +55,20 @@ describe('POST /api/retention/disposal-report', () => {
         });
         expect(JSON.stringify(body.data)).not.toMatch(/BA-/);
     });
+
+    it('tanggal draf memakai kalender WIB walau zona waktu server UTC', async () => {
+        env.SIMSA_ADVANCED_ARCHIVE_WORKFLOWS_ENABLED = 'true';
+        vi.stubEnv('TZ', 'UTC');
+        vi.useFakeTimers({ toFake: ['Date'] });
+        try {
+            // 18.30 UTC tanggal 13 November = 01.30 WIB tanggal 14 November.
+            vi.setSystemTime(new Date('2026-11-13T18:30:00Z'));
+            const { body } = await request(app).post('/api/retention/disposal-report')
+                .set(sebagai(PENGGUNA.tu)).send({ unitKerjaId: 'sesditjen' }).expect(200);
+            expect(body.data.tanggal).toBe('14 November 2026');
+        } finally {
+            vi.useRealTimers();
+            vi.unstubAllEnvs();
+        }
+    });
 });

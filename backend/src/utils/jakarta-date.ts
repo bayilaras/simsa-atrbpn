@@ -6,3 +6,8 @@ export function jakartaDate(now = new Date()): string {
     const value = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)!.value;
     return `${value('year')}-${value('month')}-${value('day')}`;
 }
+
+/** Tanggal kalender WIB untuk naskah, mis. "14 November 2026"; tidak bergantung zona waktu server. */
+export function jakartaTanggalPanjang(now = new Date()): string {
+    return now.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'long', year: 'numeric' });
+}
