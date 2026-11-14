@@ -109,9 +109,10 @@ export function authAuditEntry(ctx: AuthEventContext): LogActionData | null {
     if (path === '/change-password') {
         const user = ctx.context.newSession?.user ?? ctx.context.session?.user;
         if (!user || failed) return null;
+        // The Audit Log shows the key as "kata sandi".
         return userEntry('change_password', user, ipAddress, {
-            fields: ['password'],
-            after: { password: 'diganti' },
+            fields: ['kata_sandi'],
+            after: { kata_sandi: 'diganti' },
         });
     }
 

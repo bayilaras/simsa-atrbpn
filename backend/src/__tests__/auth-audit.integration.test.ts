@@ -192,7 +192,7 @@ describe('authentication events in the Audit Log', () => {
             action: 'change_password',
             entity_type: 'user',
             entity_id: USER.active,
-            changes: { fields: ['password'], after: { password: 'diganti' } },
+            changes: { fields: ['kata_sandi'], after: { kata_sandi: 'diganti' } },
             ip_address: expect.stringMatching(/^203\.0\.113\./),
         }]);
         const stored = JSON.stringify(rows);

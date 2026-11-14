@@ -28,7 +28,8 @@ beforeEach(() => {
         data: [
             ...PERISTIWA.map(([action, , user], index) => ({
                 id: `log-${index}`, action, entityType: 'user', entityId: null, ...user,
-                createdAt: '2026-11-14T01:00:00.000Z', changes: null,
+                createdAt: '2026-11-14T01:00:00.000Z',
+                changes: action === 'change_password' ? { fields: ['kata_sandi'], after: { kata_sandi: 'diganti' } } : null,
             })),
             { id: 'log-tanpa-email', action: 'sign_in_failed', entityType: 'user', entityId: null, userName: null, userEmail: null,
                 createdAt: '2026-11-14T01:00:00.000Z', changes: { after: { metode: 'email', alasan: 'Format email tidak valid' } } },
@@ -44,6 +45,9 @@ it('memberi label Indonesia untuk masuk, gagal masuk, keluar, dan mengganti kata
         expect((await screen.findAllByText(label, { selector: '.border-0' }))[0], action).toBeInTheDocument()
         expect(screen.queryByText(action)).toBeNull()
     }
+    // The detail of a password change is labelled in Indonesian.
+    expect(screen.getByText('kata sandi:')).toBeInTheDocument()
+    expect(screen.getByText('diganti')).toBeInTheDocument()
     // A failed attempt without a well-formed address is not attributed to the system.
     expect(screen.getByText('Pengguna tidak dikenal')).toBeInTheDocument()
 })
