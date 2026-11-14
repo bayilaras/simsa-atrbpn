@@ -8,6 +8,7 @@ import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja';
 import { ValidationError } from '../utils/errors.js';
 import { importLimiter } from '../middlewares/rate-limiter.middleware.js';
 import { IMPORT_TIME_BUDGET_MS } from '../services/import-resume.js';
+import { decodeCsvText } from '../services/import-file-reader.js';
 
 const router = Router();
 
@@ -99,7 +100,7 @@ router.post('/surat-masuk',
                 });
             }
 
-            const csvContent = req.file.buffer.toString('utf-8');
+            const csvContent = decodeCsvText(req.file.buffer);
             const result = await migrationService.importSuratMasuk(
                 csvContent,
                 unitKerjaId,
@@ -159,7 +160,7 @@ router.post('/surat-keluar',
                 });
             }
 
-            const csvContent = req.file.buffer.toString('utf-8');
+            const csvContent = decodeCsvText(req.file.buffer);
             const result = await migrationService.importSuratKeluar(
                 csvContent,
                 unitKerjaId,
@@ -217,7 +218,7 @@ router.post('/arsip',
                 });
             }
 
-            const csvContent = req.file.buffer.toString('utf-8');
+            const csvContent = decodeCsvText(req.file.buffer);
             const result = await migrationService.importArsip(
                 csvContent,
                 unitKerjaId,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PayloadTooLargeError, ValidationError } from '../utils/errors.js';
 import {
-    IMPORT_FILE_LIMITS, assertImportFileType, listImportFileSheets, readImportFile, unpackXlsx,
+    IMPORT_FILE_LIMITS, assertImportFileType, decodeCsvText, listImportFileSheets, readImportFile, unpackXlsx,
 } from '../services/import-file-reader.js';
 import { REGISTER_HEADERS, XLSX_MIME, driveLink, registerWorkbook, repackage, singleSheetWorkbook, upload, zipArchive } from './helpers/import-file-fixtures.js';
 
@@ -205,6 +205,12 @@ describe('CSV import files', () => {
     it('reads a Windows-1252 file saved as plain "CSV (Comma delimited)"', async () => {
         const bytes = Buffer.concat([Buffer.from('Nomor Surat;Hal\n1/A;Rapat '), Buffer.from([0x96]), Buffer.from(' tahap 2')]);
         expect((await readImportFile(csv(bytes))).rows[1]).toEqual(['1/A', 'Rapat – tahap 2']);
+    });
+
+    it('decodes the text of any CSV upload without its byte order mark, also when the bytes are not UTF-8', () => {
+        expect(decodeCsvText(Buffer.from('﻿Uraian;Tanggal', 'utf8'))).toBe('Uraian;Tanggal');
+        const windows = Buffer.concat([Buffer.from('efbbbf', 'hex'), Buffer.from('Arsip '), Buffer.from([0x96]), Buffer.from(' lama')]);
+        expect(decodeCsvText(windows)).toBe('Arsip – lama');
     });
 
     it('rejects binary content and a workbook saved with a .csv name', async () => {

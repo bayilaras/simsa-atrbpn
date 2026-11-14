@@ -111,9 +111,13 @@ function CsvImportForm({ type, unitKerjaId, onImportComplete, onBusyChange }) {
 
     return <div className="min-w-0 space-y-4">
         <p className="text-sm text-muted-foreground">
-            Tanggal wajib diisi sebagai YYYY-MM-DD atau DD/MM/YYYY. Koreksi tanggal yang ditolak pada CSV sumber; aplikasi tidak menggantinya dengan tanggal hari ini.
+            Tanggal wajib diisi dengan urutan hari, bulan, tahun, misalnya 03/11/2026, 3-11-2026, atau 3 November 2026; penulisan 2026-11-03 juga diterima.
+            Tanggal yang tidak dapat dibaca ditolak, tidak ditebak atau diganti dengan tanggal hari ini; koreksi pada CSV sumber.
         </p>
-        <p className="text-sm text-muted-foreground">Maksimal 1.000 rekod dan 10 MiB per berkas. Gunakan satu header unik untuk setiap kolom; pecah berkas besar sebelum diimpor.</p>
+        <p className="text-sm text-muted-foreground">
+            Pemisah kolom boleh koma, titik koma, atau tab dan dibaca dari baris judul. Sebaiknya simpan sebagai &quot;CSV UTF-8&quot;; CSV biasa dari Excel juga dapat dibaca.
+            Maksimal 1.000 rekod dan 10 MiB per berkas. Gunakan satu header unik untuk setiap kolom; pecah berkas besar sebelum diimpor.
+        </p>
         <p className="break-words rounded-md bg-muted p-3 text-sm">
             Kolom utama: {type === 'arsip' ? 'Nomor Berkas, Tanggal, Uraian, Jenis Arsip (masuk/keluar)' : 'Nomor Surat, Tanggal Surat, Perihal, Dari, Kepada'}.
         </p>

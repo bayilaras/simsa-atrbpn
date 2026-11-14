@@ -55,6 +55,11 @@ describe('migration preview boundary', () => {
         await call.attach('file', Buffer.from('Tanggal\n2026-09-11'), 'import.csv').expect(400);
         expect(mocks.import).not.toHaveBeenCalled();
     });
+    it('reads a CSV saved in the Windows code page as text instead of replacement characters', async () => {
+        const bytes = Buffer.concat([Buffer.from('Nomor Berkas;Tanggal;Uraian\nAR-1;03/11/2026;Arsip '), Buffer.from([0x96]), Buffer.from(' lama')]);
+        await request(app).post('/api/migration/arsip').field('unitKerjaId', 'unit-a').attach('file', bytes, 'arsip.csv').expect(200);
+        expect(mocks.import.mock.calls[0][0]).toBe('Nomor Berkas;Tanggal;Uraian\nAR-1;03/11/2026;Arsip – lama');
+    });
     it('preserves the default import mode when dryRun is omitted', async () => {
         await request(app).post('/api/migration/arsip').field('unitKerjaId', 'unit-a')
             .attach('file', Buffer.from('Tanggal\n2026-09-11'), 'import.csv').expect(200);
