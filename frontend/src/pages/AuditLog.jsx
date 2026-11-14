@@ -35,6 +35,7 @@ const ACTION_CONFIG = {
     'receive_distribution': { label: 'Menerima Disposisi', icon: Inbox, color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300', borderColor: 'border-blue-200', iconColor: 'text-blue-600' },
     'process_distribution': { label: 'Menyelesaikan Disposisi', icon: CheckCircle2, color: 'bg-green-100 dark:bg-green-500/15 text-green-800 dark:text-green-300', borderColor: 'border-green-200', iconColor: 'text-green-600' },
     'reject_distribution': { label: 'Menolak Disposisi', icon: XCircle, color: 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300', borderColor: 'border-red-200', iconColor: 'text-red-600' },
+    'run_scanner': { label: 'Menjalankan Pemindai', icon: Shield, color: 'bg-sky-100 dark:bg-sky-500/15 text-sky-800 dark:text-sky-300', borderColor: 'border-sky-200', iconColor: 'text-sky-600' },
 };
 
 const ENTITY_CONFIG = {
@@ -46,6 +47,7 @@ const ENTITY_CONFIG = {
     'rangkaian_surat': { label: 'Rangkaian Surat', color: 'text-cyan-700', bgColor: 'bg-cyan-50 dark:bg-cyan-500/15' },
     'rangkaian_relasi': { label: 'Relasi Rangkaian', color: 'text-sky-700', bgColor: 'bg-sky-50 dark:bg-sky-500/15' },
     'surat_distribution': { label: 'Disposisi', color: 'text-teal-700', bgColor: 'bg-teal-50 dark:bg-teal-500/15' },
+    'file_attachment': { label: 'Berkas', color: 'text-slate-700', bgColor: 'bg-slate-50 dark:bg-slate-500/15' },
 };
 
 // Status changes.itemSync pada audit ubah arsip (StatusSinkronItemArsip di

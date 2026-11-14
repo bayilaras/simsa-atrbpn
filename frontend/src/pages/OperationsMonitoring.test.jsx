@@ -35,6 +35,39 @@ describe('operational monitoring', () => {
     });
 });
 
+describe('running the scanner from monitoring', () => {
+    const scanner = status => ({ status: status === 'healthy' ? 'healthy' : 'attention', timestamp: '2026-09-15T00:00:00Z', checks: [
+        { id: 'scanner', label: 'Pemindai keamanan dokumen', status, message: 'Keadaan pemindai.' },
+    ] });
+    it('starts the scanner and says when the waiting files are scanned', async () => {
+        get.mockResolvedValue({ data: scanner('healthy') });
+        post.mockResolvedValue({ success: true, data: { wakeScheduled: true } });
+        render(<OperationsMonitoring />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Jalankan pemindai' }));
+        expect(await screen.findByText('Pemindai dijalankan. Berkas yang menunggu dipindai dalam beberapa menit; status di halaman ini diperbarui setiap menit.')).toBeInTheDocument();
+        expect(post).toHaveBeenCalledWith('/api/operations/scanner-run', {});
+        expect(screen.getByText(/Pemindai berjalan sendiri setelah berkas diunggah\./)).toBeInTheDocument();
+    });
+    it('shows the server explanation when the scanner cannot be run, and never a raw error', async () => {
+        get.mockResolvedValue({ data: scanner('failed') });
+        post.mockRejectedValueOnce(Object.assign(new Error('Pemindai tidak dapat dijalankan dari layanan ini. Periksa pengaturan pemindai pada layanan backend.'), { status: 503 }))
+            .mockRejectedValueOnce(new Error('ECONNRESET private detail'));
+        render(<OperationsMonitoring />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Jalankan pemindai' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent('Pemindai tidak dapat dijalankan dari layanan ini. Periksa pengaturan pemindai pada layanan backend.');
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Jalankan pemindai' })).toBeEnabled());
+        fireEvent.click(screen.getByRole('button', { name: 'Jalankan pemindai' }));
+        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Pemindai belum dapat dijalankan. Coba lagi beberapa saat lagi.'));
+        expect(screen.queryByText(/ECONNRESET/)).not.toBeInTheDocument();
+    });
+    it('offers no scanner run where the scanner is not enabled', async () => {
+        get.mockResolvedValue({ data: scanner('disabled') });
+        render(<OperationsMonitoring />);
+        expect(await screen.findByText('Keadaan pemindai.')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Jalankan pemindai' })).not.toBeInTheDocument();
+    });
+});
+
 describe('requeueing failed scans from monitoring', () => {
     const queue = counts => ({ status: counts.errors || counts.infected ? 'attention' : 'healthy', timestamp: '2026-09-15T00:00:00Z', checks: [
         { id: 'scan_queue', label: 'Antrean pemindaian', status: counts.errors || counts.infected ? 'attention' : 'healthy', message: 'Keadaan antrean.', counts: { waiting: 0, overdue: 0, ...counts } },

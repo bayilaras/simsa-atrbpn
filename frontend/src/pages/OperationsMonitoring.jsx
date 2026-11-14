@@ -15,6 +15,7 @@ const statuses = {
 const countLabels = { waiting: 'Menunggu', overdue: 'Terlambat', errors: 'Gagal', infected: 'Terdeteksi berbahaya', unscheduled: 'Belum terjadwal', mismatched: 'Tidak cocok' };
 const sourceLabels = { surat_masuk: 'Surat masuk', surat_keluar: 'Surat keluar', arsip: 'Arsip' };
 const REQUEUE_FAILED = 'Berkas belum dapat diantre ulang. Coba lagi beberapa saat lagi.';
+const SCANNER_RUN_FAILED = 'Pemindai belum dapat dijalankan. Coba lagi beberapa saat lagi.';
 function timestamp(value) {
     const date = new Date(value);
     return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Jakarta' }).format(date) + ' WIB' : 'Belum tersedia';
@@ -77,6 +78,35 @@ function FailedScans({ checkedAt, onChanged, onNotice }) {
     </div>;
 }
 
+// Super Admin wake for the on-demand scanner. The server records who asked;
+// queue and quarantine states are left to the scan itself.
+function RunScanner() {
+    const [busy, setBusy] = useState(false);
+    const [notice, setNotice] = useState('');
+    const [failure, setFailure] = useState('');
+    const mounted = useRef(true);
+    useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+    const run = async () => {
+        if (busy) return;
+        setBusy(true); setNotice(''); setFailure('');
+        try {
+            await api.post('/api/operations/scanner-run', {});
+            if (mounted.current) setNotice('Pemindai dijalankan. Berkas yang menunggu dipindai dalam beberapa menit; status di halaman ini diperbarui setiap menit.');
+        } catch (error) {
+            if (mounted.current) setFailure(error?.status === 429 || error?.status === 503 ? (error.message || SCANNER_RUN_FAILED) : SCANNER_RUN_FAILED);
+        } finally {
+            if (mounted.current) setBusy(false);
+        }
+    };
+    return <div className="space-y-2 rounded-md border bg-muted/20 p-3" role="group" aria-label="Jalankan pemindai">
+        <p className="text-muted-foreground">Pemindai berjalan sendiri setelah berkas diunggah. Bila ada berkas yang lama menunggu pemindaian, jalankan pemindai sekarang.</p>
+        <Button type="button" size="sm" variant="outline" disabled={busy} onClick={run}>
+            {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Jalankan pemindai</Button>
+        {notice && <p role="status">{notice}</p>}
+        {failure && <p role="alert" className="text-destructive">{failure}</p>}
+    </div>;
+}
+
 export default function OperationsMonitoring() {
     const [snapshot, setSnapshot] = useState(null);
     // Kept here so the confirmation survives once no failed scan is left.
@@ -124,6 +154,7 @@ export default function OperationsMonitoring() {
                         {check.counts && <dl className="grid grid-cols-2 gap-2">{Object.entries(check.counts).map(([key, value]) => <div key={key}><dt className="text-xs text-muted-foreground">{countLabels[key] || key}</dt><dd className="font-semibold tabular-nums">{value}</dd></div>)}</dl>}
                         {check.id === 'scan_queue' && scanNotice && <p role="status">{scanNotice}</p>}
                         {check.id === 'scan_queue' && check.counts?.errors > 0 && <FailedScans checkedAt={snapshot.timestamp} onChanged={refresh} onNotice={setScanNotice} />}
+                        {check.id === 'scanner' && check.status !== 'disabled' && <RunScanner />}
                         {check.checkedAt && <p className="text-xs text-muted-foreground">Bukti terakhir: {timestamp(check.checkedAt)}</p>}
                         {check.expiresAt && <p className="text-xs text-muted-foreground">Berlaku hingga: {timestamp(check.expiresAt)}</p>}
                     </CardContent>

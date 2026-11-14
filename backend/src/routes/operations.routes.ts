@@ -5,7 +5,7 @@ import { httpMetrics } from '../services/http-metrics.service.js';
 import { pool } from '../config/database.js';
 import { timingSafeEqual } from 'node:crypto';
 import { getOperationsStatus, invalidateOperationsStatus } from '../services/operations-status.service.js';
-import { listFailedScans, requeueFailedScans } from '../services/malware-scan-requeue.service.js';
+import { hasWaitingScanWork, listFailedScans, recordScannerRun, requeueFailedScans } from '../services/malware-scan-requeue.service.js';
 import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware.js';
 import { getReadiness } from '../services/readiness.service.js';
 import { scheduleMalwareScanWake } from '../services/malware-scan-dispatch.service.js';
@@ -36,7 +36,9 @@ router.get('/probe', async (req, res) => {
 });
 // Acceleration only, like an upload: it never changes queue or quarantine
 // state. Wakes once less than the refresh margin of the 24-hour antivirus
-// definition lease remains, so the woken scanner renews it before it lapses.
+// definition lease remains, so the woken scanner renews it before it lapses,
+// and whenever a file has waited for its scan longer than an upload's own
+// wake should take (that wake may have failed or been cut short).
 async function wakeScannerIfDue(res: Response) {
     let worker: { state?: unknown; required?: unknown; definitionsExpiresAt?: unknown } = {};
     try {
@@ -49,8 +51,12 @@ async function wakeScannerIfDue(res: Response) {
     }
     const expires = typeof worker.definitionsExpiresAt === 'string' ? Date.parse(worker.definitionsExpiresAt) : NaN;
     if (worker.state === 'ready' && expires - Date.now() > MALWARE_DEFINITION_REFRESH_BEFORE_MS) {
-        res.json({ status: 'fresh' });
-        return;
+        // An unreadable queue is treated as waiting work, never as an empty one.
+        const waiting = await hasWaitingScanWork().catch(() => true);
+        if (!waiting) {
+            res.json({ status: 'fresh' });
+            return;
+        }
     }
     if (!scheduleMalwareScanWake()) {
         res.status(503).json({ status: 'unavailable' });
@@ -146,6 +152,30 @@ async function requeueScans(req: AuthRequest, res: Response, attachmentId?: stri
 router.post('/scan-failures/requeue', sensitiveLimiter, (req: AuthRequest, res) => requeueScans(req, res));
 router.post('/scan-failures/:attachmentId/requeue', sensitiveLimiter,
     (req: AuthRequest, res) => requeueScans(req, res, String(req.params.attachmentId)));
+// "Jalankan pemindai": wakes the on-demand scanner now, as an upload does. It
+// never changes queue or quarantine state. The request is audited first, so
+// no run starts without its audit record.
+router.post('/scanner-run', sensitiveLimiter, async (req: AuthRequest, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (Object.keys(req.query).length || (req.body != null
+        && (typeof req.body !== 'object' || Array.isArray(req.body) || Object.keys(req.body).length))) {
+        res.status(400).json({ success: false, message: 'Permintaan menjalankan pemindai tidak valid.' });
+        return;
+    }
+    try {
+        await recordScannerRun({ userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip });
+    } catch {
+        res.status(503).json({ success: false, message: 'Pemindai belum dapat dijalankan. Coba lagi beberapa saat lagi.' });
+        return;
+    }
+    let wakeScheduled = false;
+    try { wakeScheduled = scheduleMalwareScanWake(); } catch { /* reported below */ }
+    if (!wakeScheduled) {
+        res.status(503).json({ success: false, message: 'Pemindai tidak dapat dijalankan dari layanan ini. Periksa pengaturan pemindai pada layanan backend.' });
+        return;
+    }
+    res.json({ success: true, data: { wakeScheduled } });
+});
 router.get('/metrics', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     const memory = process.memoryUsage();

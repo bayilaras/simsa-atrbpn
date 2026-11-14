@@ -248,6 +248,8 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'GET /scan-failures': 'bukan-rekaman',
         'POST /scan-failures/requeue': 'bukan-rekaman',
         'POST /scan-failures/:attachmentId/requeue': 'bukan-rekaman',
+        // Super Admin saja: membangunkan pemindai, tanpa membaca atau mengubah berkas.
+        'POST /scanner-run': 'bukan-rekaman',
     },
     'penyusutan.routes.ts': {
         'GET /print/daftar-arsip-aktif': proyeksi('printTemplateService.generateDaftarArsipAktif'),
