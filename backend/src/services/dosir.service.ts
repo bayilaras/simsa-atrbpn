@@ -61,6 +61,9 @@ function suratKeluarTerlihat(classes: string[] | null | undefined) {
 // Dosir dihapus permanen; kodenya tetap tercatat di audit_log (after pada
 // 'create', before pada 'delete'). Kode yang pernah dipakai unit tidak
 // dibagikan lagi agar satu kode tidak merujuk dua dosir di jejak audit.
+// Perlindungan ini bergantung pada baris audit: dosir yang dihapus tanpa
+// meninggalkan baris audit (mis. sebelum jejak audit hapus ada) tidak
+// terlihat di sini, sehingga nomornya masih dapat dibagikan satu kali.
 const kodeDiAudit = sql<string | null>`coalesce(${auditLog.changes}->'after'->>'kode', ${auditLog.changes}->'before'->>'kode')`;
 const unitDiAudit = sql<string | null>`coalesce(${auditLog.changes}->'after'->>'unitKerjaId', ${auditLog.changes}->'before'->>'unitKerjaId')`;
 
@@ -139,6 +142,8 @@ export const dosirService = {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`simsa:dosir-kode:${data.unitKerjaId}`}, 0))`);
         const kodeDiminta = data.kode?.trim();
         let kode: string;
+        // API tidak pernah menerima kode pilihan klien (skema membuangnya);
+        // penolakan 409 ini menjaga pemanggil layanan langsung.
         if (kodeDiminta) {
             const sama = (await kodeDosirTerpakai(tx, data.unitKerjaId, kodeDiminta))
                 .some((terpakai) => terpakai.toLowerCase() === kodeDiminta.toLowerCase());
