@@ -33,9 +33,16 @@ router.get('/print/daftar', canReadMiddleware(), async (req: AuthRequest, res, n
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
         if (!unitKerjaId) return res.status(400).json({ error: 'Unit Kerja ID required' });
 
+        // Daftar tercetak memakai filter yang sama dengan tabel di layar.
+        const filterTeks = (nilai: unknown) => (typeof nilai === 'string' && nilai ? nilai.slice(0, 200) : undefined);
         const pdfBuffer = await printTemplateService.generateDaftarArsipVital(
             unitKerjaId,
             allowedSecurityClassifications(req.user),
+            {
+                search: filterTeks(req.query.search),
+                kategoriVital: filterTeks(req.query.kategoriVital),
+                statusProteksi: filterTeks(req.query.statusProteksi),
+            },
         );
 
         res.setHeader('Content-Type', 'application/pdf');

@@ -2,6 +2,19 @@ import { AppError } from '../utils/errors';
 import { penyusutanService } from './penyusutan.service';
 import { NO_RECORD_UNIT_ACCESS, type RecordUnitScope } from '../utils/record-unit-scope';
 import { loadPdfKit } from '../utils/lazy-libraries.js';
+import { tanggalCetakWib } from '../utils/waktu-wib.js';
+import { namaUnitPengolah } from './export-unit-pengolah.js';
+import { labelKategoriArsipVital, labelMediaArsip, labelStatusProteksi } from './export-label.js';
+
+/** Filter tabel Arsip Vital di layar yang juga dipakai Cetak Daftar. */
+export interface FilterDaftarArsipVital {
+    search?: string;
+    kategoriVital?: string;
+    statusProteksi?: string;
+}
+
+/** Jumlah baris paling banyak dalam satu cetakan Daftar Arsip Vital. */
+export const BATAS_CETAK_ARSIP_VITAL = 1000;
 
 /**
  * Print Template Service
@@ -1038,13 +1051,18 @@ class PrintTemplateService {
     async generateDaftarArsipVital(
         unitKerjaId: string,
         securityClassifications?: string[] | null,
+        filter: FilterDaftarArsipVital = {},
     ): Promise<Buffer> {
-        // Fetch data
-        const { data } = await import('./arsip-vital.service').then(m => m.arsipVitalService.findAll({
+        // Filter sama dengan tabel Arsip Vital di layar.
+        const { data, total } = await import('./arsip-vital.service').then(m => m.arsipVitalService.findAll({
             unitKerjaId,
-            limit: 1000,
+            search: filter.search,
+            kategoriVital: filter.kategoriVital,
+            statusProteksi: filter.statusProteksi,
+            limit: BATAS_CETAK_ARSIP_VITAL,
             securityClassifications,
         }));
+        const namaUnit = await namaUnitPengolah(unitKerjaId);
 
         const PDFDocument = await loadPdfKit();
         const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: this.MARGIN.left });
@@ -1054,8 +1072,17 @@ class PrintTemplateService {
         // Header
         this.addHeader(doc, 'DAFTAR ARSIP VITAL');
         doc.fontSize(this.FONT_SIZE.body)
-            .text(`Unit Kerja: ${unitKerjaId}`) // In real app, fetch unit name
-            .text(`Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')}`);
+            .text(`Unit Kerja: ${namaUnit}`)
+            .text(`Tanggal Cetak: ${tanggalCetakWib()}`);
+        const keteranganFilter = [
+            filter.kategoriVital ? `Kategori ${labelKategoriArsipVital(filter.kategoriVital)}` : '',
+            filter.statusProteksi ? `Status Proteksi ${labelStatusProteksi(filter.statusProteksi)}` : '',
+            filter.search ? `Pencarian "${filter.search}"` : '',
+        ].filter(Boolean).join('; ');
+        if (keteranganFilter) doc.text(`Filter: ${keteranganFilter}`);
+        if (total > data.length) {
+            doc.text(`Daftar ini memuat ${data.length.toLocaleString('id-ID')} dari ${total.toLocaleString('id-ID')} arsip vital. Persempit filter untuk mencetak sisanya.`);
+        }
         doc.moveDown();
 
         // Table
@@ -1066,8 +1093,9 @@ class PrintTemplateService {
             { header: 'Uraian Informasi', width: 170 },
             { header: 'Kurun Waktu', width: 70 },
             { header: 'Media', width: 60 },
-            { header: 'Lokasi Simpan', width: 80 },
-            { header: 'Ket.', width: 60 },
+            // Lokasi cadangan dan kategori dari penetapan arsip vital.
+            { header: 'Lokasi Cadangan', width: 80 },
+            { header: 'Kategori', width: 60 },
         ];
 
         let y = doc.y;
@@ -1075,24 +1103,50 @@ class PrintTemplateService {
         y += 20;
 
         doc.font('Helvetica').fontSize(this.FONT_SIZE.small);
+        const batasBawah = doc.page.height - doc.page.margins.bottom;
+        // Satu baris paling tinggi satu halaman (di bawah kepala tabel);
+        // sel yang lebih panjang dipotong dengan "…" dan diberi catatan.
+        const tinggiMaksimal = batasBawah - this.MARGIN.top - 20;
+        let adaDipotong = false;
         data.forEach((item, index) => {
-            if (y > 500) { doc.addPage(); y = this.MARGIN.top; this.drawTableHeaders(doc, cols, y, this.MARGIN.left); y += 20; }
             const values = [
                 String(index + 1),
                 item.nomorBerkas || '-',
                 item.kodeKlasifikasi || '-',
                 item.uraianBerkas || '-',
-                item.kurunWaktu || '-', // Need to ensure these fields exist in join
-                'Kertas', // Default or fetch
+                item.kurunWaktu || '-',
+                labelMediaArsip(item.mediaType) || '-',
                 item.lokasiBackup || '-',
-                item.kategoriVital || '-'
+                labelKategoriArsipVital(item.kategoriVital) || '-',
             ];
-            this.drawTableRow(doc, cols, values, y, this.MARGIN.left);
-            y += 18; // Row height
+            // Tinggi baris mengikuti isi sel tertinggi.
+            const tinggiIsi = Math.max(18, Math.ceil(Math.max(...values.map((teks, i) =>
+                doc.heightOfString(teks, { width: cols[i].width - 4 }))) + 8));
+            const rowHeight = Math.min(tinggiIsi, tinggiMaksimal);
+            adaDipotong = adaDipotong || tinggiIsi > tinggiMaksimal;
+            if (y + rowHeight > batasBawah) {
+                doc.addPage();
+                y = this.MARGIN.top;
+                this.drawTableHeaders(doc, cols, y, this.MARGIN.left);
+                y += 20;
+                doc.font('Helvetica').fontSize(this.FONT_SIZE.small);
+            }
+            this.drawTableRow(doc, cols, values, y, this.MARGIN.left, rowHeight);
+            y += rowHeight;
         });
 
         // Footer / Signature
         doc.moveDown(2);
+        if (y + 150 > batasBawah) {
+            doc.addPage();
+            y = this.MARGIN.top - 30;
+        }
+        if (adaDipotong) {
+            doc.fontSize(this.FONT_SIZE.small).text(
+                'Teks yang terlalu panjang dipotong; isi lengkap ada pada detail arsip di aplikasi.',
+                this.MARGIN.left, y + 6, { width: 420 },
+            );
+        }
         this.addSignature(doc, 'Pimpinan Unit Kearsipan', y + 30);
 
         doc.end();
@@ -1186,9 +1240,8 @@ class PrintTemplateService {
         });
     }
 
-    private drawTableRow(doc: PDFKit.PDFDocument, cols: any[], values: string[], y: number, startX: number) {
+    private drawTableRow(doc: PDFKit.PDFDocument, cols: any[], values: string[], y: number, startX: number, rowHeight = 18) {
         let x = startX;
-        const rowHeight = 18;
         cols.forEach((col, i) => {
             doc.rect(x, y, col.width, rowHeight).stroke();
             doc.text(values[i], x + 2, y + 4, { width: col.width - 4, height: rowHeight - 4, ellipsis: true });
@@ -1198,7 +1251,7 @@ class PrintTemplateService {
 
     private addSignature(doc: PDFKit.PDFDocument, role: string, y: number) {
         const x = 500;
-        doc.text(`Jakarta, ${new Date().toLocaleDateString('id-ID')}`, x, y);
+        doc.text(`Jakarta, ${tanggalCetakWib()}`, x, y);
         doc.text(role + ',', x, y + 15);
         doc.moveDown(4);
         doc.text('____________________', x, doc.y + 40);

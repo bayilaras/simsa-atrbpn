@@ -111,6 +111,35 @@ describe('Unit Pengolah pada ekspor mengikuti unit yang membatasi data', () => {
         expect(isiPdf()).toMatch(/Unit Pengolah\s+: Direktorat BPPT/);
     });
 
+    it.each(keluaran)('%s untuk Semua Unit Kerja memuat kolom Unit Kerja berisi nama unit', async (_nama, format, buat) => {
+        holder.masuk.mockResolvedValue(hasil([
+            { id: 'sm-1', noUrut: 1, nomorSurat: 'SM-1/2026', perihal: 'Uji', unitKerjaId: 'dir_bppt' },
+            { id: 'sm-2', noUrut: 1, nomorSurat: 'SM-2/2026', perihal: 'Uji', unitKerjaId: 'sesditjen' },
+        ]));
+        holder.keluar.mockResolvedValue(hasil([
+            { id: 'sk-1', noUrut: 1, nomorSurat: 'SK-1/2026', perihal: 'Uji', balasanUntuk: null, unitKerjaId: 'dir_bppt' },
+            { id: 'sk-2', noUrut: 1, nomorSurat: 'SK-2/2026', perihal: 'Uji', balasanUntuk: null, unitKerjaId: 'sesditjen' },
+        ]));
+        holder.arsip.mockResolvedValue(hasil([
+            arsipBaris('AKTIF', { unitKerjaId: 'dir_bppt' }),
+            arsipBaris('AKTIF-SES', { unitKerjaId: 'sesditjen' }),
+            arsipBaris('DIPINDAHKAN', { unitKerjaId: 'dir_bppt', inactiveTransferredAt: new Date('2026-02-01T00:00:00Z') }),
+            arsipBaris('DIPINDAHKAN-SES', { unitKerjaId: 'sesditjen', inactiveTransferredAt: new Date('2026-02-01T00:00:00Z') }),
+        ]));
+        const isi = await ekspor(format, buat, { securityClassifications: ['biasa'] });
+        expect(isi).toMatch(/Unit\s?\\?n?Kerja/);
+        expect(isi).toContain('Direktorat BPPT');
+        expect(isi).toContain('Sekretariat Ditjen');
+        expect(isi).not.toMatch(/"dir_bppt"|"sesditjen"|\ndir_bppt|\nsesditjen/);
+        // Satu pencarian nama untuk semua unit pada baris.
+        expect(holder.pencarianUnit).toBe(1);
+    });
+
+    it.each(keluaran)('%s untuk satu unit tidak menambah kolom Unit Kerja', async (_nama, format, buat) => {
+        const isi = await ekspor(format, buat, { unitKerjaId: 'dir_bppt', securityClassifications: ['biasa'] });
+        expect(isi).not.toMatch(/Unit\s?\\?n?Kerja/);
+    });
+
     it('unit yang tidak ditemukan jatuh ke nama Ditjen', async () => {
         await expect(namaUnitPengolah('unit_tidak_ada')).resolves.toBe(DITJEN);
         await expect(namaUnitPengolah('dir_bppt')).resolves.toBe('Direktorat BPPT');

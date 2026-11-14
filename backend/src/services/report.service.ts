@@ -15,6 +15,7 @@ import { eq, and, desc, sql, gte, lte, or, isNull, inArray } from 'drizzle-orm';
 import { klasifikasiInSql } from './access/visibility-spec';
 import { archiveLendingService } from './archive-lending.service';
 import { periodeLaporanArsip, periodeLaporanSurat } from './laporan-periode';
+import { jakartaDate } from '../utils/jakarta-date.js';
 import {
     archiveRuleAssignmentService,
     CURRENT_APPRAISAL_CASE_JOIN,
@@ -169,7 +170,8 @@ class ReportService {
             })
             .from(suratMasuk)
             .where(and(...conditions))
-            .orderBy(desc(suratMasuk.tanggalSurat))
+            // id sebagai pengikat: surat bertanggal sama tidak berpindah halaman.
+            .orderBy(desc(suratMasuk.tanggalSurat), desc(suratMasuk.id))
             .limit(limit)
             .offset(offset);
 
@@ -275,7 +277,7 @@ class ReportService {
             })
             .from(suratKeluar)
             .where(and(...conditions))
-            .orderBy(desc(suratKeluar.tanggalSurat))
+            .orderBy(desc(suratKeluar.tanggalSurat), desc(suratKeluar.id))
             .limit(limit)
             .offset(offset);
 
@@ -417,7 +419,7 @@ class ReportService {
             .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
             .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
             .where(and(...conditions))
-            .orderBy(desc(arsip.createdAt));
+            .orderBy(desc(arsip.createdAt), desc(arsip.id));
 
         const todayIso = now.toISOString().slice(0, 10);
         const futureIso = futureDate.toISOString().slice(0, 10);
@@ -573,7 +575,7 @@ class ReportService {
             .from(arsip)
             .where(and(...conditions))
             .groupBy(arsip.kodeKlasifikasi)
-            .orderBy(desc(sql`count(*)`))
+            .orderBy(desc(sql`count(*)`), arsip.kodeKlasifikasi)
             .limit(10);
 
         // By Media Type
@@ -585,7 +587,7 @@ class ReportService {
             .from(arsip)
             .where(and(...conditions))
             .groupBy(arsip.mediaType)
-            .orderBy(desc(sql`count(*)`));
+            .orderBy(desc(sql`count(*)`), arsip.mediaType);
 
         return {
             summary: { ...(stats[0] || { total: 0, masuk: 0, keluar: 0 }), permanen: permanentCount },
@@ -600,12 +602,12 @@ class ReportService {
     async getLendingReport(filters: LendingReportFilters) {
         const { unitKerjaId, status = 'all', tanggalDari, tanggalSampai, page = 1, limit = 50, securityClassifications = [] } = filters;
         const offset = (page - 1) * limit;
+        // Status Dipinjam/Terlambat sama dengan daftar Peminjaman: terlambat
+        // berarti belum kembali dan jatuh temponya sebelum hari ini (WIB).
+        const today = jakartaDate();
 
-        const conditions: any[] = [];
+        const conditions: any[] = archiveLendingService.statusConditions(status === 'all' ? undefined : status, today);
 
-        if (status !== 'all') {
-            conditions.push(eq(archiveLending.status, status));
-        }
         if (tanggalDari) {
             conditions.push(gte(archiveLending.borrowDate, tanggalDari));
         }
@@ -635,14 +637,14 @@ class ReportService {
             })
             .from(archiveLending)
             .where(whereClause)
-            .orderBy(desc(archiveLending.borrowDate))
+            .orderBy(desc(archiveLending.borrowDate), desc(archiveLending.id))
             .limit(limit)
             .offset(offset);
 
         const stats = await this.getLendingStats(unitKerjaId, securityClassifications);
 
         return {
-            data,
+            data: data.map(row => ({ ...row, status: archiveLendingService.statusTampil(row, today) })),
             stats,
             pagination: {
                 page,
@@ -654,16 +656,17 @@ class ReportService {
     }
 
     async getLendingStats(unitKerjaId?: string, securityClassifications: string[] = []) {
-        const now = new Date().toISOString().split('T')[0];
+        // Sama dengan archiveLendingService.getStats: hari ini menurut WIB.
+        const now = jakartaDate();
         const readable = (...conditions: any[]) =>
             archiveLendingService.readableWhere(unitKerjaId ?? null, securityClassifications, ...conditions);
 
         const stats = await db
             .select({
                 total: sql<number>`count(*)::int`,
-                borrowed: sql<number>`count(*) filter (where ${archiveLending.status} = 'borrowed')::int`,
+                borrowed: sql<number>`count(*) filter (where ${archiveLending.status} in ('borrowed', 'overdue'))::int`,
                 returned: sql<number>`count(*) filter (where ${archiveLending.status} = 'returned')::int`,
-                overdue: sql<number>`count(*) filter (where ${archiveLending.status} = 'borrowed' and ${archiveLending.dueDate} < ${now})::int`,
+                overdue: sql<number>`count(*) filter (where ${archiveLending.status} in ('borrowed', 'overdue') and ${archiveLending.dueDate} < ${now})::int`,
             })
             .from(archiveLending)
             .where(readable());

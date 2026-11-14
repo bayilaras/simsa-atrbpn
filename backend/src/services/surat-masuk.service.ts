@@ -128,7 +128,7 @@ export class SuratMasukService {
             .select()
             .from(suratMasuk)
             .where(and(...conditions))
-            .orderBy(desc(suratMasuk.createdAt))
+            .orderBy(desc(suratMasuk.createdAt), desc(suratMasuk.id))
             .limit(limit)
             .offset(offset);
 

@@ -9,8 +9,12 @@ import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import { createLogger } from '../utils/logger';
 import { allowedSecurityClassifications } from '../services/record-access.service.js';
 import { auditExport } from '../services/export-audit';
+import { jakartaDate } from '../utils/jakarta-date.js';
 
 const log = createLogger('ExportRoutes');
+
+const PESAN_GAGAL_EXCEL = 'Gagal mengekspor ke Excel. Silakan coba lagi.';
+const PESAN_GAGAL_PDF = 'Gagal mengekspor ke PDF. Silakan coba lagi.';
 
 const router = Router();
 
@@ -44,7 +48,7 @@ router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
         const buffer = await exportService.generateExcelSuratMasuk(filters);
         await auditExport(req, { source: 'export', type: 'surat-masuk', format: 'excel', filters });
 
-        const filename = `surat-masuk-${tahun || 'semua'}-${new Date().toISOString().split('T')[0]}.xlsx`;
+        const filename = `surat-masuk-${tahun || 'semua'}-${jakartaDate()}.xlsx`;
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(buffer);
@@ -53,7 +57,7 @@ router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
             return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
         }
         log.error({ err: error }, 'Error exporting Surat Masuk to Excel:');
-        res.status(500).json({ error: 'Failed to export to Excel' });
+        res.status(500).json({ error: PESAN_GAGAL_EXCEL });
     }
 });
 
@@ -80,7 +84,7 @@ router.get('/surat-masuk/pdf', async (req: AuthRequest, res: Response) => {
         const buffer = await exportService.generatePdfSuratMasuk(filters);
         await auditExport(req, { source: 'export', type: 'surat-masuk', format: 'pdf', filters });
 
-        const filename = `surat-masuk-${tahun || 'semua'}-${new Date().toISOString().split('T')[0]}.pdf`;
+        const filename = `surat-masuk-${tahun || 'semua'}-${jakartaDate()}.pdf`;
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(buffer);
@@ -89,7 +93,7 @@ router.get('/surat-masuk/pdf', async (req: AuthRequest, res: Response) => {
             return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
         }
         log.error({ err: error }, 'Error exporting Surat Masuk to PDF:');
-        res.status(500).json({ error: 'Failed to export to PDF' });
+        res.status(500).json({ error: PESAN_GAGAL_PDF });
     }
 });
 
@@ -117,7 +121,7 @@ router.get('/surat-keluar/excel', async (req: AuthRequest, res: Response) => {
         const buffer = await exportService.generateExcelSuratKeluar(filters);
         await auditExport(req, { source: 'export', type: 'surat-keluar', format: 'excel', filters });
 
-        const filename = `surat-keluar-${tahun || 'semua'}-${new Date().toISOString().split('T')[0]}.xlsx`;
+        const filename = `surat-keluar-${tahun || 'semua'}-${jakartaDate()}.xlsx`;
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(buffer);
@@ -126,7 +130,7 @@ router.get('/surat-keluar/excel', async (req: AuthRequest, res: Response) => {
             return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
         }
         log.error({ err: error }, 'Error exporting Surat Keluar to Excel:');
-        res.status(500).json({ error: 'Failed to export to Excel' });
+        res.status(500).json({ error: PESAN_GAGAL_EXCEL });
     }
 });
 
@@ -152,7 +156,7 @@ router.get('/surat-keluar/pdf', async (req: AuthRequest, res: Response) => {
         const buffer = await exportService.generatePdfSuratKeluar(filters);
         await auditExport(req, { source: 'export', type: 'surat-keluar', format: 'pdf', filters });
 
-        const filename = `surat-keluar-${tahun || 'semua'}-${new Date().toISOString().split('T')[0]}.pdf`;
+        const filename = `surat-keluar-${tahun || 'semua'}-${jakartaDate()}.pdf`;
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(buffer);
@@ -161,7 +165,7 @@ router.get('/surat-keluar/pdf', async (req: AuthRequest, res: Response) => {
             return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
         }
         log.error({ err: error }, 'Error exporting Surat Keluar to PDF:');
-        res.status(500).json({ error: 'Failed to export to PDF' });
+        res.status(500).json({ error: PESAN_GAGAL_PDF });
     }
 });
 
@@ -187,7 +191,7 @@ router.get('/arsip/excel', async (req: AuthRequest, res: Response) => {
         await auditExport(req, { source: 'export', type: 'arsip', format: 'excel', filters, formulirType: fType });
 
         const label = fType === 'formulir6' ? 'arsip-inaktif' : 'arsip-aktif';
-        const filename = `${label}-${tahun || 'semua'}-${new Date().toISOString().split('T')[0]}.xlsx`;
+        const filename = `${label}-${tahun || 'semua'}-${jakartaDate()}.xlsx`;
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(buffer);
@@ -199,7 +203,7 @@ router.get('/arsip/excel', async (req: AuthRequest, res: Response) => {
             return res.status(error.statusCode).json({ error: error.code, message: error.message });
         }
         log.error({ err: error }, 'Error exporting Arsip to Excel:');
-        res.status(500).json({ error: 'Failed to export to Excel' });
+        res.status(500).json({ error: PESAN_GAGAL_EXCEL });
     }
 });
 
@@ -223,7 +227,7 @@ router.get('/arsip/pdf', async (req: AuthRequest, res: Response) => {
         await auditExport(req, { source: 'export', type: 'arsip', format: 'pdf', filters, formulirType: fType });
 
         const label = fType === 'formulir6' ? 'arsip-inaktif' : 'arsip-aktif';
-        const filename = `${label}-${tahun || 'semua'}-${new Date().toISOString().split('T')[0]}.pdf`;
+        const filename = `${label}-${tahun || 'semua'}-${jakartaDate()}.pdf`;
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(buffer);
@@ -235,7 +239,7 @@ router.get('/arsip/pdf', async (req: AuthRequest, res: Response) => {
             return res.status(error.statusCode).json({ error: error.code, message: error.message });
         }
         log.error({ err: error }, 'Error exporting Arsip to PDF:');
-        res.status(500).json({ error: 'Failed to export to PDF' });
+        res.status(500).json({ error: PESAN_GAGAL_PDF });
     }
 });
 
