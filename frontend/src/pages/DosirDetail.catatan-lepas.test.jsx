@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import DosirDetail from './DosirDetail';
 
-const mocks = vi.hoisted(() => ({ toast: vi.fn(), getById: vi.fn(), getTimeline: vi.fn(), removeSurat: vi.fn() }));
-vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { role: 'admin_unit', unitKerjaId: 'unit-a' }, canWrite: () => true }) }));
+const mocks = vi.hoisted(() => ({ canWrite: vi.fn(), toast: vi.fn(), getById: vi.fn(), getTimeline: vi.fn(), removeSurat: vi.fn() }));
+vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { role: 'admin_unit', unitKerjaId: 'unit-a' }, canWrite: mocks.canWrite }) }));
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }));
 vi.mock('@/services/dosir.service', () => ({
     default: { getById: mocks.getById, getTimeline: mocks.getTimeline, removeSurat: mocks.removeSurat, addSurat: vi.fn(), update: vi.fn() },
@@ -40,6 +40,7 @@ const paragrafCatatan = (isi) => screen.getByText((_, el) => el?.tagName === 'P'
 
 beforeEach(() => {
     mocks.toast.mockReset();
+    mocks.canWrite.mockReset().mockReturnValue(true);
     mocks.getById.mockReset().mockResolvedValue(dosir);
     mocks.getTimeline.mockReset().mockResolvedValue([]);
     mocks.removeSurat.mockReset().mockResolvedValue({ success: true });
@@ -86,6 +87,21 @@ describe('daftar surat di dosir', () => {
         }));
         expect(mocks.removeSurat).toHaveBeenCalledWith('d1', 'keluar', 'sk-1');
         expect(mocks.getById).toHaveBeenCalledTimes(1);
+    });
+
+    it('tanpa hak tulis di unit dosir: tidak ada tombol Edit Dosir maupun Lepas dari dosir', async () => {
+        mocks.canWrite.mockReturnValue(false);
+        renderPage();
+        await bukaTab(/Surat Masuk/);
+        expect(paragrafCatatan('Bahan rapat koordinasi\nbawa salinan')).toBeInTheDocument();
+        expect(mocks.canWrite).toHaveBeenCalledWith('unit-a');
+        expect(screen.queryByRole('button', { name: 'Lepas dari dosir' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Edit Dosir' })).not.toBeInTheDocument();
+    });
+
+    it('dengan hak tulis: tombol Edit Dosir tersedia', async () => {
+        renderPage();
+        expect(await screen.findByRole('button', { name: 'Edit Dosir' })).toBeInTheDocument();
     });
 
     it('tidak melepas apa pun bila konfirmasi dibatalkan', async () => {

@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import Dosir from './Dosir'
 
-const mocks = vi.hoisted(() => ({ toast: vi.fn(), getAll: vi.fn(), getStats: vi.fn(), update: vi.fn() }))
-vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { id: 'admin-a', role: 'admin_unit', unitKerjaId: 'ditjen' } }) }))
+const mocks = vi.hoisted(() => ({ canWrite: vi.fn(), toast: vi.fn(), getAll: vi.fn(), getStats: vi.fn(), update: vi.fn() }))
+vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { id: 'admin-a', role: 'admin_unit', unitKerjaId: 'ditjen' }, canWrite: mocks.canWrite }) }))
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }))
 vi.mock('@/services/settings.service', () => ({ default: { getAllUnitKerja: async () => [] } }))
 vi.mock('@/services/dosir.service', () => ({ default: { getAll: mocks.getAll, getStats: mocks.getStats, update: mocks.update } }))
@@ -24,6 +24,7 @@ async function bukaEdit() {
 
 beforeEach(() => {
     mocks.toast.mockReset()
+    mocks.canWrite.mockReset().mockReturnValue(true)
     mocks.getAll.mockReset().mockResolvedValue([dosir])
     mocks.getStats.mockReset().mockResolvedValue({ total: 1, open: 1, closed: 0, archived: 0 })
     mocks.update.mockReset().mockResolvedValue({ ...dosir, judul: 'Perkara revisi' })

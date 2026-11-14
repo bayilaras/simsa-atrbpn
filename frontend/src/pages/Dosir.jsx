@@ -74,7 +74,7 @@ function DosirSkeleton() {
 }
 
 export default function Dosir() {
-    const { user } = useAuth()
+    const { user, canWrite } = useAuth()
     const { toast } = useToast()
     const navigate = useNavigate()
     const isSuperAdmin = user?.role === 'super_admin'
@@ -516,6 +516,8 @@ export default function Dosir() {
                                                 <DropdownMenuItem onClick={() => navigate(`/dosir/${item.id}`)}>
                                                     <Eye className="mr-2 h-4 w-4" /> Lihat Detail
                                                 </DropdownMenuItem>
+                                                {/* Ubah dan hapus hanya bagi yang berhak menulis di unit dosir; server memeriksa hal yang sama. */}
+                                                {canWrite(item.unitKerjaId) && <>
                                                 <DropdownMenuItem onClick={() => setUbahDosir({ open: true, dosir: item })}>
                                                     <Edit2 className="mr-2 h-4 w-4" /> Edit
                                                 </DropdownMenuItem>
@@ -523,6 +525,7 @@ export default function Dosir() {
                                                 <DropdownMenuItem onClick={() => handleDelete(item)} className="text-destructive focus:text-destructive">
                                                     <Trash2 className="mr-2 h-4 w-4" /> Hapus
                                                 </DropdownMenuItem>
+                                                </>}
                                             </DropdownMenuContent>
                                         </DropdownMenu>
                                     </div>

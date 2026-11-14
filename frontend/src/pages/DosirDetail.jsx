@@ -258,6 +258,7 @@ export default function DosirDetail() {
                         </div>
 
                         <div className="flex flex-row md:flex-col gap-3 w-full md:w-auto shrink-0">
+                            {canAddSurat && (
                             <Dialog open={editing} onOpenChange={open => { setEditing(open); setSaveError('') }}>
                                 <DialogTrigger asChild>
                                     <Button className="bg-card text-indigo-700 dark:text-indigo-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/15 w-full md:w-auto shadow-lg hover:shadow-xl transition-all">
@@ -354,6 +355,7 @@ export default function DosirDetail() {
                                     </DialogFooter>
                                 </DialogContent>
                             </Dialog>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -468,9 +470,11 @@ export default function DosirDetail() {
                                                     <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-emerald-600" onClick={() => navigate(`/surat/masuk/${sm.id}`)}>
                                                         <ExternalLink className="h-4 w-4" />
                                                     </Button>
+                                                    {canAddSurat && (
                                                     <Button size="icon" variant="ghost" aria-label="Lepas dari dosir" title="Lepas dari dosir" className="h-8 w-8 text-muted-foreground hover:text-red-600 dark:hover:text-red-400" onClick={() => handleRemoveSurat('masuk', sm)}>
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))
@@ -511,9 +515,11 @@ export default function DosirDetail() {
                                                     <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-blue-600" onClick={() => navigate(`/surat/keluar/${sk.id}`)}>
                                                         <ExternalLink className="h-4 w-4" />
                                                     </Button>
+                                                    {canAddSurat && (
                                                     <Button size="icon" variant="ghost" aria-label="Lepas dari dosir" title="Lepas dari dosir" className="h-8 w-8 text-muted-foreground hover:text-red-600 dark:hover:text-red-400" onClick={() => handleRemoveSurat('keluar', sk)}>
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))

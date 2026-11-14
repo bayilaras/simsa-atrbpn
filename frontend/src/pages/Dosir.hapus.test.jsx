@@ -3,13 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import Dosir from './Dosir'
 
-const mocks = vi.hoisted(() => ({ toast: vi.fn(), getAll: vi.fn(), getStats: vi.fn(), remove: vi.fn() }))
-vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { id: 'admin-a', role: 'admin_unit', unitKerjaId: 'ditjen' } }) }))
+const mocks = vi.hoisted(() => ({ canWrite: vi.fn(), toast: vi.fn(), getAll: vi.fn(), getStats: vi.fn(), remove: vi.fn() }))
+vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { id: 'admin-a', role: 'admin_unit', unitKerjaId: 'ditjen' }, canWrite: mocks.canWrite }) }))
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }))
 vi.mock('@/services/settings.service', () => ({ default: { getAllUnitKerja: async () => [] } }))
 vi.mock('@/services/dosir.service', () => ({ default: { getAll: mocks.getAll, getStats: mocks.getStats, delete: mocks.remove } }))
 
-const dosir = { id: 'd1', kode: 'ditjen-2026-001', judul: 'Perkara sintetis', status: 'open', suratMasukCount: 2, suratKeluarCount: 1 }
+const dosir = { id: 'd1', unitKerjaId: 'ditjen', kode: 'ditjen-2026-001', judul: 'Perkara sintetis', status: 'open', suratMasukCount: 2, suratKeluarCount: 1 }
 
 async function hapusDosir() {
     render(<MemoryRouter><Dosir /></MemoryRouter>)
@@ -20,6 +20,7 @@ async function hapusDosir() {
 
 beforeEach(() => {
     mocks.toast.mockReset()
+    mocks.canWrite.mockReset().mockReturnValue(true)
     mocks.getAll.mockReset().mockResolvedValue([dosir])
     mocks.getStats.mockReset().mockResolvedValue({ total: 1, open: 1, closed: 0, archived: 0 })
     mocks.remove.mockReset().mockResolvedValue({ success: true })
@@ -29,6 +30,17 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('hapus dosir', () => {
+    it('tidak menawarkan Edit dan Hapus bila pengguna tidak berhak menulis di unit dosir', async () => {
+        mocks.canWrite.mockReturnValue(false)
+        render(<MemoryRouter><Dosir /></MemoryRouter>)
+        await screen.findByText('Perkara sintetis')
+        fireEvent.keyDown(screen.getByRole('button', { name: 'Buka menu aksi dosir' }), { key: 'Enter' })
+        expect(await screen.findByRole('menuitem', { name: 'Lihat Detail' })).toBeInTheDocument()
+        expect(mocks.canWrite).toHaveBeenCalledWith('ditjen')
+        expect(screen.queryByRole('menuitem', { name: 'Edit' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('menuitem', { name: 'Hapus' })).not.toBeInTheDocument()
+    })
+
     it('memberi tahu bila dosir berhasil dihapus lalu memuat ulang daftar', async () => {
         await hapusDosir()
         await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith({
