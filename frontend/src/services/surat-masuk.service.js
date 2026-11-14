@@ -44,12 +44,13 @@ export const suratMasukService = {
         return response.data;
     },
 
-    // Get next number
-    async getNextNumber({ unitKerjaId, tahun, tanggalSurat } = {}) {
+    // Get next number; noUrut is a No. Agenda typed on the form, used by the preview
+    async getNextNumber({ unitKerjaId, tahun, tanggalSurat, noUrut } = {}) {
         const response = await api.get('/api/surat-masuk/next-number', {
             unitKerjaId,
             tahun,
             tanggalSurat,
+            noUrut,
         });
         return response.data;
     },

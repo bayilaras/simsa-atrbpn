@@ -41,6 +41,8 @@ import { ReferensiSection } from '@/components/surat-keluar/ReferensiSection';
 import { DisposisiRegistrasiSection } from '@/components/surat-masuk/DisposisiRegistrasiSection';
 import { PESAN_TERKENDALI, isSifatTerkendali } from '@/lib/tindak-lanjut';
 import { PESAN_KELAS_TERBATAS_PERAN, PESAN_SURAT_MASUK_PERLU_PERSETUJUAN, adaKelasTersembunyi, bolehMemilihKelas, normalisasiKelas, saringOpsiKelas } from '@/lib/kelas-keamanan';
+import { PETUNJUK_NO_AGENDA, catatanPindahTahun, galatNomorUrut, nomorUrutDiketik, tahunUrutanBaru } from '@/lib/surat-nomor-urut';
+import { dataSudahBerubah, versiDimuat } from '@/lib/data-sudah-berubah';
 import {
     MailOpen,
     ChevronLeft,
@@ -197,6 +199,9 @@ export default function TambahSuratMasuk() {
     const [alasanKoreksi, setAlasanKoreksi] = useState('');
     const [referensi, setReferensi] = useState(null);
     const [sifatTersimpan, setSifatTersimpan] = useState(null);
+    // Edit: tanggal, tahun, dan updatedAt surat saat formulir dimuat.
+    const [dimuat, setDimuat] = useState(null);
+    const [konflikVersi, setKonflikVersi] = useState(false);
     const originalRef = useRef({ nomorSurat: '', perihal: '', sifatSurat: 'biasa' });
     const unitScope = useRequiredUnitKerjaScope(user, {
         fixedUnitKerjaId: isEditMode ? recordUnitKerjaId : '',
@@ -229,6 +234,8 @@ export default function TambahSuratMasuk() {
         sifatSurat: 'biasa',
         nomorSurat: '',
         tanggalSurat: '',
+        // No. Agenda; kosong berarti nomor otomatis (hanya saat tambah).
+        noUrut: '',
         perihal: '',
         dari: '',
         kepada: '',
@@ -316,6 +323,11 @@ export default function TambahSuratMasuk() {
                 sifatSurat: sifatAwal,
             };
             setSifatTersimpan(sifatAwal);
+            setDimuat({
+                tanggalSurat: data.tanggalSurat ? data.tanggalSurat.split('T')[0] : '',
+                tahun: data.tahun,
+                updatedAt: data.updatedAt ?? null,
+            });
             // Map fetched data to form fields
             setFormData({
                 jenisSurat: data.jenisSurat || '',
@@ -360,6 +372,9 @@ export default function TambahSuratMasuk() {
         }
     }, [fetchSuratData, id, isEditMode]);
 
+    // No. Agenda yang diketik dipakai template nomor surat; pratinjau mengikutinya.
+    const noAgendaPratinjau = isEditMode ? undefined : nomorUrutDiketik(formData.noUrut);
+
     useEffect(() => {
         if (isEditMode || !resolvedUnitKerjaId || !formData.tanggalSurat) return;
         let active = true;
@@ -367,17 +382,19 @@ export default function TambahSuratMasuk() {
             unitKerjaId: resolvedUnitKerjaId,
             tahun: Number(formData.tanggalSurat.slice(0, 4)),
             tanggalSurat: formData.tanggalSurat,
+            noUrut: noAgendaPratinjau,
         }).then((preview) => {
             if (active) setNumberPreview({
                 ...preview,
                 unitKerjaId: resolvedUnitKerjaId,
                 tanggalSurat: formData.tanggalSurat,
+                noUrut: noAgendaPratinjau,
             });
         }).catch(() => {
             // Creation remains authoritative and allocates the number in its transaction.
         });
         return () => { active = false; };
-    }, [formData.tanggalSurat, isEditMode, resolvedUnitKerjaId]);
+    }, [formData.tanggalSurat, isEditMode, noAgendaPratinjau, resolvedUnitKerjaId]);
 
     // Unit tujuan disposisi (D6) & chip instruksi + status jalur akses (§7); tidak dimuat pada edit.
     const { units, instruksi: opsiInstruksi, jalurAksesTerkendali, loading: loadingUnits } = useDisposisiOpsi(isEditMode ? '' : resolvedUnitKerjaId);
@@ -389,6 +406,9 @@ export default function TambahSuratMasuk() {
     // Peringatan duplikat nomor (§6 Lacak mode cek); tidak aktif pada edit.
     const cekNomor = useLacakSearch(isEditMode ? '' : formData.nomorSurat, { mode: 'cek' });
     const duplikat = cekNomor.data?.kelompok ?? [];
+
+    // Tanggal ke tahun lain: server memindahkan surat ke urutan No. Agenda tahun itu.
+    const tahunBaru = isEditMode ? tahunUrutanBaru(dimuat, formData.tanggalSurat) : null;
 
     // T24-3: surat bagian rangkaian yang identitasnya berubah wajib disertai alasan koreksi.
     const rangkaianTerkunci = isEditMode && rangkaian?.status === 'diberkaskan';
@@ -445,6 +465,8 @@ export default function TambahSuratMasuk() {
         if (archiveSelectionError) return { message: archiveSelectionError };
         if (!formData.jenisSurat) return { field: 'jenisSurat', message: 'Jenis Surat wajib diisi' };
         if (!formData.tanggalSurat) return { field: 'tanggalSurat', message: 'Tanggal Surat wajib diisi' };
+        const galatNoAgenda = isEditMode ? null : galatNomorUrut(formData.noUrut, 'No. Agenda');
+        if (galatNoAgenda) return { field: 'noUrut', message: galatNoAgenda };
         if (!formData.perihal) return { field: 'perihal', message: 'Perihal wajib diisi' };
         if (!formData.dari) return { field: 'dari', message: 'Pengirim (Dari) wajib diisi' };
         if (!formData.kepada) return { field: 'kepada', message: 'Penerima (Kepada) wajib diisi' };
@@ -485,10 +507,11 @@ export default function TambahSuratMasuk() {
         setIsSubmitting(true);
         setError(null);
         setFieldErrors({});
+        setKonflikVersi(false);
 
         try {
             const dataToSubmit = buildSuratFormPayload({ ...formData, sifatSurat }, resolvedUnitKerjaId, filesEnabled);
-            const { disposisiPj, disposisiBatasWaktu, disposisiInstruksi, disposisi: pilihan, ...dasar } = dataToSubmit;
+            const { disposisiPj, disposisiBatasWaktu, disposisiInstruksi, disposisi: pilihan, noUrut: noAgenda, ...dasar } = dataToSubmit;
 
             if (isEditMode) {
                 // F-I1: nomor/perihal/sifat hanya dikirim bila pengguna mengubahnya.
@@ -496,11 +519,13 @@ export default function TambahSuratMasuk() {
                 // impor) jangan sampai terbaca server sebagai koreksi identitas.
                 const identitasBerubah = Object.fromEntries(Object.entries(dasar)
                     .filter(([kolom]) => !KOLOM_IDENTITAS.includes(kolom) || formData[kolom] !== originalRef.current[kolom]))
-                // Tahun tidak dikirim saat edit agar tahun asli surat tidak tertimpa
+                // Tahun tidak dikirim: server mengikutkannya pada tanggal surat.
+                // Versi yang dimuat mencegah perubahan orang lain tertimpa diam-diam.
                 await suratMasukService.update(id, {
                     ...identitasBerubah,
                     disposisi: pilihan,
                     ...(perluAlasanKoreksi ? { alasan: alasanKoreksi.trim() } : {}),
+                    ...versiDimuat(dimuat?.updatedAt),
                 }, filesEnabled ? selectedFile : null);
             } else {
                 // Create new surat
@@ -514,10 +539,12 @@ export default function TambahSuratMasuk() {
                     instruksi: disposisiInstruksi?.trim() || null,
                     labelTambahan: labels,
                 } : labels;
+                const noUrut = nomorUrutDiketik(noAgenda);
                 await suratMasukService.create({
                     ...dasar,
                     disposisi,
                     ...(referensi ? { referensi: { jenis: 'surat_keluar', id: referensi.suratId } } : {}),
+                    ...(noUrut !== undefined ? { noUrut } : {}),
                     tahun: Number(formData.tanggalSurat.slice(0, 4)) || new Date().getFullYear(),
                 }, filesEnabled ? selectedFile : null);
             }
@@ -537,9 +564,23 @@ export default function TambahSuratMasuk() {
             const { ringkasan, perIsian } = uraikanGalatSimpan(err);
             setError(ringkasan);
             setFieldErrors(perIsian);
+            setKonflikVersi(dataSudahBerubah(err));
         } finally {
             if (mountedRef.current) setIsSubmitting(false);
         }
+    };
+
+    // Data diubah orang lain: muat ulang dari server; isian di formulir ini dibuang.
+    const muatUlangData = () => {
+        setKonflikVersi(false);
+        setError(null);
+        setFieldErrors({});
+        setSelectedFile(null);
+        setExistingFile(null);
+        setAlasanKoreksi('');
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        resetDirty();
+        void fetchSuratData();
     };
 
     const formatFileSize = (bytes) => {
@@ -645,7 +686,14 @@ export default function TambahSuratMasuk() {
             {error && (
                 <Alert ref={errorRef} tabIndex={-1} variant="destructive" className="animate-in slide-in-from-top-2">
                     <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>{error}</AlertDescription>
+                    <AlertDescription>
+                        <p>{error}</p>
+                        {konflikVersi && (
+                            <Button type="button" variant="outline" size="sm" className="mt-2" onClick={muatUlangData}>
+                                Muat ulang
+                            </Button>
+                        )}
+                    </AlertDescription>
                 </Alert>
             )}
 
@@ -778,6 +826,7 @@ export default function TambahSuratMasuk() {
                                 </p>
                                 {numberPreview?.unitKerjaId === resolvedUnitKerjaId
                                     && numberPreview?.tanggalSurat === formData.tanggalSurat
+                                    && numberPreview?.noUrut === noAgendaPratinjau
                                     && numberPreview?.nomorSurat && (
                                     <p className="text-xs text-primary">Preview nomor otomatis: <code>{numberPreview.nomorSurat}</code></p>
                                 )}
@@ -798,14 +847,46 @@ export default function TambahSuratMasuk() {
                                     type="date"
                                     required
                                     aria-invalid={Boolean(fieldErrors.tanggalSurat)}
-                                    aria-describedby={fieldErrors.tanggalSurat ? 'tanggal-surat-error' : undefined}
+                                    aria-describedby={[fieldErrors.tanggalSurat && 'tanggal-surat-error', tahunBaru && 'tanggal-surat-tahun'].filter(Boolean).join(' ') || undefined}
                                     value={formData.tanggalSurat}
                                     onChange={(e) => handleChange('tanggalSurat', e.target.value)}
                                     className="h-11 focus-visible:ring-primary"
                                 />
                                 <PesanIsian id="tanggal-surat-error" pesan={fieldErrors.tanggalSurat} />
+                                {tahunBaru && (
+                                    <p id="tanggal-surat-tahun" className="text-xs font-medium text-amber-700 dark:text-amber-300 flex items-start gap-1">
+                                        <Info className="h-3 w-3 mt-0.5 shrink-0" aria-hidden="true" />
+                                        {catatanPindahTahun(tahunBaru, 'nomor agenda')}
+                                    </p>
+                                )}
                             </div>
                         </div>
+
+                        {!isEditMode && (
+                            <div className="space-y-2 md:max-w-xs">
+                                <Label htmlFor="no-agenda" className="text-sm font-medium flex items-center gap-2">
+                                    <Hash className="h-4 w-4 text-muted-foreground" />
+                                    No. Agenda
+                                </Label>
+                                <Input
+                                    id="no-agenda"
+                                    inputMode="numeric"
+                                    autoComplete="off"
+                                    maxLength={6}
+                                    aria-invalid={Boolean(fieldErrors.noUrut)}
+                                    aria-describedby={[fieldErrors.noUrut && 'no-agenda-error', 'no-agenda-bantuan'].filter(Boolean).join(' ')}
+                                    value={formData.noUrut ?? ''}
+                                    onChange={(e) => handleChange('noUrut', e.target.value)}
+                                    placeholder="Otomatis"
+                                    className="h-11 focus-visible:ring-primary"
+                                />
+                                <PesanIsian id="no-agenda-error" pesan={fieldErrors.noUrut} />
+                                <p id="no-agenda-bantuan" className="text-xs text-muted-foreground flex items-start gap-1">
+                                    <Info className="h-3 w-3 mt-0.5 shrink-0" aria-hidden="true" />
+                                    {PETUNJUK_NO_AGENDA}
+                                </p>
+                            </div>
+                        )}
 
                         <div className="space-y-2">
                             <Label htmlFor="perihal-surat" className="text-sm font-medium">

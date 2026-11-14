@@ -24,13 +24,14 @@ export const suratKeluarService = {
         return response.data;
     },
 
-    // Get next number for new surat
-    async getNextNumber({ unitKerjaId, tahun, tanggalSurat, naskahDinas } = {}) {
+    // Get next number for new surat; noUrut is a No. Urut typed on the form, used by the preview
+    async getNextNumber({ unitKerjaId, tahun, tanggalSurat, naskahDinas, noUrut } = {}) {
         const response = await api.get('/api/surat-keluar/next-number', {
             unitKerjaId,
             tahun,
             tanggalSurat,
             naskahDinas,
+            noUrut,
         });
         return response.data;
     },
