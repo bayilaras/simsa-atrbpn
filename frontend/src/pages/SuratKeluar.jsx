@@ -13,6 +13,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ExportButton } from '@/components/ExportButton';
 import { canExportReports } from '@/lib/provisioning-access';
 import { sifatSuratKeluarLabel } from '@/lib/sifat-surat-keluar';
+import { JENIS_NASKAH_DINAS } from '@/lib/jenis-naskah';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
 import ImportFileDialog from '@/components/ImportFileDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
@@ -610,16 +611,7 @@ export default function SuratKeluar() {
                                         <SearchableSelect
                                             id="surat-keluar-jenis"
                                             ariaLabel="Naskah Dinas"
-                                            options={[
-                                                { value: 'all', label: 'Semua Naskah' },
-                                                'Keputusan', 'Surat Tugas', 'Surat Perintah', 'Nota Dinas', 'Memorandum',
-                                                'Surat Dinas', 'Surat Undangan', 'Surat Perjanjian/MoU', 'Surat Kuasa',
-                                                'Berita Acara', 'Surat Keterangan', 'Surat Pengantar', 'Pemberitahuan',
-                                                'Pengumuman', 'Laporan', 'Telaahan Staf', 'Piagam', 'Umum',
-                                                'Naskah Dinas Arahan', 'Naskah Dinas Korespondensi', 'Naskah Dinas Khusus',
-                                                'Peraturan', 'Pedoman', 'Petunjuk Pelaksanaan', 'Instruksi',
-                                                'Surat Edaran', 'Pengaduan'
-                                            ]}
+                                            options={[{ value: 'all', label: 'Semua Naskah' }, ...JENIS_NASKAH_DINAS]}
                                             value={naskahDinas}
                                             onValueChange={applyFilter(setNaskahDinas)}
                                             placeholder="Pilih Naskah"

@@ -16,6 +16,7 @@ import { canExportReports } from '@/lib/provisioning-access';
 import { kunciSifatSuratMasuk, labelSifatSuratMasuk } from '@/lib/sifat-surat-masuk';
 import { pesanGalat } from '@/lib/pesan-galat';
 import { KABAG_LABELS } from '@/lib/disposisi-labels';
+import { JENIS_NASKAH_DINAS } from '@/lib/jenis-naskah';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
 import ImportFileDialog from '@/components/ImportFileDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
@@ -537,16 +538,7 @@ export default function SuratMasuk() {
                                         <SearchableSelect
                                             id="surat-masuk-jenis"
                                             ariaLabel="Jenis Surat"
-                                            options={[
-                                                { value: 'all', label: 'Semua Jenis' },
-                                                'Keputusan', 'Surat Tugas', 'Surat Perintah', 'Nota Dinas', 'Memorandum',
-                                                'Surat Dinas', 'Surat Undangan', 'Surat Perjanjian/MoU', 'Surat Kuasa',
-                                                'Berita Acara', 'Surat Keterangan', 'Surat Pengantar', 'Pemberitahuan',
-                                                'Pengumuman', 'Laporan', 'Telaahan Staf', 'Piagam', 'Umum',
-                                                'Naskah Dinas Arahan', 'Naskah Dinas Korespondensi', 'Naskah Dinas Khusus',
-                                                'Peraturan', 'Pedoman', 'Petunjuk Pelaksanaan', 'Instruksi',
-                                                'Surat Edaran', 'Pengaduan'
-                                            ]}
+                                            options={[{ value: 'all', label: 'Semua Jenis' }, ...JENIS_NASKAH_DINAS]}
                                             value={jenisSurat}
                                             onValueChange={applyFilter(setJenisSurat)}
                                             placeholder="Pilih Jenis"
@@ -687,7 +679,6 @@ export default function SuratMasuk() {
                                                 <TableCell data-label="Tanggal" className="text-sm">
                                                     <div className="flex flex-col sm:items-start items-end">
                                                         <span className="font-medium">{formatDate(row.tanggalSurat)}</span>
-                                                        <span className="text-xs text-muted-foreground">{formatDate(row.tanggalDiterima)} (Trm)</span>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell data-label="Nomor Surat">
