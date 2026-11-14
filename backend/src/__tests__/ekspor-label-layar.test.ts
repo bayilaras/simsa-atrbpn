@@ -51,35 +51,57 @@ async function lembar(buffer: Buffer) {
 const kolom = (sheet: ExcelJS.Worksheet, nomor: number, dari: number, sampai: number) =>
     Array.from({ length: sampai - dari + 1 }, (_, i) => sheet.getCell(dari + i, nomor).value);
 
-interface Sel { teks: string; y: number; lebar: number }
-/** Rekam sel data PDF (Helvetica 7 pt dengan lebar kolom). */
+interface Sel { teks: string; y: number; lebar: number; halaman: number; tinggi?: number; potong?: boolean }
+/** Rekam sel data PDF (Helvetica 7 pt dengan lebar kolom) beserta halamannya. */
 async function selPdf(buat: () => Promise<Buffer>) {
     const sel: Sel[] = [];
     const semua: string[] = [];
+    let lanjutOtomatis = 0;
+    const halaman = new WeakMap<object, number>();
     const asli = PDFDocument.prototype.text;
+    const asliAddPage = PDFDocument.prototype.addPage;
+    const asliLanjut = PDFDocument.prototype.continueOnNewPage;
+    vi.spyOn(PDFDocument.prototype as any, 'addPage').mockImplementation(function (this: any, ...args: any[]) {
+        halaman.set(this, (halaman.get(this) ?? 0) + 1);
+        return (asliAddPage as any).apply(this, args);
+    });
+    // pdfkit menyambung teks ke halaman baru sendiri bila sel melewati batas bawah.
+    vi.spyOn(PDFDocument.prototype as any, 'continueOnNewPage').mockImplementation(function (this: any, ...args: any[]) {
+        lanjutOtomatis += 1;
+        return (asliLanjut as any).apply(this, args);
+    });
     vi.spyOn(PDFDocument.prototype as any, 'text').mockImplementation(function (this: any, ...args: any[]) {
         const [teks, , y, opsi] = args;
         semua.push(String(teks));
         if (typeof y === 'number' && opsi?.width && this._fontSize === 7 && this._font?.name === 'Helvetica') {
-            sel.push({ teks: String(teks), y, lebar: opsi.width });
+            sel.push({ teks: String(teks), y, lebar: opsi.width, halaman: halaman.get(this) ?? 0, tinggi: opsi.height, potong: opsi.ellipsis });
         }
         return (asli as any).apply(this, args);
     });
     const buffer = await buat();
     vi.restoreAllMocks();
     expect(buffer.subarray(0, 4).toString()).toBe('%PDF');
-    return { sel, semua };
+    return { sel, semua, lanjutOtomatis };
 }
 
-/** Baris tidak bertumpuk: bagian bawah sel tertinggi tidak melewati awal baris berikutnya. */
+// Batas bawah isi halaman A4 lanskap dengan margin 30 pt.
+const BATAS_BAWAH = 595.28 - 30;
+
+/** Baris tidak bertumpuk dan tidak melewati batas bawah halaman. */
 function periksaTidakBertumpuk(sel: Sel[]) {
     const ukur = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 30 }).font('Helvetica').fontSize(7);
-    const baris = new Map<number, number>();
-    for (const { teks, y, lebar } of sel) {
-        baris.set(y, Math.max(baris.get(y) ?? 0, y + ukur.heightOfString(teks, { width: lebar })));
+    const baris = new Map<string, { halaman: number; y: number; bawah: number }>();
+    for (const { teks, y, lebar, halaman, tinggi } of sel) {
+        const kunci = halaman + ':' + y;
+        const bawah = y + Math.min(ukur.heightOfString(teks, { width: lebar }), tinggi ?? Infinity);
+        baris.set(kunci, { halaman, y, bawah: Math.max(baris.get(kunci)?.bawah ?? 0, bawah) });
     }
-    const urut = [...baris.entries()].sort((a, b) => a[0] - b[0]);
-    for (let i = 0; i + 1 < urut.length; i++) expect(urut[i][1]).toBeLessThanOrEqual(urut[i + 1][0]);
+    const urut = [...baris.values()].sort((a, b) => a.halaman - b.halaman || a.y - b.y);
+    for (let i = 0; i < urut.length; i++) {
+        expect(urut[i].bawah).toBeLessThanOrEqual(BATAS_BAWAH);
+        const berikut = urut[i + 1];
+        if (berikut && berikut.halaman === urut[i].halaman) expect(urut[i].bawah).toBeLessThanOrEqual(berikut.y);
+    }
     return urut.length;
 }
 
@@ -168,6 +190,37 @@ describe('label isi berkas ekspor sama dengan layar', () => {
             // Kategori dan jangka simpan sama dengan versi Excel, tidak disingkat.
             expect(semua).toEqual(expect.arrayContaining(['Surat Keluar', 'Aktif: 2 Tahun\nInaktif: 5 Tahun\nNasib: Musnah']));
         }
+    });
+});
+
+describe('baris PDF surat yang lebih tinggi dari satu halaman', () => {
+    const KEPADA_PANJANG = 'Kepala Kantor Pertanahan dan seluruh pejabat terkait '.repeat(40).slice(0, 2000);
+
+    it.each([
+        ['surat masuk', () => exportService.generatePdfSuratMasuk({ unitKerjaId: 'unit-a', tahun: 2026 })],
+        ['surat keluar', () => exportService.generatePdfSuratKeluar({ unitKerjaId: 'unit-a', tahun: 2026 })],
+    ])('%s: Kepada 2.000 karakter dipotong di barisnya sendiri dengan catatan', async (_nama, buat) => {
+        state.masuk.mockResolvedValue(hasil([suratMasuk('1'), suratMasuk('2', { kepada: KEPADA_PANJANG }), suratMasuk('3')]));
+        state.keluar.mockResolvedValue(hasil([suratKeluar('1'), suratKeluar('2', { kepada: KEPADA_PANJANG }), suratKeluar('3')]));
+        const { sel, semua, lanjutOtomatis } = await selPdf(buat);
+        expect(lanjutOtomatis).toBe(0);
+        expect(periksaTidakBertumpuk(sel)).toBe(3);
+        const kepada = sel.find(item => item.teks === KEPADA_PANJANG)!;
+        expect(kepada.potong).toBe(true);
+        // Nomor surat baris itu dan sel di kanannya ada di halaman dan posisi yang sama.
+        const sebaris = sel.filter(item => item.y === kepada.y && item.halaman === kepada.halaman).map(item => item.teks);
+        expect(sebaris.some(teks => /^S[MK]-2$/.test(teks))).toBe(true);
+        expect(sebaris.length).toBeGreaterThanOrEqual(6);
+        // Baris berikutnya tidak melompati halaman.
+        const nomor3 = sel.find(item => /^S[MK]-3$/.test(item.teks))!;
+        expect(nomor3.halaman - kepada.halaman).toBeLessThanOrEqual(1);
+        expect(semua).toContain('Teks yang terlalu panjang dipotong; versi Excel memuat isi lengkap.');
+    });
+
+    it('tanpa sel yang dipotong tidak ada catatan pemotongan', async () => {
+        state.masuk.mockResolvedValue(hasil([suratMasuk('1')]));
+        const { semua } = await selPdf(() => exportService.generatePdfSuratMasuk({ unitKerjaId: 'unit-a', tahun: 2026 }));
+        expect(semua.some(teks => teks.startsWith('Teks yang terlalu panjang'))).toBe(false);
     });
 });
 

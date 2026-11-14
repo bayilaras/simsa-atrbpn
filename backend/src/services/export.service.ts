@@ -11,7 +11,7 @@ import { barisFormulirArsip, rincianItemDicetak, totalFormulirArsip, uraianFormu
 import { AppError } from '../utils/errors.js';
 import { loadExcelJS, loadPdfKit } from '../utils/lazy-libraries.js';
 import { tanggalCetakWib, waktuWib } from '../utils/waktu-wib.js';
-import { batasBawahPdf, lebarPenuh, tinggiBarisPdf, tulisBarisPdf } from './export-pdf-tabel.js';
+import { batasBawahPdf, CATATAN_TEKS_DIPOTONG, lebarPenuh, tinggiBarisPdf, tulisBarisPdf } from './export-pdf-tabel.js';
 import { klasifikasiSuratKeluar, labelKelasKeamanan, labelSifatSuratMasuk, labelStatusSuratMasuk } from './export-label.js';
 
 export const PESAN_FORMULIR6_KOSONG = 'Belum ada arsip inaktif untuk filter ini. Arsip masuk Formulir 6 setelah masa aktifnya berakhir menurut JRA dan pemicu retensi yang terverifikasi, atau setelah pemindahannya dicatat di SIMSA melalui modul Penyusutan. Pemindahan yang dilakukan di luar SIMSA tidak mengubah daftar ini.';
@@ -710,6 +710,7 @@ export class ExportService {
             const batasBawah = batasBawahPdf(doc);
             const tata = { padX: 2, padY: 3, minimal: 15 };
             let yPos = tableTop + 17;
+            let adaDipotong = false;
             doc.font('Helvetica').fontSize(7).fillColor('black');
 
             data.forEach((item, index) => {
@@ -734,15 +735,16 @@ export class ExportService {
                     doc.rect(30, yPos, LEBAR_TABEL_PDF, tinggi).fill('#F5F5F5');
                 }
                 doc.fillColor('black');
-                tulisBarisPdf(doc, rowData, colWidths, 30, yPos, tata);
+                adaDipotong = tulisBarisPdf(doc, rowData, colWidths, 30, yPos, tata, tinggi) || adaDipotong;
                 yPos += tinggi;
             });
 
-            if (yPos + 30 > batasBawah) {
+            if (yPos + 45 > batasBawah) {
                 doc.addPage();
                 yPos = doc.page.margins.top;
             }
             doc.fontSize(8).text(`Total: ${data.length} surat`, 30, yPos + 20);
+            if (adaDipotong) doc.fontSize(7).text(CATATAN_TEKS_DIPOTONG, 30, yPos + 33);
             doc.end();
         });
     }
@@ -787,6 +789,7 @@ export class ExportService {
             const batasBawah = batasBawahPdf(doc);
             const tata = { padX: 2, padY: 3, minimal: 15 };
             let yPos = tableTop + 17;
+            let adaDipotong = false;
             doc.font('Helvetica').fontSize(7).fillColor('black');
 
             data.forEach((item, index) => {
@@ -811,15 +814,16 @@ export class ExportService {
                     doc.rect(30, yPos, LEBAR_TABEL_PDF, tinggi).fill('#F5F5F5');
                 }
                 doc.fillColor('black');
-                tulisBarisPdf(doc, rowData, colWidths, 30, yPos, tata);
+                adaDipotong = tulisBarisPdf(doc, rowData, colWidths, 30, yPos, tata, tinggi) || adaDipotong;
                 yPos += tinggi;
             });
 
-            if (yPos + 30 > batasBawah) {
+            if (yPos + 45 > batasBawah) {
                 doc.addPage();
                 yPos = doc.page.margins.top;
             }
             doc.fontSize(8).text(`Total: ${data.length} surat`, 30, yPos + 20);
+            if (adaDipotong) doc.fontSize(7).text(CATATAN_TEKS_DIPOTONG, 30, yPos + 33);
             doc.end();
         });
     }
@@ -863,8 +867,9 @@ export class ExportService {
             // Tinggi tiap baris mengikuti sel tertinggi agar nomor berkas,
             // uraian, dan kurun waktu yang panjang tidak menimpa baris berikutnya.
             const batasBawah = batasBawahPdf(doc);
-            // Ruang untuk baris Total dan label formulir di bawah tabel.
+            // Ruang untuk baris Total, catatan, dan label formulir di bawah tabel.
             const ruangKaki = 45;
+            let adaDipotong = false;
 
             if (formulirType === 'formulir6') {
                 // Formulir 6 columns: No, Kode Klas, Uraian, Kurun Waktu, Tk.Perkembangan, Jumlah, Lokasi, Keamanan, Jangka Simpan, Kategori, Ket
@@ -909,7 +914,7 @@ export class ExportService {
                         doc.rect(30, yPos, LEBAR_TABEL_PDF, tinggi).fill('#F5F5F5');
                     }
                     doc.fillColor('black');
-                    tulisBarisPdf(doc, rowData, colWidths, 30, yPos, tata);
+                    adaDipotong = tulisBarisPdf(doc, rowData, colWidths, 30, yPos, tata, tinggi) || adaDipotong;
                     yPos += tinggi;
                 });
 
@@ -918,6 +923,7 @@ export class ExportService {
                     yPos = doc.page.margins.top;
                 }
                 doc.fontSize(8).text(totalFormulirArsip(jumlahArsip, data.length), 30, yPos + 20);
+                if (adaDipotong) doc.fontSize(7).text(CATATAN_TEKS_DIPOTONG, 30, yPos + 35, { width: 540 });
                 doc.fontSize(7).text('Formulir 6. Daftar Arsip Inaktif (Kertas)', 600, yPos + 35, { align: 'right' });
             } else {
                 // Formulir 4 columns
@@ -977,7 +983,7 @@ export class ExportService {
                         doc.rect(30, yPos, LEBAR_TABEL_PDF, tinggi).fill('#F5F5F5');
                     }
                     doc.fillColor('black');
-                    tulisBarisPdf(doc, isi, colWidths, 30, yPos, tata);
+                    adaDipotong = tulisBarisPdf(doc, isi, colWidths, 30, yPos, tata, tinggi) || adaDipotong;
                     yPos += tinggi;
                 });
 
@@ -986,6 +992,7 @@ export class ExportService {
                     yPos = doc.page.margins.top;
                 }
                 doc.fontSize(8).text(totalFormulirArsip(jumlahArsip, data.length), 30, yPos + 20);
+                if (adaDipotong) doc.fontSize(7).text(CATATAN_TEKS_DIPOTONG, 30, yPos + 35, { width: 540 });
                 doc.fontSize(7).text('Formulir 4. Daftar Arsip Aktif', 600, yPos + 35, { align: 'right' });
             }
 

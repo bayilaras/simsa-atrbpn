@@ -39,11 +39,13 @@ const berkas = (n: number, fase: string) => ({
 });
 const item = (nomor: string) => ({ nomorItem: nomor, uraianItem: `Item ${nomor} ${URAIAN_PANJANG}`, tingkatPerkembangan: 'Asli', tanggalItem: '2026-02-01', jumlah: 1 });
 
-interface Tulisan { teks: string; y: number; lebar: number; halaman: number }
+interface Tulisan { teks: string; y: number; lebar: number; halaman: number; tinggi?: number; potong?: boolean }
 
 /** Rekam setiap sel data (Helvetica 6 pt dengan lebar kolom) beserta halamannya. */
 async function rekamSel(buat: () => Promise<Buffer>) {
     const tulisan: Tulisan[] = [];
+    const semua: string[] = [];
+    let lanjutOtomatis = 0;
     const halaman = new WeakMap<object, number>();
     const asliText = PDFDocument.prototype.text;
     const asliAddPage = PDFDocument.prototype.addPage;
@@ -51,10 +53,17 @@ async function rekamSel(buat: () => Promise<Buffer>) {
         halaman.set(this, (halaman.get(this) ?? 0) + 1);
         return (asliAddPage as any).apply(this, args);
     });
+    // pdfkit menyambung teks ke halaman baru sendiri bila sel melewati batas bawah.
+    const asliLanjut = PDFDocument.prototype.continueOnNewPage;
+    vi.spyOn(PDFDocument.prototype as any, 'continueOnNewPage').mockImplementation(function (this: any, ...args: any[]) {
+        lanjutOtomatis += 1;
+        return (asliLanjut as any).apply(this, args);
+    });
     vi.spyOn(PDFDocument.prototype as any, 'text').mockImplementation(function (this: any, ...args: any[]) {
         const [teks, , y, opsi] = args;
+        semua.push(String(teks));
         if (typeof y === 'number' && opsi?.width && this._fontSize === 6 && this._font?.name === 'Helvetica') {
-            tulisan.push({ teks: String(teks), y, lebar: opsi.width, halaman: halaman.get(this) ?? 0 });
+            tulisan.push({ teks: String(teks), y, lebar: opsi.width, halaman: halaman.get(this) ?? 0, tinggi: opsi.height, potong: opsi.ellipsis });
         }
         return (asliText as any).apply(this, args);
     });
@@ -66,12 +75,12 @@ async function rekamSel(buat: () => Promise<Buffer>) {
     const baris = new Map<string, { halaman: number; y: number; bawah: number }>();
     for (const sel of tulisan) {
         const kunci = `${sel.halaman}:${sel.y}`;
-        const bawah = sel.y + ukur.heightOfString(sel.teks, { width: sel.lebar });
+        const bawah = sel.y + Math.min(ukur.heightOfString(sel.teks, { width: sel.lebar }), sel.tinggi ?? Infinity);
         const ada = baris.get(kunci);
         baris.set(kunci, { halaman: sel.halaman, y: sel.y, bawah: Math.max(bawah, ada?.bawah ?? 0) });
     }
     const urut = [...baris.values()].sort((a, b) => a.halaman - b.halaman || a.y - b.y);
-    return { tulisan, baris: urut };
+    return { tulisan, baris: urut, semua, lanjutOtomatis };
 }
 
 function periksaTidakBertumpuk(baris: Array<{ halaman: number; y: number; bawah: number }>) {
@@ -139,5 +148,29 @@ describe('PDF Formulir 4 dan 6: tinggi baris mengikuti isi', () => {
             const selPertama = tulisan.filter(sel => sel.halaman === halaman && sel.y === pertama.y).map(sel => sel.teks);
             expect(selPertama.some(teks => teks.startsWith(NOMOR_PANJANG))).toBe(true);
         }
+    });
+    it.each(['formulir4', 'formulir6'])('%s: keterangan 4.000 karakter dipotong di barisnya sendiri dengan catatan', async (formulirType) => {
+        const fase = formulirType === 'formulir6' ? 'inaktif' : 'aktif';
+        const ketPanjang = 'Keterangan sangat panjang '.repeat(160).slice(0, 4000);
+        state.findAll.mockResolvedValue(hasil([berkas(1, fase), { ...berkas(2, fase), keterangan: ketPanjang }, berkas(3, fase)]));
+        const { tulisan, baris, semua, lanjutOtomatis } = await rekamSel(() => exportService.generatePdfArsip({ unitKerjaId: 'unit-a' }, formulirType));
+        // Tidak ada sel yang disambung pdfkit ke halaman lain; baris tetap utuh dan berurutan.
+        expect(lanjutOtomatis).toBe(0);
+        expect(baris).toHaveLength(3);
+        periksaTidakBertumpuk(baris);
+        const selKet = tulisan.find(sel => sel.teks === ketPanjang)!;
+        expect(selKet.potong).toBe(true);
+        expect(selKet.y + selKet.tinggi!).toBeLessThanOrEqual(BATAS_BAWAH);
+        // Sel lain pada baris itu berada di halaman dan posisi yang sama.
+        const sebaris = tulisan.filter(sel => sel.y === selKet.y && sel.halaman === selKet.halaman);
+        expect(sebaris.map(sel => sel.teks)).toContain(KURUN_PANJANG);
+        expect(semua).toContain('Teks yang terlalu panjang dipotong; versi Excel memuat isi lengkap.');
+    });
+
+    it('tanpa sel yang dipotong tidak ada catatan pemotongan', async () => {
+        state.findAll.mockResolvedValue(hasil([berkas(1, 'aktif')]));
+        const { semua, tulisan } = await rekamSel(() => exportService.generatePdfArsip({ unitKerjaId: 'unit-a' }, 'formulir4'));
+        expect(semua.some(teks => teks.startsWith('Teks yang terlalu panjang'))).toBe(false);
+        expect(tulisan.some(sel => sel.potong)).toBe(false);
     });
 });
