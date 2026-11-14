@@ -91,7 +91,9 @@ export default defineConfig(({ command, mode }) => {
     tailwindcss(),
     ...(manifest ? [buildManifestPlugin(manifest)] : []),
     VitePWA({
-      registerType: 'autoUpdate',
+      // A new version waits for the user's Muat ulang on the in-app notice
+      // instead of reloading open tabs (src/lib/pembaruan-aplikasi.js).
+      registerType: 'prompt',
       manifest: false, // Use external manifest.json
       workbox: {
         // Fonts are bundled locally and the CSP allows no font or script CDN,

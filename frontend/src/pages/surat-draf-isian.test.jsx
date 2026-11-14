@@ -4,6 +4,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import TambahSuratMasuk from './TambahSuratMasuk'
 import TambahSuratKeluar from './TambahSuratKeluar'
 import { bacaDrafIsian, hapusSemuaDrafIsian, kunciDrafIsian } from '@/lib/draf-isian'
+import { adaPerubahanBelumDisimpan } from '@/lib/perubahan-belum-disimpan'
 
 // Isian formulir surat yang belum disimpan bertahan di sessionStorage tab ini
 // saat sesi berakhir atau halaman dimuat ulang (formulir dilepas lalu dibuka
@@ -93,7 +94,10 @@ describe('draf isian Tambah Surat Masuk', () => {
         await ketikSuratMasuk()
         expect(sessionStorage.getItem(KUNCI_MASUK_A)).toContain('Permohonan data pertanahan')
         expect(localStorage.length).toBe(0)
+        // Pemberitahuan versi baru tidak memuat ulang tab yang memegang isian ini.
+        expect(adaPerubahanBelumDisimpan()).toBe(true)
         pertama.unmount()
+        expect(adaPerubahanBelumDisimpan()).toBe(false)
 
         tampil('/surat/masuk/tambah')
         const dialog = await screen.findByRole('alertdialog', { name: 'Pulihkan isian yang belum disimpan?' })
