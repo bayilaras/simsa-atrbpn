@@ -52,6 +52,9 @@ describe('GET /api/unit-kerja', () => {
         expect(response.body.data).toHaveLength(1);
         const [unit] = response.body.data;
         expect(unit).toMatchObject({ id: 'dir_bppt', name: 'Direktorat Bina Pengadaan', isUnitPengawas: false });
+        expect(Object.keys(unit).sort()).toEqual([
+            'canReceiveDistribution', 'createdAt', 'description', 'id', 'isUnitPengawas', 'name', 'parentId', 'unitType', 'updatedAt',
+        ]);
         expect(unit).not.toHaveProperty('driveFolderId');
         expect(unit).not.toHaveProperty('driveUploadFolderId');
         expect(JSON.stringify(response.body)).not.toContain('lama-sintetis');
