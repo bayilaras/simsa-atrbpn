@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { TindakLanjutMenu } from '@/components/surat/TindakLanjutMenu';
+import { useNamaUnitKerja } from '@/hooks/use-nama-unit-kerja';
 
 export function StatusSidebar({ surat, onEdit, onDistribute, onArchive, onTerima, onPenyelesaian, isAdmin }) {
     // Respons lama tanpa aksesMelalui berasal dari jalur pemilik.
@@ -14,6 +15,8 @@ export function StatusSidebar({ surat, onEdit, onDistribute, onArchive, onTerima
     const aksi = Array.isArray(surat.aksiDiizinkan) ? surat.aksiDiizinkan : null;
     const bolehEdit = (aksi ? aksi.includes('edit') : isAdmin) && milik;
     const bolehArsip = (aksi ? aksi.includes('arsipkan') : isAdmin) && milik;
+    // Unit pemilik ditampilkan dengan namanya, bukan kodenya.
+    const namaUnit = useNamaUnitKerja(surat.unitKerjaId || '');
     const formatDate = (dateString) => {
         if (!dateString) return '-';
         try {
@@ -123,12 +126,12 @@ export function StatusSidebar({ surat, onEdit, onDistribute, onArchive, onTerima
                             <span className="text-xs text-muted-foreground">{formatRelativeTime(surat.updatedAt)}</span>
                         </div>
                     </div>
-                    {surat.unitKerjaId && (
+                    {namaUnit && (
                         <>
                             <Separator />
-                            <div className="flex justify-between">
+                            <div className="flex justify-between gap-2">
                                 <span className="text-muted-foreground">Unit Kerja</span>
-                                <Badge variant="outline">{surat.unitKerjaId}</Badge>
+                                <Badge variant="outline" className="text-right">{namaUnit}</Badge>
                             </div>
                         </>
                     )}
