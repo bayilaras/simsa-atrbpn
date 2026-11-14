@@ -11,6 +11,7 @@ import { barisFormulirArsip, rincianItemDicetak, totalFormulirArsip, uraianFormu
 import { AppError } from '../utils/errors.js';
 import { loadExcelJS, loadPdfKit } from '../utils/lazy-libraries.js';
 import { tanggalCetakWib, waktuWib } from '../utils/waktu-wib.js';
+import { batasBawahPdf, lebarPenuh, tinggiBarisPdf, tulisBarisPdf } from './export-pdf-tabel.js';
 
 export const PESAN_FORMULIR6_KOSONG = 'Belum ada arsip inaktif untuk filter ini. Arsip masuk Formulir 6 setelah masa aktifnya berakhir menurut JRA dan pemicu retensi yang terverifikasi, atau setelah pemindahannya dicatat di SIMSA melalui modul Penyusutan. Pemindahan yang dilakukan di luar SIMSA tidak mengubah daftar ini.';
 
@@ -58,6 +59,8 @@ const THIN_BORDER: Partial<ExcelJS.Borders> = {
 };
 const CENTER_ALIGN: Partial<ExcelJS.Alignment> = { horizontal: 'center', vertical: 'middle', wrapText: true };
 const LEFT_ALIGN: Partial<ExcelJS.Alignment> = { horizontal: 'left', vertical: 'middle', wrapText: true };
+/** Lebar tabel PDF A4 lanskap dengan margin 30 pt. */
+const LEBAR_TABEL_PDF = 782;
 
 export class ExportService {
     // ============== EXCEL EXPORTS ==============
@@ -823,12 +826,18 @@ export class ExportService {
 
             const tableTop = doc.y;
 
+            // Tinggi tiap baris mengikuti sel tertinggi agar nomor berkas,
+            // uraian, dan kurun waktu yang panjang tidak menimpa baris berikutnya.
+            const batasBawah = batasBawahPdf(doc);
+            // Ruang untuk baris Total dan label formulir di bawah tabel.
+            const ruangKaki = 45;
+
             if (formulirType === 'formulir6') {
                 // Formulir 6 columns: No, Kode Klas, Uraian, Kurun Waktu, Tk.Perkembangan, Jumlah, Lokasi, Keamanan, Jangka Simpan, Kategori, Ket
-                const colWidths = [20, 50, 180, 40, 55, 30, 70, 55, 80, 50, 70];
+                const colWidths = lebarPenuh([20, 50, 180, 70, 55, 30, 70, 55, 80, 50, 70], 2, LEBAR_TABEL_PDF);
                 const headers = ['No', 'Kode\nKlas.', 'Uraian Informasi Arsip/Berkas', 'Kurun\nWaktu', 'Tk.\nPrkbg.', 'Jml', 'Lokasi Simpan', 'Keamanan\n& Akses', 'Jangka Simpan\n& Nasib Akhir', 'Kategori\nArsip', 'Ket.'];
 
-                doc.rect(30, tableTop - 5, 782, 25).fill('#1E3A5F');
+                doc.rect(30, tableTop - 5, LEBAR_TABEL_PDF, 25).fill('#1E3A5F');
                 let xPos = 30;
                 doc.font('Helvetica-Bold').fontSize(7).fillColor('white');
                 headers.forEach((header, i) => {
@@ -836,56 +845,56 @@ export class ExportService {
                     xPos += colWidths[i];
                 });
 
-                let yPos = tableTop + 28;
+                let yPos = tableTop + 25;
                 doc.font('Helvetica').fontSize(6).fillColor('black');
+                const tata = { padX: 2, padY: 3, minimal: 15 };
 
                 data.forEach((baris, index) => {
                     const item = baris.berkas;
-                    if (yPos > 520) {
-                        doc.addPage();
-                        yPos = 30;
-                    }
-                    if (index % 2 === 0) {
-                        doc.rect(30, yPos - 3, 782, 15).fill('#F5F5F5');
-                    }
-
-                    const lokasi = baris.lokasi;
                     const jangkaSimpan = [
                         item.masaSimpanAktif ? `A:${item.masaSimpanAktif}` : '',
                         item.hasilAkhir || '',
                     ].filter(Boolean).join(' / ');
 
-                    xPos = 30;
                     const rowData = [
                         String(index + 1),
-                        (item.kodeKlasifikasi || '').substring(0, 10),
-                        uraianFormulir6(baris, ' ').substring(0, 45),
+                        item.kodeKlasifikasi || '',
+                        uraianFormulir6(baris, ' '),
                         item.kurunWaktu || String(item.tahun),
-                        baris.tingkatPerkembangan.substring(0, 12),
+                        baris.tingkatPerkembangan,
                         String(baris.jumlah),
-                        lokasi.substring(0, 15),
-                        (item.klasifikasiKeamanan || '').substring(0, 12),
-                        jangkaSimpan.substring(0, 20),
+                        baris.lokasi,
+                        item.klasifikasiKeamanan || '',
+                        jangkaSimpan,
                         item.jenisArsip === 'masuk' ? 'SM' : 'SK',
-                        (item.keterangan || '').substring(0, 15),
+                        item.keterangan || '',
                     ];
 
+                    const tinggi = tinggiBarisPdf(doc, rowData, colWidths, tata);
+                    if (yPos + tinggi > batasBawah) {
+                        doc.addPage();
+                        yPos = doc.page.margins.top;
+                    }
+                    if (index % 2 === 0) {
+                        doc.rect(30, yPos, LEBAR_TABEL_PDF, tinggi).fill('#F5F5F5');
+                    }
                     doc.fillColor('black');
-                    rowData.forEach((text, i) => {
-                        doc.text(text, xPos + 2, yPos, { width: colWidths[i] - 4, align: 'left' });
-                        xPos += colWidths[i];
-                    });
-                    yPos += 15;
+                    tulisBarisPdf(doc, rowData, colWidths, 30, yPos, tata);
+                    yPos += tinggi;
                 });
 
+                if (yPos + ruangKaki > batasBawah) {
+                    doc.addPage();
+                    yPos = doc.page.margins.top;
+                }
                 doc.fontSize(8).text(totalFormulirArsip(jumlahArsip, data.length), 30, yPos + 20);
                 doc.fontSize(7).text('Formulir 6. Daftar Arsip Inaktif (Kertas)', 600, yPos + 35, { align: 'right' });
             } else {
                 // Formulir 4 columns
-                const colWidths = [20, 45, 145, 40, 30, 25, 145, 40, 25, 50, 55, 55, 55];
+                const colWidths = lebarPenuh([45, 45, 145, 67, 30, 25, 145, 40, 25, 50, 55, 55, 55], 2, LEBAR_TABEL_PDF);
                 const headers = ['No.\nBrks', 'Kode\nKlas.', 'Uraian Info.\nBerkas', 'Kurun\nWktu', 'Jml\nBrks', 'No.\nItem', 'Uraian Info.\nArsip', 'Tgl', 'Jml', 'Tk.\nPrkbg.', 'Lokasi\nSimpan', 'Keamanan\n& Akses', 'Ket.'];
 
-                doc.rect(30, tableTop - 5, 782, 25).fill('#1E3A5F');
+                doc.rect(30, tableTop - 5, LEBAR_TABEL_PDF, 25).fill('#1E3A5F');
                 let xPos = 30;
                 doc.font('Helvetica-Bold').fontSize(6).fillColor('white');
                 headers.forEach((header, i) => {
@@ -893,8 +902,9 @@ export class ExportService {
                     xPos += colWidths[i];
                 });
 
-                let yPos = tableTop + 28;
+                let yPos = tableTop + 25;
                 doc.font('Helvetica').fontSize(6).fillColor('black');
+                const tata = { padX: 1, padY: 3, minimal: 15 };
 
                 // Kolom berkas dicetak pada baris pertama tiap berkas, dan
                 // diulang bila berkas itu bersambung ke halaman berikutnya.
@@ -902,44 +912,45 @@ export class ExportService {
                 let awalHalaman = true;
                 data.forEach((baris) => {
                     const item = baris.berkas;
-                    if (yPos > 520) {
-                        doc.addPage();
-                        yPos = 30;
-                        awalHalaman = true;
-                    }
-                    if (baris.urutBerkas % 2 === 1) {
-                        doc.rect(30, yPos - 3, 782, 15).fill('#F5F5F5');
-                    }
-                    const cetakBerkas = baris.itemKe === 0 || awalHalaman;
-                    awalHalaman = false;
-
-                    xPos = 30;
                     const rowData = [
                         item.nomorBerkas || String(baris.urutBerkas),
-                        (item.kodeKlasifikasi || '').substring(0, 10),
-                        (item.uraianBerkas || '').substring(0, 35),
+                        item.kodeKlasifikasi || '',
+                        item.uraianBerkas || '',
                         item.kurunWaktu || String(item.tahun),
                         String(baris.jumlahBerkas),
-                        baris.nomorItem.substring(0, 5),
-                        baris.uraianItem.substring(0, 35),
+                        baris.nomorItem,
+                        baris.uraianItem,
                         baris.tanggal,
                         String(baris.jumlah),
-                        baris.tingkatPerkembangan.substring(0, 10),
-                        baris.lokasi.substring(0, 12),
-                        (item.klasifikasiKeamanan || '').substring(0, 12),
-                        (item.keterangan || '').substring(0, 12),
+                        baris.tingkatPerkembangan,
+                        baris.lokasi,
+                        item.klasifikasiKeamanan || '',
+                        item.keterangan || '',
                     ];
+                    const isiBaris = (cetakBerkas: boolean) =>
+                        rowData.map((teks, i) => (cetakBerkas || !kolomBerkas.includes(i) ? teks : ''));
 
+                    let isi = isiBaris(baris.itemKe === 0 || awalHalaman);
+                    let tinggi = tinggiBarisPdf(doc, isi, colWidths, tata);
+                    if (yPos + tinggi > batasBawah) {
+                        doc.addPage();
+                        yPos = doc.page.margins.top;
+                        isi = isiBaris(true);
+                        tinggi = tinggiBarisPdf(doc, isi, colWidths, tata);
+                    }
+                    awalHalaman = false;
+                    if (baris.urutBerkas % 2 === 1) {
+                        doc.rect(30, yPos, LEBAR_TABEL_PDF, tinggi).fill('#F5F5F5');
+                    }
                     doc.fillColor('black');
-                    rowData.forEach((text, i) => {
-                        if (cetakBerkas || !kolomBerkas.includes(i)) {
-                            doc.text(text, xPos + 1, yPos, { width: colWidths[i] - 2, align: 'left' });
-                        }
-                        xPos += colWidths[i];
-                    });
-                    yPos += 15;
+                    tulisBarisPdf(doc, isi, colWidths, 30, yPos, tata);
+                    yPos += tinggi;
                 });
 
+                if (yPos + ruangKaki > batasBawah) {
+                    doc.addPage();
+                    yPos = doc.page.margins.top;
+                }
                 doc.fontSize(8).text(totalFormulirArsip(jumlahArsip, data.length), 30, yPos + 20);
                 doc.fontSize(7).text('Formulir 4. Daftar Arsip Aktif', 600, yPos + 35, { align: 'right' });
             }
