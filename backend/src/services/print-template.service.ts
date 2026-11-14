@@ -2,7 +2,7 @@ import { AppError } from '../utils/errors';
 import { penyusutanService } from './penyusutan.service';
 import { NO_RECORD_UNIT_ACCESS, type RecordUnitScope } from '../utils/record-unit-scope';
 import { loadPdfKit } from '../utils/lazy-libraries.js';
-import { tanggalCetakWib } from '../utils/waktu-wib.js';
+import { tanggalCetakWib } from '../utils/jakarta-date.js';
 import { namaUnitPengolah } from './export-unit-pengolah.js';
 import { labelKategoriArsipVital, labelMediaArsip, labelStatusProteksi } from './export-label.js';
 

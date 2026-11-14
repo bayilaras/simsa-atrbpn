@@ -17,6 +17,7 @@ import { arsipVital } from '../db/schema/arsip-vital.js';
 import { arsipTerjaga } from '../db/schema/arsip-terjaga.js';
 import { sql, eq, and, gte, lte, lt, count, inArray, or, isNull, isNotNull } from 'drizzle-orm';
 import { createLogger } from '../utils/logger.js';
+import { jakartaDate, jakartaYearMonth, selisihHariKalender } from '../utils/jakarta-date.js';
 import { arsipService } from './arsip.service.js';
 import {
     CURRENT_APPRAISAL_CASE_JOIN,
@@ -114,8 +115,10 @@ export const dashboardService = {
         tahun?: number,
         securityClassifications?: string[] | null,
     ): Promise<DashboardStats> {
-        const currentYear = tahun || new Date().getFullYear();
-        const currentMonth = new Date().getMonth() + 1;
+        // "Bulan ini" dan tahun bawaan mengikuti kalender WIB, bukan jam server (UTC).
+        const sekarang = jakartaYearMonth();
+        const currentYear = tahun || sekarang.year;
+        const currentMonth = sekarang.month;
         const incomingClass = incomingClassificationCondition(securityClassifications);
         const outgoingClass = outgoingClassificationCondition(securityClassifications);
         const archiveClass = arsipClassificationCondition(securityClassifications);
@@ -292,7 +295,7 @@ export const dashboardService = {
         daysAhead: number = 30,
         securityClassifications?: string[] | null,
     ) {
-        const currentDate = new Date();
+        const hariIni = jakartaDate();
         const expiringArchives = await arsipService.getExpiring(
             unitKerjaId,
             daysAhead,
@@ -303,9 +306,7 @@ export const dashboardService = {
             .slice(0, 10)
             .map((a: any) => ({
             ...a,
-            daysLeft: Math.ceil(
-                (new Date(a.tanggalKadaluarsa as string).getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
-            ),
+            daysLeft: selisihHariKalender(hariIni, String(a.tanggalKadaluarsa)),
         }));
     },
 
@@ -316,7 +317,7 @@ export const dashboardService = {
         allowRelatedUnits = false,
     ) {
         try {
-            const currentYear = tahun || new Date().getFullYear();
+            const currentYear = tahun || jakartaYearMonth().year;
             const incomingClass = incomingClassificationCondition(securityClassifications);
             const outgoingClass = outgoingClassificationCondition(securityClassifications);
             const archiveClass = arsipClassificationCondition(securityClassifications);
@@ -433,7 +434,7 @@ export const dashboardService = {
         securityClassifications?: string[] | null,
     ) {
         try {
-            const today = new Date().toISOString().split('T')[0];
+            const today = jakartaDate();
             const archiveClass = arsipClassificationCondition(securityClassifications);
 
             // Build unit kerja filter conditions for each table
