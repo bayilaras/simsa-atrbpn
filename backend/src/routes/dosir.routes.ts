@@ -15,6 +15,7 @@ import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import { allowedSecurityClassifications } from '../services/record-access.service.js';
 import { sanitizeSuratRecord } from '../utils/sanitize-surat-response.js';
 import { hasPostgresErrorCode } from '../utils/postgres-errors.js';
+import { ConflictError } from '../utils/errors.js';
 
 const log = createLogger('DosirRoutes');
 
@@ -119,7 +120,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
         );
 
         if (!data) {
-            res.status(404).json({ success: false, error: 'Dosir not found' });
+            res.status(404).json({ success: false, error: 'Dosir tidak ditemukan atau sudah dihapus.' });
             return;
         }
 
@@ -147,7 +148,7 @@ router.get('/:id/timeline', async (req: AuthRequest, res: Response) => {
         );
 
         if (!timeline) {
-            res.status(404).json({ success: false, error: 'Dosir not found' });
+            res.status(404).json({ success: false, error: 'Dosir tidak ditemukan atau sudah dihapus.' });
             return;
         }
 
@@ -158,7 +159,7 @@ router.get('/:id/timeline', async (req: AuthRequest, res: Response) => {
     }
 });
 
-router.post('/', canWriteMiddleware(), validateBody(createDosirSchema), async (req: AuthRequest, res: Response) => {
+router.post('/', canWriteMiddleware(), validateBody(createDosirSchema), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const user = req.user;
         const { kode, judul, deskripsi, kategori, tanggalMulai } = req.body;
@@ -176,11 +177,10 @@ router.post('/', canWriteMiddleware(), validateBody(createDosirSchema), async (r
             });
             return;
         }
-        const generatedKode = kode || await dosirService.generateKode(unitKerjaId);
-
+        // Tanpa kode, layanan membuat kode berikutnya di bawah kunci unit.
         const data = await dosirService.create({
             unitKerjaId,
-            kode: generatedKode,
+            kode: kode || undefined,
             judul,
             deskripsi,
             kategori,
@@ -194,8 +194,10 @@ router.post('/', canWriteMiddleware(), validateBody(createDosirSchema), async (r
 
         res.status(201).json({ success: true, data });
     } catch (error) {
+        // Kode yang sudah pernah dipakai di unit dijawab 409 lewat penangan galat.
+        if (error instanceof ConflictError) return next(error);
         log.error({ err: error }, 'Error creating dosir:');
-        res.status(500).json({ success: false, error: 'Failed to create dosir' });
+        res.status(500).json({ success: false, error: 'Dosir belum tersimpan. Silakan coba lagi.' });
     }
 });
 
@@ -213,7 +215,7 @@ router.put('/:id', canWriteMiddleware(), validateBody(updateDosirSchema), async 
         });
 
         if (!data) {
-            res.status(404).json({ success: false, error: 'Dosir not found' });
+            res.status(404).json({ success: false, error: 'Dosir tidak ditemukan atau sudah dihapus.' });
             return;
         }
 
@@ -235,14 +237,14 @@ router.delete('/:id', sensitiveLimiter, canWriteMiddleware(), async (req: AuthRe
             ipAddress: (req.ip || req.get('x-forwarded-for') || '') as string,
         });
         if (!deleted) {
-            res.status(404).json({ success: false, error: 'Dosir not found' });
+            res.status(404).json({ success: false, error: 'Dosir tidak ditemukan atau sudah dihapus.' });
             return;
         }
 
-        res.json({ success: true, message: 'Dosir deleted' });
+        res.json({ success: true, message: 'Dosir dihapus.' });
     } catch (error) {
         log.error({ err: error }, 'Error deleting dosir:');
-        res.status(500).json({ success: false, error: 'Failed to delete dosir' });
+        res.status(500).json({ success: false, error: 'Dosir belum dapat dihapus. Silakan coba lagi.' });
     }
 });
 
@@ -318,19 +320,20 @@ router.delete('/:id/surat/:type/:suratId', canWriteMiddleware(), async (req: Aut
                 { userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip },
             );
         } else {
-            res.status(400).json({ success: false, error: 'Invalid type' });
+            res.status(400).json({ success: false, error: 'Jenis surat harus masuk atau keluar.' });
             return;
         }
 
+        // Tautan ke surat yang tidak terlihat pemanggil dijawab sama dengan "tidak tertaut".
         if (!result) {
-            res.status(404).json({ success: false, error: 'Dosir not found' });
+            res.status(404).json({ success: false, error: 'Surat tidak ditemukan pada dosir ini.' });
             return;
         }
 
-        res.json({ success: true, message: 'Surat removed from dosir' });
+        res.json({ success: true, message: 'Surat dilepas dari dosir.' });
     } catch (error) {
         log.error({ err: error }, 'Error unlinking surat:');
-        res.status(500).json({ success: false, error: 'Failed to unlink surat' });
+        res.status(500).json({ success: false, error: 'Surat belum dapat dilepas dari dosir. Silakan coba lagi.' });
     }
 });
 

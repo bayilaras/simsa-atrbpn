@@ -198,6 +198,48 @@ describe('DELETE /api/dosir/:id', () => {
         expect(keluar.find((t: any) => t.suratKeluarId === SK.rahasia)).toMatchObject({ notes: 'Catatan tautan' });
         expect(keluar.every((t: any) => typeof t.addedAt === 'string')).toBe(true);
     });
+
+    it('menjawab dengan pesan berbahasa Indonesia bila dosir sudah tidak ada', async () => {
+        await request(app).delete(`/api/dosir/${DOSIR}`).set(sebagai(admin)).expect(200);
+        const ulang = await request(app).delete(`/api/dosir/${DOSIR}`).set(sebagai(admin)).expect(404);
+        expect(ulang.body).toEqual({ success: false, error: 'Dosir tidak ditemukan atau sudah dihapus.' });
+    });
+});
+
+describe('dosir yang tidak ada', () => {
+    it('detail dan linimasa menjawab 404 dengan pesan berbahasa Indonesia', async () => {
+        const harapan = { success: false, error: 'Dosir tidak ditemukan atau sudah dihapus.' };
+        expect((await request(app).get(`/api/dosir/${ACAK}`).set(sebagai(admin)).expect(404)).body).toEqual(harapan);
+        expect((await request(app).get(`/api/dosir/${ACAK}/timeline`).set(sebagai(admin)).expect(404)).body).toEqual(harapan);
+    });
+});
+
+describe('kode dosir unik per unit', () => {
+    const tahun = new Date().getFullYear();
+    const buat = (judul: string) => request(app).post('/api/dosir').set(sebagai(admin)).send({ judul });
+
+    it('kode dosir yang dihapus tidak dibagikan lagi, juga pada pratinjau kode', async () => {
+        const pertama = await buat('Perkara pertama').expect(201);
+        const kedua = await buat('Perkara kedua').expect(201);
+        expect(pertama.body.data.kode).toBe(`dir_bppt-${tahun}-001`);
+        expect(kedua.body.data.kode).toBe(`dir_bppt-${tahun}-002`);
+
+        await request(app).delete(`/api/dosir/${kedua.body.data.id}`).set(sebagai(admin)).expect(200);
+        const ketiga = await buat('Perkara ketiga').expect(201);
+        expect(ketiga.body.data.kode).toBe(`dir_bppt-${tahun}-003`);
+
+        const pratinjau = await request(app).get('/api/dosir/generate-kode').set(sebagai(admin)).expect(200);
+        expect(pratinjau.body.data.kode).toBe(`dir_bppt-${tahun}-004`);
+    });
+
+    it('nomor unit lain tidak ikut dihitung', async () => {
+        const adminPtep = { ...admin, id: uid(904), email: 'ptep@example.test', unitKerjaId: 'dir_ptep' } satisfies PenggunaUji;
+        await insertUser(database, adminPtep);
+        await database.query(`INSERT INTO dosir (unit_kerja_id, kode, judul) VALUES ('dir_ptep', $1, 'Dosir unit lain')`, [`dir_ptep-${tahun}-041`]);
+        expect((await buat('Perkara unit sendiri').expect(201)).body.data.kode).toBe(`dir_bppt-${tahun}-001`);
+        const lain = await request(app).post('/api/dosir').set(sebagai(adminPtep)).send({ judul: 'Perkara PTEP' }).expect(201);
+        expect(lain.body.data.kode).toBe(`dir_ptep-${tahun}-042`);
+    });
 });
 
 describe('DELETE /api/dosir/:id/surat/:type/:suratId', () => {
@@ -207,6 +249,7 @@ describe('DELETE /api/dosir/:id/surat/:type/:suratId', () => {
     it('tautan ke surat tersembunyi dijawab seperti tidak tertaut dan barisnya tetap ada', async () => {
         const tidakTertaut = await lepas(admin, SK.terbatasLepas).expect(404);
         const tersembunyi = await lepas(admin, SK.rahasia).expect(404);
+        expect(tidakTertaut.body).toEqual({ success: false, error: 'Surat tidak ditemukan pada dosir ini.' });
         expect(tersembunyi.body).toEqual(tidakTertaut.body);
         expect(await tautanKeluar(SK.rahasia)).toBe(1);
         await lepas(admin, SK.terhapus).expect(404);
