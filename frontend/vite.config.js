@@ -19,6 +19,13 @@ export const SPA_NAVIGATION_DENYLIST = Object.freeze([
   /^[^?]*%/,
 ])
 
+// Browsers the build is made for, stated in the user guides. JavaScript is
+// emitted for these versions (Vite's own default baseline already starts at
+// Chrome/Edge 111 and Safari 16.4); Firefox 128 is set because Tailwind CSS 4
+// relies on @property, which Firefox supports from version 128. index.html
+// shows a notice in browsers below these versions.
+export const BROWSER_TARGETS = Object.freeze(['chrome111', 'edge111', 'firefox128', 'safari16.4', 'ios16.4'])
+
 function validateClientApiTarget(command, mode) {
   const loadedEnvironment = loadEnv(mode, currentDirectory, '')
   const configuredApiUrl = (process.env.VITE_API_URL ?? loadedEnvironment.VITE_API_URL ?? '').trim()
@@ -163,6 +170,7 @@ export default defineConfig(({ command, mode }) => {
     },
   },
   build: {
+    target: [...BROWSER_TARGETS],
     // Vite 8 bundles with Rolldown, which dropped Rollup's object-form
     // `manualChunks`. These codeSplitting groups name the vendor chunks: each
     // captures the listed packages plus their dependencies
