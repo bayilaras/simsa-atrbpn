@@ -60,6 +60,19 @@ describe('migration preview boundary', () => {
         await request(app).post('/api/migration/arsip').field('unitKerjaId', 'unit-a').attach('file', bytes, 'arsip.csv').expect(200);
         expect(mocks.import.mock.calls[0][0]).toBe('Nomor Berkas;Tanggal;Uraian\nAR-1;03/11/2026;Arsip – lama');
     });
+    it('refuses a CSV over the 4 MiB limit of the surat imports, and a file that is not CSV, with a plain message', async () => {
+        const big = await request(app).post('/api/migration/arsip').field('unitKerjaId', 'unit-a')
+            .attach('file', Buffer.alloc(4 * 1024 * 1024 + 1, 0x61), 'arsip.csv');
+        expect(big.status).toBe(413);
+        expect(big.body.message).toBe('Berkas melebihi batas 4 MiB. Pecah data menjadi beberapa berkas.');
+        const workbook = await request(app).post('/api/migration/arsip').field('unitKerjaId', 'unit-a').attach('file', Buffer.from('PK'), 'arsip.xlsx');
+        expect(workbook.status).toBe(400);
+        expect(workbook.body.message).toBe('Pilih satu berkas CSV (.csv).');
+        expect(mocks.import).not.toHaveBeenCalled();
+        await request(app).post('/api/migration/arsip').field('unitKerjaId', 'unit-a')
+            .attach('file', Buffer.alloc(4 * 1024 * 1024, 0x61), 'arsip.csv').expect(200);
+        expect(mocks.import).toHaveBeenCalledOnce();
+    });
     it('preserves the default import mode when dryRun is omitted', async () => {
         await request(app).post('/api/migration/arsip').field('unitKerjaId', 'unit-a')
             .attach('file', Buffer.from('Tanggal\n2026-09-11'), 'import.csv').expect(200);

@@ -3,7 +3,7 @@ import { Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import api from '@/services/api'
-import { IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import'
+import { IMPORT_FILE_MAX_BYTES, IMPORT_FILE_TOO_LARGE, IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import'
 import { outcomeUnknown, runResumableImport } from '@/lib/resumable-import'
 
 const labels = { 'surat-masuk': 'Surat Masuk', 'surat-keluar': 'Surat Keluar', arsip: 'Arsip' }
@@ -13,6 +13,13 @@ const PESAN_IMPOR_ARSIP_PERMANEN =
     'Arsip yang diimpor tidak dapat dihapus dari aplikasi, dan impor tidak dapat dibatalkan. Periksa hasil pratinjau sebelum mengimpor.'
 const PERNYATAAN_IMPOR_ARSIP = 'Saya sudah memeriksa pratinjau dan memahami bahwa impor ini permanen.'
 const statuses = { valid: 'Valid', imported: 'Diimpor', duplicate: 'Duplikat', invalid: 'Perlu koreksi' }
+const NOT_CSV = 'Pilih berkas CSV (.csv).'
+
+/** Why a chosen file cannot be sent, checked before anything is uploaded. */
+function fileProblem(file) {
+    if (!file.name.toLowerCase().endsWith('.csv')) return NOT_CSV
+    return file.size > IMPORT_FILE_MAX_BYTES ? IMPORT_FILE_TOO_LARGE : ''
+}
 
 /** Join the parts of a resumable CSV import into one result. */
 function addCsvPart(total, part) {
@@ -49,16 +56,19 @@ function CsvImportForm({ type, unitKerjaId, onImportComplete, onBusyChange }) {
 
     const chooseFile = event => {
         requestVersion.current++
-        setFile(event.target.files?.[0] || null)
+        const chosen = event.target.files?.[0] || null
+        const problem = chosen ? fileProblem(chosen) : ''
+        setFile(problem ? null : chosen)
         setResult(null)
-        setError('')
+        setError(problem)
         setPaham(false)
     }
     const canImport = result?.dryRun === true && result.success && result.valid > 0
     const run = async dryRun => {
         if (!file || !unitKerjaId || unitKerjaId === 'all' || (!dryRun && (!canImport || (perluPernyataan && !paham)))) return
-        if (!file.name.toLowerCase().endsWith('.csv') || file.size > 10 * 1024 * 1024) {
-            setError('Pilih berkas CSV dengan ukuran maksimal 10 MiB.')
+        const problem = fileProblem(file)
+        if (problem) {
+            setError(problem)
             return
         }
         const version = ++requestVersion.current
@@ -116,7 +126,7 @@ function CsvImportForm({ type, unitKerjaId, onImportComplete, onBusyChange }) {
         </p>
         <p className="text-sm text-muted-foreground">
             Pemisah kolom boleh koma, titik koma, atau tab dan dibaca dari baris judul. Sebaiknya simpan sebagai &quot;CSV UTF-8&quot;; CSV biasa dari Excel juga dapat dibaca.
-            Maksimal 1.000 rekod dan 10 MiB per berkas. Gunakan satu header unik untuk setiap kolom; pecah berkas besar sebelum diimpor.
+            Maksimal 1.000 rekod dan 4 MiB per berkas. Gunakan satu header unik untuk setiap kolom; pecah berkas besar sebelum diimpor.
         </p>
         <p className="break-words rounded-md bg-muted p-3 text-sm">
             Kolom utama: {type === 'arsip' ? 'Nomor Berkas, Tanggal, Uraian, Jenis Arsip (masuk/keluar)' : 'Nomor Surat, Tanggal Surat, Perihal, Dari, Kepada'}.

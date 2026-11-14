@@ -9,7 +9,7 @@ import ImportUnitRequiredButton from '@/components/ImportUnitRequiredButton'
 import { importResultSummary } from '@/lib/import-report'
 import { CATATAN_KELAS_IMPOR_SURAT_MASUK } from '@/lib/kelas-keamanan'
 import api from '@/services/api'
-import { addImportPart, emptyImportTotals, IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import'
+import { addImportPart, emptyImportTotals, IMPORT_FILE_MAX_BYTES, IMPORT_FILE_TOO_LARGE, IMPORT_PART_TIMEOUT_MS } from '@/lib/google-sheets-import'
 import { runResumableImport, unfinishedImportNotice } from '@/lib/resumable-import'
 
 /**
@@ -19,7 +19,6 @@ import { runResumableImport, unfinishedImportNotice } from '@/lib/resumable-impo
  * server reads in memory and never stores.
  */
 const labels = { 'surat-masuk': 'Surat Masuk', 'surat-keluar': 'Surat Keluar' }
-const MAX_FILE_BYTES = 4 * 1024 * 1024
 const PREVIEW_ROWS = 10
 const ACCEPT = '.csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
@@ -68,9 +67,9 @@ function ImportFileFlow({ type, unitKerjaId, onImportComplete, onBusyChange, onD
         if (chosen && !/\.(csv|xlsx)$/i.test(chosen.name)) {
             setFile(null)
             setError('Pilih berkas .csv atau .xlsx. Simpan berkas .xls atau .xlsm sebagai Excel Workbook (.xlsx) terlebih dahulu.')
-        } else if (chosen && chosen.size > MAX_FILE_BYTES) {
+        } else if (chosen && chosen.size > IMPORT_FILE_MAX_BYTES) {
             setFile(null)
-            setError('Berkas melebihi batas 4 MiB. Pecah data menjadi beberapa berkas.')
+            setError(IMPORT_FILE_TOO_LARGE)
         } else setFile(chosen)
     }
     const chooseSheet = name => { version.current++; setPreview(null); setError(''); setSheet(name) }

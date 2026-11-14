@@ -128,6 +128,23 @@ describe('CSV preview before import', () => {
         expect(screen.getByRole('button', { name: 'Impor data valid' })).toBeDisabled()
     })
 
+    it('menolak berkas di atas 4 MiB, batas impor surat, sebelum mengirimnya', async () => {
+        render(<ImportCsvDialog type="arsip" unitKerjaId="unit-a" />)
+        fireEvent.click(screen.getByRole('button', { name: 'Impor CSV' }))
+        expect(await screen.findByText(/Maksimal 1\.000 rekod dan 4 MiB per berkas/)).toBeInTheDocument()
+        const big = new File([new Uint8Array(4 * 1024 * 1024 + 1)], 'arsip.csv', { type: 'text/csv' })
+        fireEvent.change(screen.getByLabelText('Berkas CSV'), { target: { files: [big] } })
+        expect(screen.getByRole('alert')).toHaveTextContent('Berkas melebihi batas 4 MiB. Pecah data menjadi beberapa berkas.')
+        expect(screen.getByRole('button', { name: 'Pratinjau' })).toBeDisabled()
+        fireEvent.change(screen.getByLabelText('Berkas CSV'), { target: { files: [new File(['x'], 'arsip.xlsx')] } })
+        expect(screen.getByRole('alert')).toHaveTextContent('Pilih berkas CSV (.csv).')
+        expect(screen.getByRole('button', { name: 'Pratinjau' })).toBeDisabled()
+        fireEvent.change(screen.getByLabelText('Berkas CSV'), { target: { files: [source()] } })
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Pratinjau' })).toBeEnabled()
+        expect(mocks.post).not.toHaveBeenCalled()
+    })
+
     it('arsip: impor baru dapat dimulai setelah pernyataan permanen dicentang', async () => {
         mocks.post.mockResolvedValueOnce({ data: preview }).mockResolvedValueOnce({ data: { ...preview, dryRun: false, imported: 1, rows: [{ ...preview.rows[0], status: 'imported' }] } })
         render(<ImportCsvDialog type="arsip" unitKerjaId="unit-a" />)
