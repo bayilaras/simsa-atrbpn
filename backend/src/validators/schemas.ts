@@ -6,6 +6,7 @@ import {
     NOTIFICATION_ID_PATTERN,
 } from '../utils/notification-id.js';
 import { jakartaDate } from '../utils/jakarta-date.js';
+import { parseJsonObjectString } from '../utils/json-objek-teks.js';
 import { KATEGORI_PERLU_DILENGKAPI } from '../services/perlu-dilengkapi.constants.js';
 
 // Common schemas
@@ -88,17 +89,6 @@ export const nextSuratNumberQuerySchema = z.object({
 
 // ==================== Rangkaian surat (P3) ====================
 
-/** Multipart mengirim objek bersarang sebagai JSON string; bentuk JSON diterima, selain itu apa adanya. */
-function parseJsonObjectString(value: unknown) {
-    if (typeof value !== 'string') return value;
-    const trimmed = value.trim();
-    if (!trimmed.startsWith('{')) return value;
-    try {
-        return JSON.parse(trimmed);
-    } catch {
-        return value;
-    }
-}
 
 const alasanText = z.string('Alasan wajib diisi').trim().min(10, 'Alasan minimal 10 karakter').max(2000, 'Alasan maksimal 2000 karakter');
 export const alasanSchema = z.object({ alasan: alasanText }).strict();
