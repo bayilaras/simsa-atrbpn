@@ -7,6 +7,7 @@ import {
 } from '../utils/notification-id.js';
 import { jakartaDate } from '../utils/jakarta-date.js';
 import { KATEGORI_PERLU_DILENGKAPI } from '../services/perlu-dilengkapi.constants.js';
+import { URUTAN_DAFTAR_SURAT } from '../services/urutan-daftar-surat.constants.js';
 
 // Common schemas
 export const uuidSchema = z.string().uuid('Invalid UUID format');
@@ -217,6 +218,7 @@ export const querySuratMasukSchema = paginationSchema.extend({
     disposisi: z.string().max(100).optional(),
     disposisiUnitId: z.string().trim().min(1).max(50).optional(),
     search: z.string().max(255).optional(),
+    urutan: z.enum(URUTAN_DAFTAR_SURAT).optional(),
 });
 
 // Surat Keluar schemas
@@ -312,6 +314,7 @@ export const querySuratKeluarSchema = paginationSchema.extend({
     /** Penyaring kerja persetujuan; hanya mempersempit daftar yang sudah boleh dibaca. */
     persetujuan: z.enum(['menunggu_saya', 'draft_saya']).optional(),
     search: z.string().max(255).optional(),
+    urutan: z.enum(URUTAN_DAFTAR_SURAT).optional(),
 });
 
 // Arsip schemas

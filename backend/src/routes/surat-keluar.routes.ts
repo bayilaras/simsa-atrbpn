@@ -93,7 +93,7 @@ router.get('/', validateQuery(querySuratKeluarSchema), async (req: AuthRequest, 
     try {
         // Use validated query from res.locals (set by validateQuery middleware)
         const validatedQuery = res.locals.validatedQuery || {};
-        const { tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif, search, persetujuan, page, limit } = validatedQuery;
+        const { tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif, search, persetujuan, urutan, page, limit } = validatedQuery;
 
         // Resolve unitKerjaId based on user's role (enforces unit kerja isolation)
         const unitKerjaId = resolveListUnitKerjaId(req, validatedQuery.unitKerjaId);
@@ -108,6 +108,7 @@ router.get('/', validateQuery(querySuratKeluarSchema), async (req: AuthRequest, 
             klasifikasiSubstantif,
             search,
             persetujuan,
+            urutan,
             page,
             limit,
             securityClassifications: allowedSecurityClassifications(req.user),

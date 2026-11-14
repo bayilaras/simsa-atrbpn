@@ -18,6 +18,19 @@ vi.mock('@/services/surat-masuk.service', () => ({ default: mocks.masuk, suratMa
 vi.mock('@/services/surat-keluar.service', () => ({ default: mocks.keluar, suratKeluarService: mocks.keluar }))
 vi.mock('@/services/settings.service', () => ({ default: { getAllUnitKerja: mocks.units } }))
 vi.mock('@/components/ExportButton', () => ({ ExportButton: () => null }))
+vi.mock('@/components/ui/select', async () => {
+    const { Children } = await import('react')
+    return {
+        Select: ({ children, value, onValueChange }) => {
+            const trigger = Children.toArray(children).find(child => child.props?.id)
+            return <select id={trigger?.props.id} value={value} onChange={event => onValueChange(event.target.value)}>{children}</select>
+        },
+        SelectTrigger: () => null,
+        SelectValue: () => null,
+        SelectContent: ({ children }) => <>{children}</>,
+        SelectItem: ({ children, value }) => <option value={value}>{children}</option>,
+    }
+})
 
 const baris = {
     id: 'surat-1', unitKerjaId: 'sesditjen', unitKerjaNama: 'Sekretariat Direktorat Jenderal',
@@ -64,5 +77,21 @@ describe.each(daftar)('filter jenis pada daftar surat $jenis', ({ Component, jen
         }
         fireEvent.click(screen.getByRole('button', { name: 'Permohonan Hak Milik' }))
         await waitFor(() => expect(mocks[jenis].getAll).toHaveBeenLastCalledWith(expect.objectContaining({ [param]: 'Permohonan Hak Milik' })))
+    })
+})
+
+describe.each(daftar)('urutan daftar surat $jenis', ({ Component, jenis }) => {
+    it('menawarkan urutan menurut tanggal surat dan mengirim pilihannya dari halaman pertama', async () => {
+        tampil(Component)
+        await screen.findByText('Perihal uji daftar')
+        expect(mocks[jenis].getAll.mock.lastCall[0].urutan).toBeUndefined()
+        const urutan = screen.getByLabelText('Urutkan')
+        expect([...urutan.options].map(option => option.textContent)).toEqual([
+            'Terakhir dicatat', 'Tanggal surat (terbaru)', 'Tanggal surat (terlama)',
+        ])
+        fireEvent.change(urutan, { target: { value: 'tanggal_terlama' } })
+        await waitFor(() => expect(mocks[jenis].getAll).toHaveBeenLastCalledWith(expect.objectContaining({ urutan: 'tanggal_terlama', page: 1 })))
+        fireEvent.change(urutan, { target: { value: 'dicatat_terbaru' } })
+        await waitFor(() => expect(mocks[jenis].getAll.mock.lastCall[0].urutan).toBeUndefined())
     })
 })

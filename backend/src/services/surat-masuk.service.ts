@@ -34,6 +34,8 @@ import type { DisposisiRoutingInput } from '../validators/schemas.js';
 import type { RecordUser } from './record-access.service.js';
 import { klasifikasiInSql, sifatKunciSql } from './access/visibility-spec.js';
 import { disposisiKeUnitSql, disposisiLabelSql } from './disposisi-filter.js';
+import { urutanDaftarSuratSql } from './urutan-daftar-surat.js';
+import type { UrutanDaftarSurat } from './urutan-daftar-surat.constants.js';
 
 export type CreateSuratMasukInput = Omit<NewSuratMasuk, 'disposisi'> & {
     disposisi?: string[] | DisposisiRoutingInput | null;
@@ -54,6 +56,7 @@ export interface SuratMasukFilters {
     /** Unit tujuan disposisi; lihat disposisiKeUnitSql. */
     disposisiUnitId?: string;
     search?: string;
+    urutan?: UrutanDaftarSurat;
     page?: number;
     limit?: number;
     /** null means all classes (super_admin); [] fails closed. */
@@ -68,7 +71,7 @@ function securityClassificationCondition(classes: string[] | null | undefined) {
 
 export class SuratMasukService {
     async findAll(filters: SuratMasukFilters) {
-        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, disposisiUnitId, search, page = 1, limit = 20, securityClassifications } = filters;
+        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, disposisiUnitId, search, urutan, page = 1, limit = 20, securityClassifications } = filters;
         const offset = (page - 1) * limit;
 
         // Build where conditions
@@ -135,7 +138,7 @@ export class SuratMasukService {
             .select()
             .from(suratMasuk)
             .where(and(...conditions))
-            .orderBy(desc(suratMasuk.createdAt))
+            .orderBy(...urutanDaftarSuratSql(suratMasuk, urutan))
             .limit(limit)
             .offset(offset);
 

@@ -10,11 +10,13 @@ vi.mock('../config/database', () => ({ get db() { return holder.db; } }));
 
 let database: PGlite;
 let suratMasukService: typeof import('../services/surat-masuk.service').suratMasukService;
+let suratKeluarService: typeof import('../services/surat-keluar.service').suratKeluarService;
 
 beforeAll(async () => {
     database = await bootRangkaianDatabase();
     holder.db = drizzle(database, { schema });
     ({ suratMasukService } = await import('../services/surat-masuk.service'));
+    ({ suratKeluarService } = await import('../services/surat-keluar.service'));
 }, 120_000);
 afterAll(async () => { await database?.close(); });
 beforeEach(async () => { await seedRangkaianFixture(database); });
@@ -63,5 +65,64 @@ describe('filter Disposisi Ke pada daftar surat masuk', () => {
         expect(await idSuratMasuk({ disposisiUnitId: 'dir_ptep', securityClassifications: kelasUntukRole('staff') })).toEqual([]);
         expect(await idSuratMasuk({ disposisiUnitId: 'dir_bppt', unitKerjaId: 'bagian_umum' })).toEqual([]);
         expect(await idSuratMasuk({ disposisiUnitId: 'dir_bppt', unitKerjaId: null })).toEqual([SURAT.smBiasa]);
+    });
+});
+
+describe('urutan daftar surat', () => {
+    it('hanya nilai urutan yang dikenal diterima', async () => {
+        const { querySuratMasukSchema, querySuratKeluarSchema } = await import('../validators/schemas');
+        const { urutanDaftarSuratDari } = await import('../services/urutan-daftar-surat');
+        for (const skema of [querySuratMasukSchema, querySuratKeluarSchema]) {
+            for (const urutan of ['dicatat_terbaru', 'tanggal_terbaru', 'tanggal_terlama']) {
+                expect(skema.safeParse({ urutan }).success).toBe(true);
+            }
+            expect(skema.safeParse({ urutan: 'nomor_surat' }).success).toBe(false);
+            expect(skema.safeParse({ urutan: 'created_at desc' }).success).toBe(false);
+        }
+        expect(urutanDaftarSuratDari('tanggal_terlama')).toBe('tanggal_terlama');
+        expect(urutanDaftarSuratDari('perihal')).toBeUndefined();
+        expect(urutanDaftarSuratDari(['tanggal_terlama'])).toBeUndefined();
+    });
+
+    it('surat masuk: bawaan menurut waktu dicatat, atau menurut tanggal surat dengan tanggal kosong di akhir', async () => {
+        await database.exec(`
+            UPDATE surat_masuk SET created_at = '2026-10-01T00:00:00Z', tanggal_surat = '2026-09-01' WHERE id = '${SURAT.smBiasa}';
+            UPDATE surat_masuk SET created_at = '2026-10-03T00:00:00Z', tanggal_surat = '2026-08-01' WHERE id = '${SURAT.smTerbatas}';
+            UPDATE surat_masuk SET created_at = '2026-10-02T00:00:00Z', tanggal_surat = NULL WHERE id = '${SURAT.smTunggal}';`);
+        const urut = async (urutan?: string) => (await suratMasukService.findAll({
+            unitKerjaId: 'sesditjen', securityClassifications: SEMUA_KELAS, limit: 100, urutan,
+        } as any)).data.map((row) => row.id);
+        const bawaan = [SURAT.smTerbatas, SURAT.smTunggal, SURAT.smBiasa];
+        expect(await urut()).toEqual(bawaan);
+        expect(await urut('dicatat_terbaru')).toEqual(bawaan);
+        expect(await urut('tanggal_terbaru')).toEqual([SURAT.smBiasa, SURAT.smTerbatas, SURAT.smTunggal]);
+        expect(await urut('tanggal_terlama')).toEqual([SURAT.smTerbatas, SURAT.smBiasa, SURAT.smTunggal]);
+    });
+
+    it('nilai yang sama diurutkan menurut id sehingga halaman tidak bertukar baris', async () => {
+        await database.exec(`UPDATE surat_masuk SET created_at = '2026-10-01T00:00:00Z', tanggal_surat = '2026-09-01'
+            WHERE unit_kerja_id = 'sesditjen'`);
+        const halaman = async (urutan: string | undefined, page: number) => (await suratMasukService.findAll({
+            unitKerjaId: 'sesditjen', securityClassifications: SEMUA_KELAS, limit: 1, page, urutan,
+        } as any)).data.map((row) => row.id);
+        const menurun = [SURAT.smTunggal, SURAT.smTerbatas, SURAT.smBiasa];
+        for (const urutan of [undefined, 'tanggal_terbaru']) {
+            expect([...await halaman(urutan, 1), ...await halaman(urutan, 2), ...await halaman(urutan, 3)]).toEqual(menurun);
+        }
+        expect([...await halaman('tanggal_terlama', 1), ...await halaman('tanggal_terlama', 2), ...await halaman('tanggal_terlama', 3)])
+            .toEqual([...menurun].reverse());
+    });
+
+    it('surat keluar memakai urutan yang sama', async () => {
+        await database.exec(`
+            UPDATE surat_keluar SET created_at = '2026-10-01T00:00:00Z', tanggal_surat = '2026-07-01' WHERE id = '${SURAT.skBpptBiasa}';
+            UPDATE surat_keluar SET created_at = '2026-10-03T00:00:00Z', tanggal_surat = '2026-09-01' WHERE id = '${SURAT.skBpptNull}';
+            UPDATE surat_keluar SET created_at = '2026-10-02T00:00:00Z', tanggal_surat = '2026-08-01' WHERE id = '${SURAT.skBpptTunggal}';`);
+        const urut = async (urutan?: string) => (await suratKeluarService.findAll({
+            unitKerjaId: 'dir_bppt', securityClassifications: SEMUA_KELAS, limit: 100, urutan,
+        } as any)).data.map((row) => row.id);
+        expect(await urut()).toEqual([SURAT.skBpptNull, SURAT.skBpptTunggal, SURAT.skBpptBiasa]);
+        expect(await urut('tanggal_terbaru')).toEqual([SURAT.skBpptNull, SURAT.skBpptTunggal, SURAT.skBpptBiasa]);
+        expect(await urut('tanggal_terlama')).toEqual([SURAT.skBpptBiasa, SURAT.skBpptTunggal, SURAT.skBpptNull]);
     });
 });

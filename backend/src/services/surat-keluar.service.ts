@@ -32,6 +32,8 @@ import type { TindakLanjutInput } from '../validators/schemas.js';
 import { afterSuratKeluarChanged, afterSuratKeluarInsert } from './rangkaian/tindak-lanjut.hook.js';
 import type { RecordUser } from './record-access.service.js';
 import { resolveKonteksBaca, visibleSql, type KonteksBaca } from './access/visibility-spec.js';
+import { urutanDaftarSuratSql } from './urutan-daftar-surat.js';
+import type { UrutanDaftarSurat } from './urutan-daftar-surat.constants.js';
 
 export interface SuratKeluarFilters {
     unitKerjaId?: string | null;
@@ -44,6 +46,7 @@ export interface SuratKeluarFilters {
     search?: string;
     /** menunggu_saya: menunggu keputusan pembaca; draft_saya: buatan pembaca yang belum diajukan. */
     persetujuan?: 'menunggu_saya' | 'draft_saya';
+    urutan?: UrutanDaftarSurat;
     page?: number;
     limit?: number;
     /** Legacy outgoing rows are treated as Terbatas until reclassified. */
@@ -74,7 +77,7 @@ type CreateSuratKeluarInput = Omit<NewSuratKeluar, 'noUrut' | 'tahun'> & {
 
 export class SuratKeluarService {
     async findAll(filters: SuratKeluarFilters) {
-        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif, search, persetujuan, page = 1, limit = 20, securityClassifications, pembaca } = filters;
+        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, naskahDinas, klasifikasiFasilitatif, klasifikasiSubstantif, search, persetujuan, urutan, page = 1, limit = 20, securityClassifications, pembaca } = filters;
         const offset = (page - 1) * limit;
 
         const conditions = [
@@ -156,7 +159,7 @@ export class SuratKeluarService {
             .select(kolom)
             .from(suratKeluar)
             .where(and(...conditions))
-            .orderBy(desc(suratKeluar.createdAt))
+            .orderBy(...urutanDaftarSuratSql(suratKeluar, urutan))
             .limit(limit)
             .offset(offset);
 

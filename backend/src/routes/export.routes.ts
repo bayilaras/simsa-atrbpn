@@ -9,6 +9,7 @@ import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import { createLogger } from '../utils/logger';
 import { allowedSecurityClassifications } from '../services/record-access.service.js';
 import { auditExport } from '../services/export-audit';
+import { urutanDaftarSuratDari } from '../services/urutan-daftar-surat';
 
 const log = createLogger('ExportRoutes');
 
@@ -44,6 +45,7 @@ router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
             status: status as string,
             disposisi: disposisi as string,
             disposisiUnitId: teksSingkat(disposisiUnitId),
+            urutan: urutanDaftarSuratDari(req.query.urutan),
             securityClassifications: allowedSecurityClassifications(req.user),
         };
 
@@ -81,6 +83,7 @@ router.get('/surat-masuk/pdf', async (req: AuthRequest, res: Response) => {
             status: status as string,
             disposisi: disposisi as string,
             disposisiUnitId: teksSingkat(disposisiUnitId),
+            urutan: urutanDaftarSuratDari(req.query.urutan),
             securityClassifications: allowedSecurityClassifications(req.user),
         };
 
@@ -118,6 +121,7 @@ router.get('/surat-keluar/excel', async (req: AuthRequest, res: Response) => {
             naskahDinas: naskahDinas as string,
             klasifikasiFasilitatif: klasifikasiFasilitatif as string,
             klasifikasiSubstantif: klasifikasiSubstantif as string,
+            urutan: urutanDaftarSuratDari(req.query.urutan),
             securityClassifications: allowedSecurityClassifications(req.user),
         };
 
@@ -153,6 +157,7 @@ router.get('/surat-keluar/pdf', async (req: AuthRequest, res: Response) => {
             naskahDinas: naskahDinas as string,
             klasifikasiFasilitatif: klasifikasiFasilitatif as string,
             klasifikasiSubstantif: klasifikasiSubstantif as string,
+            urutan: urutanDaftarSuratDari(req.query.urutan),
             securityClassifications: allowedSecurityClassifications(req.user),
         };
 

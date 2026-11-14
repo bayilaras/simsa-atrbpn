@@ -14,6 +14,7 @@ export const suratMasukService = {
         disposisiUnitId,
         tanggalDari,
         tanggalSampai,
+        urutan,
         page = 1,
         limit = 20,
     } = {}) {
@@ -28,6 +29,7 @@ export const suratMasukService = {
             disposisiUnitId,
             tanggalDari,
             tanggalSampai,
+            urutan,
             page,
             limit,
         });

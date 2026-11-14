@@ -14,6 +14,7 @@ import { ExportButton } from '@/components/ExportButton';
 import { canExportReports } from '@/lib/provisioning-access';
 import { sifatSuratKeluarLabel } from '@/lib/sifat-surat-keluar';
 import { JENIS_NASKAH_DINAS } from '@/lib/jenis-naskah';
+import { PILIHAN_URUTAN_SURAT, URUTAN_BAWAAN, parameterUrutan } from '@/lib/urutan-daftar-surat';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
 import ImportFileDialog from '@/components/ImportFileDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
@@ -119,6 +120,7 @@ export default function SuratKeluar() {
     const [naskahDinas, setNaskahDinas] = useState('all');
     const [tanggalDari, setTanggalDari] = useState(null);
     const [tanggalSampai, setTanggalSampai] = useState(null);
+    const [urutan, setUrutan] = useState(URUTAN_BAWAAN);
 
     // Dialog states
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
@@ -162,6 +164,7 @@ export default function SuratKeluar() {
                 persetujuan: saringPersetujuan !== 'all' ? saringPersetujuan : undefined,
                 tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
                 tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
+                urutan: parameterUrutan(urutan),
             };
 
             const response = await suratKeluarService.getAll(params);
@@ -195,7 +198,7 @@ export default function SuratKeluar() {
         } finally {
             if (seq === fetchSeqRef.current && !changingPage) setLoading(false);
         }
-    }, [pagination.page, pagination.limit, debouncedSearchTerm, resolvedUnitKerjaId, tahun, naskahDinas, saringPersetujuan, tanggalDari, tanggalSampai, toast]);
+    }, [pagination.page, pagination.limit, debouncedSearchTerm, resolvedUnitKerjaId, tahun, naskahDinas, saringPersetujuan, tanggalDari, tanggalSampai, urutan, toast]);
 
     // Fetch stats from API
     const fetchStats = useCallback(async () => {
@@ -437,6 +440,7 @@ export default function SuratKeluar() {
                                 naskahDinas: naskahDinas !== 'all' ? naskahDinas : undefined,
                                 tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
                                 tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
+                                urutan: parameterUrutan(urutan),
                             }}
                         />
                     )}
@@ -563,6 +567,19 @@ export default function SuratKeluar() {
                                         onChange={(e) => setSearchTerm(e.target.value)}
                                     />
                                 </div>
+                            </div>
+                            <div className="w-full space-y-1.5 md:w-[220px]">
+                                <label htmlFor="surat-keluar-urutan" className="text-sm font-medium">Urutkan</label>
+                                <Select value={urutan} onValueChange={applyFilter(setUrutan)}>
+                                    <SelectTrigger id="surat-keluar-urutan" className="h-9 bg-background">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {PILIHAN_URUTAN_SURAT.map(pilihan => (
+                                            <SelectItem key={pilihan.value} value={pilihan.value}>{pilihan.label}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
                             <Collapsible open={isAdvancedOpen} onOpenChange={setIsAdvancedOpen} className="flex-none">
                                 <CollapsibleTrigger asChild>
