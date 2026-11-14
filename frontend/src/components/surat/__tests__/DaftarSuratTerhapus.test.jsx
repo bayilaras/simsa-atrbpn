@@ -65,6 +65,30 @@ it('Pulihkan mewajibkan alasan minimal 10 karakter, lalu memuat ulang daftar dan
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 })
 
+it('nomor surat yang juga dipakai surat aktif lain disebut di toast pemulihan', async () => {
+    mocks.pulihkan.mockResolvedValue({ id: 'sm-1', nomorSurat: 'SM-3/2026', suratAktifNomorSama: ['sm-8', 'sm-9'] })
+    tampil()
+    fireEvent.click(await screen.findByRole('button', { name: 'Pulihkan surat SM-3/2026' }))
+    const dialog = within(await screen.findByRole('dialog'))
+    fireEvent.change(dialog.getByLabelText('Alasan pemulihan'), { target: { value: 'Salah hapus, surat masih dipakai' } })
+    fireEvent.click(dialog.getByRole('button', { name: 'Pulihkan' }))
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith({
+        title: 'Surat dipulihkan',
+        description: 'Surat SM-3/2026 kembali ke daftar dengan nomor semula. Nomor surat ini juga dipakai oleh 2 surat lain yang masih aktif di unit ini. Periksa apakah surat itu sama.',
+    }))
+})
+
+it.each([
+    ['masuk', 'nomor agenda dan nomor surat'],
+    ['keluar', 'nomor urut dan nomor surat'],
+])('surat %s memakai sebutan nomornya sendiri', async (jenis, nomor) => {
+    tampil({ jenis })
+    expect(await screen.findByText(`Surat yang dihapus tidak tampil di daftar lain. Surat yang dipulihkan kembali ke daftar dengan ${nomor} semula.`)).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'Pulihkan surat SM-3/2026' }))
+    expect(await screen.findByText(`Surat SM-3/2026 akan kembali ke daftar dengan ${nomor} semula. Pemulihan dicatat di log audit.`)).toBeInTheDocument()
+    expect(mocks.daftar).toHaveBeenCalledWith(jenis, expect.anything())
+})
+
 it('penolakan server tampil di dialog dengan pesannya, bukan nama kelas galat', async () => {
     const pesan = 'Surat ini bagian dari berkas rangkaian yang sudah diberkaskan, sehingga tidak dapat dipulihkan.'
     mocks.pulihkan.mockRejectedValue(galatApi(409, { success: false, error: 'ConflictError', message: pesan, code: 'CONFLICT' }))

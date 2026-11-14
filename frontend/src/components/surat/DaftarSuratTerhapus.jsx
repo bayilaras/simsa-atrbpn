@@ -14,6 +14,8 @@ import { useToast } from '@/hooks/use-toast'
 import suratTerhapusService from '@/services/surat-terhapus.service'
 
 const JUDUL = { masuk: 'Surat Masuk Terhapus', keluar: 'Surat Keluar Terhapus' }
+// Surat masuk memakai nomor agenda; surat keluar memakai nomor urut.
+const NOMOR = { masuk: 'nomor agenda dan nomor surat', keluar: 'nomor urut dan nomor surat' }
 
 function waktuHapus(nilai) {
     if (!nilai) return '-'
@@ -25,7 +27,8 @@ const sebutan = (surat) => surat?.nomorSurat || surat?.perihal || 'tanpa nomor'
 
 /**
  * Daftar surat terhapus untuk Super Admin, dengan tombol Pulihkan. Surat yang
- * dipulihkan kembali ke daftar dengan nomor agenda dan nomor surat semula.
+ * dipulihkan kembali ke daftar dengan nomornya semula (lihat NOMOR); bila nomor
+ * suratnya juga dipakai surat aktif lain di unit itu, toast memuat peringatan.
  */
 export function DaftarSuratTerhapus({ jenis, unitKerjaId, onDipulihkan }) {
     const { toast } = useToast()
@@ -40,8 +43,12 @@ export function DaftarSuratTerhapus({ jenis, unitKerjaId, onDipulihkan }) {
     const idCari = `cari-surat-${jenis}-terhapus`
 
     const pulihkan = async (alasan) => {
-        await suratTerhapusService.pulihkan(jenis, dipilih.id, alasan)
-        toast({ title: 'Surat dipulihkan', description: `Surat ${sebutan(dipilih)} kembali ke daftar dengan nomor semula.` })
+        const hasil = await suratTerhapusService.pulihkan(jenis, dipilih.id, alasan)
+        const nomorSama = Array.isArray(hasil?.suratAktifNomorSama) ? hasil.suratAktifNomorSama.length : 0
+        const peringatan = nomorSama > 0
+            ? ` Nomor surat ini juga dipakai oleh ${nomorSama} surat lain yang masih aktif di unit ini. Periksa apakah surat itu sama.`
+            : ''
+        toast({ title: 'Surat dipulihkan', description: `Surat ${sebutan(dipilih)} kembali ke daftar dengan nomor semula.${peringatan}` })
         daftar.reload()
         onDipulihkan?.()
     }
@@ -52,7 +59,7 @@ export function DaftarSuratTerhapus({ jenis, unitKerjaId, onDipulihkan }) {
                 <div className="space-y-1">
                     <CardTitle className="text-base">{JUDUL[jenis]}</CardTitle>
                     <p className="text-sm text-muted-foreground">
-                        Surat yang dihapus tidak tampil di daftar lain. Surat yang dipulihkan kembali ke daftar dengan nomor agenda dan nomor surat semula.
+                        Surat yang dihapus tidak tampil di daftar lain. Surat yang dipulihkan kembali ke daftar dengan {NOMOR[jenis]} semula.
                     </p>
                 </div>
                 <div className="max-w-md space-y-1.5">
@@ -113,7 +120,7 @@ export function DaftarSuratTerhapus({ jenis, unitKerjaId, onDipulihkan }) {
                 open={Boolean(dipilih)}
                 onOpenChange={(buka) => { if (!buka) setDipilih(null) }}
                 title="Pulihkan surat?"
-                description={`Surat ${sebutan(dipilih)} akan kembali ke daftar dengan nomor agenda dan nomor surat semula. Pemulihan dicatat di log audit.`}
+                description={`Surat ${sebutan(dipilih)} akan kembali ke daftar dengan ${NOMOR[jenis]} semula. Pemulihan dicatat di log audit.`}
                 label="Alasan pemulihan"
                 submitLabel="Pulihkan"
                 onSubmit={pulihkan}

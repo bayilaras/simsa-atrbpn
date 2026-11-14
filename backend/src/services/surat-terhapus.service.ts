@@ -143,12 +143,32 @@ async function suratMasukUntukDihitung(
     return ids;
 }
 
+/**
+ * Nomor agenda tidak dapat bertabrakan (indeks unik unit, tahun, no_urut ikut
+ * memuat surat terhapus), tetapi teks nomor surat dapat: selama surat terhapus,
+ * surat lain bernomor sama bisa dicatat. Pemulihan tetap berjalan; surat aktif
+ * sejenis di unit yang sama dengan nomor yang sama (tanpa beda huruf besar/kecil
+ * dan spasi) dikembalikan sebagai peringatan dan dicatat di audit pemulihan.
+ */
+async function suratAktifNomorSama(tx: Tx, jenis: JenisSuratTerhapus, surat: SuratDipulihkan): Promise<string[]> {
+    const nomor = surat.nomorSurat?.trim();
+    if (!nomor) return [];
+    const normal = (expr: SQL) => sql`lower(btrim(regexp_replace(${expr}, ${'\\s+'}::text, ' ', 'g')))`;
+    // `jenis` sama dengan nama tabelnya.
+    return rowsOf<{ id: string }>(await tx.execute(sql`
+        SELECT s.id::text AS id FROM ${sql.raw(jenis)} s
+         WHERE s.unit_kerja_id = ${surat.unitKerjaId} AND s.id <> ${surat.id} AND s.is_deleted IS NOT TRUE
+           AND ${normal(sql.raw('s.nomor_surat'))} = ${normal(sql`${nomor}::text`)}
+         ORDER BY s.id`)).map((row) => row.id);
+}
+
 async function catatAuditPulihkan(
     tx: Tx,
     jenis: JenisSuratTerhapus,
     surat: SuratDipulihkan,
     alasan: string,
     audit: CriticalAuditContext,
+    nomorSama: string[],
 ): Promise<void> {
     await auditLogService.logActionOrThrow({
         ...audit,
@@ -158,6 +178,7 @@ async function catatAuditPulihkan(
         changes: {
             before: { isDeleted: true, deletedAt: surat.deletedAt, deletedBy: surat.deletedBy, nomorSurat: surat.nomorSurat, perihal: surat.perihal },
             after: { isDeleted: false, alasan },
+            ...(nomorSama.length > 0 ? { suratAktifNomorSama: nomorSama } : {}),
         },
     }, tx);
 }
@@ -188,7 +209,8 @@ async function pulihkanSuratMasuk(tx: Tx, id: string, user: RecordUser, alasan: 
     await tx.update(suratMasuk)
         .set({ isDeleted: false, deletedAt: null, deletedBy: null, updatedAt: new Date() })
         .where(and(eq(suratMasuk.id, id), sql`${suratMasuk.isDeleted} IS TRUE`));
-    await catatAuditPulihkan(tx, 'surat_masuk', surat, alasan, audit);
+    const nomorSama = await suratAktifNomorSama(tx, 'surat_masuk', surat);
+    await catatAuditPulihkan(tx, 'surat_masuk', surat, alasan, audit, nomorSama);
 
     let dihitung = [id];
     if (rangkaianId) {
@@ -204,7 +226,7 @@ async function pulihkanSuratMasuk(tx: Tx, id: string, user: RecordUser, alasan: 
     }
     if (dihitung.some((sm) => !smDikunci.has(sm))) throw new ConflictError(PESAN_KONFLIK_BERSAMAAN);
     await recomputeSuratMasuk(tx, dihitung, audit);
-    return { id, nomorSurat: surat.nomorSurat, perihal: surat.perihal };
+    return { id, nomorSurat: surat.nomorSurat, perihal: surat.perihal, suratAktifNomorSama: nomorSama };
 }
 
 type KeanggotaanSuratKeluar = { anggota_id: string; rangkaian_id: string; status: string };
@@ -247,7 +269,8 @@ async function pulihkanSuratKeluar(tx: Tx, id: string, user: RecordUser, alasan:
     await tx.update(suratKeluar)
         .set({ isDeleted: false, deletedAt: null, deletedBy: null, updatedAt: new Date() })
         .where(and(eq(suratKeluar.id, id), sql`${suratKeluar.isDeleted} IS TRUE`));
-    await catatAuditPulihkan(tx, 'surat_keluar', surat, alasan, audit);
+    const nomorSama = await suratAktifNomorSama(tx, 'surat_keluar', surat);
+    await catatAuditPulihkan(tx, 'surat_keluar', surat, alasan, audit, nomorSama);
 
     if (anggota) {
         // Draf yang dipulihkan kembali menahan rangkaian; surat masuk tujuannya dihitung ulang.
@@ -256,7 +279,7 @@ async function pulihkanSuratKeluar(tx: Tx, id: string, user: RecordUser, alasan:
         if (dihitung.some((sm) => !smDikunci.has(sm))) throw new ConflictError(PESAN_KONFLIK_BERSAMAAN);
         await recomputeSuratMasuk(tx, dihitung, audit);
     }
-    return { id, nomorSurat: surat.nomorSurat, perihal: surat.perihal };
+    return { id, nomorSurat: surat.nomorSurat, perihal: surat.perihal, suratAktifNomorSama: nomorSama };
 }
 
 export const suratTerhapusService = {

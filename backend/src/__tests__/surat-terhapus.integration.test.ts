@@ -87,7 +87,9 @@ describe('pulihkan surat masuk', () => {
     it('surat kembali ke daftar dengan nomor agenda dan nomor surat semula; pemulihan tercatat di audit', async () => {
         const sebelum = await one('SELECT no_urut, nomor_surat, tahun FROM surat_masuk WHERE id = $1', [SURAT.smTunggal]);
         await suratMasukService.delete(SURAT.smTunggal, USER_ID.tu, 'sesditjen', auditTu, { alasan: ALASAN_HAPUS });
-        expect(await pulihkan('surat_masuk', SURAT.smTunggal)).toEqual({ id: SURAT.smTunggal, nomorSurat: 'SM-3/2026', perihal: 'Surat tunggal TU' });
+        expect(await pulihkan('surat_masuk', SURAT.smTunggal)).toEqual({
+            id: SURAT.smTunggal, nomorSurat: 'SM-3/2026', perihal: 'Surat tunggal TU', suratAktifNomorSama: [],
+        });
 
         expect(await one('SELECT no_urut, nomor_surat, tahun, is_deleted, deleted_at, deleted_by FROM surat_masuk WHERE id = $1', [SURAT.smTunggal]))
             .toEqual({ ...sebelum, is_deleted: false, deleted_at: null, deleted_by: null });
@@ -99,6 +101,7 @@ describe('pulihkan surat masuk', () => {
             after: { isDeleted: false, alasan: ALASAN_PULIH },
         });
         expect(audit.changes.before.deletedAt).toBeTruthy();
+        expect(audit.changes).not.toHaveProperty('suratAktifNomorSama');
         expect((await daftarMasuk()).data).toEqual([]);
         const aktif = await suratMasukService.findAll({ unitKerjaId: 'sesditjen', securityClassifications: SEMUA_KELAS, limit: 100 });
         expect(aktif.data.map((row) => row.id)).toContain(SURAT.smTunggal);
@@ -155,6 +158,47 @@ describe('pulihkan surat masuk', () => {
         await database.exec(`UPDATE surat_masuk SET sifat_surat = 'Konfidensial' WHERE id = '${SURAT.smTunggal}'`);
         await expect(pulihkan('surat_masuk', SURAT.smTunggal)).rejects.toMatchObject({ statusCode: 404 });
         expect((await one('SELECT is_deleted FROM surat_masuk WHERE id = $1', [SURAT.smTunggal])).is_deleted).toBe(true);
+    });
+});
+
+describe('peringatan nomor surat yang juga dipakai surat aktif', () => {
+    const SM_SAMA = '30000000-0000-4000-8000-0000000000b1';
+    const SM_UNIT_LAIN = '30000000-0000-4000-8000-0000000000b2';
+    const SM_TERHAPUS = '30000000-0000-4000-8000-0000000000b3';
+    const SK_SAMA = '40000000-0000-4000-8000-0000000000b1';
+
+    it('surat masuk tetap dipulihkan; surat aktif sejenis di unit yang sama dengan nomor sama dilaporkan dan dicatat di audit', async () => {
+        await suratMasukService.delete(SURAT.smTunggal, USER_ID.tu, 'sesditjen', auditTu, { alasan: ALASAN_HAPUS });
+        await database.exec(`
+            INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, sifat_surat, nomor_surat, perihal, dari, tanggal_surat) VALUES
+                ('${SM_SAMA}', 'sesditjen', 30, 2026, 'biasa', '  sm-3/2026 ', 'Dicatat ulang', 'Kanwil C', '2026-09-03'),
+                ('${SM_UNIT_LAIN}', 'bagian_umum', 30, 2026, 'biasa', 'SM-3/2026', 'Unit lain', 'Kanwil C', '2026-09-03'),
+                ('${SM_TERHAPUS}', 'sesditjen', 31, 2026, 'biasa', 'SM-3/2026', 'Juga terhapus', 'Kanwil C', '2026-09-03');
+            UPDATE surat_masuk SET is_deleted = true WHERE id = '${SM_TERHAPUS}';
+            INSERT INTO surat_keluar (id, unit_kerja_id, no_urut, tahun, klasifikasi_keamanan, nomor_surat, perihal, kepada, tanggal_surat)
+                VALUES ('${SK_SAMA}', 'sesditjen', 30, 2026, 'biasa', 'SM-3/2026', 'Surat keluar bernomor sama', 'Kanwil', '2026-09-03');`);
+
+        const hasil = await pulihkan('surat_masuk', SURAT.smTunggal);
+
+        expect(hasil.suratAktifNomorSama).toEqual([SM_SAMA]);
+        expect((await one('SELECT is_deleted FROM surat_masuk WHERE id = $1', [SURAT.smTunggal])).is_deleted).toBe(false);
+        const audit = await one<{ changes: any }>(
+            `SELECT changes FROM audit_log WHERE entity_type = 'surat_masuk' AND action = 'restore' AND entity_id = $1`, [SURAT.smTunggal]);
+        expect(audit.changes.suratAktifNomorSama).toEqual([SM_SAMA]);
+    });
+
+    it('surat keluar: draf bernomor ketikan dipulihkan setelah surat baru memakai nomor yang sama', async () => {
+        await database.exec(`UPDATE surat_keluar SET nomor_surat = 'ND 7/BPPT/2026' WHERE id = '${SURAT.skBpptTunggal}'`);
+        await suratKeluarService.delete(SURAT.skBpptTunggal, USER_ID.bppt, 'dir_bppt', auditBppt, { alasan: 'Draf ganda, sudah dibuat ulang' });
+        await database.exec(`INSERT INTO surat_keluar (id, unit_kerja_id, no_urut, tahun, klasifikasi_keamanan, nomor_surat, perihal, kepada, tanggal_surat)
+            VALUES ('${SK_SAMA}', 'dir_bppt', 7, 2026, 'biasa', 'nd   7/bppt/2026', 'Surat baru', 'Kanwil', '2026-09-08')`);
+
+        const hasil = await pulihkan('surat_keluar', SURAT.skBpptTunggal);
+
+        expect(hasil).toMatchObject({ nomorSurat: 'ND 7/BPPT/2026', suratAktifNomorSama: [SK_SAMA] });
+        const audit = await one<{ changes: any }>(
+            `SELECT changes FROM audit_log WHERE entity_type = 'surat_keluar' AND action = 'restore' AND entity_id = $1`, [SURAT.skBpptTunggal]);
+        expect(audit.changes.suratAktifNomorSama).toEqual([SK_SAMA]);
     });
 });
 
