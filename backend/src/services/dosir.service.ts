@@ -1,5 +1,5 @@
 import { db } from '../config/database';
-import { dosir, dosirSuratMasuk, dosirSuratKeluar, suratMasuk, suratKeluar, Dosir } from '../db/schema';
+import { auditLog, dosir, dosirSuratMasuk, dosirSuratKeluar, suratMasuk, suratKeluar, Dosir } from '../db/schema';
 import { eq, and, desc, asc, ilike, or, sql, inArray, exists } from 'drizzle-orm';
 import { klasifikasiInSql } from './access/visibility-spec.js';
 import {
@@ -7,11 +7,12 @@ import {
     type RecordUnitScope,
 } from '../utils/record-unit-scope.js';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
-import { ValidationError } from '../utils/errors';
+import { ConflictError, ValidationError } from '../utils/errors';
 
 interface CreateDosirInput {
     unitKerjaId: string;
-    kode: string;
+    /** Tanpa kode, server membuat kode berikutnya untuk unit itu. */
+    kode?: string;
     judul: string;
     deskripsi?: string;
     kategori?: string;
@@ -57,6 +58,54 @@ function suratKeluarTerlihat(classes: string[] | null | undefined) {
     );
 }
 
+// Dosir dihapus permanen; kodenya tetap tercatat di audit_log (after pada
+// 'create', before pada 'delete'). Kode yang pernah dipakai unit tidak
+// dibagikan lagi agar satu kode tidak merujuk dua dosir di jejak audit.
+const kodeDiAudit = sql<string | null>`coalesce(${auditLog.changes}->'after'->>'kode', ${auditLog.changes}->'before'->>'kode')`;
+const unitDiAudit = sql<string | null>`coalesce(${auditLog.changes}->'after'->>'unitKerjaId', ${auditLog.changes}->'before'->>'unitKerjaId')`;
+
+/** Kode dosir unit (yang masih ada atau sudah dihapus) yang diawali `awalan`, tanpa membedakan huruf besar. */
+async function kodeDosirTerpakai(
+    executor: Pick<typeof db, 'select'>,
+    unitKerjaId: string,
+    awalan: string,
+): Promise<string[]> {
+    const masihAda = await executor
+        .select({ kode: dosir.kode })
+        .from(dosir)
+        .where(and(
+            eq(dosir.unitKerjaId, unitKerjaId),
+            sql`starts_with(lower(${dosir.kode}), lower(${awalan}))`,
+        ));
+    const tercatat = await executor
+        .select({ kode: kodeDiAudit })
+        .from(auditLog)
+        .where(and(
+            eq(auditLog.entityType, 'dosir'),
+            inArray(auditLog.action, ['create', 'delete']),
+            sql`${unitDiAudit} = ${unitKerjaId}`,
+            sql`starts_with(lower(${kodeDiAudit}), lower(${awalan}))`,
+        ));
+    return [...masihAda, ...tercatat]
+        .map((baris) => baris.kode)
+        .filter((kode): kode is string => typeof kode === 'string');
+}
+
+/** UNIT-TAHUN-NNN dengan nomor setelah nomor terbesar yang pernah dipakai unit pada tahun berjalan. */
+async function kodeDosirBerikutnya(executor: Pick<typeof db, 'select'>, unitKerjaId: string): Promise<string> {
+    const awalan = `${unitKerjaId}-${new Date().getFullYear()}-`;
+    let terbesar = 0;
+    for (const kode of await kodeDosirTerpakai(executor, unitKerjaId, awalan)) {
+        const nomor = kode.slice(awalan.length);
+        if (/^\d+$/.test(nomor)) terbesar = Math.max(terbesar, Number(nomor));
+    }
+    return `${awalan}${String(terbesar + 1).padStart(3, '0')}`;
+}
+
+export function pesanKodeDosirTerpakai(kode: string): string {
+    return `Kode dosir ${kode} sudah pernah dipakai di unit kerja ini. Silakan coba lagi.`;
+}
+
 async function findAccessibleDosir(
     id: string,
     unitScope: RecordUnitScope,
@@ -85,9 +134,22 @@ export const dosirService = {
      */
     async create(data: CreateDosirInput, auditContext?: CriticalAuditContext) {
         return db.transaction(async (tx) => {
+        // Tanpa indeks unik, kode dibagikan berurutan di bawah kunci per unit
+        // sampai transaksi selesai.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`simsa:dosir-kode:${data.unitKerjaId}`}, 0))`);
+        const kodeDiminta = data.kode?.trim();
+        let kode: string;
+        if (kodeDiminta) {
+            const sama = (await kodeDosirTerpakai(tx, data.unitKerjaId, kodeDiminta))
+                .some((terpakai) => terpakai.toLowerCase() === kodeDiminta.toLowerCase());
+            if (sama) throw new ConflictError(pesanKodeDosirTerpakai(kodeDiminta));
+            kode = kodeDiminta;
+        } else {
+            kode = await kodeDosirBerikutnya(tx, data.unitKerjaId);
+        }
         const [newDosir] = await tx.insert(dosir).values({
             unitKerjaId: data.unitKerjaId,
-            kode: data.kode,
+            kode,
             judul: data.judul,
             deskripsi: data.deskripsi || null,
             kategori: data.kategori || null,
@@ -599,28 +661,10 @@ export const dosirService = {
     },
 
     /**
-     * Generate next kode for a unit kerja
+     * Generate next kode for a unit kerja. Pratinjau saja: create membuat
+     * ulang kodenya di bawah kunci unit.
      */
     async generateKode(unitKerjaId: string) {
-        const year = new Date().getFullYear();
-        const prefix = `${unitKerjaId}-${year}`;
-
-        const existing = await db
-            .select({ kode: dosir.kode })
-            .from(dosir)
-            .where(ilike(dosir.kode, `${prefix}%`))
-            .orderBy(desc(dosir.kode))
-            .limit(1);
-
-        let nextNumber = 1;
-        if (existing.length > 0) {
-            const lastKode = existing[0].kode;
-            const match = lastKode.match(/-(\d+)$/);
-            if (match) {
-                nextNumber = parseInt(match[1], 10) + 1;
-            }
-        }
-
-        return `${prefix}-${nextNumber.toString().padStart(3, '0')}`;
+        return kodeDosirBerikutnya(db, unitKerjaId);
     },
 };

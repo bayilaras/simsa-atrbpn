@@ -1,10 +1,13 @@
 import express from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ValidationError } from '../utils/errors.js';
+import { ConflictError, ValidationError } from '../utils/errors.js';
 import { publicErrorResponse, publicErrorStatus } from '../utils/public-error.js';
 
-const mocks = vi.hoisted(() => ({ update: vi.fn(), addSuratMasuk: vi.fn(), addSuratKeluar: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+    update: vi.fn(), addSuratMasuk: vi.fn(), addSuratKeluar: vi.fn(),
+    create: vi.fn(), delete: vi.fn(), removeSuratMasuk: vi.fn(), removeSuratKeluar: vi.fn(),
+}));
 
 vi.mock('../middlewares/auth.middleware', () => ({
     authMiddleware: (req: any, _res: any, next: any) => {
@@ -16,7 +19,10 @@ vi.mock('../middlewares/rate-limiter.middleware', () => ({
     sensitiveLimiter: (_req: any, _res: any, next: any) => next(),
 }));
 vi.mock('../services/dosir.service', () => ({
-    dosirService: { update: mocks.update, addSuratMasuk: mocks.addSuratMasuk, addSuratKeluar: mocks.addSuratKeluar },
+    dosirService: {
+        update: mocks.update, addSuratMasuk: mocks.addSuratMasuk, addSuratKeluar: mocks.addSuratKeluar,
+        create: mocks.create, delete: mocks.delete, removeSuratMasuk: mocks.removeSuratMasuk, removeSuratKeluar: mocks.removeSuratKeluar,
+    },
 }));
 vi.mock('../services/record-access.service', () => ({ allowedSecurityClassifications: () => ['biasa'] }));
 vi.mock('../utils/logger', () => ({ createLogger: () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn() }) }));
@@ -34,9 +40,7 @@ const dosirId = 'f3ab2f27-6759-4f0b-a995-bc874dad9828';
 const invalidRangeMessage = 'Tanggal selesai tidak boleh sebelum tanggal mulai.';
 
 beforeEach(() => {
-    mocks.update.mockReset();
-    mocks.addSuratMasuk.mockReset();
-    mocks.addSuratKeluar.mockReset();
+    for (const mock of Object.values(mocks)) mock.mockReset();
 });
 
 describe('dosir update request and error boundaries', () => {
@@ -119,5 +123,67 @@ describe('dosir surat link responses', () => {
         expect(response.status).toBe(500);
         expect(response.body).toEqual({ success: false, error: 'Surat belum dapat ditambahkan ke dosir. Silakan coba lagi.' });
         expect(response.text).not.toContain(privateMarker);
+    });
+});
+
+describe('pembuatan dosir', () => {
+    it('membiarkan layanan membuat kode di bawah kunci unit', async () => {
+        mocks.create.mockResolvedValue({ id: dosirId, kode: 'unit-a-2026-001' });
+        await request(app).post('/api/dosir').send({ judul: 'Perkara sintetis', kode: 'kode-pilihan-klien' }).expect(201);
+        expect(mocks.create).toHaveBeenCalledWith(
+            expect.objectContaining({ unitKerjaId: 'unit-a', judul: 'Perkara sintetis', kode: undefined }),
+            expect.objectContaining({ userId: 'synthetic-user' }),
+        );
+    });
+
+    it('menjawab 409 dengan pesan berbahasa Indonesia bila kode sudah pernah dipakai di unit', async () => {
+        const pesan = 'Kode dosir unit-a-2026-002 sudah pernah dipakai di unit kerja ini. Silakan coba lagi.';
+        mocks.create.mockRejectedValue(new ConflictError(pesan));
+        const response = await request(app).post('/api/dosir').send({ judul: 'Perkara sintetis' });
+        expect(response.status).toBe(409);
+        expect(response.body).toMatchObject({ success: false, message: pesan, code: 'CONFLICT' });
+    });
+
+    it('kegagalan lain dijawab 500 dengan pesan berbahasa Indonesia tanpa rincian internal', async () => {
+        const privateMarker = 'SYNTHETIC_PRIVATE_CREATE_FAILURE';
+        mocks.create.mockRejectedValue(new Error(privateMarker));
+        const response = await request(app).post('/api/dosir').send({ judul: 'Perkara sintetis' });
+        expect(response.status).toBe(500);
+        expect(response.body).toEqual({ success: false, error: 'Dosir belum tersimpan. Silakan coba lagi.' });
+        expect(response.text).not.toContain(privateMarker);
+    });
+});
+
+describe('hapus dosir dan lepas surat', () => {
+    const suratId = '0b6f0c55-3f0e-4f43-9d39-6c1f0e7f2a10';
+
+    it('hapus dosir: pesan berbahasa Indonesia untuk tidak ditemukan dan untuk kegagalan', async () => {
+        mocks.delete.mockResolvedValueOnce(null);
+        const hilang = await request(app).delete(`/api/dosir/${dosirId}`);
+        expect(hilang.status).toBe(404);
+        expect(hilang.body).toEqual({ success: false, error: 'Dosir tidak ditemukan atau sudah dihapus.' });
+
+        mocks.delete.mockRejectedValueOnce(new Error('SYNTHETIC_PRIVATE_DELETE_FAILURE'));
+        const gagal = await request(app).delete(`/api/dosir/${dosirId}`);
+        expect(gagal.status).toBe(500);
+        expect(gagal.body).toEqual({ success: false, error: 'Dosir belum dapat dihapus. Silakan coba lagi.' });
+        expect(gagal.text).not.toContain('SYNTHETIC_PRIVATE_DELETE_FAILURE');
+    });
+
+    it('lepas surat: pesan berbahasa Indonesia untuk jenis salah, tidak tertaut, dan kegagalan', async () => {
+        const jenisSalah = await request(app).delete(`/api/dosir/${dosirId}/surat/lainnya/${suratId}`);
+        expect(jenisSalah.status).toBe(400);
+        expect(jenisSalah.body).toEqual({ success: false, error: 'Jenis surat harus masuk atau keluar.' });
+
+        mocks.removeSuratKeluar.mockResolvedValueOnce(null);
+        const tidakTertaut = await request(app).delete(`/api/dosir/${dosirId}/surat/keluar/${suratId}`);
+        expect(tidakTertaut.status).toBe(404);
+        expect(tidakTertaut.body).toEqual({ success: false, error: 'Surat tidak ditemukan pada dosir ini.' });
+
+        mocks.removeSuratMasuk.mockRejectedValueOnce(new Error('SYNTHETIC_PRIVATE_UNLINK_FAILURE'));
+        const gagal = await request(app).delete(`/api/dosir/${dosirId}/surat/masuk/${suratId}`);
+        expect(gagal.status).toBe(500);
+        expect(gagal.body).toEqual({ success: false, error: 'Surat belum dapat dilepas dari dosir. Silakan coba lagi.' });
+        expect(gagal.text).not.toContain('SYNTHETIC_PRIVATE_UNLINK_FAILURE');
     });
 });

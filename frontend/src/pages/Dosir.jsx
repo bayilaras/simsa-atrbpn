@@ -9,6 +9,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Search, Plus, FolderOpen, Loader2, Calendar, FileText, ArrowRight, Edit2, Trash2, Clock, CheckCircle2, Archive, MailPlus, MailMinus, Eye, Filter, MoreHorizontal, Folder, Building2 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
+import { useToast } from '@/hooks/use-toast'
+import { pesanGalat } from '@/lib/pesan-galat'
 import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope'
 import dosirService from '@/services/dosir.service'
 import settingsService from '@/services/settings.service'
@@ -72,6 +74,7 @@ function DosirSkeleton() {
 
 export default function Dosir() {
     const { user } = useAuth()
+    const { toast } = useToast()
     const navigate = useNavigate()
     const isSuperAdmin = user?.role === 'super_admin'
     const [request, setRequest] = useState(null)
@@ -202,14 +205,23 @@ export default function Dosir() {
         }
     }
 
-    const handleDelete = async (id) => {
+    const handleDelete = async (item) => {
         if (!confirm('Apakah Anda yakin ingin menghapus dosir ini?')) return
 
         try {
-            await dosirService.delete(id)
+            await dosirService.delete(item.id)
+            toast({
+                title: 'Dosir dihapus',
+                description: `Dosir ${item.kode} telah dihapus. Surat yang pernah ditautkan tetap tersimpan.`,
+            })
             fetchData()
         } catch (error) {
             console.error('Error deleting dosir:', error)
+            toast({
+                title: 'Dosir gagal dihapus',
+                description: pesanGalat(error, 'Dosir belum dapat dihapus. Silakan coba lagi.'),
+                variant: 'destructive',
+            })
         }
     }
 
@@ -492,7 +504,7 @@ export default function Dosir() {
                                         <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
                                                 <Button variant="ghost" className="h-8 w-8 p-0">
-                                                    <span className="sr-only">Open menu</span>
+                                                    <span className="sr-only">Buka menu aksi dosir</span>
                                                     <MoreHorizontal className="h-4 w-4" />
                                                 </Button>
                                             </DropdownMenuTrigger>
@@ -505,7 +517,7 @@ export default function Dosir() {
                                                     <Edit2 className="mr-2 h-4 w-4" /> Edit
                                                 </DropdownMenuItem>
                                                 <DropdownMenuSeparator />
-                                                <DropdownMenuItem onClick={() => handleDelete(item.id)} className="text-destructive focus:text-destructive">
+                                                <DropdownMenuItem onClick={() => handleDelete(item)} className="text-destructive focus:text-destructive">
                                                     <Trash2 className="mr-2 h-4 w-4" /> Hapus
                                                 </DropdownMenuItem>
                                             </DropdownMenuContent>
