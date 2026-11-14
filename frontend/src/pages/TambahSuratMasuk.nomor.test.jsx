@@ -44,7 +44,7 @@ beforeEach(async () => {
     vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
     mocks.masuk.create.mockResolvedValue({ data: { id: 'sm-baru' } })
     mocks.masuk.update.mockResolvedValue({ id: 'sm-1' })
-    mocks.masuk.getNextNumber.mockImplementation(async ({ noUrut }) => ({ nomorSurat: `${String(noUrut ?? 1).padStart(3, '0')}/SM/2026` }))
+    mocks.masuk.getNextNumber.mockImplementation(async ({ noUrut }) => ({ nextNumber: 9, nomorSurat: `${String(noUrut ?? 9).padStart(3, '0')}/SM/2026` }))
     mocks.masuk.getById.mockResolvedValue(tersimpan)
     mocks.dist.getDistributableUnits.mockResolvedValue([])
     mocks.dist.getOpsi.mockResolvedValue({ instruksi: [], jalurAksesTerkendali: false })
@@ -85,7 +85,7 @@ describe('No. Agenda pada Tambah Surat Masuk', () => {
     it('tanpa No. Agenda tidak mengirim nomor sehingga server memberi nomor otomatis', async () => {
         const view = tampil('/surat/masuk/tambah')
         isiWajib()
-        expect(await screen.findByText('001/SM/2026')).toBeInTheDocument()
+        expect(await screen.findByText('009/SM/2026')).toBeInTheDocument()
         fireEvent.submit(view.container.querySelector('form'))
         await waitFor(() => expect(mocks.masuk.create).toHaveBeenCalled())
         expect(mocks.masuk.create.mock.calls[0][0]).not.toHaveProperty('noUrut')
@@ -102,7 +102,7 @@ describe('No. Agenda pada Tambah Surat Masuk', () => {
     })
 
     it('menampilkan pesan server bila No. Agenda sudah dipakai, tanpa tombol Muat ulang', async () => {
-        const pesan = 'No. Agenda 345 tahun 2026 sudah dipakai surat lain di unit ini. Nomor surat yang sudah dihapus juga tidak dapat dipakai ulang. Kosongkan No. Agenda untuk nomor otomatis atau isi nomor lain.'
+        const pesan = 'No. Agenda 345 tahun 2026 sudah dipakai surat lain di unit ini. No. Agenda milik surat yang sudah dihapus juga tidak dapat dipakai ulang. Kosongkan No. Agenda untuk nomor otomatis atau isi nomor lain.'
         mocks.masuk.create.mockRejectedValue(Object.assign(new Error(pesan), { status: 409, data: { error: 'ConflictError', message: pesan, code: 'CONFLICT' } }))
         const view = tampil('/surat/masuk/tambah')
         isiWajib()
@@ -127,7 +127,7 @@ describe('Edit Surat Masuk: tahun surat', () => {
         fireEvent.change(screen.getByLabelText(/Tanggal Surat/), { target: { value: '2026-12-01' } })
         expect(screen.queryByText(/Tahun berubah/)).toBeNull()
         fireEvent.change(screen.getByLabelText(/Tanggal Surat/), { target: { value: '2025-12-30' } })
-        expect(screen.getByText('Tahun berubah. Surat akan mendapat nomor agenda baru di tahun 2025.')).toBeInTheDocument()
+        expect(screen.getByText('Tahun berubah. Surat akan mendapat nomor agenda baru di tahun 2025; nomor surat yang dibuat otomatis ikut diperbarui.')).toBeInTheDocument()
         fireEvent.change(screen.getByLabelText(/Tanggal Surat/), { target: { value: '2026-09-11' } })
         expect(screen.queryByText(/Tahun berubah/)).toBeNull()
     })
@@ -141,5 +141,61 @@ describe('Edit Surat Masuk: tahun surat', () => {
         expect(payload).toMatchObject({ tanggalSurat: '2025-12-30' })
         expect(payload).not.toHaveProperty('tahun')
         expect(payload).not.toHaveProperty('noUrut')
+    })
+})
+
+describe('nomor otomatis berikutnya dan rentang tahun', () => {
+    const PESAN_JAUH = 'Nomor yang diisi jauh di atas nomor otomatis berikutnya (9). Nomor setelahnya akan melanjutkan dari angka ini dan tidak dapat diturunkan lagi. Lanjutkan?'
+
+    it('menampilkan nomor otomatis berikutnya di bawah isian No. Agenda', async () => {
+        tampil('/surat/masuk/tambah')
+        isiWajib()
+        expect(await screen.findByText('Nomor otomatis berikutnya: 9')).toBeInTheDocument()
+    })
+
+    it('No. Agenda lebih dari 100 di atas nomor otomatis meminta konfirmasi; bila dibatalkan tidak disimpan', async () => {
+        window.confirm.mockImplementation(pesan => pesan !== PESAN_JAUH)
+        const view = tampil('/surat/masuk/tambah')
+        isiWajib()
+        fireEvent.change(screen.getByLabelText('No. Agenda'), { target: { value: '110' } })
+        expect(await screen.findByText('110/SM/2026')).toBeInTheDocument()
+        fireEvent.submit(view.container.querySelector('form'))
+        expect(window.confirm).toHaveBeenCalledWith(PESAN_JAUH)
+        expect(mocks.masuk.create).not.toHaveBeenCalled()
+
+        window.confirm.mockReturnValue(true)
+        fireEvent.submit(view.container.querySelector('form'))
+        await waitFor(() => expect(mocks.masuk.create).toHaveBeenCalled())
+        expect(mocks.masuk.create.mock.calls[0][0]).toMatchObject({ noUrut: 110 })
+    })
+
+    it('nomor sampai 100 di atas nomor otomatis disimpan tanpa konfirmasi tambahan', async () => {
+        const view = tampil('/surat/masuk/tambah')
+        isiWajib()
+        fireEvent.change(screen.getByLabelText('No. Agenda'), { target: { value: '109' } })
+        expect(await screen.findByText('109/SM/2026')).toBeInTheDocument()
+        fireEvent.submit(view.container.querySelector('form'))
+        await waitFor(() => expect(mocks.masuk.create).toHaveBeenCalled())
+        expect(window.confirm).not.toHaveBeenCalledWith(PESAN_JAUH)
+    })
+
+    it('tanggal di luar 2000-2100 ditolak saat mencatat; isian tanggal dibatasi', async () => {
+        const view = tampil('/surat/masuk/tambah')
+        expect(screen.getByLabelText(/Tanggal Surat/)).toHaveAttribute('min', '2000-01-01')
+        expect(screen.getByLabelText(/Tanggal Surat/)).toHaveAttribute('max', '2100-12-31')
+        isiWajib()
+        fireEvent.change(screen.getByLabelText(/Tanggal Surat/), { target: { value: '1999-12-31' } })
+        fireEvent.submit(view.container.querySelector('form'))
+        expect(await screen.findByRole('alert')).toHaveTextContent('Tahun harus antara 2000 dan 2100')
+        expect(mocks.masuk.create).not.toHaveBeenCalled()
+    })
+
+    it('pindah ke tahun di luar 2000-2100 ditolak saat mengubah', async () => {
+        const view = tampil('/surat/masuk/edit/sm-1')
+        await screen.findByDisplayValue('Perihal tersimpan')
+        fireEvent.change(screen.getByLabelText(/Tanggal Surat/), { target: { value: '2101-01-02' } })
+        fireEvent.submit(view.container.querySelector('form'))
+        expect(await screen.findByRole('alert')).toHaveTextContent('Tahun harus antara 2000 dan 2100')
+        expect(mocks.masuk.update).not.toHaveBeenCalled()
     })
 })

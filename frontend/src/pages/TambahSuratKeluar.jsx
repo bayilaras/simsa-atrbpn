@@ -19,7 +19,10 @@ import { ReferensiSection } from '@/components/surat-keluar/ReferensiSection';
 import { toTindakLanjutPayload } from '@/lib/tindak-lanjut';
 import { sifatSuratKeluarOptions } from '@/lib/sifat-surat-keluar';
 import { PESAN_KELAS_TERBATAS_PERAN, adaKelasTersembunyi, bolehMemilihKelas, saringOpsiKelas } from '@/lib/kelas-keamanan';
-import { PETUNJUK_NO_URUT, catatanPindahTahun, galatNomorUrut, nomorUrutDiketik, tahunUrutanBaru } from '@/lib/surat-nomor-urut';
+import {
+    PESAN_TAHUN_DI_LUAR_RENTANG, PETUNJUK_NO_URUT, TANGGAL_SURAT_MAKS, TANGGAL_SURAT_MIN, catatanPindahTahun, galatNomorUrut,
+    konfirmasiNomorJauh, nomorJauhDiAtas, nomorUrutDiketik, tahunDiLuarRentang, tahunUrutanBaru,
+} from '@/lib/surat-nomor-urut';
 import { dataSudahBerubah, versiDimuat } from '@/lib/data-sudah-berubah';
 import { useLacakSearch } from '@/hooks/use-lacak-search';
 import {
@@ -358,6 +361,12 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
 
     // Tanggal ke tahun lain: server memindahkan surat ke urutan No. Urut tahun itu.
     const tahunBaru = isEditMode ? tahunUrutanBaru(dimuat, formData.tanggalSurat) : null;
+    // Batas tanggal 2000-2100 seperti server; surat lama di luar rentang tetap dapat diubah tanpa pindah tahun.
+    const batasTanggal = !isEditMode || !tahunDiLuarRentang(dimuat?.tanggalSurat);
+    // Nomor otomatis berikutnya dari pratinjau, untuk isian No. Urut.
+    const noUrutOtomatis = !isEditMode && numberPreview?.unitKerjaId === resolvedUnitKerjaId
+        && numberPreview?.tanggalSurat === formData.tanggalSurat && numberPreview?.naskahDinas === formData.naskahDinas
+        && Number.isInteger(numberPreview?.nextNumber) ? numberPreview.nextNumber : undefined;
 
     // Handle input changes
     const handleChange = (field, value) => {
@@ -402,6 +411,9 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
         if (archiveSelectionError) return { message: archiveSelectionError };
         if (!formData.naskahDinas) return { field: 'naskahDinas', message: 'Naskah Dinas wajib diisi' };
         if (!formData.tanggalSurat) return { message: 'Tanggal Surat wajib diisi' };
+        if ((!isEditMode || tahunBaru !== null) && tahunDiLuarRentang(formData.tanggalSurat)) {
+            return { field: 'tanggalSurat', message: PESAN_TAHUN_DI_LUAR_RENTANG };
+        }
         const galatNoUrut = isEditMode ? null : galatNomorUrut(formData.noUrut, 'No. Urut');
         if (galatNoUrut) return { field: 'noUrut', message: galatNoUrut };
         if (!formData.perihal) return { message: 'Perihal wajib diisi' };
@@ -423,6 +435,9 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
             setFieldErrors(validationError.field ? { [validationError.field]: validationError.message } : {});
             return;
         }
+        // Nomor jauh di atas urutan otomatis tidak dapat diturunkan lagi setelah tersimpan.
+        if (!isEditMode && nomorJauhDiAtas(nomorUrutDiketik(formData.noUrut), noUrutOtomatis)
+            && !window.confirm(konfirmasiNomorJauh(noUrutOtomatis))) return;
 
         // Lock synchronously: consecutive submit events can precede React's next render.
         saveLockedRef.current = true;
@@ -739,6 +754,8 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
                                     id="tanggal-surat-keluar"
                                     type="date"
                                     required
+                                    min={batasTanggal ? TANGGAL_SURAT_MIN : undefined}
+                                    max={batasTanggal ? TANGGAL_SURAT_MAKS : undefined}
                                     aria-describedby={tahunBaru ? 'tanggal-surat-keluar-tahun' : undefined}
                                     value={formData.tanggalSurat}
                                     onChange={(e) => handleChange('tanggalSurat', e.target.value)}
@@ -765,7 +782,7 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
                                     autoComplete="off"
                                     maxLength={6}
                                     aria-invalid={Boolean(fieldErrors.noUrut)}
-                                    aria-describedby={[fieldErrors.noUrut && 'no-urut-keluar-error', 'no-urut-keluar-bantuan'].filter(Boolean).join(' ')}
+                                    aria-describedby={[fieldErrors.noUrut && 'no-urut-keluar-error', 'no-urut-keluar-bantuan', noUrutOtomatis && 'no-urut-keluar-otomatis'].filter(Boolean).join(' ')}
                                     value={formData.noUrut ?? ''}
                                     onChange={(e) => handleChange('noUrut', e.target.value)}
                                     placeholder="Otomatis"
@@ -776,6 +793,9 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
                                     <Info className="h-3 w-3 mt-0.5 shrink-0" aria-hidden="true" />
                                     {PETUNJUK_NO_URUT}
                                 </p>
+                                {noUrutOtomatis && (
+                                    <p id="no-urut-keluar-otomatis" className="text-xs text-emerald-700 dark:text-emerald-300">{`Nomor otomatis berikutnya: ${noUrutOtomatis}`}</p>
+                                )}
                             </div>
                         )}
 

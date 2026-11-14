@@ -36,6 +36,28 @@ export function tahunUrutanBaru(dimuat, tanggalBaru) {
     return tahun !== tahunDimuat ? tahun : null
 }
 
+/** Nomor surat buatan template ikut dibuat ulang di server; yang diketik staf tetap. */
 export function catatanPindahTahun(tahun, namaNomor) {
-    return `Tahun berubah. Surat akan mendapat ${namaNomor} baru di tahun ${tahun}.`
+    return `Tahun berubah. Surat akan mendapat ${namaNomor} baru di tahun ${tahun}; nomor surat yang dibuat otomatis ikut diperbarui.`
+}
+
+// Rentang tahun yang sama dengan server saat mencatat surat atau memindahkan tahunnya.
+export const TANGGAL_SURAT_MIN = '2000-01-01'
+export const TANGGAL_SURAT_MAKS = '2100-12-31'
+export const PESAN_TAHUN_DI_LUAR_RENTANG = 'Tahun harus antara 2000 dan 2100'
+
+export function tahunDiLuarRentang(tanggal) {
+    const tahun = Number(String(tanggal ?? '').slice(0, 4))
+    return Number.isInteger(tahun) && (tahun < 2000 || tahun > 2100)
+}
+
+/** Selisih di atas nomor otomatis berikutnya yang perlu dikonfirmasi sebelum disimpan. */
+export const SELISIH_NOMOR_PERLU_KONFIRMASI = 100
+
+export function nomorJauhDiAtas(diketik, otomatis) {
+    return Number.isInteger(diketik) && Number.isInteger(otomatis) && diketik > otomatis + SELISIH_NOMOR_PERLU_KONFIRMASI
+}
+
+export function konfirmasiNomorJauh(otomatis) {
+    return `Nomor yang diisi jauh di atas nomor otomatis berikutnya (${otomatis}). Nomor setelahnya akan melanjutkan dari angka ini dan tidak dapat diturunkan lagi. Lanjutkan?`
 }

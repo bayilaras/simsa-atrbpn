@@ -41,7 +41,10 @@ import { ReferensiSection } from '@/components/surat-keluar/ReferensiSection';
 import { DisposisiRegistrasiSection } from '@/components/surat-masuk/DisposisiRegistrasiSection';
 import { PESAN_TERKENDALI, isSifatTerkendali } from '@/lib/tindak-lanjut';
 import { PESAN_KELAS_TERBATAS_PERAN, PESAN_SURAT_MASUK_PERLU_PERSETUJUAN, adaKelasTersembunyi, bolehMemilihKelas, normalisasiKelas, saringOpsiKelas } from '@/lib/kelas-keamanan';
-import { PETUNJUK_NO_AGENDA, catatanPindahTahun, galatNomorUrut, nomorUrutDiketik, tahunUrutanBaru } from '@/lib/surat-nomor-urut';
+import {
+    PESAN_TAHUN_DI_LUAR_RENTANG, PETUNJUK_NO_AGENDA, TANGGAL_SURAT_MAKS, TANGGAL_SURAT_MIN, catatanPindahTahun, galatNomorUrut,
+    konfirmasiNomorJauh, nomorJauhDiAtas, nomorUrutDiketik, tahunDiLuarRentang, tahunUrutanBaru,
+} from '@/lib/surat-nomor-urut';
 import { dataSudahBerubah, versiDimuat } from '@/lib/data-sudah-berubah';
 import {
     MailOpen,
@@ -409,6 +412,12 @@ export default function TambahSuratMasuk() {
 
     // Tanggal ke tahun lain: server memindahkan surat ke urutan No. Agenda tahun itu.
     const tahunBaru = isEditMode ? tahunUrutanBaru(dimuat, formData.tanggalSurat) : null;
+    // Batas tanggal 2000-2100 seperti server; surat lama di luar rentang tetap dapat diubah tanpa pindah tahun.
+    const batasTanggal = !isEditMode || !tahunDiLuarRentang(dimuat?.tanggalSurat);
+    // Nomor otomatis berikutnya dari pratinjau, untuk isian No. Agenda.
+    const noAgendaOtomatis = !isEditMode && numberPreview?.unitKerjaId === resolvedUnitKerjaId
+        && numberPreview?.tanggalSurat === formData.tanggalSurat && Number.isInteger(numberPreview?.nextNumber)
+        ? numberPreview.nextNumber : undefined;
 
     // T24-3: surat bagian rangkaian yang identitasnya berubah wajib disertai alasan koreksi.
     const rangkaianTerkunci = isEditMode && rangkaian?.status === 'diberkaskan';
@@ -465,6 +474,9 @@ export default function TambahSuratMasuk() {
         if (archiveSelectionError) return { message: archiveSelectionError };
         if (!formData.jenisSurat) return { field: 'jenisSurat', message: 'Jenis Surat wajib diisi' };
         if (!formData.tanggalSurat) return { field: 'tanggalSurat', message: 'Tanggal Surat wajib diisi' };
+        if ((!isEditMode || tahunBaru !== null) && tahunDiLuarRentang(formData.tanggalSurat)) {
+            return { field: 'tanggalSurat', message: PESAN_TAHUN_DI_LUAR_RENTANG };
+        }
         const galatNoAgenda = isEditMode ? null : galatNomorUrut(formData.noUrut, 'No. Agenda');
         if (galatNoAgenda) return { field: 'noUrut', message: galatNoAgenda };
         if (!formData.perihal) return { field: 'perihal', message: 'Perihal wajib diisi' };
@@ -501,6 +513,9 @@ export default function TambahSuratMasuk() {
             setFieldErrors(validationError.field ? { [validationError.field]: validationError.message } : {});
             return;
         }
+        // Nomor jauh di atas urutan otomatis tidak dapat diturunkan lagi setelah tersimpan.
+        if (!isEditMode && nomorJauhDiAtas(nomorUrutDiketik(formData.noUrut), noAgendaOtomatis)
+            && !window.confirm(konfirmasiNomorJauh(noAgendaOtomatis))) return;
 
         // Lock synchronously: consecutive submit events can precede React's next render.
         saveLockedRef.current = true;
@@ -846,6 +861,8 @@ export default function TambahSuratMasuk() {
                                     id="tanggal-surat"
                                     type="date"
                                     required
+                                    min={batasTanggal ? TANGGAL_SURAT_MIN : undefined}
+                                    max={batasTanggal ? TANGGAL_SURAT_MAKS : undefined}
                                     aria-invalid={Boolean(fieldErrors.tanggalSurat)}
                                     aria-describedby={[fieldErrors.tanggalSurat && 'tanggal-surat-error', tahunBaru && 'tanggal-surat-tahun'].filter(Boolean).join(' ') || undefined}
                                     value={formData.tanggalSurat}
@@ -874,7 +891,7 @@ export default function TambahSuratMasuk() {
                                     autoComplete="off"
                                     maxLength={6}
                                     aria-invalid={Boolean(fieldErrors.noUrut)}
-                                    aria-describedby={[fieldErrors.noUrut && 'no-agenda-error', 'no-agenda-bantuan'].filter(Boolean).join(' ')}
+                                    aria-describedby={[fieldErrors.noUrut && 'no-agenda-error', 'no-agenda-bantuan', noAgendaOtomatis && 'no-agenda-otomatis'].filter(Boolean).join(' ')}
                                     value={formData.noUrut ?? ''}
                                     onChange={(e) => handleChange('noUrut', e.target.value)}
                                     placeholder="Otomatis"
@@ -885,6 +902,9 @@ export default function TambahSuratMasuk() {
                                     <Info className="h-3 w-3 mt-0.5 shrink-0" aria-hidden="true" />
                                     {PETUNJUK_NO_AGENDA}
                                 </p>
+                                {noAgendaOtomatis && (
+                                    <p id="no-agenda-otomatis" className="text-xs text-primary">{`Nomor otomatis berikutnya: ${noAgendaOtomatis}`}</p>
+                                )}
                             </div>
                         )}
 

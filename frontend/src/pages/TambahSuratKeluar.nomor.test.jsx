@@ -37,10 +37,11 @@ beforeEach(() => {
     vi.clearAllMocks()
     Element.prototype.scrollIntoView = vi.fn()
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
     vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
     mocks.keluar.create.mockResolvedValue({ data: { id: 'sk-baru' } })
     mocks.keluar.update.mockResolvedValue({ id: 'sk-1' })
-    mocks.keluar.getNextNumber.mockImplementation(async ({ noUrut }) => ({ nomorSurat: `${String(noUrut ?? 1).padStart(3, '0')}/Nota Dinas/09/2026` }))
+    mocks.keluar.getNextNumber.mockImplementation(async ({ noUrut }) => ({ nextNumber: 4, nomorSurat: `${String(noUrut ?? 4).padStart(3, '0')}/Nota Dinas/09/2026` }))
     mocks.keluar.getById.mockResolvedValue(tersimpan)
     mocks.lacak.mockResolvedValue({ kelompok: [] })
 })
@@ -95,6 +96,31 @@ describe('Edit Surat Keluar: tahun surat', () => {
         fireEvent.change(document.getElementById('tanggal-surat-keluar'), { target: { value: '2026-12-31' } })
         expect(screen.queryByText(/Tahun berubah/)).toBeNull()
         fireEvent.change(document.getElementById('tanggal-surat-keluar'), { target: { value: '2027-01-04' } })
-        expect(screen.getByText('Tahun berubah. Surat akan mendapat nomor urut baru di tahun 2027.')).toBeInTheDocument()
+        expect(screen.getByText('Tahun berubah. Surat akan mendapat nomor urut baru di tahun 2027; nomor surat yang dibuat otomatis ikut diperbarui.')).toBeInTheDocument()
+    })
+})
+
+describe('nomor otomatis berikutnya dan rentang tahun pada surat keluar', () => {
+    const PESAN_JAUH = 'Nomor yang diisi jauh di atas nomor otomatis berikutnya (4). Nomor setelahnya akan melanjutkan dari angka ini dan tidak dapat diturunkan lagi. Lanjutkan?'
+
+    it('menampilkan nomor otomatis berikutnya; nomor jauh di atasnya meminta konfirmasi', async () => {
+        window.confirm.mockReturnValue(false)
+        const view = tampil('/surat/keluar/tambah')
+        isiWajib()
+        expect(await screen.findByText('Nomor otomatis berikutnya: 4')).toBeInTheDocument()
+        fireEvent.change(screen.getByLabelText('No. Urut'), { target: { value: '500' } })
+        expect(await screen.findByText('500/Nota Dinas/09/2026')).toBeInTheDocument()
+        fireEvent.submit(view.container.querySelector('form'))
+        expect(window.confirm).toHaveBeenCalledWith(PESAN_JAUH)
+        expect(mocks.keluar.create).not.toHaveBeenCalled()
+    })
+
+    it('pindah ke tahun di luar 2000-2100 ditolak saat mengubah', async () => {
+        const view = tampil('/surat/keluar/edit/sk-1')
+        await screen.findByDisplayValue('Surat lama')
+        fireEvent.change(document.getElementById('tanggal-surat-keluar'), { target: { value: '1999-12-31' } })
+        fireEvent.submit(view.container.querySelector('form'))
+        expect(await screen.findByRole('alert')).toHaveTextContent('Tahun harus antara 2000 dan 2100')
+        expect(mocks.keluar.update).not.toHaveBeenCalled()
     })
 })
