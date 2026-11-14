@@ -37,6 +37,28 @@ export function alamatMasukSetelahSesiDitolak(sekarang = Date.now()) {
     return sesiBerakhirKarenaTidakAktif(sekarang) ? `/login?${PARAM_SESI}=${SESI_BERAKHIR}` : '/login'
 }
 
+// Kode galat yang dikirim server ke halaman masuk (?error=) saat masuk dengan
+// Google ditolak (backend/src/config/auth.ts dan Better Auth).
+const EMAIL_GOOGLE_BELUM_TERVERIFIKASI = 'Email akun Google Anda belum terverifikasi. Verifikasi email itu di akun Google, lalu coba lagi.'
+const PENDAFTARAN_GOOGLE_DITUTUP = 'Akun Google ini belum terdaftar di SIMSA. Minta Super Admin mendaftarkan akun Anda.'
+const PESAN_GAGAL_MASUK_GOOGLE = {
+    // Sesi tidak dibuat untuk akun yang dinonaktifkan.
+    unable_to_create_session: 'Akun Anda tidak aktif atau belum disetujui. Hubungi Super Admin.',
+    google_email_verification_required: EMAIL_GOOGLE_BELUM_TERVERIFIKASI,
+    email_not_verified: EMAIL_GOOGLE_BELUM_TERVERIFIKASI,
+    // Akun SIMSA dengan email yang sama hanya ditautkan bila Google menyatakan email itu terverifikasi.
+    account_not_linked: EMAIL_GOOGLE_BELUM_TERVERIFIKASI,
+    signup_disabled: PENDAFTARAN_GOOGLE_DITUTUP,
+    google_signup_disabled: PENDAFTARAN_GOOGLE_DITUTUP,
+}
+export const PESAN_GAGAL_MASUK_GOOGLE_UMUM = 'Masuk dengan Google gagal. Silakan coba lagi atau hubungi Super Admin.'
+
+/** Pesan Indonesia untuk kode galat masuk dengan Google; kode yang tidak dikenal mendapat pesan umum. */
+export function pesanGagalMasukGoogle(kode) {
+    const kunci = String(kode ?? '').toLowerCase()
+    return Object.hasOwn(PESAN_GAGAL_MASUK_GOOGLE, kunci) ? PESAN_GAGAL_MASUK_GOOGLE[kunci] : PESAN_GAGAL_MASUK_GOOGLE_UMUM
+}
+
 /** Hanya untuk pengujian. */
 export function aturUlangKontakServer() {
     kontakTerakhir = 0

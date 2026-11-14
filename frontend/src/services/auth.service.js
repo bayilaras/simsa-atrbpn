@@ -73,6 +73,8 @@ export function createAuthService({
                 const result = await legacyClient.signIn.social({
                     provider: 'google',
                     callbackURL: window.location.origin,
+                    // A refused Google sign-in returns here with ?error=<code>.
+                    errorCallbackURL: `${window.location.origin}/login`,
                 });
                 if (result?.error) throw new Error(result.error.message || 'Login Google gagal. Silakan coba lagi.');
                 return result;

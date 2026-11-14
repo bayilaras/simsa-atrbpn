@@ -15,10 +15,14 @@ import {
     Loader2,
 } from 'lucide-react'
 import appConfig from '@/lib/app-config'
-import { PARAM_SESI, PESAN_SESI_BERAKHIR, SESI_BERAKHIR } from '@/lib/sesi-masuk'
+import { PARAM_SESI, PESAN_SESI_BERAKHIR, SESI_BERAKHIR, pesanGagalMasukGoogle } from '@/lib/sesi-masuk'
 import { AUTH_PROVIDER } from '@/lib/cloud-provider-config'
 import { useAppConfig } from '@/context/app-config-context'
 import { AppServiceNotice } from '@/components/AppServiceNotice'
+
+// Read once from the address bar, which is cleaned right after: the reason a
+// session ended, and the error code of a refused Google sign-in.
+const ADDRESS_PARAMS = [PARAM_SESI, 'error', 'error_description']
 
 export default function Login() {
     const { signInWithGoogle, signInWithEmail, signOut, signingOut, logoutError, loading, error, isAuthenticated, sessionNotice } = useAuth()
@@ -28,19 +32,22 @@ export default function Login() {
     const [password, setPassword] = useState('')
     const [showPassword, setShowPassword] = useState(false)
     const [localError, setLocalError] = useState('')
-    // The server refused a session that was not used for 30 minutes. Read
-    // once; the address bar is cleaned right after.
+    // The server refused a session that was not used for 30 minutes.
     const [addressNotice, setAddressNotice] = useState(() => (
         searchParams.get(PARAM_SESI) === SESI_BERAKHIR ? PESAN_SESI_BERAKHIR : ''
+    ))
+    // Only the code is shown, in Indonesian; the provider's description is not.
+    const [googleError, setGoogleError] = useState(() => (
+        searchParams.has('error') ? pesanGagalMasukGoogle(searchParams.get('error')) : ''
     ))
     const runtime = useAppConfig()
     const googleAvailable = !runtime.loading && runtime.authentication?.googleSignIn === true
         && runtime.authentication?.provider === AUTH_PROVIDER
 
     useEffect(() => {
-        if (!searchParams.has(PARAM_SESI)) return
+        if (!ADDRESS_PARAMS.some(name => searchParams.has(name))) return
         const remaining = new URLSearchParams(searchParams)
-        remaining.delete(PARAM_SESI)
+        for (const name of ADDRESS_PARAMS) remaining.delete(name)
         setSearchParams(remaining, { replace: true })
     }, [searchParams, setSearchParams])
 
@@ -58,6 +65,7 @@ export default function Login() {
         event.preventDefault()
         setLocalError('')
         setAddressNotice('')
+        setGoogleError('')
 
         try {
             await signInWithEmail(email, password)
@@ -67,7 +75,13 @@ export default function Login() {
         }
     }
 
-    const displayError = localError || error
+    const handleGoogleLogin = () => {
+        setAddressNotice('')
+        setGoogleError('')
+        signInWithGoogle()
+    }
+
+    const displayError = localError || error || googleError
     const notice = displayError ? '' : (sessionNotice || addressNotice)
 
     return (
@@ -177,7 +191,7 @@ export default function Login() {
 
                         <Button
                             type="button"
-                            onClick={signInWithGoogle}
+                            onClick={handleGoogleLogin}
                             disabled={loading}
                             variant="outline"
                             className="h-11 w-full"

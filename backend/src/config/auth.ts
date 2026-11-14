@@ -44,6 +44,18 @@ function resolveBaseURL(): string {
 
 type AuthHookContext = Parameters<Parameters<typeof createAuthMiddleware>[0]>[0];
 
+// A refused Google sign-in returns to the login page, which explains the
+// error code. The client also asks for this page (errorCallbackURL); this
+// covers errors found before the requested page is known, e.g. an expired
+// sign-in state.
+function loginPageURL(): string | undefined {
+    try {
+        return new URL('/login', env.FRONTEND_URL).toString();
+    } catch {
+        return undefined;
+    }
+}
+
 // This origin guard is an additional boundary around Better Auth's built-in
 // state-cookie, PKCE and CSRF protections.
 // A browser always sends Origin (or at least Referer) on a cross-site POST, so rejecting
@@ -145,6 +157,9 @@ export const auth = betterAuth({
         },
     },
     trustedOrigins: getTrustedOrigins(),
+    onAPIError: {
+        errorURL: loginPageURL(),
+    },
     // The application never calls this endpoint over HTTP, and it has no
     // dedicated burst rule.
     disabledPaths: ['/verify-password'],

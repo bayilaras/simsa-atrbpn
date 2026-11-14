@@ -32,7 +32,11 @@ describe('Better Auth Google sign-in', () => {
         const service = createAuthService({ legacyClient: { signIn: { social } } })
 
         await expect(service.signInWithGoogle()).resolves.toBe(result)
-        expect(social).toHaveBeenCalledExactlyOnceWith({ provider: 'google', callbackURL: window.location.origin })
+        expect(social).toHaveBeenCalledExactlyOnceWith({
+            provider: 'google',
+            callbackURL: window.location.origin,
+            errorCallbackURL: `${window.location.origin}/login`,
+        })
     })
 
     it('keeps rejected network failures available to the login context', async () => {

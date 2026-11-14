@@ -66,8 +66,8 @@ async function login(auth:ReturnType<typeof fixture>['auth'],email='new@example.
         body:JSON.stringify({provider:'google',idToken:{token:token(email,verified)},role:'super_admin',unitKerjaId:'ditjen',isActive:true})}));
 }
 function cookie(response:Response) { return response.headers.getSetCookie().map(value=>value.split(';')[0]).join('; '); }
-async function callbackLogin(auth:ReturnType<typeof fixture>['auth'],email:string,verified=true) {
-    const start=await auth.handler(new Request(`${origin}/api/auth/sign-in/social`,{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({provider:'google',callbackURL:`${origin}/dashboard`})}));
+async function callbackLogin(auth:ReturnType<typeof fixture>['auth'],email:string,verified=true,startBody:Record<string,unknown>={}) {
+    const start=await auth.handler(new Request(`${origin}/api/auth/sign-in/social`,{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({provider:'google',callbackURL:`${origin}/dashboard`,...startBody})}));
     expect(start.status).toBe(200);
     const authorizationURL=new URL((await start.json()).url);
     expect(authorizationURL.origin).toBe('https://accounts.google.com');
@@ -163,6 +163,28 @@ it.each(['unverified','disabled'])('does not create a pending identity through a
     expect(response.headers.get('location')).toContain('error=');
     expect(data.user).toEqual([]);
     expect(data.session).toEqual([]);
+});
+it.each([
+    ['an unverified Google email', undefined, false, true, 'GOOGLE_EMAIL_VERIFICATION_REQUIRED'],
+    ['closed sign-up', undefined, true, false, 'signup_disabled'],
+    ['a deactivated account', {role:'admin_unit',unitKerjaId:'ditjen',isActive:false}, true, true, 'unable_to_create_session'],
+])('returns a Google sign-in refused for %s to the login page with its error code',async(_label,existing,verified,enabled,code)=>{
+    const {auth,data}=fixture(existing,enabled);
+    const email=existing?'existing@example.test':'refused@example.test';
+    for (const startBody of [{}, {errorCallbackURL:`${origin}/login`}]) {
+        const response=await callbackLogin(auth,email,verified,startBody);
+        expect(response.status).toBe(302);
+        const location=new URL(response.headers.get('location')!);
+        expect(location.origin+location.pathname).toBe(`${origin}/login`);
+        expect(location.searchParams.get('error')).toBe(code);
+    }
+    expect(data.session).toEqual([]);
+});
+it('sends the generic auth error page to the login page as well',async()=>{
+    const {auth}=fixture();
+    const response=await auth.handler(new Request(`${origin}/api/auth/error?error=state_not_found`));
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe(`${origin}/login?error=state_not_found`);
 });
 it.each(['/list-accounts','/list-sessions'])('denies pending native account administration at %s',async path=>{
     const {auth}=fixture({role:'user',unitKerjaId:null,emailVerified:true});
