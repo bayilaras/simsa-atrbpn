@@ -8,9 +8,10 @@ import { NAMA_ELEMEN_MARKUP } from '../constants/nama-elemen-markup';
 /**
  * Oracle independen: keluaran penyaring diurai dengan parse5 (pengurai HTML
  * sesuai standar, bukan pemindai penyaring). Keluaran tidak boleh menghasilkan
- * elemen yang dikenal, maupun elemen apa pun dengan atribut bernilai (termasuk
- * setiap atribut on*). Atribut tanpa nilai pada nama tak dikenal ("<Rapat
- * Online>") tidak menjalankan apa pun dan sengaja dibiarkan sebagai teks.
+ * elemen HTML/SVG/MathML yang dikenal, maupun elemen apa pun dengan atribut
+ * bernama on* (/^on[a-z]+$/i) yang bernilai. Atribut on* tanpa nilai tidak
+ * menjalankan apa pun dan harus dibiarkan, sebab kata biasa seperti "Online"
+ * pada "<Rapat Online>" terbaca sebagai atribut bernama "online".
  *
  * parse5 adalah dependensi frontend (lewat jsdom). Uji ini berjalan bila
  * frontend/node_modules terpasang (lokal dan job CI yang memasang keduanya);
@@ -32,8 +33,8 @@ function bahaya(html: string): string | null {
         for (const anak of simpul.childNodes ?? []) {
             if (anak.tagName) {
                 if (dikenal.has(String(anak.tagName).toLowerCase())) return `elemen dikenal <${anak.tagName}>`;
-                const bernilai = (anak.attrs ?? []).filter((atribut: any) => atribut.value !== '');
-                if (bernilai.length > 0) return `<${anak.tagName} ${bernilai.map((a: any) => `${a.name}=${a.value}`).join(' ')}>`;
+                const penangan = (anak.attrs ?? []).filter((atribut: any) => /^on[a-z]+$/i.test(atribut.name) && atribut.value !== '');
+                if (penangan.length > 0) return `<${anak.tagName} ${penangan.map((a: any) => `${a.name}=${a.value}`).join(' ')}>`;
             }
             const dalam = telusuri(anak.content ?? anak);
             if (dalam) return dalam;
@@ -86,6 +87,9 @@ describe.skipIf(!parse5)('penyaring diuji dengan pengurai HTML parse5', () => {
             '<b<a href=x>>', '<form action=//evil><input name=x>', '<base href=//evil/>', '<meta http-equiv=refresh content="0;url=//evil">',
             'Aplikasi <e-Office>', 'Lampiran <PP-24/1997>', 'Lihat <Sub-Bagian TU>', 'Kode <A-1> dan <B_2>', 'Undangan <Rapat Koordinasi>',
             'Budi <budi@contoh.go.id>', 'a < b > c', 'nilai p<q', 'teks <img', 'a <b dan c', 'nilai x <y dan z = 5',
+            'Tautan <http://contoh.go.id/berkas?nomor=1> terlampir', '<https://contoh.go.id/a/b?x=1&y=2>', '<Rapat Online>', '<nama>',
+            '<e-Office>', '<Lampiran 1>', '<x onfocus autofocus>', "<x title='a>b' onclick=alert(1)>klik", '<x title="a>b" onclick=alert(1)>klik',
+            '<x onclick=alert(1)', `<x ${'a=1 '.repeat(100)}onclick=alert(1)>`, '<x a="1"onclick=alert(1)>', '<x a=1/onclick=alert(1)>',
         ];
         expect(kasus.flatMap(periksa)).toEqual([]);
     });

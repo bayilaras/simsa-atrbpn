@@ -13,19 +13,22 @@ import { parseJsonObjectString } from '../utils/json-objek-teks.js';
  * - tag elemen HTML, SVG, atau MathML yang dikenal (huruf besar/kecil sama
  *   saja) yang namanya diikuti pemisah, '/' atau '>' (mis. <b>, </div>,
  *   <img src=x ...>), sampai '>' pertama di luar nilai atribut berkutip;
- * - tag bernama lain (termasuk nama bertanda hubung seperti x-foo) yang
- *   namanya diikuti pemisah atau '/' dan memuat '=' sebelum '>' berikutnya
- *   (mis. <xss onmouseover=...>, <x/ onfocus=...>);
+ * - tag bernama lain (termasuk nama bertanda hubung seperti x-foo) yang, dibaca
+ *   seperti tokenizer HTML, membawa atribut bernama on* yang diberi nilai
+ *   (mis. <xss onmouseover=...>, <x/ onfocus=...>); atribut lain tidak dapat
+ *   menjalankan apa pun, jadi tag seperti itu tetap teks;
  * - elemen script/style beserta isinya, dan komentar HTML.
- * Nama elemen yang dikenal yang diikuti pemisah atau '/' tetapi tidak pernah
- * ditutup '>' tidak dibuang: '<'-nya diberi spasi ("< img src=x"), sehingga
- * tidak tersimpan awal tag elemen yang dikenal. Nama elemen di akhir teks tanpa
- * karakter apa pun sesudahnya ("nilai p<q", "teks <img") bukan tag dan tetap.
- * Hasil akhir adalah titik tetap: menyaring ulang tidak mengubahnya.
+ * '<' diberi spasi ("< img src=x") bila: nama elemen yang dikenal diikuti
+ * pemisah atau '/' tetapi tidak pernah ditutup '>'; tag bernama lain dengan
+ * atribut on* bernilai tidak ditutup '>'; atau atribut tag bernama lain lebih
+ * panjang dari UNKNOWN_TAG_BUDGET. Nama elemen di akhir teks tanpa karakter apa
+ * pun sesudahnya ("nilai p<q", "teks <img") bukan tag dan tetap. Hasil akhir
+ * adalah titik tetap: menyaring ulang tidak mengubahnya.
  *
  * Teks lain yang memuat '<' dan '>' disimpan apa adanya: perbandingan "a < b",
- * alamat surel "Budi <budi@contoh.go.id>", panah "->", isian seperti "<nama>",
- * "Undangan <Rapat Koordinasi>", "Aplikasi <e-Office>", "Lampiran <PP-24/1997>".
+ * alamat surel "Budi <budi@contoh.go.id>", alamat web "<https://contoh.go.id/a?x=1>",
+ * panah "->", isian seperti "<nama>", "Undangan <Rapat Koordinasi>",
+ * "<Rapat Online>", "Aplikasi <e-Office>", "Lampiran <PP-24/1997>".
  *
  * Penyaring ini bukan pengaman tampilan: setiap keluaran HTML di luar React
  * wajib meloloskan teks (backend utils/escape-html.ts, frontend lib/escape-html.js).
@@ -114,10 +117,41 @@ class NextNameEnd {
     }
 }
 
+/**
+ * Posisi '=' berikutnya mulai `from` yang didahului (setelah pemisah) deret huruf
+ * berawalan "on", sepanjang paling banyak 64 huruf: calon atribut penangan
+ * kejadian. Setiap '=' diperiksa sekali per putaran.
+ */
+class NextHandlerEquals {
+    private found = -2;
+    private scanned = 0;
+
+    constructor(private readonly text: string) {}
+
+    from(position: number): number {
+        if (this.found >= position) return this.found;
+        if (this.found === -1) return -1;
+        let equals = this.text.indexOf('=', Math.max(position, this.scanned));
+        while (equals !== -1 && !this.afterHandlerName(equals)) equals = this.text.indexOf('=', equals + 1);
+        this.scanned = equals === -1 ? this.text.length : equals;
+        this.found = equals;
+        return equals;
+    }
+
+    private afterHandlerName(equals: number): boolean {
+        let end = equals;
+        while (end > 0 && isSeparator(this.text.charCodeAt(end - 1))) end -= 1;
+        let start = end;
+        while (start > 0 && end - start <= 64 && isAsciiLetter(this.text.charCodeAt(start - 1))) start -= 1;
+        if (start > 0 && isAsciiLetter(this.text.charCodeAt(start - 1))) return false;
+        return end - start > 2 && /^on/i.test(this.text.slice(start, start + 2));
+    }
+}
+
 interface PassState {
     text: string;
+    nextHandlerEquals: NextHandlerEquals;
     nextGreaterThan: NextChar;
-    nextEquals: NextChar;
     nextNameEnd: NextNameEnd;
     lastQuote: Map<number, number>;
     noClosingFrom: Map<string, number>;
@@ -175,13 +209,100 @@ function readTag(state: PassState, start: number): TagMatch {
         return { end: afterName === GREATER_THAN ? nameEnd + 1 : knownTagEnd(state, nameEnd), name, closing };
     }
 
-    // Nama lain (termasuk nama bertanda hubung) hanya tag bila membawa atribut:
-    // '=' sebelum '>' berikutnya; '/' setelah nama diperlakukan seperti spasi.
+    // Nama lain (termasuk nama bertanda hubung) hanya dibuang bila membawa
+    // atribut penangan kejadian yang diberi nilai. Tanpa "on…=" di depan, tag ini
+    // pasti tidak berbahaya dan tidak perlu dibaca.
     if (closing || afterName === GREATER_THAN) return null;
-    const greaterThan = state.nextGreaterThan.from(nameEnd);
-    if (greaterThan === -1) return null;
-    const equals = state.nextEquals.from(nameEnd);
-    return equals !== -1 && equals < greaterThan ? { end: greaterThan + 1, name, closing } : null;
+    if (state.nextHandlerEquals.from(nameEnd) === -1) return null;
+    const attributes = readUnknownTagAttributes(text, nameEnd);
+    if (attributes === 'budget') return 'neutralise';
+    if (!attributes.handler) return null;
+    return attributes.end === -1 ? 'neutralise' : { end: attributes.end, name, closing };
+}
+
+/** Nama atribut berbentuk penangan kejadian (onclick, onfocus, ...). */
+const EVENT_HANDLER_NAME = /^on[a-z]+$/i;
+
+/**
+ * Batas langkah pembacaan atribut satu tag bernama tak dikenal. Atribut tidak
+ * pernah dibuang bersama tag ini bila tagnya tidak berbahaya, jadi tag lain di
+ * dalamnya membaca ulang bagian yang sama; batas tetap ini menjaga putaran tetap
+ * linear. Melewati batas, '<'-nya dinetralkan.
+ */
+const UNKNOWN_TAG_BUDGET = 64;
+
+const BEFORE_NAME = 0;
+const NAME = 1;
+const AFTER_NAME = 2;
+const BEFORE_VALUE = 3;
+const UNQUOTED_VALUE = 4;
+
+/**
+ * Atribut tag bernama tak dikenal, dibaca seperti tokenizer HTML mulai akhir
+ * nama tag: '/' dan pemisah memisahkan atribut, nilai berkutip boleh memuat '>'
+ * dan '<'. `handler` benar bila ada atribut bernama on* yang diberi nilai ('='),
+ * `end` adalah posisi setelah '>' penutup, atau -1 bila teks habis lebih dulu.
+ */
+function readUnknownTagAttributes(text: string, nameEnd: number): { end: number; handler: boolean } | 'budget' {
+    const limit = Math.min(text.length, nameEnd + UNKNOWN_TAG_BUDGET);
+    let state: number = BEFORE_NAME;
+    let attributeStart = nameEnd;
+    let attributeName = '';
+    let handler = false;
+    let position = nameEnd;
+    while (position < limit) {
+        const code = text.charCodeAt(position);
+        switch (state) {
+            case BEFORE_NAME:
+                if (code === GREATER_THAN) return { end: position + 1, handler };
+                if (!isSeparator(code) && code !== SLASH) {
+                    attributeStart = position;
+                    state = NAME;
+                }
+                break;
+            case NAME:
+                if (isSeparator(code) || code === SLASH || code === GREATER_THAN || code === EQUALS) {
+                    attributeName = position - attributeStart <= 64 ? text.slice(attributeStart, position) : '';
+                    if (code === EQUALS) {
+                        handler ||= EVENT_HANDLER_NAME.test(attributeName);
+                        state = BEFORE_VALUE;
+                    } else {
+                        state = AFTER_NAME;
+                        continue;
+                    }
+                }
+                break;
+            case AFTER_NAME:
+                if (code === GREATER_THAN) return { end: position + 1, handler };
+                if (code === EQUALS) {
+                    handler ||= EVENT_HANDLER_NAME.test(attributeName);
+                    state = BEFORE_VALUE;
+                } else if (code === SLASH) state = BEFORE_NAME;
+                else if (!isSeparator(code)) {
+                    attributeStart = position;
+                    state = NAME;
+                }
+                break;
+            case BEFORE_VALUE:
+                if (code === GREATER_THAN) return { end: position + 1, handler };
+                if (code === DOUBLE_QUOTE || code === SINGLE_QUOTE) {
+                    let close = position + 1;
+                    while (close < limit && text.charCodeAt(close) !== code) close += 1;
+                    if (close >= limit) return limit < text.length ? 'budget' : { end: -1, handler };
+                    position = close;
+                    state = BEFORE_NAME;
+                } else if (!isSeparator(code)) {
+                    state = UNQUOTED_VALUE;
+                }
+                break;
+            case UNQUOTED_VALUE:
+                if (code === GREATER_THAN) return { end: position + 1, handler };
+                if (isSeparator(code)) state = BEFORE_NAME;
+                break;
+        }
+        position += 1;
+    }
+    return limit < text.length ? 'budget' : { end: -1, handler };
 }
 
 /**
@@ -206,8 +327,8 @@ function stripOnce(text: string): string {
     const state: PassState = {
         text,
         nextGreaterThan: new NextChar(text, '>'),
-        nextEquals: new NextChar(text, '='),
         nextNameEnd: new NextNameEnd(text),
+        nextHandlerEquals: new NextHandlerEquals(text),
         lastQuote: new Map([[DOUBLE_QUOTE, text.lastIndexOf('"')], [SINGLE_QUOTE, text.lastIndexOf("'")]]),
         noClosingFrom: new Map(),
     };

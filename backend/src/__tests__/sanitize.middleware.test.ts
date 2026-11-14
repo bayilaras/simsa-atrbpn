@@ -103,17 +103,17 @@ describe('sanitizeInput', () => {
 
 /**
  * Tag yang masih hidup: nama elemen dikenal yang diikuti pemisah, '/' atau '>',
- * atau nama lain yang diikuti pemisah atau '/' dan memuat '=' sebelum '>'. Nama
- * dibaca seperti peramban (berlanjut melewati '<'). Ditulis ulang dengan ekspresi
- * reguler, terpisah dari pemindai yang diuji; oracle parse5 ada di
- * sanitize.parse5-oracle.test.ts.
+ * atau nama lain yang diikuti pemisah atau '/' dan membawa atribut on* bernilai
+ * sebelum '>'. Nama dibaca seperti peramban (berlanjut melewati '<'). Ditulis
+ * ulang dengan ekspresi reguler, terpisah dari pemindai yang diuji; oracle parse5
+ * ada di sanitize.parse5-oracle.test.ts.
  */
 function tagHidup(teks: string): string[] {
     const temuan: string[] = [];
     for (const [cocok, nama] of teks.matchAll(/<\/?([A-Za-z][^\s/>]*)(?=[\s/>])/g)) {
         if (NAMA_ELEMEN_MARKUP.has(nama.toLowerCase())) temuan.push(cocok);
     }
-    temuan.push(...(teks.match(/<[A-Za-z][^\s/>]*[\s/][^>]*=[^>]*>/g) ?? []));
+    temuan.push(...(teks.match(/<[A-Za-z][^\s/>]*[\s/](?:[^>]*[\s/"'])?on[a-z]+\s*=[^>]*>/gi) ?? []));
     return temuan;
 }
 
@@ -179,7 +179,8 @@ describe('penyaring tahan terhadap pemisah dan atribut yang tidak lazim', () => 
         // Nama dibaca seperti peramban: melewati '<' sampai pemisah, '/' atau '>'.
         ['<img<1 onfocus=alert(1) autofocus tabindex=1>', ''],
         ['<x<!-- onfocus=alert(1) autofocus tabindex=1>', ''],
-        ['<img<?onfocus=alert(1) autofocus tabindex=1>', ''],
+        // 'onfocus=...' di sini bagian dari nama tag, bukan atribut: tidak ada penangan.
+        ['<img<?onfocus=alert(1) autofocus tabindex=1>', '<img<?onfocus=alert(1) autofocus tabindex=1>'],
         ["<imgx='<' onfocus=1>", ''],
         // '/' setelah nama tak dikenal diperlakukan seperti spasi.
         ['<x/ onfocus=alert(1) autofocus tabindex=1>', ''],
@@ -188,7 +189,11 @@ describe('penyaring tahan terhadap pemisah dan atribut yang tidak lazim', () => 
         ["<x/'a' onfocus=alert(1) autofocus tabindex=1>", ''],
         ['<x/"x" onfocus=alert(1) autofocus tabindex=1>', ''],
         ['<x\u0000/ onfocus=alert(1) autofocus tabindex=1>', ''],
-        ['Tautan <http://contoh.go.id/surat?nomor=1> terlampir', 'Tautan terlampir'],
+        // Atribut on* bernilai dibaca seperti peramban: nilai berkutip boleh memuat '>'.
+        ["<x title='a>b' onclick=alert(1)>klik", 'klik'],
+        ['<x title="a>b" onclick=alert(1)>klik', 'klik'],
+        // Tag bernama lain dengan penangan bernilai tetapi tanpa '>': '<' diberi spasi.
+        ['<x onclick=alert(1)', '< x onclick=alert(1)'],
         // Nama elemen dikenal + pemisah tanpa '>' sesudahnya: '<' diberi spasi.
         ['a <b dan c', 'a < b dan c'],
     ])('%j menjadi %j', (masukan, hasil) => {
@@ -242,6 +247,12 @@ describe('penyaring hanya membuang markup HTML', () => {
         '&lt;img src=x onerror=alert(1)&gt;',
         // Nama bertanda hubung tanpa atribut tetap teks.
         'Aplikasi <e-Office>',
+        // Nama lain dengan atribut yang tidak dapat menjalankan apa pun tetap teks.
+        'Tautan <http://contoh.go.id/berkas?nomor=1> terlampir',
+        '<https://contoh.go.id/a/b?x=1&y=2>',
+        '<Rapat Online>',
+        '<x a=1 b="2" c=3>',
+        '<x onfocus autofocus>',
         'Lampiran <PP-24/1997>',
         'Lihat <Sub-Bagian TU>',
         'Kode <A-1> dan <B_2>',
@@ -309,6 +320,8 @@ describe('penyaring hanya membuang markup HTML', () => {
             ('<a y=">"').repeat(N / 8) + ' x="',
             '<xss a'.repeat(N / 6) + '=>',
             '<x '.repeat(N / 3) + '=',
+            '<x '.repeat(N / 3) + ' onclick=1',
+            '<x onclick=1 '.repeat(N / 13),
             '<x/ '.repeat(N / 4),
             '<img<1 a=1 '.repeat(N / 11),
             '<x<1 a=1'.repeat(N / 8),
