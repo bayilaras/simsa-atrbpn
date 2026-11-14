@@ -86,11 +86,20 @@ function csvDelimiter(text: string): CsvDelimiter {
     return CSV_DELIMITERS.reduce((best, delimiter) => counts.get(delimiter)! > counts.get(best)! ? delimiter : best);
 }
 
+const UTF8_BOM = Buffer.from('efbbbf', 'hex');
+
+/**
+ * The text of an uploaded CSV: "CSV UTF-8" from Excel or a Google Sheets
+ * download, otherwise Excel's plain "CSV" in the Windows code page. A UTF-8
+ * byte order mark is dropped either way.
+ */
+export function decodeCsvText(buffer: Buffer): string {
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(buffer); }
+    catch { return new TextDecoder('windows-1252').decode(buffer.subarray(buffer.subarray(0, 3).equals(UTF8_BOM) ? 3 : 0)); }
+}
+
 function readCsvRows(buffer: Buffer): string[][] {
-    let text: string;
-    // "CSV UTF-8" from Excel or a Google Sheets download; otherwise Excel's plain "CSV" in the Windows code page.
-    try { text = new TextDecoder('utf-8', { fatal: true }).decode(buffer); }
-    catch { text = new TextDecoder('windows-1252').decode(buffer); }
+    const text = decodeCsvText(buffer);
     return parseBoundedSheetCsv(text, csvDelimiter(text));
 }
 

@@ -1,9 +1,10 @@
 import { ValidationError } from '../utils/errors.js';
 
 export type GoogleSheetsImportType = 'surat-masuk' | 'surat-keluar';
-type Column = { label: string; aliases: string[] };
+/** stored false: recognised, so the column is never taken for another one, but the import does not keep its value. */
+type Column = { label: string; aliases: string[]; stored?: false };
 const common: Record<string, Column> = {
-    id: { label: 'ID sumber', aliases: ['id'] },
+    id: { label: 'ID sumber', aliases: ['id'], stored: false },
     noUrut: { label: 'Nomor urut sumber', aliases: ['no', 'nomor urut', 'no urut'] },
     nomorSurat: { label: 'Nomor surat', aliases: ['nomor surat', 'no surat', 'nomor'] },
     tanggalSurat: { label: 'Tanggal surat', aliases: ['tanggal surat', 'tgl surat', 'tanggal', 'tgl'] },
@@ -16,7 +17,8 @@ const columns: Record<GoogleSheetsImportType, Record<string, Column>> = {
         jenisSurat: { label: 'Jenis surat', aliases: ['jenis surat', 'jenis naskah', 'naskah dinas', 'jenis'] },
         sifatSurat: { label: 'Sifat surat', aliases: ['sifat surat', 'sifat', 'urgency'] },
         dari: { label: 'Pengirim', aliases: ['dari', 'asal', 'pengirim', 'from'] },
-        status: { label: 'Status sumber', aliases: ['status', 'disposisi status'] },
+        // An imported letter always starts as not yet answered.
+        status: { label: 'Status sumber', aliases: ['status', 'disposisi status'], stored: false },
         disposisi: { label: 'Disposisi', aliases: ['disposisi'] },
     },
     'surat-keluar': {
@@ -39,7 +41,11 @@ export function normalizeSheetHeader(value: string): string {
     return value.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 
-export interface SheetColumnMapping { field: string; label: string; columnIndex: number; header: string }
+export interface SheetColumnMapping {
+    field: string; label: string; columnIndex: number; header: string;
+    /** Present (false) only for a recognised column whose value the import does not store. */
+    stored?: false;
+}
 
 /** The header is the first of the first five rows with at least three recognised titles; -1 when none. */
 function findHeaderRow(rows: string[][], definitions: Record<string, Column>): number {
@@ -85,8 +91,16 @@ export function resolveSheetMapping(rows: string[][], importType: GoogleSheetsIm
         if (matches.length === 1) {
             const columnIndex = matches[0];
             columnMap[field] = columnIndex;
-            mapping.push({ field, label: definition.label, columnIndex, header: headers[columnIndex] });
+            mapping.push({ field, label: definition.label, columnIndex, header: headers[columnIndex], ...(definition.stored === false ? { stored: false } : {}) });
         }
+    }
+    // A classification code and title are stored as fasilitatif or substantif, as the
+    // type column of the row says; without a type column, or with nothing to sort, none is stored.
+    const typed = columnMap.klasifikasiJenis !== undefined;
+    const described = columnMap.klasifikasiArsip !== undefined || columnMap.klasifikasiKode !== undefined;
+    for (const item of mapping) {
+        if ((item.field === 'klasifikasiArsip' || item.field === 'klasifikasiKode') && !typed) item.stored = false;
+        if (item.field === 'klasifikasiJenis' && !described) item.stored = false;
     }
     // A register's title can run into its first header ("SURAT KELUAR 2026 No" in a
     // Google Sheets CSV export). Without an exact sequence title, a first column whose

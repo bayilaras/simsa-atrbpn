@@ -1,13 +1,14 @@
-import { Router } from 'express';
+import { Router, type NextFunction, type Response } from 'express';
 import multer from 'multer';
 import { migrationService } from '../services/migration.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { canAccessUnit, Role } from '../config/permissions';
 import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja';
-import { ValidationError } from '../utils/errors.js';
+import { PayloadTooLargeError, ValidationError } from '../utils/errors.js';
 import { importLimiter } from '../middlewares/rate-limiter.middleware.js';
 import { IMPORT_TIME_BUDGET_MS } from '../services/import-resume.js';
+import { IMPORT_FILE_LIMITS, decodeCsvText } from '../services/import-file-reader.js';
 
 const router = Router();
 
@@ -31,7 +32,9 @@ function importOptions(req: AuthRequest) {
     }
     return { dryRun, resume: { startRow: position, prefixHash, deadlineAt: Date.now() + IMPORT_TIME_BUDGET_MS } };
 }
-const CSV_UPLOAD_LIMIT_BYTES = 10 * 1024 * 1024;
+// The limit of the surat file imports: the file travels in the body of one
+// function request, which the platform caps at 4.5 MB.
+const CSV_UPLOAD_LIMIT_BYTES = IMPORT_FILE_LIMITS.bytes;
 const CSV_MIME_TYPES = new Set([
     'text/csv',
     'application/csv',
@@ -52,6 +55,19 @@ const upload = multer({
     },
 });
 
+/** One CSV held in memory; a refused upload is answered in words instead of as a server error. */
+function receiveCsv(req: AuthRequest, res: Response, next: NextFunction) {
+    upload.single('file')(req, res, (error: unknown) => {
+        if (error instanceof multer.MulterError) {
+            next(error.code === 'LIMIT_FILE_SIZE'
+                ? new PayloadTooLargeError('Berkas melebihi batas 4 MiB. Pecah data menjadi beberapa berkas.')
+                : new ValidationError('Pilih satu berkas CSV (.csv).'));
+            return;
+        }
+        next(error);
+    });
+}
+
 function resolveMigrationUnit(req: AuthRequest): string | null {
     return resolveEffectiveUnitKerjaId(
         (req.user?.role || 'user') as Role,
@@ -70,7 +86,7 @@ router.use(importLimiter);
  */
 router.post('/surat-masuk',
     canWriteMiddleware(),
-    upload.single('file'),
+    receiveCsv,
     async (req: AuthRequest, res, next) => {
         try {
             const unitKerjaId = resolveMigrationUnit(req);
@@ -99,7 +115,7 @@ router.post('/surat-masuk',
                 });
             }
 
-            const csvContent = req.file.buffer.toString('utf-8');
+            const csvContent = decodeCsvText(req.file.buffer);
             const result = await migrationService.importSuratMasuk(
                 csvContent,
                 unitKerjaId,
@@ -130,7 +146,7 @@ router.post('/surat-masuk',
  */
 router.post('/surat-keluar',
     canWriteMiddleware(),
-    upload.single('file'),
+    receiveCsv,
     async (req: AuthRequest, res, next) => {
         try {
             const unitKerjaId = resolveMigrationUnit(req);
@@ -159,7 +175,7 @@ router.post('/surat-keluar',
                 });
             }
 
-            const csvContent = req.file.buffer.toString('utf-8');
+            const csvContent = decodeCsvText(req.file.buffer);
             const result = await migrationService.importSuratKeluar(
                 csvContent,
                 unitKerjaId,
@@ -188,7 +204,7 @@ router.post('/surat-keluar',
  */
 router.post('/arsip',
     canWriteMiddleware(),
-    upload.single('file'),
+    receiveCsv,
     async (req: AuthRequest, res, next) => {
         try {
             const unitKerjaId = resolveMigrationUnit(req);
@@ -217,7 +233,7 @@ router.post('/arsip',
                 });
             }
 
-            const csvContent = req.file.buffer.toString('utf-8');
+            const csvContent = decodeCsvText(req.file.buffer);
             const result = await migrationService.importArsip(
                 csvContent,
                 unitKerjaId,

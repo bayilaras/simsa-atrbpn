@@ -214,13 +214,21 @@ describe('sinkron surat masuk', () => {
         expect(await perihalOf('SM-4/2026')).toBeUndefined();
     });
 
-    it('leaves a letter of another sender with the same number alone', async () => {
+    it('records the letter of another sender with the same number as a new letter and leaves the recorded one alone', async () => {
         await importer.importRows('surat-masuk', [header, ['045/2026', '02/03/2026', 'Permohonan', 'Dinas B', 'Biasa', 'Surat Dinas']], 'dir_bppt', audit);
         const result = await importer.importRows('surat-masuk', [header, ['045/2026', '05/03/2026', 'Undangan', 'Dinas A', 'Biasa', 'Surat Dinas']],
             'dir_bppt', audit, {}, undefined, sinkron);
-        expect(result.rows?.[0]).toMatchObject({ status: 'locked',
-            reason: 'Tidak diperbarui: pengirim di sumber ("Dinas A") berbeda dengan yang tercatat ("Dinas B"); mungkin surat lain dengan nomor yang sama.' });
-        expect(await perihalOf('045/2026')).toMatchObject({ perihal: 'Permohonan' });
+        expect(result).toMatchObject({ importedRows: 1, updatedRows: 0 });
+        expect((await database.query('SELECT dari, perihal FROM surat_masuk WHERE nomor_surat = $1 ORDER BY dari', ['045/2026'])).rows)
+            .toEqual([{ dari: 'Dinas A', perihal: 'Undangan' }, { dari: 'Dinas B', perihal: 'Permohonan' }]);
+    });
+
+    it('updates the letter of the same sender written in another letter case and spacing', async () => {
+        await importer.importRows('surat-masuk', [header, ['046/2026', '02/03/2026', 'Permohonan', 'Dinas B', 'Biasa', 'Surat Dinas']], 'dir_bppt', audit);
+        const result = await importer.importRows('surat-masuk', [header, ['046/2026', '02/03/2026', 'Permohonan data', ' DINAS  b ', 'Biasa', 'Surat Dinas']],
+            'dir_bppt', audit, {}, undefined, sinkron);
+        expect(result.rows?.[0]).toMatchObject({ status: 'updated', changes: [{ field: 'perihal', label: 'Perihal', before: 'Permohonan', after: 'Permohonan data' }] });
+        expect(await perihalOf('046/2026')).toMatchObject({ perihal: 'Permohonan data' });
     });
 
     it('leaves a letter in a rangkaian to its own correction flow, which needs a reason', async () => {
@@ -232,6 +240,96 @@ describe('sinkron surat masuk', () => {
         expect(result.rows?.[0]).toMatchObject({ status: 'locked',
             reason: expect.stringMatching(/^Tidak diperbarui: Perubahan nomor\/perihal\/sifat .* wajib disertai alasan/) });
         expect((await perihalOf('SM-2/2026')).perihal).toBe('Undangan');
+    });
+});
+
+// Senders number their letters independently, so a numbered surat masuk is
+// recognised by its number, year, and sender; a surat keluar by number and year.
+describe('import identity of numbered letters', () => {
+    const header = ['Nomor Surat', 'Tanggal Surat', 'Perihal', 'Dari'];
+    const letters = async (nomor: string) => (await database.query<{ dari: string; perihal: string }>(
+        "SELECT dari, perihal FROM surat_masuk WHERE nomor_surat = $1 AND unit_kerja_id = 'dir_bppt' ORDER BY perihal", [nomor])).rows;
+
+    it('records the same number and year from another sender, and keeps the same sender a duplicate whatever its spelling', async () => {
+        await importer.importRows('surat-masuk', [header, ['001/2026', '02/03/2026', 'Permohonan A', 'Instansi A']], 'dir_bppt', audit);
+        const result = await importer.importRows('surat-masuk', [header,
+            ['001/2026', '04/03/2026', 'Permohonan B', 'Instansi B'],
+            ['001/2026', '02/03/2026', 'Permohonan A lagi', '  INSTANSI  a '],
+            // A row without a sender tells no letter apart: its number and year decide, as before.
+            ['001/2026', '05/03/2026', 'Tanpa pengirim', ''],
+        ], 'dir_bppt', audit);
+        expect(result.rows?.map(row => [row.status, row.duplicate])).toEqual([['imported', undefined], ['duplicate', 'recorded'], ['duplicate', 'recorded']]);
+        expect(await letters('001/2026')).toEqual([{ dari: 'Instansi A', perihal: 'Permohonan A' }, { dari: 'Instansi B', perihal: 'Permohonan B' }]);
+    });
+
+    it('tells rows of one source apart by their sender and names the earlier row of the same sender', async () => {
+        const result = await importer.importRows('surat-masuk', [header,
+            ['002/2026', '02/03/2026', 'Dari A', 'Instansi A'],
+            ['002/2026', '03/03/2026', 'Dari B', 'Instansi B'],
+            ['002/2026', '04/03/2026', 'Dari A lagi', 'instansi  a']], 'dir_bppt', audit);
+        expect(result.rows?.map(row => [row.status, row.reason])).toEqual([['imported', undefined], ['imported', undefined],
+            ['duplicate', 'Nomor surat, tahun, dan pengirim sama dengan baris data ke-1 pada sumber ini.']]);
+        expect(await letters('002/2026')).toEqual([{ dari: 'Instansi A', perihal: 'Dari A' }, { dari: 'Instansi B', perihal: 'Dari B' }]);
+    });
+
+    it('reads a recorded sender with a non-breaking space, or none, as the import reads the source', async () => {
+        await database.query(`INSERT INTO surat_masuk (unit_kerja_id, no_urut, tahun, nomor_surat, tanggal_surat, perihal, dari, sifat_surat)
+            VALUES ('dir_bppt', 1, 2026, '003/2026', '2026-03-02', 'Tercatat', 'Kantor Pertanahan', 'Biasa'),
+                   ('dir_bppt', 2, 2026, '004/2026', '2026-03-02', 'Tercatat tanpa pengirim', NULL, 'Biasa')`);
+        const result = await importer.importRows('surat-masuk', [header,
+            ['003/2026', '02/03/2026', 'Ulang', 'kantor pertanahan'], ['004/2026', '02/03/2026', 'Ulang', 'Instansi C']], 'dir_bppt', audit);
+        expect(result).toMatchObject({ importedRows: 0, duplicateRows: 2 });
+        // The canonical create repeats the lookup under the unit lock with the same comparison.
+        const { suratMasukService } = await import('../services/surat-masuk.service');
+        await expect(suratMasukService.createImported({ unitKerjaId: 'dir_bppt', noUrut: 9, tahun: 2026, nomorSurat: '003/2026',
+            tanggalSurat: '2026-03-05', perihal: 'Ulang', dari: 'KANTOR PERTANAHAN', sifatSurat: 'Biasa', createdBy: admin.id }, audit))
+            .rejects.toMatchObject({ statusCode: 409 });
+    });
+
+    it('lets the preview count the recorded letters of the unit and the rejected rows without writing anything', async () => {
+        await importer.importRows('surat-masuk', [header, ['005/2026', '02/03/2026', 'Tercatat', 'Instansi A']], 'dir_bppt', audit);
+        const count = async () => Number((await database.query<{ n: string }>('SELECT count(*) AS n FROM surat_masuk')).rows[0].n);
+        const auditRows = async () => Number((await database.query<{ n: string }>('SELECT count(*) AS n FROM audit_log')).rows[0].n);
+        const [lettersBefore, auditBefore] = [await count(), await auditRows()];
+        const rows = [[...header, 'Sifat Surat'], ['005/2026', '02/03/2026', 'Tercatat', 'instansi a', 'Biasa'],
+            ['006/2026', '03/03/2026', 'Baru', 'Instansi A', 'Biasa'], ['007/2026', '04/03/2026', 'Rahasia', 'Instansi A', 'Rahasia']];
+        const preview = await importer.previewRows(rows, 10, 'surat-masuk', { importer: audit, unitKerjaId: 'dir_bppt' });
+        expect(preview.rowIssues).toEqual({ total: 1, rows: [{ row: 3, reason: PESAN_KELAS_MELEBIHI_KEWENANGAN }] });
+        expect(preview.duplicates).toEqual({ source: 0, recorded: 1, deleted: 0 });
+        // Another unit has none of these letters.
+        expect((await importer.previewRows(rows, 10, 'surat-masuk', { importer: audit, unitKerjaId: 'dir_ptep' })).duplicates)
+            .toEqual({ source: 0, recorded: 0, deleted: 0 });
+        expect([await count(), await auditRows()]).toEqual([lettersBefore, auditBefore]);
+    });
+
+    it('reports a row without a sender as a repeat of the earlier row of its number in the same source, as the preview counts it', async () => {
+        const rows = [header, ['008/2026', '02/03/2026', 'Dari A', 'Instansi A'], ['008/2026', '03/03/2026', 'Tanpa pengirim', '']];
+        expect((await importer.previewRows(rows, 10, 'surat-masuk', { importer: audit, unitKerjaId: 'dir_bppt' })).duplicates)
+            .toEqual({ source: 1, recorded: 0, deleted: 0 });
+        const result = await importer.importRows('surat-masuk', rows, 'dir_bppt', audit);
+        expect(result.rows?.map(row => [row.status, row.duplicate, row.reason])).toEqual([['imported', undefined, undefined],
+            ['duplicate', 'source', 'Nomor surat dan tahun sama dengan baris data ke-1 pada sumber ini.']]);
+        expect(await letters('008/2026')).toEqual([{ dari: 'Instansi A', perihal: 'Dari A' }]);
+    });
+
+    it('says in the preview and in the report when a new row has the number of a recorded letter of another sender', async () => {
+        await importer.importRows('surat-masuk', [header, ['009/2026', '02/03/2026', 'Tercatat', 'Kantah Lama']], 'dir_bppt', audit);
+        const rows = [header, ['009/2026', '02/03/2026', 'Pengirim dikoreksi', 'Kantah Baru'], ['010/2026', '02/03/2026', 'Baru', 'Kantah Baru']];
+        const preview = await importer.previewRows(rows, 10, 'surat-masuk', { importer: audit, unitKerjaId: 'dir_bppt' });
+        expect(preview).toMatchObject({ otherSenderRows: 1, duplicates: { source: 0, recorded: 0, deleted: 0 } });
+        expect((await importer.previewRows(rows, 10, 'surat-masuk', { importer: audit, unitKerjaId: 'dir_ptep' })).otherSenderRows).toBe(0);
+        const result = await importer.importRows('surat-masuk', rows, 'dir_bppt', audit);
+        expect(result.rows?.map(row => [row.status, row.reason])).toEqual([
+            ['imported', 'Nomor dan tahun sama dengan surat yang sudah tercatat, tetapi pengirimnya berbeda; dicatat sebagai surat baru. Periksa penulisan pengirim bila surat itu sama.'],
+            ['imported', undefined]]);
+    });
+
+    it('keeps identifying a numbered surat keluar by its number and year only', async () => {
+        const rows = [['Nomor Surat', 'Tanggal Surat', 'Hal', 'Kepada'],
+            ['SK-9/2026', '02/03/2026', 'Undangan', 'Instansi A'], ['SK-9/2026', '03/03/2026', 'Undangan lain', 'Instansi B']];
+        const result = await importer.importRows('surat-keluar', rows, 'dir_bppt', audit);
+        expect(result.rows?.map(row => [row.status, row.reason])).toEqual([['imported', undefined],
+            ['duplicate', 'Nomor surat dan tahun sama dengan baris data ke-1 pada sumber ini.']]);
     });
 });
 

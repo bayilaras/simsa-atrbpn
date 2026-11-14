@@ -42,11 +42,25 @@ describe('file import routes', () => {
         expect(file).not.toHaveProperty('path');
     });
 
-    it('previews the chosen tab for the chosen type', async () => {
+    it('previews the chosen tab for the chosen type, judging the rows for the importing user', async () => {
+        const importer = { userId: 'synthetic-user', userEmail: undefined, ipAddress: expect.any(String), role: 'super_admin' };
         await post('/preview', { type: 'surat-keluar', sheet: 'Tab 2026 ', maxRows: '5' }).expect(200);
-        expect(mocks.preview).toHaveBeenCalledWith(expect.objectContaining({ originalname: 'register.xlsx' }), 'Tab 2026 ', 5, 'surat-keluar');
+        expect(mocks.preview).toHaveBeenCalledWith(expect.objectContaining({ originalname: 'register.xlsx' }), 'Tab 2026 ', 5, 'surat-keluar',
+            { importer, unitKerjaId: undefined });
         await post('/preview', {}, { name: 'register.csv', type: 'text/csv', data: Buffer.from('Nomor Surat,Hal') }).expect(200);
-        expect(mocks.preview).toHaveBeenLastCalledWith(expect.objectContaining({ originalname: 'register.csv' }), undefined, 10, 'surat-masuk');
+        expect(mocks.preview).toHaveBeenLastCalledWith(expect.objectContaining({ originalname: 'register.csv' }), undefined, 10, 'surat-masuk',
+            { importer, unitKerjaId: undefined });
+    });
+
+    it('looks up a named destination unit only as the import would resolve and authorize it', async () => {
+        await post('/preview', { unitKerjaId: 'unit-b' }).expect(200);
+        expect(mocks.preview.mock.calls[0][4]).toMatchObject({ unitKerjaId: 'unit-b' });
+        mocks.user = { id: 'synthetic-user', role: 'admin_unit', unitKerjaId: 'unit-a' };
+        await post('/preview', { unitKerjaId: 'unit-b' }).expect(200);
+        expect(mocks.preview.mock.calls[1][4]).toMatchObject({ unitKerjaId: 'unit-a', importer: { role: 'admin_unit' } });
+        mocks.user = { id: 'synthetic-user', role: 'admin_unit', unitKerjaId: null };
+        await post('/preview', { unitKerjaId: 'unit-b' }).expect(400);
+        expect(mocks.preview).toHaveBeenCalledTimes(2);
     });
 
     it.each(['masuk', 'keluar'])('imports surat %s in one request when no part position is sent', async kind => {

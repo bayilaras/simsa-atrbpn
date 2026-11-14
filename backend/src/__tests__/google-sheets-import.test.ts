@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { resolveSheetMapping } from '../services/google-sheets-import-mapping.js';
-import { DuplicateSuratImportError, suratImportIdentity } from '../services/surat-import-identity.js';
+import { DuplicateSuratImportError, sameImportIdentity, suratImportIdentity, suratImportIdentityKey } from '../services/surat-import-identity.js';
 
 // The bulk lookup is advisory; by default it finds nothing so every row reaches the canonical create.
 const mocks = vi.hoisted(() => ({ incoming: vi.fn(), outgoing: vi.fn(), existing: vi.fn(),
@@ -162,6 +162,33 @@ describe('exact Google Sheets column mapping before writes', () => {
     });
 });
 
+describe('columns the import recognises but does not store', () => {
+    it('marks the source ID and status of an incoming register and leaves the stored columns unmarked', () => {
+        const { mapping } = resolveSheetMapping([['ID', 'No', 'Nomor Surat', 'Tanggal Surat', 'Perihal', 'Dari', 'Status']], 'surat-masuk');
+        expect(mapping.filter(item => item.stored === false).map(item => [item.field, item.label])).toEqual([['id', 'ID sumber'], ['status', 'Status sumber']]);
+        expect(mapping.find(item => item.field === 'noUrut')).toEqual({ field: 'noUrut', label: 'Nomor urut sumber', columnIndex: 1, header: 'No' });
+        expect(mapping.find(item => item.field === 'dari')).toEqual({ field: 'dari', label: 'Pengirim', columnIndex: 5, header: 'Dari' });
+    });
+
+    it('marks a classification code and title without a type column, and a type column with neither', () => {
+        const unstored = (headers: string[]) => resolveSheetMapping([headers], 'surat-keluar').mapping.filter(item => item.stored === false).map(item => item.field);
+        expect(unstored(['Nomor Surat', 'Tanggal', 'Hal', 'Kode Klasifikasi', 'Klasifikasi Arsip'])).toEqual(['klasifikasiArsip', 'klasifikasiKode']);
+        expect(unstored(['Nomor Surat', 'Tanggal', 'Hal', 'Kode Klasifikasi', 'Jenis Klasifikasi'])).toEqual([]);
+        expect(unstored(['Nomor Surat', 'Tanggal', 'Hal', 'Jenis Klasifikasi'])).toEqual(['klasifikasiJenis']);
+    });
+
+    it('stores the classification of an outgoing letter whatever the letter case of its type', async () => {
+        const rows = [['Nomor Surat', 'Tanggal Surat', 'Hal', 'Kode Klasifikasi', 'Klasifikasi Arsip', 'Jenis Klasifikasi'],
+            ['1/A', '05/01/2026', 'Rapat', 'KU.01', 'Keuangan', 'Fasilitatif'],
+            ['2/A', '06/01/2026', 'Ukur', 'HP.02', 'Pengukuran', ' SUBSTANTIF '],
+            ['3/A', '07/01/2026', 'Lain', 'XX.01', 'Lain-lain', 'Umum']];
+        expect(await new GoogleDriveImportService().importRows('surat-keluar', rows, 'unit-a', audit)).toMatchObject({ importedRows: 3 });
+        expect(mocks.outgoing.mock.calls.map(([record]) => [record.klasifikasiFasilitatifKode, record.klasifikasiFasilitatif,
+            record.klasifikasiSubstantifKode, record.klasifikasiSubstantif])).toEqual([
+            ['KU.01', 'Keuangan', null, null], [null, null, 'HP.02', 'Pengukuran'], [null, null, null, null]]);
+    });
+});
+
 describe('importing already-parsed rows from any source', () => {
     it.each([['surat-masuk', mocks.incoming], ['surat-keluar', mocks.outgoing]] as const)(
         'maps and imports %s rows without fetching a sheet', async (type, create) => {
@@ -272,6 +299,43 @@ describe('resumable import within a time budget', () => {
         const result = await run(outgoingRows(5));
         expect(result).toMatchObject({ importedRows: 5, totalRows: 5 });
         for (const field of ['startRow', 'nextRow', 'prefixHash']) expect(result).not.toHaveProperty(field);
+    });
+});
+
+describe('import identity of a numbered incoming letter', () => {
+    const base = { unitKerjaId: 'unit-a', tahun: 2026, nomorSurat: '001/2026', tanggalSurat: '2026-03-02', perihal: 'Permohonan' };
+    const key = (type: 'masuk' | 'keluar', extra: { dari?: string; kepada?: string }) => suratImportIdentityKey(type, { ...base, ...extra });
+
+    it('includes the sender, read with spaces collapsed and letter case ignored', () => {
+        expect(key('masuk', { dari: '  Kantor  Pertanahan Kota  ' }))
+            .toEqual({ by: 'nomor', unitKerjaId: 'unit-a', tahun: 2026, nomorSurat: '001/2026', pengirim: 'kantor pertanahan kota' });
+        expect(key('masuk', { dari: 'KANTOR PERTANAHAN KOTA' })).toEqual(key('masuk', { dari: 'Kantor Pertanahan Kota' }));
+        expect(key('masuk', { dari: 'Instansi B' })).not.toEqual(key('masuk', { dari: 'Instansi A' }));
+    });
+
+    it('leaves the sender out when the row names none, and for every outgoing letter', () => {
+        expect(key('masuk', { dari: ' ' })).toEqual({ by: 'nomor', unitKerjaId: 'unit-a', tahun: 2026, nomorSurat: '001/2026' });
+        expect(key('keluar', { dari: 'Instansi A', kepada: 'Instansi B' })).toEqual({ by: 'nomor', unitKerjaId: 'unit-a', tahun: 2026, nomorSurat: '001/2026' });
+    });
+
+    it('treats a missing sender as any sender of the same number and year, as the database comparison does', () => {
+        const a = key('masuk', { dari: 'Instansi A' });
+        const none = key('masuk', { dari: '' });
+        expect(sameImportIdentity(a, key('masuk', { dari: 'INSTANSI  a' }))).toBe(true);
+        expect(sameImportIdentity(a, key('masuk', { dari: 'Instansi B' }))).toBe(false);
+        expect([sameImportIdentity(a, none), sameImportIdentity(none, a)]).toEqual([true, true]);
+        expect(sameImportIdentity(a, { ...a, tahun: 2025 })).toBe(false);
+    });
+
+    it('compares the recorded sender in SQL only for an incoming letter that names one', () => {
+        const query = (type: 'masuk' | 'keluar', extra: { dari?: string; kepada?: string }) =>
+            new PgDialect().sqlToQuery(suratImportIdentity(type, { ...base, ...extra }));
+        const masuk = query('masuk', { dari: 'Instansi A' });
+        expect(masuk.sql).toContain('"dari"');
+        expect(masuk.sql).toContain('regexp_replace');
+        expect(masuk.params).toContain('instansi a');
+        expect(query('masuk', { dari: '' }).sql).not.toContain('regexp_replace');
+        expect(query('keluar', { kepada: 'Instansi A' }).sql).not.toContain('regexp_replace');
     });
 });
 

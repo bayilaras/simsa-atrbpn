@@ -187,12 +187,14 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
     },
     'file-import.routes.ts': {
         'POST /lembar': 'bukan-rekaman',
-        'POST /preview': 'bukan-rekaman',
+        // Hitungan baris yang sudah tercatat di unit tujuan (resolveImportUnit), seperti impornya.
+        'POST /preview': proyeksi('fileImportService.preview'),
         'POST /surat-${kind}': check('fileImportService.importSurat'),
     },
     'google-drive-import.routes.ts': {
         'GET /google-drive/sheets': 'bukan-rekaman',
-        'POST /google-drive/preview': 'bukan-rekaman',
+        // Hitungan baris yang sudah tercatat di unit tujuan (resolveImportUnit), seperti impornya.
+        'POST /google-drive/preview': proyeksi('googleDriveImportService.previewData'),
         'POST /google-drive/surat-${kind}': check('googleDriveImportService.importSurat'),
     },
     'jra.routes.ts': {

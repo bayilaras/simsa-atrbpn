@@ -10,13 +10,20 @@ export const IMPORT_ROW_STATUS_LABELS = {
 
 const REVIEW_STATUSES = new Set(['locked', 'invalid'])
 
+/** The SIMSA data a source column maps to; a column the server recognises but does not store says so. */
+export function importMappingLabel(item) {
+    return item.stored === false ? `${item.label} (tidak disimpan)` : item.label
+}
+
 /**
  * Rows that need action: rejected rows, rows whose letter could not be updated,
- * rows repeating an earlier source row, and rows matching a deleted letter. A
- * letter already recorded (with nothing to change) needs none.
+ * rows repeating an earlier source row, rows matching a deleted letter, and
+ * rows stored with a note (a recorded letter has their number under another
+ * sender). A letter already recorded (with nothing to change) needs none.
  */
 export function importRowsNeedingReview(rows) {
-    return rows.filter(row => REVIEW_STATUSES.has(row.status) || (row.status === 'duplicate' && row.duplicate !== 'recorded'))
+    return rows.filter(row => REVIEW_STATUSES.has(row.status) || (row.status === 'duplicate' && row.duplicate !== 'recorded')
+        || (row.status === 'imported' && Boolean(row.reason)))
 }
 
 const DUPLICATE_LINES = [
@@ -24,6 +31,17 @@ const DUPLICATE_LINES = [
     ['source', count => `${count} baris ganda di sumber (dilewati)`],
     ['deleted', count => `${count} baris cocok dengan surat yang sudah dihapus (tidak dibuat ulang)`],
 ]
+
+const PREVIEW_DUPLICATE_LINES = [
+    ['recorded', count => `${count} baris sudah tercatat di SIMSA pada unit ini dan akan dilewati, atau diperbarui bila Sinkronkan dipilih dan sumbernya berubah.`],
+    ['source', count => `${count} baris ganda di sumber akan dilewati.`],
+    ['deleted', count => `${count} baris cocok dengan surat yang sudah dihapus dan tidak akan dibuat ulang.`],
+]
+
+/** Preview: the rows the import will skip as duplicates, by kind; an older server counts none. */
+export function previewDuplicateLines(duplicates) {
+    return PREVIEW_DUPLICATE_LINES.filter(([kind]) => duplicates?.[kind] > 0).map(([kind, line]) => line(duplicates[kind]))
+}
 
 /** Duplicate counts by kind; a server without per-row outcomes keeps the single earlier line. */
 function duplicateLines(result) {

@@ -45,7 +45,8 @@ describe('CSV date fidelity and mutation-free preview', () => {
             const result = await migrationService[method](csv(header, number, date), 'unit-a', actor);
             expect(result).toMatchObject({ success: false, imported: 0, skipped: 1 });
             expect(result.rows).toEqual([expect.objectContaining({ row: 2, status: 'invalid', sourceDate: date })]);
-            expect(result.errors[0]).toContain(date || '(kosong)');
+            expect(result.errors[0]).toContain(date || 'Tanggal wajib diisi.');
+            expect(result.errors[0]).toMatch(/^Baris 2: /);
         }
         expect(mocks[create]).not.toHaveBeenCalled();
         expect(mocks.chain.select).not.toHaveBeenCalled();
@@ -76,6 +77,26 @@ describe('CSV date fidelity and mutation-free preview', () => {
         expect(result).toMatchObject({ imported: 0, valid: 1, duplicates: 1, skipped: 1, success: false });
         expect(result.rows.map(row => [row.row, row.status])).toEqual([[2, 'valid'], [3, 'duplicate'], [4, 'invalid']]);
         expect(mocks.masuk).not.toHaveBeenCalled();
+    });
+
+    it('tells numbered incoming letters apart by their sender, inside the file and in the lookup', async () => {
+        const result = await migrationService.importSuratMasuk([
+            'Nomor Surat,Tanggal Surat,Perihal,Dari',
+            'SM-1,2026-09-11,Permohonan A,Instansi A',
+            'SM-1,2026-09-12,Permohonan B,Instansi B',
+            'SM-1,2026-09-13,Permohonan A lagi,INSTANSI  A',
+        ].join('\n'), 'unit-a', actor, { dryRun: true });
+        expect(result.rows.map(row => row.status)).toEqual(['valid', 'valid', 'duplicate']);
+        expect(mocks.existing.mock.calls[0][0].map((key: { pengirim?: string }) => key.pengirim)).toEqual(['instansi a', 'instansi b', 'instansi a']);
+    });
+
+    it.each([true, false])('counts a numbered row without a sender as a repeat of the earlier row of its number (dry run %s)', async dryRun => {
+        const result = await migrationService.importSuratMasuk(['Nomor Surat,Tanggal Surat,Perihal,Dari',
+            'SM-1,2026-09-11,Permohonan A,Instansi A', 'SM-1,2026-09-12,Tanpa pengirim,', 'SM-1,2026-09-13,Permohonan B,Instansi B',
+        ].join('\n'), 'unit-a', actor, { dryRun });
+        const ok = dryRun ? 'valid' : 'imported';
+        expect(result.rows.map(row => row.status)).toEqual([ok, 'duplicate', ok]);
+        expect(mocks.masuk).toHaveBeenCalledTimes(dryRun ? 0 : 2);
     });
 
     it.each(['', '-'])('imports an unnumbered outgoing letter (%s) through automatic numbering', async number => {
@@ -179,6 +200,45 @@ describe('CSV date fidelity and mutation-free preview', () => {
     });
 });
 
+describe('archive CSV saved by Excel with other regional settings', () => {
+    beforeEach(() => { vi.clearAllMocks(); mocks.queue.length = 0; mocks.arsip.mockResolvedValue({ id: 'c' }); });
+    const created = () => mocks.arsip.mock.calls.map(([record]) => [record.nomorBerkas, record.tanggalArsip, record.uraianBerkas, record.jenisArsip]);
+
+    it.each([['titik koma', ';'], ['tab', '\t'], ['koma', ',']])('reads the columns separated by %s, taken from the header line', async (_name, delimiter) => {
+        const source = [['Nomor Berkas', 'Tanggal', 'Uraian', 'Jenis Arsip'].join(delimiter),
+            // Commas in the description outnumber the separators of the data rows.
+            ['AR-1', '03/11/2026', delimiter === ',' ? '"Warkah tanah, sertipikat, peta, dan surat ukur"' : 'Warkah tanah, sertipikat, peta, dan surat ukur', 'keluar'].join(delimiter),
+            ['AR-2', '4 November 2026', 'Buku tanah', 'masuk'].join(delimiter)].join('\r\n');
+        const result = await migrationService.importArsip(source, 'unit-a', actor);
+        expect(result).toMatchObject({ success: true, imported: 2, skipped: 0, errors: [] });
+        expect(created()).toEqual([
+            ['AR-1', '2026-11-03', 'Warkah tanah, sertipikat, peta, dan surat ukur', 'keluar'],
+            ['AR-2', '2026-11-04', 'Buku tanah', 'masuk']]);
+    });
+
+    it('names the missing columns and the separator instead of rejecting every row for its date', async () => {
+        const result = await migrationService.importArsip('Nomor Berkas;Tgl;Keterangan\nAR-1;03/11/2026;Arsip lama', 'unit-a', actor, { dryRun: true });
+        expect(result).toMatchObject({ success: false, valid: 0, skipped: 0, rows: [] });
+        expect(result.errors).toEqual(['Kolom wajib tidak ditemukan di baris judul: Tanggal atau Tanggal Arsip; Uraian, Uraian Berkas, Deskripsi, atau Perihal. '
+            + 'Pemisah kolom yang terbaca: titik koma (;). Periksa judul kolom pada baris pertama CSV.']);
+        expect(mocks.chain.select).not.toHaveBeenCalled();
+        expect(mocks.arsip).not.toHaveBeenCalled();
+    });
+
+    it('reads dates like the surat imports, day first, and rejects each unreadable date in its own row', async () => {
+        const source = ['Nomor Berkas;Tanggal;Uraian', 'AR-1;03/11/26;Satu', 'AR-2;11/25/2026;Dua', 'AR-3;3-11-2026;Tiga', 'AR-4;-;Empat'].join('\n');
+        const result = await migrationService.importArsip(source, 'unit-a', actor, { dryRun: true });
+        expect(result).toMatchObject({ success: false, valid: 2, skipped: 2 });
+        expect(result.rows.map(row => [row.row, row.status, row.normalizedDate])).toEqual([
+            [2, 'valid', '2026-11-03'], [3, 'invalid', undefined], [4, 'valid', '2026-11-03'], [5, 'invalid', undefined]]);
+        expect(result.errors).toEqual([
+            'Baris 3: Tanggal "11/25/2026" tampaknya ditulis dengan bulan lebih dulu, sehingga tidak dipakai. '
+                + 'Tulis dengan urutan hari, bulan, tahun, misalnya 03/11/2026, 3-11-2026, 3.11.2026, atau 3 November 2026; penulisan 2026-11-03 juga diterima.',
+            'Baris 5: Tanggal wajib diisi.']);
+        expect(mocks.arsip).not.toHaveBeenCalled();
+    });
+});
+
 describe('class ceiling of a CSV surat masuk row', () => {
     const rejected = 'Klasifikasi keamanan melebihi kewenangan pengguna. Kelas Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin.';
     const source = ['Nomor Surat,Tanggal Surat,Perihal,Dari,Sifat Surat', 'SM-1,2026-09-11,Biasa,Unit A,Biasa',
@@ -192,7 +252,7 @@ describe('class ceiling of a CSV surat masuk row', () => {
         expect(result).toMatchObject({ success: false, skipped: 2, valid: 3, imported: dryRun ? 0 : 3, duplicates: 0 });
         expect(result.rows.map(row => [row.row, row.status, row.message])).toEqual([
             [2, ok, undefined], [3, 'invalid', rejected], [4, 'invalid', rejected], [5, ok, undefined], [6, ok, undefined]]);
-        expect(result.errors).toEqual([`Row 3: ${rejected}`, `Row 4: ${rejected}`]);
+        expect(result.errors).toEqual([`Baris 3: ${rejected}`, `Baris 4: ${rejected}`]);
         // Rejected rows are never looked up or written.
         expect(mocks.existing.mock.calls.flat(2).map((key: any) => key.nomorSurat)).toEqual(['SM-1', 'SM-4', 'SM-5']);
         expect(mocks.masuk.mock.calls.map(([record]) => record.sifatSurat)).toEqual(dryRun ? [] : ['Biasa', 'Terbatas', 'Biasa']);

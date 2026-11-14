@@ -10,10 +10,11 @@ import { ValidationError } from '../utils/errors.js';
 import { publicErrorResponse } from '../utils/public-error.js';
 import { currentRequestId } from '../utils/request-context.js';
 import { createLogger } from '../utils/logger.js';
-import { DuplicateSuratImportError, type SuratImportIdentityKey } from './surat-import-identity.js';
+import { DuplicateSuratImportError, sameImportIdentity, type SuratImportIdentityKey } from './surat-import-identity.js';
 import { assertImportResumable, importPrefixHash, type ImportResume } from './import-resume.js';
 import { normalizeSifatSurat, sifatSuratMasukSumber } from './sifat-surat.js';
 import { assertImportedKelasSuratMasuk, assertSifatSuratMasukDapatDisimpan, type ImportAuditContext } from './import-plafon-kelas.js';
+import { parseImportDate } from './import-tanggal.js';
 
 const log = createLogger('MigrationService');
 
@@ -58,6 +59,42 @@ type PreparedImport = {
 );
 type PreparedRecord = { diagnostic: ImportRowResult } & ({ item: PreparedImport } | { error: unknown });
 const IMPORT_ROW_LIMIT = 1_000;
+const MAX_RECORD_SIZE = 64 * 1024;
+
+/** The column titles an import reads exactly; a row is read by these titles only. */
+interface CsvColumns {
+    /** Titles of the date column; the first one filled in a row is used. */
+    date: string[];
+    /** Every other column no row can be imported without, each as its accepted titles. */
+    required: string[][];
+}
+
+type CsvDelimiter = ',' | ';' | '\t';
+const CSV_DELIMITERS: readonly CsvDelimiter[] = [',', ';', '\t'];
+const DELIMITER_NAMES: Record<CsvDelimiter, string> = { ',': 'koma (,)', ';': 'titik koma (;)', '\t': 'tab' };
+
+/**
+ * The separator of the header line. Excel writes CSV with the list separator
+ * of the regional settings, which is ";" in Indonesia. The separator used
+ * most outside quotes in the header line wins and a tie keeps ","; commas in
+ * the descriptions below never outvote it.
+ */
+function headerDelimiter(text: string): CsvDelimiter {
+    const counts = new Map<string, number>(CSV_DELIMITERS.map(delimiter => [delimiter, 0]));
+    let quoted = false;
+    for (let i = 0; i < text.length && i < MAX_RECORD_SIZE; i++) {
+        const char = text[i];
+        if (char === '"') quoted = !quoted;
+        else if (!quoted && (char === '\n' || char === '\r')) break;
+        else if (!quoted && counts.has(char)) counts.set(char, counts.get(char)! + 1);
+    }
+    return CSV_DELIMITERS.reduce((best, delimiter) => counts.get(delimiter)! > counts.get(best)! ? delimiter : best);
+}
+
+/** "A atau B", "A, B, atau C". */
+function alternatives(titles: string[]): string {
+    return titles.length < 3 ? titles.join(' atau ') : `${titles.slice(0, -1).join(', ')}, atau ${titles.at(-1)}`;
+}
 
 function csvHeaders(headers: string[]): string[] {
     const seen = new Set<string>();
@@ -70,35 +107,28 @@ function csvHeaders(headers: string[]): string[] {
     return headers;
 }
 
-/** Validate the source calendar date without timezone conversion or rollover. */
-function parseSourceDate(source: string): string {
-    const value = source.trim();
-    const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-    const local = /^(\d{2})\/(\d{2})\/(\d{4})(?: ([01]\d|2[0-3]):([0-5]\d):([0-5]\d))?$/.exec(value);
-    const year = Number(iso?.[1] ?? local?.[3]);
-    const month = Number(iso?.[2] ?? local?.[2]);
-    const day = Number(iso?.[3] ?? local?.[1]);
-    const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-    const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    if ((!iso && !local) || year < 1 || month < 1 || month > 12 || day < 1 || day > days[month - 1]) {
-        throw new ValidationError('Tanggal sumber "' + (source || '(kosong)') + '" tidak valid. Gunakan YYYY-MM-DD atau DD/MM/YYYY dengan tanggal kalender yang benar; tanggal tidak diganti otomatis.');
-    }
-    return [String(year).padStart(4, '0'), String(month).padStart(2, '0'), String(day).padStart(2, '0')].join('-');
+/** The calendar date of a row, read like the surat imports read it (see import-tanggal). */
+function sourceDate(value: string): string {
+    const date = parseImportDate(value);
+    if (!date) throw new ValidationError('Tanggal wajib diisi.');
+    return date;
 }
 
 async function runImport(
     csvContent: string,
-    dateFields: string[],
+    columns: CsvColumns,
     prepare: (row: CsvRow, date: string, year: number, position: number) => PreparedImport,
     options: ImportOptions,
     existingSurat?: (keys: SuratImportIdentityKey[]) => Promise<boolean[]>,
 ): Promise<ImportResult> {
     const result: ImportResult = { success: true, imported: 0, skipped: 0, duplicates: 0, errors: [], dryRun: options.dryRun === true, valid: 0, rows: [] };
+    const delimiter = headerDelimiter(csvContent);
+    let headers: string[] = [];
     let records: CsvRow[];
     try {
         records = parse(csvContent, {
-            columns: csvHeaders, bom: true, skip_empty_lines: true, trim: true,
-            relax_column_count: true, max_record_size: 64 * 1024, to: IMPORT_ROW_LIMIT + 1,
+            columns: (titles: string[]) => (headers = csvHeaders(titles)), delimiter, bom: true, skip_empty_lines: true, trim: true,
+            relax_column_count: true, max_record_size: MAX_RECORD_SIZE, to: IMPORT_ROW_LIMIT + 1,
         }) as CsvRow[];
         if (records.length > IMPORT_ROW_LIMIT) {
             throw new ValidationError('Maksimal 1.000 rekod per impor. Pecah CSV menjadi beberapa berkas dan pratinjau masing-masing.');
@@ -106,7 +136,18 @@ async function runImport(
     } catch (error) {
         const failure = publicErrorResponse(error, currentRequestId());
         log.warn({ event: 'csv_import_parse_rejected', publicCode: failure.code }, 'CSV import rejected');
-        result.errors.push('Parse error: ' + (error instanceof ValidationError ? failure.message : 'CSV tidak dapat dibaca. Periksa format dan panjang baris.'));
+        result.errors.push(error instanceof ValidationError ? failure.message
+            : `CSV tidak dapat dibaca dengan pemisah ${DELIMITER_NAMES[delimiter]}. Periksa format dan panjang baris.`);
+        result.success = false;
+        return result;
+    }
+    // Without a required column every row would fail on its first missing
+    // value; name the columns instead, with the separator the header was read with.
+    const missing = [columns.date, ...columns.required].filter(titles => !titles.some(title => headers.includes(title)));
+    if (missing.length) {
+        log.warn({ event: 'csv_import_columns_missing', missing: missing.length }, 'CSV import rejected');
+        result.errors.push(`Kolom wajib tidak ditemukan di baris judul: ${missing.map(alternatives).join('; ')}. `
+            + `Pemisah kolom yang terbaca: ${DELIMITER_NAMES[delimiter]}. Periksa judul kolom pada baris pertama CSV.`);
         result.success = false;
         return result;
     }
@@ -115,10 +156,10 @@ async function runImport(
     if (resume) assertImportResumable(records, resume);
     const prepared = records.slice(start).map((row, offset): PreparedRecord => {
         const index = start + offset;
-        const sourceDate = dateFields.map(field => row[field]).find(value => value?.trim()) ?? '';
-        const diagnostic: ImportRowResult = { row: index + 2, status: 'invalid', sourceDate };
+        const sourceValue = columns.date.map(field => row[field]).find(value => value?.trim()) ?? '';
+        const diagnostic: ImportRowResult = { row: index + 2, status: 'invalid', sourceDate: sourceValue };
         try {
-            const date = parseSourceDate(sourceDate);
+            const date = sourceDate(sourceValue);
             diagnostic.normalizedDate = date;
             return { diagnostic, item: prepare(row, date, Number(date.slice(0, 4)), index + 1) };
         } catch (error) { return { diagnostic, error }; }
@@ -128,6 +169,8 @@ async function runImport(
     const found = keyed.length && existingSurat ? await existingSurat(keyed.map(({ key }) => key)) : [];
     const recorded = new Set(keyed.flatMap(({ entry }, index) => found[index] ? [entry] : []));
     const seen = new Set<string>();
+    // Surat rows accepted so far, compared as the canonical create compares them (a missing sender included).
+    const seenKeys: SuratImportIdentityKey[] = [];
     for (const [offset, entry] of prepared.entries()) {
         // Every part handles at least one record, so a continuation always advances.
         if (resume && offset > 0 && Date.now() >= resume.deadlineAt) { result.nextRow = start + offset; break; }
@@ -136,7 +179,7 @@ async function runImport(
         try {
             if ('error' in entry) throw entry.error;
             const { item } = entry;
-            if (seen.has(item.identity) || recorded.has(entry) || ('exists' in item && (await item.exists()).length > 0)) {
+            if (seen.has(item.identity) || ('key' in item && seenKeys.some(key => sameImportIdentity(key, item.key))) || recorded.has(entry) || ('exists' in item && (await item.exists()).length > 0)) {
                 diagnostic.status = 'duplicate';
                 diagnostic.message = 'Rekod dengan identitas yang sama sudah ada pada unit/tahun ini atau di berkas CSV.';
                 result.duplicates++;
@@ -162,13 +205,14 @@ async function runImport(
                 result.imported++;
             }
             seen.add(item.identity);
+            if ('key' in item) seenKeys.push(item.key);
             diagnostic.status = result.dryRun ? 'valid' : 'imported';
         } catch (error) {
             const failure = publicErrorResponse(error, currentRequestId());
             log.warn({ event: 'csv_import_row_rejected', row: diagnostic.row, publicCode: failure.code }, 'Import row rejected');
             const message = failure.message;
             diagnostic.message = message;
-            result.errors.push('Row ' + diagnostic.row + ': ' + message);
+            result.errors.push('Baris ' + diagnostic.row + ': ' + message);
             result.skipped++;
         }
     }
@@ -181,9 +225,13 @@ async function runImport(
     return result;
 }
 
+const SURAT_COLUMNS: CsvColumns = { date: ['Tanggal Surat'], required: [['Perihal']] };
+const URAIAN_TITLES = ['Uraian', 'Uraian Berkas', 'Deskripsi', 'Perihal'];
+const ARSIP_COLUMNS: CsvColumns = { date: ['Tanggal', 'Tanggal Arsip'], required: [URAIAN_TITLES] };
+
 export const migrationService = {
     async importSuratMasuk(csvContent: string, unitKerjaId: string, auditContext: ImportAuditContext, options: ImportOptions = {}): Promise<ImportResult> {
-        return runImport(csvContent, ['Tanggal Surat'], (row, date, year, position) => {
+        return runImport(csvContent, SURAT_COLUMNS, (row, date, year, position) => {
             const sifatSurat = sifatSuratMasukSumber(row['Sifat Surat']);
             // A class above the importer's ceiling, or a sifat that names no
             // class, makes the row invalid, in a dry run too. This path has no
@@ -196,7 +244,6 @@ export const migrationService = {
             if (!perihal) throw new ValidationError('Perihal wajib diisi.');
             const numbered = Boolean(nomorSurat && nomorSurat !== '-');
             if (!numbered && !dari) throw new ValidationError('Nomor surat kosong memerlukan tanggal, perihal, dan pengirim untuk identitas impor yang stabil.');
-            const identity = numbered ? [unitKerjaId, year, nomorSurat] : [unitKerjaId, date, perihal, dari];
             const record = {
                 unitKerjaId, noUrut: parseInt(row['No'] || '0') || position, tahun: year,
                 jenisSurat: row['Jenis Surat'] || 'Surat Dinas', sifatSurat,
@@ -204,16 +251,19 @@ export const migrationService = {
                 status: row['Status'] || 'belum_dibalas', disposisi: row['Disposisi'] ? [row['Disposisi']] : [],
                 createdBy: auditContext.userId,
             };
+            // Rows of one file are told apart as the canonical create tells them
+            // apart: a numbered letter by its number, year, and sender.
+            const key = suratMasukService.importIdentityKey(record);
             return {
-                identity: JSON.stringify(identity),
-                key: suratMasukService.importIdentityKey(record),
+                identity: JSON.stringify(key),
+                key,
                 create: () => suratMasukService.createImported(record, auditContext),
             };
         }, options, keys => suratMasukService.existingImportIdentities(keys));
     },
 
     async importSuratKeluar(csvContent: string, unitKerjaId: string, auditContext: CriticalAuditContext, options: ImportOptions = {}): Promise<ImportResult> {
-        return runImport(csvContent, ['Tanggal Surat'], (row, date, year) => {
+        return runImport(csvContent, SURAT_COLUMNS, (row, date, year) => {
             const nomorSurat = row['Nomor Surat'] || '';
             const perihal = row['Perihal'] || '';
             const kepada = row['Kepada'] || row['Tujuan'] || '';
@@ -235,8 +285,8 @@ export const migrationService = {
     },
 
     async importArsip(csvContent: string, unitKerjaId: string, auditContext: CriticalAuditContext, options: ImportOptions = {}): Promise<ImportResult> {
-        return runImport(csvContent, ['Tanggal', 'Tanggal Arsip'], (row, date, year) => {
-            const uraian = row['Uraian'] || row['Uraian Berkas'] || row['Deskripsi'] || row['Perihal'] || '';
+        return runImport(csvContent, ARSIP_COLUMNS, (row, date, year) => {
+            const uraian = URAIAN_TITLES.map(title => row[title]).find(Boolean) || '';
             if (!uraian) throw new ValidationError('Uraian berkas wajib diisi.');
             const jenisArsip = row['Jenis Arsip'] || row['Jenis'] || 'masuk';
             if (!['masuk', 'keluar'].includes(jenisArsip)) throw new ValidationError('Jenis Arsip harus masuk atau keluar.');

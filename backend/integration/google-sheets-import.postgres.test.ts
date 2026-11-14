@@ -204,11 +204,19 @@ describe('atomic Sheets import on real PostgreSQL transactions', () => {
             tanggalSurat: '2025-09-02', status: 'belum_dibalas', createdBy: userId, ...row });
         expect(await service(sheet('masuk', 'SM-lookup').replace('2026-09-12', '2025-09-02')
             + '\n18,-,2025-09-02,Laporan,Kantah sintetis').importSuratMasuk('sheet', 'Data', unit, audit)).toMatchObject({ importedRows: 2 });
-        const incomingProbes = [incoming({ nomorSurat: 'SM-lookup', perihal: 'Lain', dari: 'Lain' }),
+        // A numbered incoming letter is also told apart by its sender, read with spaces collapsed and case ignored.
+        const incomingProbes = [incoming({ nomorSurat: 'SM-lookup', perihal: 'Lain', dari: ' KANTAH  Sintetis ' }),
+            incoming({ nomorSurat: 'SM-lookup', perihal: 'Lain', dari: 'Kantah lain' }),
+            incoming({ nomorSurat: 'SM-lookup', perihal: 'Tanpa pengirim', dari: '' }),
             incoming({ nomorSurat: '-', perihal: 'Laporan', dari: 'Kantah sintetis' }),
             incoming({ nomorSurat: '-', perihal: 'Laporan', dari: 'Kantah lain' })];
-        expect(await suratMasukService.existingImportIdentities(incomingProbes.map(probe => suratMasukService.importIdentityKey(probe))))
-            .toEqual([true, true, false]);
+        const incomingFound = await suratMasukService.existingImportIdentities(incomingProbes.map(probe => suratMasukService.importIdentityKey(probe)));
+        expect(incomingFound).toEqual([true, false, true, true, false]);
+        for (const [index, probe] of incomingProbes.entries()) {
+            const outcome = await suratMasukService.createImported(probe, audit).then(() => false,
+                (error: unknown) => { if (error instanceof DuplicateSuratImportError) return true; throw error; });
+            expect([index, outcome]).toEqual([index, incomingFound[index]]);
+        }
     });
 
     it('imports a sheet in resumable parts exactly once, in sheet order, with one audit row each', async () => {

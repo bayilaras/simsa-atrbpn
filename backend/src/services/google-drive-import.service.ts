@@ -11,7 +11,7 @@ import { currentRequestId } from '../utils/request-context.js';
 import { GOOGLE_SHEETS_LIMITS, GoogleSheetsAccessError, GoogleSheetsSource, assertSheetName, assertSpreadsheetId, parseBoundedSheetCsv, parseSheetTabs, type GoogleSheetsRequestOptions, type SheetTab } from './google-sheets-source.js';
 
 import { isWebAddress, resolveSheetMapping, type GoogleSheetsImportType, type SheetColumnMapping } from './google-sheets-import-mapping.js';
-import { DuplicateSuratImportError, type SuratImportIdentityKey, type SuratImportMatch } from './surat-import-identity.js';
+import { DuplicateSuratImportError, sameImportIdentity, type SuratImportIdentityKey, type SuratImportMatch } from './surat-import-identity.js';
 import { assertImportResumable, importPrefixHash, type ImportResume } from './import-resume.js';
 import { normalizeSifatSurat, sifatSuratMasukSumber } from './sifat-surat.js';
 import { importDateProblem, parseImportDate } from './import-tanggal.js';
@@ -78,8 +78,14 @@ export interface ImportPreview {
     /** 1-based among the non-empty rows; 0 when the source is empty. */
     headerRow: number;
     mapping: SheetColumnMapping[];
-    /** Rows of the whole source the import will reject for their date, read as the import reads it. */
+    /** Rows of the whole source the import will reject for their date, read as the import reads it (kept for older clients). */
     dateIssues: ImportDateIssues;
+    /** With an importer (see ImportPreviewCheck): every row the import will reject, for any reason its own checks find. */
+    rowIssues?: ImportRowIssues;
+    /** With an importer: rows the import will skip as duplicates. */
+    duplicates?: ImportPreviewDuplicates;
+    /** With a destination unit: rows that will become a new letter although their number and year are recorded there under another sender. */
+    otherSenderRows?: number;
 }
 
 export interface ImportDateIssues {
@@ -87,6 +93,18 @@ export interface ImportDateIssues {
     /** The first PREVIEW_DATE_ISSUES of them; `row` counts data rows from 1, as the import report does. */
     rows: Array<{ row: number; value: string; reason: string }>;
 }
+
+export interface ImportRowIssues {
+    total: number;
+    /** The first PREVIEW_ROW_ISSUES of them; `row` counts data rows from 1, as the import report does. */
+    rows: Array<{ row: number; reason: string }>;
+}
+
+/** `recorded` and `deleted` are counted only when the preview named the destination unit. */
+export interface ImportPreviewDuplicates { source: number; recorded?: number; deleted?: number }
+
+/** Whose import the preview judges, and the unit it writes into (optional: without it no letter is looked up). */
+export interface ImportPreviewCheck { importer: ImportAuditContext; unitKerjaId?: string }
 
 /** A tab by gid, or by name for older clients. */
 export type SheetSelector = string | { gid: string };
@@ -123,22 +141,34 @@ const outgoing: ImportTarget<NewSuratKeluar & { numberingMode: 'manual' }> = {
 type PreparedRecord<T> = { record: T; key: SuratImportIdentityKey };
 /** null: an empty row; error: a row rejected before any write. */
 type PreparedRow<T> = PreparedRecord<T> | { error: unknown } | null;
+/** How a row of one import type becomes a record, and which records the importer may write; the import and its preview share it. */
+interface RowAdmission<T> {
+    target: ImportTarget<T>;
+    build: (row: string[], index: number) => T | null;
+    /** Throws for a row this importer may not write. */
+    admit?: (record: T) => void;
+    /** Throws for a row that may not be stored as a new letter; a matched (sinkron) row is not checked. */
+    admitInsert?: (record: T) => void;
+}
 type RowSummary = Pick<ImportRowOutcome, 'no' | 'nomorSurat' | 'tanggal' | 'perihal'>;
 /** What a source row would set on its recorded letter, and the counterpart it names. */
 type ImportSyncSource = { values: Record<string, string>; counterpart: ImportCounterpart };
 
 const REPORTED_PERIHAL_LENGTH = 200;
 const ALREADY_RECORDED = 'Sudah tercatat di SIMSA pada unit ini.';
+const OTHER_SENDER = 'Nomor dan tahun sama dengan surat yang sudah tercatat, tetapi pengirimnya berbeda; dicatat sebagai surat baru. Periksa penulisan pengirim bila surat itu sama.';
 const EMPTY_ROW = 'Nomor surat dan perihal kosong.';
 const EMPTY_DATE = 'Tanggal surat kosong.';
 const PREVIEW_DATE_ISSUES = 10;
+const PREVIEW_ROW_ISSUES = 20;
 const IDENTITY_LABELS: Record<string, string> = {
     nomor: 'Nomor surat dan tahun',
     counterpart: 'Tanggal, perihal, dan pengirim/tujuan',
     link: 'Tanggal, perihal, dan tautan dokumen',
 };
 function sameAsEarlierRow(key: SuratImportIdentityKey, row: number): string {
-    return `${IDENTITY_LABELS[key.by] ?? 'Identitas impor'} sama dengan baris data ke-${row} pada sumber ini.`;
+    const label = key.by === 'nomor' && key.pengirim ? 'Nomor surat, tahun, dan pengirim' : IDENTITY_LABELS[key.by];
+    return `${label ?? 'Identitas impor'} sama dengan baris data ke-${row} pada sumber ini.`;
 }
 
 export class GoogleDriveImportService {
@@ -219,24 +249,75 @@ export class GoogleDriveImportService {
      * Preview first N rows from a spreadsheet
      */
     async previewData(spreadsheetId: string, sheet: SheetSelector, maxRows: number = 10,
-        options: GoogleSheetsRequestOptions = {}, importType: GoogleSheetsImportType = 'surat-masuk'): Promise<ImportPreview> {
+        options: GoogleSheetsRequestOptions = {}, importType: GoogleSheetsImportType = 'surat-masuk', check?: ImportPreviewCheck): Promise<ImportPreview> {
         this.assertPreviewRows(maxRows);
         const csvText = await this.fetchSelectedSheet(spreadsheetId, sheet, options);
-        return this.previewRows(this.parseCSV(csvText), maxRows, importType);
+        return this.previewRows(this.parseCSV(csvText), maxRows, importType, check);
     }
 
     /**
      * The column mapping and first N data rows of already-parsed rows from
-     * any source, exactly as importRows will map them.
+     * any source, exactly as importRows will map them. With a check, every
+     * row is also judged as importRows would judge it for that importer (see
+     * rowChecks), without writing.
      */
-    previewRows(allRows: string[][], maxRows: number = 10, importType: GoogleSheetsImportType = 'surat-masuk'): ImportPreview {
+    async previewRows(allRows: string[][], maxRows: number = 10, importType: GoogleSheetsImportType = 'surat-masuk',
+        check?: ImportPreviewCheck): Promise<ImportPreview> {
         this.assertPreviewRows(maxRows);
         if (allRows.length === 0) return { headers: [], rows: [], totalRows: 0, importType, headerRow: 0, mapping: [], dateIssues: { total: 0, rows: [] } };
         const { headers, headerRowIndex, mapping, columnMap } = resolveSheetMapping(allRows, importType);
         const dataRows = allRows.slice(headerRowIndex + 1);
         this.assertDataRows(dataRows);
+        // Without a destination unit the records are built for none; they are only compared with each other.
+        const checks = check && await this.admission(importType, columnMap, check.unitKerjaId ?? '', check.importer,
+            admission => this.rowChecks(dataRows, admission, check.unitKerjaId !== undefined));
         return { headers, rows: dataRows.slice(0, maxRows), totalRows: dataRows.length,
-            importType, headerRow: headerRowIndex + 1, mapping, dateIssues: this.dateIssues(dataRows, columnMap) };
+            importType, headerRow: headerRowIndex + 1, mapping, dateIssues: this.dateIssues(dataRows, columnMap),
+            ...(checks ? { rowIssues: checks.issues, duplicates: checks.duplicates } : {}),
+            ...(checks?.otherSenderRows === undefined ? {} : { otherSenderRows: checks.otherSenderRows }) };
+    }
+
+    /**
+     * What importRows would do with every data row, judged by its own checks
+     * without writing: the rows it would reject and why (a date it cannot read
+     * or that is missing, values the import identity needs, a class above the
+     * importer's ceiling, a sifat that names no class), and the rows it would
+     * skip as duplicates. With `lookup`, the one advisory lookup the import makes
+     * also finds the letters already recorded in the unit. A write can still
+     * fail for a reason only the write sees; the import report shows that row.
+     * Empty rows are skipped by the import and left out here, as in dateIssues.
+     */
+    private async rowChecks<T>(dataRows: string[][], admission: RowAdmission<T>, lookup: boolean):
+        Promise<{ issues: ImportRowIssues; duplicates: ImportPreviewDuplicates; otherSenderRows?: number }> {
+        const { prepared, firstRowOf } = this.prepareRows(dataRows, admission);
+        const keyed = prepared.flatMap(item => item && 'key' in item ? [item] : []);
+        const matches = lookup && keyed.length ? await admission.target.importMatches(keyed.map(item => item.key)) : [];
+        const matchOf = new Map(keyed.map((item, index) => [item, matches[index] ?? []]));
+        const issues: ImportRowIssues = { total: 0, rows: [] };
+        const duplicates: Required<ImportPreviewDuplicates> = { source: 0, recorded: 0, deleted: 0 };
+        const reject = (index: number, error: unknown) => {
+            issues.total++;
+            if (issues.rows.length < PREVIEW_ROW_ISSUES) issues.rows.push({ row: index + 1, reason: this.rowFailure(error, index + 1, false).message });
+        };
+        const otherSender = lookup ? await this.otherSenderRows(admission.target, keyed, matchOf) : new Set();
+        let otherSenderRows = 0;
+        // The identities rows of this source would create, which the canonical create would then find.
+        const created: SuratImportIdentityKey[] = [];
+        prepared.forEach((item, index) => {
+            if (!item) return;
+            if ('error' in item) { reject(index, item.error); return; }
+            const letters = matchOf.get(item) ?? [];
+            if (letters.length) {
+                const first = firstRowOf.get(JSON.stringify(item.key));
+                duplicates[first !== undefined && first < index ? 'source' : letters.every(letter => letter.isDeleted) ? 'deleted' : 'recorded']++;
+                return;
+            }
+            try { admission.admitInsert?.(item.record); } catch (error) { reject(index, error); return; }
+            if (created.some(key => sameImportIdentity(key, item.key))) { duplicates.source++; return; }
+            created.push(item.key);
+            if (otherSender.has(item)) otherSenderRows++;
+        });
+        return lookup ? { issues, duplicates, otherSenderRows } : { issues, duplicates: { source: duplicates.source } };
     }
 
     /** The rows whose date the import will not accept; rows it skips as empty are left out. */
@@ -334,18 +415,25 @@ export class GoogleDriveImportService {
             };
         };
         const write = { unitKerjaId, auditContext, options, resume, sync };
+        const rowSync = type === 'surat-masuk'
+            ? (row: string[]) => syncSource(row, ['perihal', 'tanggalSurat', 'jenisSurat'], { field: 'dari', label: 'Pengirim' })
+            : (row: string[]) => syncSource(row, ['perihal', 'tanggalSurat', 'sifatSurat', 'linkDokumen', 'naskahDinas'], { field: 'kepada', label: 'Tujuan' });
 
+        return this.admission(type, colMap, unitKerjaId, auditContext,
+            admission => this.importRecords(dataRows, admission, write, { summary, syncSource: rowSync }));
+    }
+
+    /** How rows of this type are read and admitted, for the import and its preview alike. */
+    private admission<R>(type: GoogleSheetsImportType, colMap: Record<string, number>, unitKerjaId: string,
+        auditContext: ImportAuditContext, use: <T>(admission: RowAdmission<T>) => R): R {
         return type === 'surat-masuk'
-            ? this.importRecords(dataRows, incoming, write, {
-                summary, build: (row, i) => this.incomingRecord(row, i, colMap, unitKerjaId, auditContext),
+            ? use<NewSuratMasuk>({
+                target: incoming, build: (row, i) => this.incomingRecord(row, i, colMap, unitKerjaId, auditContext),
                 admit: record => assertImportedKelasSuratMasuk(auditContext, record.sifatSurat),
                 // Sinkron never writes the sifat, so only a row that would be stored must name a class.
-                admitInsert: record => assertSifatSuratMasukDapatDisimpan(record.sifatSurat),
-                syncSource: row => syncSource(row, ['perihal', 'tanggalSurat', 'jenisSurat'], { field: 'dari', label: 'Pengirim' }) })
-            : this.importRecords(dataRows, outgoing, write, {
-                summary, build: (row, i) => this.outgoingRecord(row, i, colMap, unitKerjaId, auditContext),
-                syncSource: row => syncSource(row, ['perihal', 'tanggalSurat', 'sifatSurat', 'linkDokumen', 'naskahDinas'],
-                    { field: 'kepada', label: 'Tujuan' }) });
+                admitInsert: record => assertSifatSuratMasukDapatDisimpan(record.sifatSurat) })
+            : use<NewSuratKeluar & { numberingMode: 'manual' }>({
+                target: outgoing, build: (row, i) => this.outgoingRecord(row, i, colMap, unitKerjaId, auditContext) });
     }
 
     private incomingRecord(row: string[], i: number, colMap: Record<string, number>, unitKerjaId: string,
@@ -397,7 +485,8 @@ export class GoogleDriveImportService {
         const kepada = this.getField(row, colMap, 'kepada');
         const effectiveTahun = parsedDate ? Number(parsedDate.slice(0, 4)) : new Date().getFullYear();
 
-        const klasifikasiJenis = this.getField(row, colMap, 'klasifikasiJenis');
+        // Registers write the type in any letter case ("Fasilitatif", "SUBSTANTIF").
+        const klasifikasiJenis = this.getField(row, colMap, 'klasifikasiJenis').toLowerCase();
         const klasifikasiKode = this.getField(row, colMap, 'klasifikasiKode');
         const klasifikasiArsip = this.getField(row, colMap, 'klasifikasiArsip');
         const link = this.getField(row, colMap, 'linkDokumen');
@@ -424,6 +513,53 @@ export class GoogleDriveImportService {
     }
 
     /**
+     * The rows that will become a new letter although a letter with their
+     * number and year is recorded in the unit under another sender: after a
+     * sender was corrected in the source, that is the same letter twice. One
+     * more lookup, only for numbered rows that name a sender and matched
+     * nothing; like the first, it never sees a row the importer may not write.
+     */
+    private async otherSenderRows<T>(target: ImportTarget<T>, items: PreparedRecord<T>[],
+        matchOf: Map<PreparedRecord<T>, SuratImportMatch[]>): Promise<Set<PreparedRecord<T>>> {
+        const candidates = items.filter(item => item.key.by === 'nomor' && item.key.pengirim && !matchOf.get(item)?.length);
+        if (!candidates.length) return new Set();
+        const found = await target.importMatches(candidates.map(({ key }) => {
+            const { pengirim: _pengirim, ...numbered } = key as Extract<SuratImportIdentityKey, { by: 'nomor' }>;
+            return numbered;
+        }));
+        return new Set(candidates.filter((_item, index) => found[index]?.some(letter => !letter.isDeleted)));
+    }
+
+    /**
+     * Every data row as the import reads and admits it, before any lookup or
+     * write: null for an empty row, an error for a row rejected before any
+     * write, otherwise the record and its import identity. firstRowOf gives
+     * the first row of each identity, earlier parts included, so a row
+     * repeating an identity can name the row it repeats. A row the importer
+     * may not write is invalid like an unreadable one: it is never looked up,
+     * synced, or counted as an earlier row, and it writes nothing.
+     */
+    private prepareRows<T>(dataRows: string[][], { target, build, admit }: RowAdmission<T>) {
+        const built = dataRows.map((row, i): { record: T | null } | { error: unknown } => {
+            try { return { record: build(row, i) }; } catch (error) { return { error }; }
+        });
+        const prepared = built.map((item): PreparedRow<T> => {
+            if ('error' in item) return item;
+            if (!item.record) return null;
+            try {
+                admit?.(item.record);
+                return { record: item.record, key: target.importIdentityKey(item.record) };
+            } catch (error) { return { error }; }
+        });
+        const firstRowOf = new Map<string, number>();
+        prepared.forEach((item, index) => {
+            const identity = item && 'key' in item ? JSON.stringify(item.key) : undefined;
+            if (identity !== undefined && !firstRowOf.has(identity)) firstRowOf.set(identity, index);
+        });
+        return { built, prepared, firstRowOf };
+    }
+
+    /**
      * Import prepared rows in sheet order. One advisory lookup finds rows that
      * are already recorded; every other row goes through canonical creation,
      * which owns numbering, the authoritative duplicate check, audit
@@ -441,47 +577,24 @@ export class GoogleDriveImportService {
      */
     private async importRecords<T>(
         dataRows: string[][],
-        target: ImportTarget<T>,
+        admission: RowAdmission<T>,
         { unitKerjaId, auditContext, options, resume, sync }: {
             unitKerjaId: string; auditContext: CriticalAuditContext; options: GoogleSheetsRequestOptions;
             resume: ImportResume | undefined; sync: ImportSync | undefined;
         },
-        { summary, build, admit, admitInsert, syncSource }: {
+        { summary, syncSource }: {
             summary: (row: string[]) => RowSummary;
-            build: (row: string[], index: number) => T | null;
-            /** Throws for a row this importer may not write; checked after the resume digest. */
-            admit?: (record: T) => void;
-            /** Throws for a row that may not be stored as a new letter; a matched (sinkron) row is not checked. */
-            admitInsert?: (record: T) => void;
             syncSource: (row: string[]) => ImportSyncSource;
         },
     ): Promise<ImportResult> {
+        const { target, admitInsert } = admission;
+        const { built, prepared, firstRowOf } = this.prepareRows(dataRows, admission);
         // Every row as this import reads it. The resume digest covers exactly
         // these values, so a column the import never reads (a formula, a source
         // ID or status note) cannot block resuming.
-        const built = dataRows.map((row, i): { record: T | null } | { error: unknown } => {
-            try { return { record: build(row, i) }; } catch (error) { return { error }; }
-        });
         const readRows = built.map(item => 'error' in item ? { unreadable: true } : item.record);
         const start = resume?.startRow ?? 0;
         if (resume) assertImportResumable(readRows, resume);
-        // Identities of every row, earlier parts included, so a row repeating
-        // an identity can name the row it repeats. A row the importer may not
-        // write is invalid like an unreadable one: it is never looked up,
-        // synced, or counted as an earlier row, and it writes nothing.
-        const prepared = built.map((item): PreparedRow<T> => {
-            if ('error' in item) return item;
-            if (!item.record) return null;
-            try {
-                admit?.(item.record);
-                return { record: item.record, key: target.importIdentityKey(item.record) };
-            } catch (error) { return { error }; }
-        });
-        const firstRowOf = new Map<string, number>();
-        prepared.forEach((item, index) => {
-            const identity = item && 'key' in item ? JSON.stringify(item.key) : undefined;
-            if (identity !== undefined && !firstRowOf.has(identity)) firstRowOf.set(identity, index);
-        });
         const recorded = prepared.slice(start).flatMap(item => item && 'key' in item ? [item] : []);
         // One lookup for the whole part: the letters each identity matches,
         // deleted ones included, so a duplicate can say which kind it is.
@@ -505,8 +618,13 @@ export class GoogleDriveImportService {
             if (first !== undefined) return { duplicate: 'source', reason: sameAsEarlierRow(item.key, first + 1) };
             const letters = matchOf.get(item) ?? [];
             if (letters.length && letters.every(letter => letter.isDeleted)) return { duplicate: 'deleted', reason: SYNC_REASONS.deleted };
+            // Nothing was recorded before this import, so the letter the canonical create found came from an
+            // earlier row: one the database reads as the same letter, such as a row without a sender.
+            const same = letters.length ? -1 : prepared.findIndex((other, index) => index < i && other !== null && 'key' in other && sameImportIdentity(other.key, item.key));
+            if (same >= 0) return { duplicate: 'source', reason: sameAsEarlierRow(item.key, same + 1) };
             return { duplicate: 'recorded', reason: ALREADY_RECORDED };
         };
+        const otherSender = await this.otherSenderRows(target, recorded, matchOf);
         let importedRows = 0;
         let skippedRows = 0;
         let duplicateRows = 0;
@@ -548,7 +666,7 @@ export class GoogleDriveImportService {
                 admitInsert?.(item.record);
                 await target.createImported(item.record, auditContext, options);
                 importedRows++;
-                report(i, 'imported');
+                report(i, 'imported', otherSender.has(item) ? { reason: OTHER_SENDER } : {});
             } catch (error) {
                 if (error instanceof DuplicateSuratImportError) {
                     duplicateRows++; report(i, 'duplicate', duplicateOf(item as PreparedRecord<T>, i)); continue;
