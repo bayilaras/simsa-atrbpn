@@ -223,6 +223,12 @@ export const querySuratMasukSchema = paginationSchema.extend({
     urutan: z.enum(URUTAN_DAFTAR_SURAT).optional(),
 });
 
+/** Daftar Surat Terhapus (Super Admin). */
+export const querySuratTerhapusSchema = paginationSchema.extend({
+    unitKerjaId: z.string().trim().min(1).max(50).optional(),
+    search: z.string().max(255).optional(),
+});
+
 // Surat Keluar schemas
 // Fields must match database schema in db/schema/surat-keluar.ts.
 const suratKeluarBaseSchema = z.object({

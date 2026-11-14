@@ -24,6 +24,7 @@ import { logger } from './utils/logger';
 // Import routes
 import suratMasukRoutes from './routes/surat-masuk.routes';
 import suratKeluarRoutes from './routes/surat-keluar.routes';
+import suratTerhapusRoutes from './routes/surat-terhapus.routes';
 import arsipRoutes from './routes/arsip.routes';
 import uploadRoutes from './routes/upload.routes';
 import unitKerjaRoutes from './routes/unit-kerja.routes';
@@ -344,6 +345,7 @@ app.use('/api', generalLimiter);
 // API Routes
 app.use('/api/surat-masuk', suratMasukRoutes);
 app.use('/api/surat-keluar', suratKeluarRoutes);
+app.use('/api/surat-terhapus', suratTerhapusRoutes); // Super Admin: daftar surat terhapus dan pemulihannya
 app.use('/api/arsip', arsipRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/unit-kerja', unitKerjaRoutes);

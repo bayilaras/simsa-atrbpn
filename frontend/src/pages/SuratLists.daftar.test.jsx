@@ -18,6 +18,9 @@ vi.mock('@/services/surat-masuk.service', () => ({ default: mocks.masuk, suratMa
 vi.mock('@/services/surat-keluar.service', () => ({ default: mocks.keluar, suratKeluarService: mocks.keluar }))
 vi.mock('@/services/settings.service', () => ({ default: { getAllUnitKerja: mocks.units } }))
 vi.mock('@/components/ExportButton', () => ({ ExportButton: () => null }))
+vi.mock('@/components/surat/DaftarSuratTerhapus', () => ({
+    DaftarSuratTerhapus: ({ jenis, unitKerjaId }) => <div data-testid="surat-terhapus">{`${jenis}|${unitKerjaId ?? 'semua'}`}</div>,
+}))
 vi.mock('@/components/ui/select', async () => {
     const { Children } = await import('react')
     return {
@@ -114,5 +117,24 @@ describe.each(daftar)('kolom Unit Kerja pada daftar surat $jenis', ({ Component,
         tampil(Component)
         await screen.findByText('Perihal uji daftar')
         expect(screen.queryByRole('columnheader', { name: 'Unit Kerja' })).not.toBeInTheDocument()
+    })
+})
+
+describe.each(daftar)('tab Surat Terhapus pada daftar surat $jenis', ({ Component, jenis }) => {
+    it('Super Admin dapat beralih ke Surat Terhapus dan kembali ke daftar', async () => {
+        tampil(Component)
+        await screen.findByText('Perihal uji daftar')
+        expect(screen.queryByTestId('surat-terhapus')).not.toBeInTheDocument()
+        fireEvent.mouseDown(screen.getByRole('tab', { name: 'Surat Terhapus' }), { button: 0, ctrlKey: false })
+        expect(await screen.findByTestId('surat-terhapus')).toHaveTextContent(`${jenis}|semua`)
+        fireEvent.mouseDown(screen.getByRole('tab', { name: 'Daftar Surat' }), { button: 0, ctrlKey: false })
+        await waitFor(() => expect(screen.queryByTestId('surat-terhapus')).not.toBeInTheDocument())
+    })
+
+    it('peran lain tidak melihat tab Surat Terhapus', async () => {
+        mocks.user = { id: 'admin-ses', role: 'admin_unit', unitKerjaId: 'sesditjen' }
+        tampil(Component)
+        await screen.findByText('Perihal uji daftar')
+        expect(screen.queryByRole('tab', { name: 'Surat Terhapus' })).not.toBeInTheDocument()
     })
 })

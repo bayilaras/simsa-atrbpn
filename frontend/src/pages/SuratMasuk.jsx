@@ -15,6 +15,8 @@ import { ExportButton } from '@/components/ExportButton';
 import { canExportReports } from '@/lib/provisioning-access';
 import { kunciSifatSuratMasuk, labelSifatSuratMasuk } from '@/lib/sifat-surat-masuk';
 import { pesanGalat } from '@/lib/pesan-galat';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DaftarSuratTerhapus } from '@/components/surat/DaftarSuratTerhapus';
 import { KABAG_LABELS } from '@/lib/disposisi-labels';
 import { JENIS_NASKAH_DINAS } from '@/lib/jenis-naskah';
 import { PILIHAN_URUTAN_SURAT, URUTAN_BAWAAN, parameterUrutan } from '@/lib/urutan-daftar-surat';
@@ -133,6 +135,8 @@ export default function SuratMasuk() {
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [selectedSurat, setSelectedSurat] = useState(null);
     const [alasanHapus, setAlasanHapus] = useState('');
+    // Super Admin: 'daftar' atau 'terhapus' (surat yang dihapus dan dapat dipulihkan).
+    const [tampilan, setTampilan] = useState('daftar');
 
     // Daftar unit: pemilih unit Super Admin, dan pilihan "Disposisi Ke" yang
     // bagi peran lain baru dimuat saat panel filter pertama kali dibuka.
@@ -478,8 +482,20 @@ export default function SuratMasuk() {
                 </div>
             )}
 
+            {isSuperAdmin && (
+                <Tabs value={tampilan} onValueChange={setTampilan}>
+                    <TabsList>
+                        <TabsTrigger value="daftar">Daftar Surat</TabsTrigger>
+                        <TabsTrigger value="terhapus">Surat Terhapus</TabsTrigger>
+                    </TabsList>
+                </Tabs>
+            )}
+            {isSuperAdmin && tampilan === 'terhapus' && (
+                <DaftarSuratTerhapus jenis="masuk" unitKerjaId={resolvedUnitKerjaId} onDipulihkan={refreshAll} />
+            )}
+
             {/* Main Content Area */}
-            <Card className="shadow-sm border-border/60">
+            <Card className={`shadow-sm border-border/60 ${tampilan === 'terhapus' ? 'hidden' : ''}`}>
                 <CardHeader className="pb-4">
                     <div className="flex flex-col space-y-4">
                         {/* Search & Filter Controls */}
@@ -851,7 +867,7 @@ export default function SuratMasuk() {
                         <AlertDialogTitle>Hapus Surat Masuk?</AlertDialogTitle>
                         <AlertDialogDescription>
                             Apakah Anda yakin ingin menghapus surat <strong>{selectedSurat?.nomorSurat}</strong>?
-                            Tindakan ini tidak dapat dibatalkan.
+                            Surat akan hilang dari semua daftar. Hanya Super Admin yang dapat memulihkannya.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <div className="space-y-1">
