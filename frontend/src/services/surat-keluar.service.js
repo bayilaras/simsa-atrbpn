@@ -97,9 +97,9 @@ export const suratKeluarService = {
         return response.data;
     },
 
-    // Delete surat keluar
-    async delete(id) {
-        await api.delete(`/api/surat-keluar/${id}`);
+    // Delete surat keluar; alasan dicatat di audit dan tampil di daftar Surat Terhapus
+    async delete(id, { alasan } = {}) {
+        await api.delete(`/api/surat-keluar/${id}`, alasan ? { alasan } : undefined);
     },
 
     // Archive surat keluar (creates arsip record with full metadata)

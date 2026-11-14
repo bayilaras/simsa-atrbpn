@@ -103,6 +103,8 @@ function parseJsonObjectString(value: unknown) {
 
 const alasanText = z.string('Alasan wajib diisi').trim().min(10, 'Alasan minimal 10 karakter').max(2000, 'Alasan maksimal 2000 karakter');
 export const alasanSchema = z.object({ alasan: alasanText }).strict();
+/** Badan DELETE surat: alasan boleh kosong untuk klien lama; bila dikirim, aturannya sama dengan alasan lain. */
+export const hapusSuratSchema = z.object({ alasan: alasanText.optional() });
 
 const batasWaktuSchema = dateSchema.refine((value) => value >= jakartaDate(), 'Batas waktu tidak boleh sebelum hari ini');
 

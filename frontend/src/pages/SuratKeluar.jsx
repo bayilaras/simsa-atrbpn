@@ -8,12 +8,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ExportButton } from '@/components/ExportButton';
 import { canExportReports } from '@/lib/provisioning-access';
 import { sifatSuratKeluarLabel } from '@/lib/sifat-surat-keluar';
 import { JENIS_NASKAH_DINAS } from '@/lib/jenis-naskah';
+import { pesanGalat } from '@/lib/pesan-galat';
 import { PILIHAN_URUTAN_SURAT, URUTAN_BAWAAN, parameterUrutan } from '@/lib/urutan-daftar-surat';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
 import ImportFileDialog from '@/components/ImportFileDialog';
@@ -126,6 +129,7 @@ export default function SuratKeluar() {
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [selectedSurat, setSelectedSurat] = useState(null);
+    const [alasanHapus, setAlasanHapus] = useState('');
 
     // Load unit kerja list for super admin
     useEffect(() => {
@@ -357,7 +361,7 @@ export default function SuratKeluar() {
 
     const handleDelete = async () => {
         try {
-            await suratKeluarService.delete(selectedSurat.id);
+            await suratKeluarService.delete(selectedSurat.id, { alasan: alasanHapus.trim() });
             toast({
                 title: 'Berhasil Dihapus',
                 description: `Surat ${selectedSurat.nomorSurat} telah dihapus`,
@@ -367,7 +371,7 @@ export default function SuratKeluar() {
         } catch (error) {
             toast({
                 title: 'Error',
-                description: error.message || 'Gagal menghapus surat',
+                description: pesanGalat(error, 'Gagal menghapus surat'),
                 variant: 'destructive',
             });
         }
@@ -948,7 +952,7 @@ export default function SuratKeluar() {
             />
 
             {/* Delete Confirmation Dialog */}
-            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+            <AlertDialog open={deleteDialogOpen} onOpenChange={(open) => { setDeleteDialogOpen(open); if (!open) setAlasanHapus(''); }}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle>Hapus Surat Keluar?</AlertDialogTitle>
@@ -957,9 +961,23 @@ export default function SuratKeluar() {
                             Tindakan ini tidak dapat dibatalkan.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
+                    <div className="space-y-1">
+                        <Label htmlFor="alasan-hapus-surat-keluar">Alasan penghapusan <span className="text-destructive">*</span></Label>
+                        <Textarea
+                            id="alasan-hapus-surat-keluar"
+                            value={alasanHapus}
+                            onChange={(event) => setAlasanHapus(event.target.value)}
+                            placeholder="Jelaskan alasan penghapusan surat ini (minimal 10 karakter)..."
+                            rows={3}
+                        />
+                    </div>
                     <AlertDialogFooter>
                         <AlertDialogCancel>Batal</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                        <AlertDialogAction
+                            onClick={handleDelete}
+                            disabled={alasanHapus.trim().length < 10}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
                             Hapus
                         </AlertDialogAction>
                     </AlertDialogFooter>

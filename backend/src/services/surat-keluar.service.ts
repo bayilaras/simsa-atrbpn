@@ -503,6 +503,7 @@ export class SuratKeluarService {
         deletedByUserId: string | undefined,
         unitScope: RecordUnitScope,
         auditContext?: CriticalAuditContext,
+        options: { alasan?: string } = {},
     ) {
         // Soft delete - mark as deleted instead of permanently removing
         const conditions = [
@@ -536,7 +537,7 @@ export class SuratKeluarService {
                     entityId: id,
                     changes: {
                         before: { isDeleted: false, nomorSurat: result.nomorSurat, perihal: result.perihal },
-                        after: { isDeleted: true, deletedBy: deletedByUserId || null },
+                        after: { isDeleted: true, deletedBy: deletedByUserId || null, alasan: options.alasan ?? null },
                     },
                 }, tx);
             }

@@ -13,6 +13,7 @@ import {
     querySuratKeluarSchema,
     nextSuratNumberQuerySchema,
     archiveRegistrationSchema,
+    hapusSuratSchema,
 } from '../validators/schemas';
 import { createLogger } from '../utils/logger';
 import { blobStorageService } from '../services/blob-storage.service';
@@ -511,11 +512,16 @@ router.delete('/:id', validateIdParam(), canWriteMiddleware(), async (req: AuthR
                 error: 'Surat yang sedang atau telah disetujui tidak dapat dihapus.',
             });
         }
+        // Alasan dicatat di audit hapus dan tampil di daftar Surat Terhapus.
+        const badan = hapusSuratSchema.safeParse(req.body ?? {});
+        if (!badan.success) {
+            return sendValidationFailure(res, badan.error.issues);
+        }
         const result = await suratKeluarService.delete(id, req.user?.id, unitScope, {
             userId: req.user?.id,
             userEmail: req.user?.email,
             ipAddress: req.ip,
-        });
+        }, { alasan: badan.data.alasan });
 
         if (!result) {
             return res.status(404).json({ error: 'Surat keluar not found' });
