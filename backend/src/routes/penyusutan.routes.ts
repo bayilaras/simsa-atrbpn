@@ -14,6 +14,7 @@ import { printTemplateService } from '../services/print-template.service';
 import { resolveEffectiveUnitKerjaId, resolveUnitKerjaId } from '../utils/resolve-unit-kerja';
 import { allowedSecurityClassifications } from '../services/record-access.service.js';
 import { LEGACY_PERMANENT_TRANSFER_READ_ONLY_MESSAGE } from '../utils/permanent-transfer-policy';
+import { sanitizeMultipartInput } from '../middlewares/sanitize.middleware.js';
 
 const router = Router();
 const evidenceUpload = multer({ storage: multer.memoryStorage(),
@@ -227,7 +228,7 @@ router.get('/:id/execution-options', canWriteMiddleware(), async (req: AuthReque
 router.post('/:id/evidence', canWriteMiddleware(), uploadLimiter, (req: AuthRequest, res, next) => {
     if (req.user?.role !== 'super_admin') return res.status(403).json({ error: 'Akses pencatat pelaksanaan diperlukan.' });
     next();
-}, evidenceUpload.single('file'), async (req: AuthRequest, res, next) => {
+}, evidenceUpload.single('file'), sanitizeMultipartInput, async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = requireConcreteUnitScope(req, res);
         if (!unitKerjaId || !req.user) return;
