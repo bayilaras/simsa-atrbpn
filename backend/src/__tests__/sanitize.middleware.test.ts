@@ -1,11 +1,37 @@
 import { describe, expect, it } from 'vitest';
-import { MULTILINE_FIELDS, sanitizeInput, sanitizeSatuBaris } from '../middlewares/sanitize.middleware';
+import { MULTILINE_FIELDS, sanitizeInput, sanitizeMultipartInput, sanitizeSatuBaris } from '../middlewares/sanitize.middleware';
 
 function jalankan(body: unknown) {
     const req: any = { body };
     sanitizeInput(req, {} as any, () => undefined);
     return req.body;
 }
+
+function jalankanMultipart(body: unknown) {
+    const req: any = { body };
+    sanitizeMultipartInput(req, {} as any, () => undefined);
+    return req.body;
+}
+
+describe('sanitizeMultipartInput', () => {
+    it('objek bersarang dalam teks JSON disaring seperti badan JSON dan tetap berupa teks JSON', () => {
+        const hasil = jalankanMultipart({
+            disposisi: JSON.stringify({ instruksi: 'Baris <b>satu</b>\nbaris dua', labelTambahan: ['<i>Segera</i>'] }),
+            perihal: '{Rahasia} <i>Undangan</i>\nrapat',
+        });
+        expect(JSON.parse(hasil.disposisi)).toEqual({ instruksi: 'Baris satu\nbaris dua', labelTambahan: ['Segera'] });
+        expect(hasil.perihal).toBe('{Rahasia} Undangan\nrapat');
+    });
+
+    it('teks berawalan { yang bukan JSON disaring sebagai teks biasa', () => {
+        expect(jalankanMultipart({ referensi: '{bukan json <b>x</b>' }).referensi).toBe('{bukan json x');
+    });
+
+    it('badan JSON yang sudah tersaring tidak berubah (idempoten)', () => {
+        const badan = jalankan({ perihal: 'a <b>b</b>\nc', disposisi: { instruksi: 'x\ny', targets: [{ unitKerjaId: 'u' }] } });
+        expect(jalankanMultipart(structuredClone(badan))).toEqual(badan);
+    });
+});
 
 describe('sanitizeInput', () => {
     it('mempertahankan baris baru pada instruksi tetapi tetap membuang tag', () => {

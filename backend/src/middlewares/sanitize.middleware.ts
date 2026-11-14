@@ -245,3 +245,37 @@ export function sanitizeInput(req: Request, res: Response, next: NextFunction): 
     }
     next();
 }
+
+/**
+ * Bidang multipart yang membawa objek bersarang sebagai teks JSON; validator
+ * mengurainya dengan parseJsonObjectString (validators/schemas.ts).
+ */
+const MULTIPART_JSON_FIELDS: ReadonlySet<string> = new Set(['disposisi', 'referensi', 'tindakLanjut']);
+
+function sanitizeMultipartField(value: unknown, key: string): unknown {
+    if (MULTIPART_JSON_FIELDS.has(key) && typeof value === 'string' && value.trim().startsWith('{')) {
+        try {
+            const parsed: unknown = JSON.parse(value);
+            if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                return JSON.stringify(sanitizeValue(parsed));
+            }
+        } catch {
+            // Bukan JSON: disaring sebagai teks biasa, validator yang menolaknya.
+        }
+    }
+    return sanitizeValue(value, key);
+}
+
+/**
+ * Penyaring yang sama untuk badan multipart. sanitizeInput global berjalan
+ * sebelum multer, jadi rute unggah memasang ini tepat setelah parser unggah;
+ * objek bersarang dalam teks JSON disaring seperti badan JSON. Idempoten untuk
+ * badan JSON yang sudah tersaring.
+ */
+export function sanitizeMultipartInput(req: Request, res: Response, next: NextFunction): void {
+    if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
+        req.body = Object.fromEntries(Object.entries(req.body)
+            .map(([key, value]) => [key, sanitizeMultipartField(value, key)]));
+    }
+    next();
+}
