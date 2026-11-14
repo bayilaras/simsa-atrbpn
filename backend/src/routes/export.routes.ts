@@ -14,6 +14,11 @@ const log = createLogger('ExportRoutes');
 
 const router = Router();
 
+/** Parameter teks pendek yang sama batasnya dengan validasi daftar; selain itu diabaikan. */
+function teksSingkat(value: unknown, maks = 50): string | undefined {
+    return typeof value === 'string' && value.trim() && value.length <= maks ? value.trim() : undefined;
+}
+
 // Apply rate limiting to all export routes
 router.use(exportLimiter);
 router.use(authMiddleware);
@@ -26,7 +31,7 @@ router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
         // only super_admin/auditor may target another unit (or all units) via query param.
         const unitKerjaId = resolveUnitKerjaId(req) || undefined;
-        const { search, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi } = req.query;
+        const { search, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, disposisiUnitId } = req.query;
 
         const filters = {
             search: typeof search === 'string' ? search : undefined,
@@ -38,6 +43,7 @@ router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
             sifatSurat: sifatSurat as string,
             status: status as string,
             disposisi: disposisi as string,
+            disposisiUnitId: teksSingkat(disposisiUnitId),
             securityClassifications: allowedSecurityClassifications(req.user),
         };
 
@@ -62,7 +68,7 @@ router.get('/surat-masuk/pdf', async (req: AuthRequest, res: Response) => {
         // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
         // only super_admin/auditor may target another unit (or all units) via query param.
         const unitKerjaId = resolveUnitKerjaId(req) || undefined;
-        const { search, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi } = req.query;
+        const { search, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, disposisiUnitId } = req.query;
 
         const filters = {
             search: typeof search === 'string' ? search : undefined,
@@ -74,6 +80,7 @@ router.get('/surat-masuk/pdf', async (req: AuthRequest, res: Response) => {
             sifatSurat: sifatSurat as string,
             status: status as string,
             disposisi: disposisi as string,
+            disposisiUnitId: teksSingkat(disposisiUnitId),
             securityClassifications: allowedSecurityClassifications(req.user),
         };
 

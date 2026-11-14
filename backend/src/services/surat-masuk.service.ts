@@ -33,6 +33,7 @@ import { afterSuratMasukInsert, afterSuratMasukMutation, guardSuratMasukMutation
 import type { DisposisiRoutingInput } from '../validators/schemas.js';
 import type { RecordUser } from './record-access.service.js';
 import { klasifikasiInSql, sifatKunciSql } from './access/visibility-spec.js';
+import { disposisiKeUnitSql, disposisiLabelSql } from './disposisi-filter.js';
 
 export type CreateSuratMasukInput = Omit<NewSuratMasuk, 'disposisi'> & {
     disposisi?: string[] | DisposisiRoutingInput | null;
@@ -48,7 +49,10 @@ export interface SuratMasukFilters {
     jenisSurat?: string;
     sifatSurat?: string;
     status?: string;
+    /** Label disposisi tanpa unit (mis. label Kabag). */
     disposisi?: string;
+    /** Unit tujuan disposisi; lihat disposisiKeUnitSql. */
+    disposisiUnitId?: string;
     search?: string;
     page?: number;
     limit?: number;
@@ -64,7 +68,7 @@ function securityClassificationCondition(classes: string[] | null | undefined) {
 
 export class SuratMasukService {
     async findAll(filters: SuratMasukFilters) {
-        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, search, page = 1, limit = 20, securityClassifications } = filters;
+        const { unitKerjaId, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, disposisiUnitId, search, page = 1, limit = 20, securityClassifications } = filters;
         const offset = (page - 1) * limit;
 
         // Build where conditions
@@ -100,7 +104,10 @@ export class SuratMasukService {
             conditions.push(eq(suratMasuk.status, status));
         }
         if (disposisi) {
-            conditions.push(sql`${suratMasuk.disposisi} @> ARRAY[${disposisi}]`);
+            conditions.push(disposisiLabelSql(disposisi));
+        }
+        if (disposisiUnitId) {
+            conditions.push(disposisiKeUnitSql(disposisiUnitId));
         }
 
         // Search across multiple fields using ILIKE (case-insensitive)

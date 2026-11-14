@@ -15,6 +15,7 @@ import { ExportButton } from '@/components/ExportButton';
 import { canExportReports } from '@/lib/provisioning-access';
 import { kunciSifatSuratMasuk, labelSifatSuratMasuk } from '@/lib/sifat-surat-masuk';
 import { pesanGalat } from '@/lib/pesan-galat';
+import { KABAG_LABELS } from '@/lib/disposisi-labels';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
 import ImportFileDialog from '@/components/ImportFileDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
@@ -75,6 +76,14 @@ import { PageHeader } from '@/components/PageHeader'
 const currentYear = new Date().getFullYear();
 const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - i);
 
+// Pilihan "Disposisi Ke": unit tujuan disaring server lewat tabel disposisi,
+// label tanpa unit (Kabag) lewat teks disposisi yang tersimpan.
+function parameterDisposisi(nilai) {
+    if (nilai?.startsWith('unit:')) return { disposisiUnitId: nilai.slice('unit:'.length) };
+    if (nilai?.startsWith('label:')) return { disposisi: nilai.slice('label:'.length) };
+    return {};
+}
+
 // Warna lencana sifat di daftar; Rahasia dan Sangat Rahasia sama-sama merah.
 function warnaLencanaSifat(sifatSurat) {
     const kunci = kunciSifatSuratMasuk(sifatSurat);
@@ -122,14 +131,17 @@ export default function SuratMasuk() {
     const [selectedSurat, setSelectedSurat] = useState(null);
     const [alasanHapus, setAlasanHapus] = useState('');
 
-    // Load unit kerja list for super admin
+    // Daftar unit: pemilih unit Super Admin, dan pilihan "Disposisi Ke" yang
+    // bagi peran lain baru dimuat saat panel filter pertama kali dibuka.
+    const [daftarUnitDiminta, setDaftarUnitDiminta] = useState(false);
+    const perluDaftarUnit = isSuperAdmin || daftarUnitDiminta;
     useEffect(() => {
-        if (isSuperAdmin) {
+        if (perluDaftarUnit) {
             settingsService.getAllUnitKerja().then(result => {
                 setUnitKerjaList(result.data || result || []);
             }).catch(err => console.error('Failed to load unit kerja list:', err));
         }
-    }, [isSuperAdmin]);
+    }, [perluDaftarUnit]);
 
     // Resolve effective unitKerjaId
     const resolvedUnitKerjaId = isSuperAdmin
@@ -158,7 +170,7 @@ export default function SuratMasuk() {
                 jenisSurat: jenisSurat !== 'all' ? jenisSurat : undefined,
                 status: status !== 'all' ? status : undefined,
                 sifatSurat: sifatSurat !== 'all' ? sifatSurat : undefined,
-                disposisi: disposisiKe !== 'all' ? disposisiKe : undefined,
+                ...parameterDisposisi(disposisiKe),
                 tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
                 tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
             };
@@ -232,6 +244,15 @@ export default function SuratMasuk() {
         }, 500);
         return () => clearTimeout(timer);
     }, [searchTerm]);
+
+    // Unit bagian tidak pernah menjadi tujuan disposisi (hanya label), begitu pula unit pencatat sendiri.
+    const opsiDisposisi = [
+        { value: 'all', label: 'Semua Disposisi' },
+        ...unitKerjaList
+            .filter(uk => uk.unitType !== 'bagian' && uk.id !== resolvedUnitKerjaId)
+            .map(uk => ({ value: `unit:${uk.id}`, label: uk.name })),
+        ...KABAG_LABELS.map(label => ({ value: `label:${label}`, label })),
+    ];
 
     const hasActiveFilters = tahun !== 'all' || jenisSurat !== 'all' || status !== 'all' ||
         sifatSurat !== 'all' || disposisiKe !== 'all' || tanggalDari || tanggalSampai || searchTerm;
@@ -376,7 +397,7 @@ export default function SuratMasuk() {
                                 jenisSurat: jenisSurat !== 'all' ? jenisSurat : undefined,
                                 status: status !== 'all' ? status : undefined,
                                 sifatSurat: sifatSurat !== 'all' ? sifatSurat : undefined,
-                                disposisi: disposisiKe !== 'all' ? disposisiKe : undefined,
+                                ...parameterDisposisi(disposisiKe),
                                 tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
                                 tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
                             }}
@@ -469,7 +490,7 @@ export default function SuratMasuk() {
                                     />
                                 </div>
                             </div>
-                            <Collapsible open={isAdvancedOpen} onOpenChange={setIsAdvancedOpen} className="flex-none">
+                            <Collapsible open={isAdvancedOpen} onOpenChange={(buka) => { setIsAdvancedOpen(buka); if (buka) setDaftarUnitDiminta(true); }} className="flex-none">
                                 <CollapsibleTrigger asChild>
                                     <Button variant="outline" className={`gap-2 w-full md:w-auto ${isAdvancedOpen ? 'bg-muted' : ''}`}>
                                         <Filter className="h-4 w-4" />
@@ -601,12 +622,7 @@ export default function SuratMasuk() {
                                         <SearchableSelect
                                             id="surat-masuk-disposisi"
                                             ariaLabel="Disposisi Ke"
-                                            options={[
-                                                { value: 'all', label: 'Semua Disposisi' },
-                                                'Ditjen', 'SekDitjen', 'Dit. BPPT', 'Dit. PTEP',
-                                                'Dit. KTPP', 'Kabag Program dan Hukum',
-                                                'Kabag Kepegawaian Keuangan dan Umum'
-                                            ]}
+                                            options={opsiDisposisi}
                                             value={disposisiKe}
                                             onValueChange={applyFilter(setDisposisiKe)}
                                             placeholder="Pilih Disposisi"

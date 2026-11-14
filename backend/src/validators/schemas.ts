@@ -213,7 +213,9 @@ export const querySuratMasukSchema = paginationSchema.extend({
         'biasa', 'segera', 'sangat_segera', 'terbatas', 'rahasia', 'sangat_rahasia', 'undangan', 'penting',
     ]).optional(),
     status: z.enum(['pending', 'diproses', 'selesai', 'arsip', 'belum_dibalas', 'sudah_dibalas']).optional(),
+    // Label disposisi tanpa unit (mis. label Kabag); unit tujuan lewat disposisiUnitId.
     disposisi: z.string().max(100).optional(),
+    disposisiUnitId: z.string().trim().min(1).max(50).optional(),
     search: z.string().max(255).optional(),
 });
 
