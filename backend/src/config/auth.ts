@@ -5,7 +5,7 @@ import { db } from './database';
 import { env } from './env';
 import { getTrustedOrigins, isTrustedOrigin } from './trusted-origins';
 import { hashCredentialPassword, verifyCredentialPassword } from './password-hashing.js';
-import { CREDENTIAL_PASSWORD_MAX_LENGTH, CREDENTIAL_PASSWORD_MIN_LENGTH } from './password-policy.js';
+import { CREDENTIAL_PASSWORD_MAX_LENGTH, CREDENTIAL_PASSWORD_MIN_LENGTH, newPasswordProblem } from './password-policy.js';
 import { buildGoogleOAuthConfig } from './google-oauth.js';
 import { createRateLimiterStore, usesSharedRateLimits } from './rate-limits.js';
 import { betterAuthIpOptions } from '../middlewares/better-auth-ip.middleware.js';
@@ -84,6 +84,15 @@ async function guardOrigin(ctx: AuthHookContext) {
         unitKerjaId: typeof current.user.unitKerjaId === 'string' ? current.user.unitKerjaId : null,
     }) !== null)) {
         throw new APIError('FORBIDDEN', { code: 'ACCESS_PENDING', message: 'Akun hanya dapat melihat status akses atau keluar. Hubungi administrator.' });
+    }
+
+    // A password the user chooses follows the same rules as one a Super Admin
+    // sets. Sign-in is not checked: existing passwords keep working.
+    const body: unknown = ctx.body;
+    const newPassword = body && typeof body === 'object' ? (body as { newPassword?: unknown }).newPassword : undefined;
+    if (ctx.path === '/change-password' && current && typeof newPassword === 'string') {
+        const problem = newPasswordProblem(newPassword, current.user);
+        if (problem) throw new APIError('BAD_REQUEST', { code: 'PASSWORD_POLICY', message: problem });
     }
 }
 

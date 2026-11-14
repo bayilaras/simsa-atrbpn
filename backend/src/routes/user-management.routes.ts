@@ -58,10 +58,13 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     try {
+        // Zod issues carry the rule and path, never the submitted value.
         const bodyResult = createUserSchema.safeParse(req.body);
         if (!bodyResult.success) {
+            const passwordIssue = bodyResult.error.issues.find(issue => issue.path[0] === 'password');
             return res.status(400).json({
                 error: 'Validation error',
+                ...(passwordIssue ? { message: passwordIssue.message } : {}),
                 details: bodyResult.error.issues
             });
         }

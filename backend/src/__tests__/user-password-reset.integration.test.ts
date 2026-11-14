@@ -196,15 +196,22 @@ describe('Super Admin password reset', () => {
         expect(await credentialRows(USER.google)).toEqual([]);
     });
 
-    it('applies the Better Auth password bounds without echoing the value', async () => {
-        const tooShort = await resetRequest(USER.unit, superAdminCookie, { newPassword: 'pendek7' }).expect(400);
-        expect(tooShort.body.message).toBe('Kata sandi minimal 8 karakter');
-        expect(JSON.stringify(tooShort.body)).not.toContain('pendek7');
+    it('applies the rules for new passwords without echoing the value', async () => {
+        const tooShort = await resetRequest(USER.unit, superAdminCookie, { newPassword: 'pendek-11ch' }).expect(400);
+        expect(tooShort.body.message).toBe('Kata sandi minimal 12 karakter.');
+        expect(JSON.stringify(tooShort.body)).not.toContain('pendek-11ch');
 
         const tooLong = 'p'.repeat(129);
         const long = await resetRequest(USER.unit, superAdminCookie, { newPassword: tooLong }).expect(400);
-        expect(long.body.message).toBe('Kata sandi maksimal 128 karakter');
+        expect(long.body.message).toBe('Kata sandi maksimal 128 karakter.');
         expect(JSON.stringify(long.body)).not.toContain(tooLong);
+
+        // The account's own email (admin-unit@…) and name (Admin Unit).
+        const withEmail = await resetRequest(USER.unit, superAdminCookie, { newPassword: 'x-admin-unit-2026' }).expect(400);
+        expect(withEmail.body.message).toBe('Kata sandi tidak boleh memuat bagian depan alamat email (sebelum tanda @).');
+        const withName = await resetRequest(USER.unit, superAdminCookie, { newPassword: 'kantor-ADMIN-2026' }).expect(400);
+        expect(withName.body.message).toBe('Kata sandi tidak boleh memuat nama pengguna.');
+        expect(JSON.stringify(withName.body)).not.toContain('kantor-ADMIN-2026');
 
         await resetRequest(USER.unit, superAdminCookie, {}).expect(400);
         await resetRequest('bukan-uuid', superAdminCookie).expect(400);

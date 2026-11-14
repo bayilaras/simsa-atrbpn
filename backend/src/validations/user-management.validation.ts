@@ -1,17 +1,16 @@
 import { z } from 'zod';
 import { ASSIGNABLE_ROLES, KNOWN_ROLES } from '../config/permissions.js';
-import {
-    CREDENTIAL_PASSWORD_MAX_LENGTH,
-    CREDENTIAL_PASSWORD_MIN_LENGTH,
-} from '../config/password-policy.js';
+import { newPasswordProblem } from '../config/password-policy.js';
 
 // Valid roles
 const roles = KNOWN_ROLES;
 
-// Same bounds as Better Auth's email+password sign-in (config/auth.ts).
-const credentialPasswordSchema = z.string()
-    .min(CREDENTIAL_PASSWORD_MIN_LENGTH, `Kata sandi minimal ${CREDENTIAL_PASSWORD_MIN_LENGTH} karakter`)
-    .max(CREDENTIAL_PASSWORD_MAX_LENGTH, `Kata sandi maksimal ${CREDENTIAL_PASSWORD_MAX_LENGTH} karakter`);
+// A password a Super Admin sets must follow the rules for new passwords
+// (config/password-policy.ts). The message never echoes the value.
+function refuseWeakPassword(password: string, owner: { email?: string; name?: string }, ctx: z.RefinementCtx, path: string[]) {
+    const problem = newPasswordProblem(password, owner);
+    if (problem) ctx.addIssue({ code: 'custom', message: problem, path });
+}
 
 // Query params for listing users
 export const listUsersSchema = z.object({
@@ -47,16 +46,19 @@ export const createUserSchema = z.object({
     unitKerjaId: z.string().nullable().optional(),
     jabatan: z.string().max(100).nullable().optional(),
     nip: z.string().max(30).nullable().optional(),
-    password: credentialPasswordSchema.optional(),
+    password: z.string().optional(),
 }).refine(value => value.role !== 'admin_unit' || Boolean(value.unitKerjaId?.trim()), {
     message: 'Unit kerja wajib untuk admin unit.', path: ['unitKerjaId'],
+}).superRefine((value, ctx) => {
+    if (value.password !== undefined) refuseWeakPassword(value.password, value, ctx, ['password']);
 });
 
 // Super Admin password reset body. `newPassword` is exempt from the HTML
-// input sanitizer, so the stored hash matches what the user will type.
+// input sanitizer, so the stored hash matches what the user will type. The
+// service repeats the check against the target's email and name.
 export const resetPasswordSchema = z.object({
-    newPassword: credentialPasswordSchema,
-});
+    newPassword: z.string(),
+}).superRefine((value, ctx) => refuseWeakPassword(value.newPassword, {}, ctx, ['newPassword']));
 
 export type ListUsersQuery = z.infer<typeof listUsersSchema>;
 export type UpdateUserBody = z.infer<typeof updateUserSchema>;

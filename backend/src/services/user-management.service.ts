@@ -3,6 +3,7 @@ import { users, unitKerja, sessions, accounts, suratKeluar } from '../db/schema'
 import { eq, ilike, or, and, desc, sql } from 'drizzle-orm';
 import { hashPassword } from 'better-auth/crypto';
 import { hashCredentialPassword } from '../config/password-hashing.js';
+import { newPasswordProblem } from '../config/password-policy.js';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 import { ROLE_MANDATED_UNIT_KERJA } from '../utils/resolve-unit-kerja.js';
 import {
@@ -517,12 +518,17 @@ export const userManagementService = {
             const actor = await requireActiveSuperAdminActor(tx, auditContext);
 
             const [target] = await tx
-                .select({ id: users.id, role: users.role, isActive: users.isActive })
+                .select({ id: users.id, role: users.role, isActive: users.isActive, email: users.email, name: users.name })
                 .from(users)
                 .where(eq(users.id, userId))
                 .limit(1)
                 .for('update');
             if (!target) return null;
+
+            // Same rules as the request validation, now with the account's
+            // own email and name.
+            const passwordProblem = newPasswordProblem(newPassword, target);
+            if (passwordProblem) throw new ValidationError(passwordProblem);
 
             // The uuid lookup ignores case but accounts.account_id is text:
             // compare and write the stored id, never the id as requested.

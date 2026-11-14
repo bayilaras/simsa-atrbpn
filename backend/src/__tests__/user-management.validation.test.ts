@@ -179,18 +179,26 @@ describe('createUserSchema', () => {
         expect(result.success).toBe(true);
     });
 
-    it('rejects password shorter than 8 characters', () => {
-        const result = createUserSchema.safeParse({ ...validUser, password: 'short' });
+    it('rejects a password shorter than 12 characters with an Indonesian message', () => {
+        const result = createUserSchema.safeParse({ ...validUser, password: 'Pendek-11ch' });
         expect(result.success).toBe(false);
+        if (!result.success) expect(result.error.issues[0]).toMatchObject({ path: ['password'], message: 'Kata sandi minimal 12 karakter.' });
+        expect(createUserSchema.safeParse({ ...validUser, password: 'Cukup-12-chr' }).success).toBe(true);
     });
 
-    it('accepts password exactly 8 characters', () => {
-        const result = createUserSchema.safeParse({ ...validUser, password: '12345678' });
-        expect(result.success).toBe(true);
+    it('rejects a password containing the email local part, a name part, or a very common password', () => {
+        const messageFor = (password: string, extra = {}) => {
+            const result = createUserSchema.safeParse({ ...validUser, email: 'siti.rahma@example.com', name: 'Siti Rahmawati', ...extra, password });
+            return result.success ? null : result.error.issues[0].message;
+        };
+        expect(messageFor('2026-Siti.Rahma-kantor')).toBe('Kata sandi tidak boleh memuat bagian depan alamat email (sebelum tanda @).');
+        expect(messageFor('kantor-RAHMAWATI-2026')).toBe('Kata sandi tidak boleh memuat nama pengguna.');
+        expect(messageFor('Password1234')).toBe('Kata sandi ini terlalu umum dan mudah ditebak. Pilih kata sandi lain.');
+        expect(messageFor('lemari-arsip-biru-7')).toBeNull();
     });
 
     it('rejects a password Better Auth would refuse at sign-in (over 128 characters)', () => {
-        expect(createUserSchema.safeParse({ ...validUser, password: 'a'.repeat(128) }).success).toBe(true);
+        expect(createUserSchema.safeParse({ ...validUser, password: 'a1'.repeat(64) }).success).toBe(true);
         expect(createUserSchema.safeParse({ ...validUser, password: 'a'.repeat(129) }).success).toBe(false);
     });
 
@@ -251,19 +259,22 @@ describe('createUserSchema', () => {
 // ==================== resetPasswordSchema ====================
 
 describe('resetPasswordSchema', () => {
-    it('accepts the Better Auth bounds of 8 to 128 characters', () => {
-        expect(resetPasswordSchema.safeParse({ newPassword: '12345678' }).success).toBe(true);
-        expect(resetPasswordSchema.safeParse({ newPassword: 'a'.repeat(128) }).success).toBe(true);
+    it('accepts 12 to 128 characters', () => {
+        expect(resetPasswordSchema.safeParse({ newPassword: 'Cukup-12-chr' }).success).toBe(true);
+        expect(resetPasswordSchema.safeParse({ newPassword: 'a1'.repeat(64) }).success).toBe(true);
     });
 
-    it('rejects a missing, short or overlong password with an Indonesian message', () => {
+    it('rejects a missing, short, overlong or very common password with an Indonesian message', () => {
         expect(resetPasswordSchema.safeParse({}).success).toBe(false);
-        const short = resetPasswordSchema.safeParse({ newPassword: '1234567' });
+        const short = resetPasswordSchema.safeParse({ newPassword: '12345678901' });
         expect(short.success).toBe(false);
-        if (!short.success) expect(short.error.issues[0].message).toBe('Kata sandi minimal 8 karakter');
+        if (!short.success) expect(short.error.issues[0].message).toBe('Kata sandi minimal 12 karakter.');
         const long = resetPasswordSchema.safeParse({ newPassword: 'a'.repeat(129) });
         expect(long.success).toBe(false);
-        if (!long.success) expect(long.error.issues[0].message).toBe('Kata sandi maksimal 128 karakter');
+        if (!long.success) expect(long.error.issues[0].message).toBe('Kata sandi maksimal 128 karakter.');
+        const common = resetPasswordSchema.safeParse({ newPassword: 'Indonesia1945' });
+        expect(common.success).toBe(false);
+        if (!common.success) expect(common.error.issues[0].message).toBe('Kata sandi ini terlalu umum dan mudah ditebak. Pilih kata sandi lain.');
     });
 
     it('does not accept the password under another field name', () => {

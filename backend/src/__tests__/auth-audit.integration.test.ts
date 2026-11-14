@@ -206,6 +206,33 @@ describe('authentication events in the Audit Log', () => {
         expect(again.status).toBe(200);
     });
 
+    it('applies the rules for new passwords to a change of one’s own password, not to sign-in', async () => {
+        // An existing eight-character password still signs in.
+        await database.query('UPDATE accounts SET password = $2 WHERE user_id = $1', [USER.active, await hashCredentialPassword('lama8chr')]);
+        const signedIn = await signIn(EMAIL.active, 'lama8chr');
+        expect(signedIn.status).toBe(200);
+        const cookie = cookieHeader(signedIn);
+        await database.query('DELETE FROM audit_log');
+
+        const change = (newPassword: string) => post('/change-password', {
+            currentPassword: 'lama8chr', newPassword, revokeOtherSessions: true,
+        }, cookie);
+        for (const [newPassword, message] of [
+            ['sebelas-chr', 'Kata sandi minimal 12 karakter.'],
+            ['x-PENCATAT-2026', 'Kata sandi tidak boleh memuat bagian depan alamat email (sebelum tanda @).'],
+            ['kantor-petugas-77', 'Kata sandi tidak boleh memuat nama pengguna.'],
+            ['Password1234', 'Kata sandi ini terlalu umum dan mudah ditebak. Pilih kata sandi lain.'],
+        ]) {
+            const refused = await change(newPassword);
+            expect(refused.status).toBe(400);
+            expect(await refused.json()).toMatchObject({ code: 'PASSWORD_POLICY', message });
+        }
+        expect(await auditRows()).toEqual([]);
+        expect((await signIn(EMAIL.active, 'lama8chr')).status).toBe(200);
+
+        expect((await change(PASSWORD.active)).status).toBe(200);
+    });
+
     it('does not record ordinary session reads', async () => {
         const cookie = cookieHeader(await signIn(EMAIL.active, PASSWORD.active));
         await database.query('DELETE FROM audit_log');
