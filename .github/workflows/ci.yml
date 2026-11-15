@@ -251,12 +251,14 @@ jobs:
         working-directory: backend
 
       - name: Install the HTML parser used by the sanitizer oracle test
-        run: npm install --no-save --no-package-lock --ignore-scripts parse5@8.0.1
-        working-directory: backend
+        # Outside backend/ so the locked backend dependency tree stays untouched.
+        run: npm install --prefix "$RUNNER_TEMP/parse5" --no-audit --no-fund --ignore-scripts parse5@8.0.1
 
       - name: Run tests
         run: npx vitest run --reporter=verbose
         working-directory: backend
+        env:
+          SIMSA_PARSE5_DIR: ${{ runner.temp }}/parse5/node_modules/parse5
 
       # PostgreSQL role memberships are cluster-wide. Run the alternate
       # upgrade fixture before the canonical bootstrap restores CI principals.
