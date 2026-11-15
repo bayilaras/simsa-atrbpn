@@ -84,7 +84,8 @@ export class ExportService {
     /**
      * Export Surat Masuk to Excel — format matches Google Spreadsheet structure
      * Columns: ID, No, Jenis Surat, Sifat Surat, Nomor Surat, Tanggal Surat,
-     *          Perihal, Dari, Kepada, Status, Disposisi, Timestamp, Status Arsip
+     *          Tanggal Diterima, Perihal, Dari, Kepada, Status, Disposisi,
+     *          Timestamp, Status Arsip (+ Unit Kerja for all units)
      */
     async generateExcelSuratMasuk(filters: SuratMasukFilters, opsi: OpsiEksporSurat = {}): Promise<Buffer> {
         const result = await suratMasukService.findAll({
@@ -96,7 +97,7 @@ export class ExportService {
         const unitPengolah = await namaUnitPengolah(filters.unitKerjaId);
         // Ekspor Semua Unit Kerja diberi kolom Unit Kerja berisi nama unit.
         const namaUnit = await namaUnitPerBaris(filters.unitKerjaId, data);
-        const kolomTerakhir = namaUnit ? 14 : 13;
+        const kolomTerakhir = namaUnit ? 15 : 14;
 
         const { Workbook } = await loadExcelJS();
         const workbook = new Workbook();

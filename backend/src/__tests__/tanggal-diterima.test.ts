@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSuratMasukSchema, updateSuratMasukSchema } from '../validators/schemas';
 import {
-    PESAN_DITERIMA_SEBELUM_TANGGAL_SURAT, PESAN_DITERIMA_SETELAH_HARI_INI, pastikanTanggalDiterima,
+    PESAN_DITERIMA_SEBELUM_TANGGAL_SURAT, PESAN_DITERIMA_SETELAH_HARI_INI, pastikanTanggalDiterima, tanggalDiterimaImpor,
 } from '../services/tanggal-diterima';
 import { parseImportDateDiterima } from '../services/import-tanggal';
 
@@ -55,5 +55,16 @@ describe('pemeriksaan layanan dan impor', () => {
         expect(parseImportDateDiterima('-')).toBeNull();
         expect(() => parseImportDateDiterima('kemarin')).toThrow(/^Tanggal diterima "kemarin" tidak dapat dibaca\./);
         expect(() => parseImportDateDiterima('31/02/2026')).toThrow(/^Tanggal diterima "31\/02\/2026" tidak ada di kalender\./);
+    });
+
+    it('impor tidak menolak baris karena tanggal diterima: nilainya dikosongkan dengan catatan', () => {
+        vi.useFakeTimers({ now: new Date('2026-11-15T03:00:00.000Z') });
+        expect(tanggalDiterimaImpor('2026-11-10', '12/11/2026')).toEqual({ tanggal: '2026-11-12' });
+        expect(tanggalDiterimaImpor('2026-11-10', '')).toEqual({ tanggal: null });
+        expect(tanggalDiterimaImpor('2026-11-10', '09/11/2026'))
+            .toEqual({ tanggal: null, catatan: 'Tanggal diterima tidak boleh sebelum tanggal surat; tanggal diterima tidak disimpan.' });
+        expect(tanggalDiterimaImpor('2026-11-10', '20/11/2026'))
+            .toEqual({ tanggal: null, catatan: 'Tanggal diterima tidak boleh setelah hari ini; tanggal diterima tidak disimpan.' });
+        expect(tanggalDiterimaImpor(null, 'kemarin').catatan).toMatch(/^Tanggal diterima "kemarin" tidak dapat dibaca/);
     });
 });

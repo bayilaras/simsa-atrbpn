@@ -212,18 +212,20 @@ describe('importing already-parsed rows from any source', () => {
             expect(fetch).not.toHaveBeenCalled();
         });
 
-    it('reads Tanggal Diterima for surat masuk and rejects a row with an unreadable or early one', async () => {
+    it('reads Tanggal Diterima for surat masuk; an unusable one is left out with a note, never rejecting the row', async () => {
         const service = new GoogleDriveImportService();
         const kepala = [...headers, 'Tgl Terima'];
         const rows = [kepala, [...data, '14/09/2026'], ['8', 'SM-8', '12/09/2026', 'Kedua', 'Kantah B', 'Ditjen', 'kemarin'],
             ['9', 'SM-9', '12/09/2026', 'Ketiga', 'Kantah C', 'Ditjen', '11/09/2026'], ['10', 'SM-10', '12/09/2026', 'Keempat', 'Kantah D', 'Ditjen', '']];
         const result = await service.importRows('surat-masuk', rows, 'unit-a', audit);
-        expect(result).toMatchObject({ importedRows: 2 });
-        expect(result.errors).toHaveLength(2);
-        expect(result.errors.join(' ')).toMatch(/Tanggal diterima "kemarin" tidak dapat dibaca/);
-        expect(result.errors.join(' ')).toMatch(/Tanggal diterima tidak boleh sebelum tanggal surat/);
+        expect(result).toMatchObject({ importedRows: 4, errors: [] });
         expect(mocks.incoming.mock.calls.map(([record]) => [record.nomorSurat, record.tanggalDiterima]))
-            .toEqual([['SM-2026-actual', '2026-09-14'], ['SM-10', null]]);
+            .toEqual([['SM-2026-actual', '2026-09-14'], ['SM-8', null], ['SM-9', null], ['SM-10', null]]);
+        const catatan = Object.fromEntries((result.rows ?? []).map((baris: any) => [baris.nomorSurat, baris.reason]));
+        expect(catatan['SM-8']).toMatch(/^Tanggal diterima "kemarin" tidak dapat dibaca\..*; tanggal diterima tidak disimpan\.$/);
+        expect(catatan['SM-9']).toBe('Tanggal diterima tidak boleh sebelum tanggal surat; tanggal diterima tidak disimpan.');
+        expect(catatan['SM-2026-actual']).toBeUndefined();
+        expect(catatan['SM-10']).toBeUndefined();
         const { mapping } = resolveSheetMapping([kepala], 'surat-masuk');
         expect(mapping.find(kolom => kolom.field === 'tanggalDiterima')).toMatchObject({ label: 'Tanggal diterima', header: 'Tgl Terima' });
     });

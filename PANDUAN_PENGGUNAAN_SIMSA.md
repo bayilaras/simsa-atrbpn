@@ -392,7 +392,8 @@ flowchart LR
 | Sifat Surat | Biasa / Segera / Sangat Segera / Terbatas / Rahasia / Sangat Rahasia / Undangan / Penting. Terbatas, Rahasia, dan Sangat Rahasia adalah kelas keamanan surat. Admin Unit Kerja dapat memilih Terbatas; Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin, dan Admin Unit Kerja tidak melihat kedua pilihan itu kecuali sifat itu sudah tersimpan pada surat. Surat Terbatas, Rahasia, atau Sangat Rahasia hanya dapat dibuka atau diubah dengan persetujuan akses berjangka, juga oleh pencatatnya; ajukan persetujuan akses setelah menyimpan. | ✅ |
 | Nomor Surat | Nomor surat sesuai yang tertera pada surat. Bila dikosongkan, nomor dibuat otomatis dari template unit. Nomor yang sudah tercatat memunculkan peringatan **Nomor sudah terdaftar** (tidak menghalangi penyimpanan) | ❌ |
 | Tanggal Surat | Tanggal yang tertulis pada surat; tahun antara 2000 dan 2100 | ✅ |
-| No. Agenda | Hanya saat menambah surat. Kosongkan untuk nomor otomatis (tertulis *Nomor otomatis berikutnya: N*), atau isi untuk melanjutkan nomor dari buku agenda kantor. Nomor yang sudah dipakai, termasuk milik surat yang sudah dihapus, ditolak | ❌ |
+| Tanggal Diterima | Tanggal surat sampai di kantor. Saat menambah surat terisi tanggal hari ini; ubah bila surat diterima di hari lain. Tidak boleh setelah hari ini atau sebelum Tanggal Surat; boleh dikosongkan | ❌ |
+| No. Agenda | Hanya saat menambah surat. Kosongkan untuk nomor otomatis (tertulis *Nomor otomatis berikutnya: N*), atau isi untuk melanjutkan nomor dari buku agenda kantor. Nomor yang dipakai surat lain ditolak; nomor milik surat yang sudah dihapus boleh dipakai lagi | ❌ |
 | Perihal | Subjek / topik surat | ✅ |
 | Dari (Pengirim) | Nama instansi / perorangan pengirim | ✅ |
 | Kepada (Penerima) | Unit kerja / pejabat penerima | ✅ |

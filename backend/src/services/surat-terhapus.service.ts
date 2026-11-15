@@ -23,6 +23,7 @@ import {
 import { rowsOf } from './rangkaian/sql-rows.js';
 import { hasPostgresErrorCode } from '../utils/postgres-errors.js';
 import { nomorUrutTerpakai, pesanNomorUrutPulihkan } from './surat-nomor-urut.js';
+import { settingsService } from './settings.service.js';
 
 /**
  * Surat terhapus (hapus lunak) dan pemulihannya oleh Super Admin.
@@ -223,7 +224,18 @@ const kolomPulihkan = (tabel: typeof suratMasuk | typeof suratKeluar) => ({
     deletedBy: tabel.deletedBy,
 });
 
+/**
+ * Kunci templat unit sebelum baris surat, urutan kunci yang sama dengan
+ * pencatatan surat: pemeriksaan nomor bebas saat pemulihan dan saat mencatat
+ * nomor yang diketik tidak dapat saling mendahului.
+ */
+async function kunciTemplatUnit(tx: Tx, tabel: typeof suratMasuk | typeof suratKeluar, id: string): Promise<void> {
+    const [baris] = await tx.select({ unitKerjaId: tabel.unitKerjaId }).from(tabel).where(eq(tabel.id, id)).limit(1);
+    if (baris) await settingsService.lockSuratTemplates(tx, baris.unitKerjaId);
+}
+
 async function pulihkanSuratMasuk(tx: Tx, id: string, user: RecordUser, alasan: string, audit: CriticalAuditContext) {
+    await kunciTemplatUnit(tx, suratMasuk, id);
     // Prabaca tanpa kunci (pola distribusi C-I1): bila rangkaiannya 'selesai', pemulihan
     // dapat membukanya kembali, jadi semua surat masuk anggotanya dikunci lebih dulu.
     const smDikunci = new Set(await suratMasukUntukDistribusi(tx, id));
@@ -277,6 +289,7 @@ async function suratMasukTujuan(tx: Tx, anggotaId: string): Promise<string[]> {
 }
 
 async function pulihkanSuratKeluar(tx: Tx, id: string, user: RecordUser, alasan: string, audit: CriticalAuditContext) {
+    await kunciTemplatUnit(tx, suratKeluar, id);
     // G-LOCK: surat_keluar → surat_masuk → rangkaian.
     const [surat] = await tx.select({ ...kolomPulihkan(suratKeluar), klasifikasiKeamanan: suratKeluar.klasifikasiKeamanan })
         .from(suratKeluar).where(eq(suratKeluar.id, id)).limit(1).for('update');

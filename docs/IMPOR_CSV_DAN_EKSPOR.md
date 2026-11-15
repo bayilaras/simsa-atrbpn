@@ -165,7 +165,7 @@ Kolom dikenali dari judulnya pada lima baris pertama, tidak pernah dari posisi.
 | Tanggal surat | Tanggal Surat, Tgl Surat, Tanggal, Tgl | Ya |
 | Perihal | Perihal, Hal, Subject | Ya |
 | Pengirim (surat masuk) | Dari, Asal, Pengirim, From | Ya, surat masuk |
-| Tanggal diterima (surat masuk) | Tanggal Diterima, Tgl Diterima, Tanggal Terima, Tgl Terima, Diterima, Tanggal Masuk, Tgl Masuk. Dibaca dengan hari lebih dulu seperti tanggal surat; tidak boleh sebelum tanggal surat atau setelah hari ini. Pada impor sinkron, nilainya melengkapi surat yang sudah tercatat | Tidak |
+| Tanggal diterima (surat masuk) | Tanggal Diterima, Tgl Diterima, Tanggal Terima, Tgl Terima, Diterima, Tanggal Masuk, Tgl Masuk. Dibaca dengan hari lebih dulu seperti tanggal surat. Nilai yang tidak terbaca, sebelum tanggal surat, atau setelah hari ini tidak disimpan; barisnya tetap tersimpan dengan catatan di rincian hasil impor. Impor sinkron menyalin nilainya ke surat yang sudah tercatat bila berbeda; sel kosong tidak menghapus | Tidak |
 | Kepada | Kepada, Tujuan, Penerima, To | Tidak |
 | No. Agenda (surat masuk) / No. Urut (surat keluar) | No, Nomor Urut, No Urut, No Agenda, Nomor Agenda; juga judul kolom pertama yang diakhiri kata "No" bila judul register menyatu dengannya (mis. `SURAT KELUAR 2026 No` pada ekspor CSV Google). Bila ada kolom "No" dan kolom "No. Agenda", dipakai kolom No. Agenda | Tidak |
 | Jenis surat (surat masuk) / Jenis naskah (surat keluar) | Jenis Surat, Jenis Naskah, Naskah Dinas, Jenis | Tidak |
