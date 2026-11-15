@@ -15,7 +15,7 @@ import { NAMA_ELEMEN_MARKUP } from '../constants/nama-elemen-markup';
  *
  * parse5 adalah dependensi frontend (lewat jsdom). Uji ini memakai parse5 dari
  * folder SIMSA_PARSE5_DIR (job CI memasangnya di luar backend/ agar dependensi
- * backend yang terkunci tidak berubah) atau dari frontend/node_modules (lokal). Di CI uji gagal bila parse5 tidak ada,
+ * backend yang terkunci tidak berubah) atau dari frontend/node_modules (lokal). Di GitHub Actions uji gagal bila parse5 tidak ada,
  * supaya tidak terlewati diam-diam. Kasus tetapnya juga ada di
  * sanitize.middleware.test.ts dengan pemeriksa ekspresi reguler.
  */
@@ -26,7 +26,8 @@ const lokasiParse5 = [
 ]
     .find(lokasi => existsSync(lokasi));
 const parse5: any = lokasiParse5 ? await import(/* @vite-ignore */ pathToFileURL(lokasiParse5).href) : null;
-if (!parse5 && process.env.CI) throw new Error('parse5 tidak terpasang; uji oracle penyaring tidak boleh dilewati di CI.');
+// Hanya GitHub Actions yang memasang parse5. Build kandidat Vercel juga menyalakan CI, tetapi tidak memasangnya.
+if (!parse5 && process.env.GITHUB_ACTIONS === 'true') throw new Error('parse5 tidak terpasang; uji oracle penyaring tidak boleh dilewati di GitHub Actions.');
 
 const multiBaris = (teks: string): string => {
     const req: any = { body: { perihal: teks } };
