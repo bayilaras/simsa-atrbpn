@@ -24,6 +24,7 @@ import { logger } from './utils/logger';
 // Import routes
 import suratMasukRoutes from './routes/surat-masuk.routes';
 import suratKeluarRoutes from './routes/surat-keluar.routes';
+import suratTerhapusRoutes from './routes/surat-terhapus.routes';
 import arsipRoutes from './routes/arsip.routes';
 import uploadRoutes from './routes/upload.routes';
 import unitKerjaRoutes from './routes/unit-kerja.routes';
@@ -333,6 +334,7 @@ app.get('/api/blob-test', authMiddleware as any, roleMiddleware(['super_admin'])
         res.status(503).json({
             success: false,
             error: 'Private object storage is unavailable',
+            message: 'Penyimpanan berkas sementara tidak tersedia. Silakan coba lagi.',
             provider: cloudPlatformConfig.storageProvider,
         });
     }
@@ -344,6 +346,7 @@ app.use('/api', generalLimiter);
 // API Routes
 app.use('/api/surat-masuk', suratMasukRoutes);
 app.use('/api/surat-keluar', suratKeluarRoutes);
+app.use('/api/surat-terhapus', suratTerhapusRoutes); // Super Admin: daftar surat terhapus dan pemulihannya
 app.use('/api/arsip', arsipRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/unit-kerja', unitKerjaRoutes);
@@ -392,7 +395,7 @@ app.use('/api/record-access-grants', recordAccessGrantRoutes); // Purpose-bound,
 
 // 404 handler
 app.use((req: Request, res: Response) => {
-    res.status(404).json({ success: false, error: 'Not Found', path: req.path });
+    res.status(404).json({ success: false, error: 'Not Found', message: 'Alamat yang diminta tidak ditemukan.', path: req.path });
 });
 
 // Request body errors raised by body-parser that are the client's, by type.

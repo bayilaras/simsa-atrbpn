@@ -7,6 +7,7 @@ import {
     ChevronRight,
     CircleHelp,
     Clock3,
+    ExternalLink,
     FileCheck2,
     FileSearch,
     FolderTree,
@@ -16,9 +17,12 @@ import {
     Mail,
     Menu,
     Printer,
+    Reply,
     Rocket,
+    RotateCcw,
     Scale,
     Search,
+    Send,
     ShieldCheck,
     Smartphone,
     Users,
@@ -32,6 +36,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/context/AuthContext'
 import { useAppConfig } from '@/context/app-config-context'
+import { PASSWORD_MIN_LENGTH } from '@/lib/password-policy'
+
+// Situs panduan lengkap (docs-site/, docusaurus.config.js `url`).
+const ALAMAT_PANDUAN_LENGKAP = 'https://simsa-atrbpn.vercel.app'
 
 const ALL_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen', 'staff', 'auditor']
 const ADMIN_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']
@@ -95,6 +103,23 @@ const GUIDE_SECTIONS = [
         action: { label: 'Buka Dashboard', to: '/' },
     },
     {
+        id: 'ganti-kata-sandi',
+        category: 'dasar',
+        title: 'Mengganti kata sandi',
+        summary: 'Ganti kata sandi awal dari administrator melalui Pengaturan › Profil.',
+        icon: KeyRound,
+        roles: ALL_ROLES,
+        keywords: ['kata sandi', 'password', 'ganti kata sandi', 'ubah kata sandi', 'profil', 'pengaturan', 'akun'],
+        steps: [
+            'Buka menu akun di kanan atas, lalu pilih Pengaturan. Halaman Pengaturan terbuka pada tab Profil.',
+            'Pada kartu Ubah Kata Sandi, isi Kata sandi saat ini, Kata sandi baru, dan Konfirmasi kata sandi baru, lalu tekan Simpan Kata Sandi.',
+            `Kata sandi baru minimal ${PASSWORD_MIN_LENGTH} karakter, tidak memuat nama atau bagian depan email Anda, dan bukan kata sandi yang umum.`,
+            'Setelah kata sandi diubah, sesi SIMSA di perangkat lain ditutup.',
+            'Akun yang masuk dengan Google tidak memiliki kata sandi SIMSA. Bila perlu masuk dengan email dan kata sandi, minta Super Admin mengaturnya melalui Manajemen Pengguna.',
+        ],
+        action: { label: 'Buka Pengaturan', to: '/settings' },
+    },
+    {
         id: 'surat-masuk-keluar',
         category: 'surat',
         title: 'Mengelola surat masuk dan keluar',
@@ -107,11 +132,78 @@ const GUIDE_SECTIONS = [
             'Cari dahulu berdasarkan nomor, perihal, pengirim, atau penerima untuk mencegah pencatatan ganda.',
             'Isi metadata dari dokumen sumber secara lengkap dan periksa kembali tanggal serta nomor surat. Pada formulir surat masuk, admin dapat memilih sifat Terbatas, sedangkan sifat Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin. Surat Terbatas, Rahasia, atau Sangat Rahasia hanya dapat dibuka atau diubah dengan persetujuan akses berjangka, juga oleh pencatatnya; ajukan persetujuan akses setelah menyimpan.',
             'Untuk daftar CSV atau XLSX, pilih unit kerja konkret lalu Impor CSV/XLSX dan Pratinjau (pilih lembar kerja bila ada beberapa). Periksa pemetaan kolom, lalu Impor; perbaiki judul atau baris yang ditolak karena data tidak lengkap atau tidak valid pada berkas sumber dan periksa hasil karena sebagian baris dapat berhasil saat baris lain gagal.',
-            'Sifat surat masuk sekaligus menjadi klasifikasi keamanan. Tulis Sifat Surat sebagai Biasa, Terbatas, Rahasia, atau Sangat Rahasia; sifat urgensi Segera, Sangat Segera, Amat Segera/Kilat, Penting, dan Undangan dibaca Biasa, begitu pula sel kosong atau “-”. Baris surat baru dengan sifat lain ditolak untuk semua pengguna, termasuk Super Admin, dengan keterangan “Sifat surat tidak dikenal…”. Pratinjau hanya menampilkan isi sumber; periksa Rincian hasil impor per baris setelah Impor. Impor surat keluar tidak terpengaruh karena sifatnya adalah urgensi.',
+            'Sifat surat masuk sekaligus menjadi klasifikasi keamanan. Tulis Sifat Surat sebagai Biasa, Terbatas, Rahasia, atau Sangat Rahasia; sifat urgensi Segera, Sangat Segera, Amat Segera/Kilat, Penting, dan Undangan dibaca Biasa, begitu pula sel kosong atau “-”. Baris surat baru dengan sifat lain ditolak untuk semua pengguna, termasuk Super Admin, dengan keterangan “Sifat surat tidak dikenal…”. Pratinjau mencantumkan baris yang akan ditolak beserta alasannya sebelum Impor; periksa juga Rincian hasil impor per baris setelah Impor. Impor surat keluar tidak terpengaruh karena sifatnya adalah urgensi.',
             'Baris surat masuk Rahasia atau Sangat Rahasia hanya dapat diimpor oleh Super Admin. Bila diimpor Admin Unit Kerja, Admin Dirjen, atau Admin Sesditjen, baris itu ditolak dengan keterangan “Klasifikasi keamanan melebihi kewenangan pengguna…”, tidak dicocokkan dengan surat yang sudah tercatat (juga saat sinkron), dan baris lain tetap tersimpan. Minta Super Admin mengimpor lembar yang sama atau mencatat surat itu melalui formulir surat masuk, yang menyediakan pilihan Rahasia dan Sangat Rahasia bagi Super Admin. Surat Rahasia atau Sangat Rahasia yang diimpor Super Admin tidak tampil bagi admin tersebut tanpa persetujuan akses rekod.',
             'Periksa Rincian hasil impor per baris (filter Perlu dicek) atau unduh laporannya sebagai CSV. Bila sumber diubah setelah diimpor, centang Sinkronkan surat yang sudah tercatat sebelum mengimpor ulang; perubahan dicatat di log audit, sel kosong tidak menghapus data, sifat surat masuk tidak ikut diubah, dan surat yang sedang atau telah disetujui, diarsipkan, dihapus, atau tidak boleh Anda ubah tetap seperti semula.',
             'Simpan metadata dan pastikan detailnya dapat dibuka. Tambahkan lampiran hanya bila fasilitas penyimpanan file tersedia dan berkasnya memang terkait; arsip fisik tidak memerlukan unggahan pengganti.',
             'Gunakan Distribusi bila menu tersebut tersedia dan tindak lanjut memang diperlukan.',
+        ],
+        action: { label: 'Buka Surat Masuk', to: '/surat/masuk' },
+    },
+    {
+        id: 'persetujuan-surat-keluar',
+        category: 'surat',
+        title: 'Persetujuan surat keluar sebelum diarsipkan',
+        summary: 'Surat keluar diajukan, disetujui, lalu baru dapat diarsipkan; beberapa surat dapat diproses sekaligus.',
+        icon: Send,
+        roles: ADMIN_ROLES,
+        keywords: ['persetujuan', 'ajukan persetujuan', 'setujui', 'tolak', 'penyetuju', 'arsipkan', 'surat keluar', 'massal', 'perlu perbaikan'],
+        steps: [
+            'Surat keluar yang baru dicatat berstatus Draft. Tombol Arsipkan baru muncul setelah surat berstatus Disetujui.',
+            'Pembuat surat membuka detail surat, menekan Ajukan Persetujuan, lalu memilih penyetuju: administrator aktif lain untuk unit surat itu atau Super Admin.',
+            'Penyetuju membuka surat yang menunggu keputusannya lalu menekan Setujui atau Tolak. Penolakan wajib disertai catatan; surat yang ditolak berstatus Perlu Perbaikan, dapat diubah, lalu diajukan kembali.',
+            'Untuk beberapa surat sekaligus, centang surat di daftar Surat Keluar, lalu pilih Ajukan Persetujuan atau Setujui pada bilah di atas daftar. Setiap surat tetap diperiksa satu per satu; surat yang tidak dapat diproses disebutkan beserta alasannya.',
+            'Jumlah surat yang menunggu keputusan Anda tampil pada menu Surat Keluar dan di Dashboard.',
+            'Setelah Disetujui, pilih Arsipkan pada detail surat atau pada menu baris di daftar. Persetujuan ini adalah persetujuan internal SIMSA, bukan tanda tangan elektronik BSrE/PSrE.',
+        ],
+        action: { label: 'Buka Surat Keluar', to: '/surat/keluar' },
+    },
+    {
+        id: 'tindak-lanjut-surat',
+        category: 'surat',
+        title: 'Menu Tindak Lanjut',
+        summary: 'Membalas, membuat nota dinas, mendisposisikan, atau menautkan surat langsung dari halaman detailnya.',
+        icon: Reply,
+        roles: ADMIN_ROLES,
+        keywords: ['tindak lanjut', 'balas', 'saya balas', 'nota dinas', 'nd penjelas', 'disposisi', 'terima disposisi', 'penyelesaian', 'rangkaian', 'tautkan'],
+        steps: [
+            'Buka detail surat masuk atau surat keluar, lalu tekan tombol Tindak Lanjut. Pilihan yang tampil mengikuti kewenangan Anda atas surat itu.',
+            'Saya Balas dan Buat Nota Dinas membuka formulir Tambah Surat Keluar dengan Nomor Referensi surat asal yang sudah terisi. Buat ND Penjelas tersedia untuk surat keluar berjenis Keputusan.',
+            'Pada surat masuk, Disposisi ke Direktorat mengirim surat ke unit tujuan. Unit penerima memilih Terima Disposisi, lalu Penyelesaian setelah disposisinya ditindaklanjuti.',
+            'Tautkan ke Rangkaian menghubungkan surat dengan surat lain dalam satu rangkaian agar alurnya dapat dilacak.',
+            'Dari daftar Surat Keluar, pilihan Tindak Lanjut Surat Masuk… membuka formulir baru dan langsung meminta Anda memilih surat yang ditindaklanjuti.',
+        ],
+        action: { label: 'Buka Surat Masuk', to: '/surat/masuk' },
+    },
+    {
+        id: 'lacak-surat',
+        category: 'surat',
+        title: 'Lacak Surat',
+        summary: 'Menelusuri surat masuk dan keluar beserta rangkaian tindak lanjutnya dalam satu pencarian.',
+        icon: Search,
+        roles: ALL_ROLES,
+        keywords: ['lacak', 'lacak surat', 'telusur', 'rangkaian', 'berkas rangkaian', 'perlu dilengkapi', 'nomor surat'],
+        steps: [
+            'Buka Surat › Lacak Surat di sidebar.',
+            'Pada tab Lacak, ketik nomor surat (misalnya B-12/PTPP.1/IX/2024) atau kata dalam perihal. Hasil memuat surat masuk dan keluar yang boleh Anda lihat beserta rangkaian tindak lanjutnya.',
+            'Tab Berkas Rangkaian menampilkan rangkaian surat yang dapat Anda lihat.',
+            'Tab Perlu Dilengkapi menampilkan surat dan rangkaian dalam jangkauan Anda yang rantainya belum lengkap, misalnya surat masuk yang belum ditindaklanjuti atau disposisi yang belum selesai. Bagi admin, angka pada menu Lacak Surat menunjukkan jumlahnya.',
+        ],
+        action: { label: 'Buka Lacak Surat', to: '/surat/lacak' },
+    },
+    {
+        id: 'surat-terhapus',
+        category: 'surat',
+        title: 'Menemukan surat yang terhapus',
+        summary: 'Super Admin dapat melihat dan memulihkan surat yang sudah dihapus.',
+        icon: RotateCcw,
+        roles: ['super_admin'],
+        keywords: ['terhapus', 'surat terhapus', 'hapus', 'pulihkan', 'kembalikan surat', 'super admin'],
+        steps: [
+            'Surat yang dihapus tidak lagi tampil di daftar. Hanya Super Admin yang dapat melihat dan memulihkannya; admin lain meminta bantuan Super Admin.',
+            'Buka Surat Masuk atau Surat Keluar, lalu pilih tab Surat Terhapus di atas daftar.',
+            'Cari surat, periksa alasan penghapusannya, lalu tekan Pulihkan dan isi alasan pemulihan minimal 10 karakter.',
+            'Surat kembali ke daftar dengan nomor agenda atau nomor urut dan nomor surat semula, dan pemulihannya dicatat di log audit. Bila nomor surat yang sama dipakai surat aktif lain di unit itu, pemberitahuan setelah pemulihan menyebutkannya.',
         ],
         action: { label: 'Buka Surat Masuk', to: '/surat/masuk' },
     },
@@ -317,7 +409,15 @@ const TROUBLESHOOTING = [
     },
     {
         problem: 'Sesi berakhir saat bekerja',
-        answer: 'Aplikasi mengakhiri sesi yang tidak aktif untuk keamanan. Login kembali dan periksa apakah perubahan terakhir sudah tersimpan sebelum mengulang input.',
+        answer: 'Aplikasi mengakhiri sesi yang tidak aktif selama 30 menit untuk keamanan. Masuk kembali, lalu buka lagi formulir surat atau dialog Arsipkan yang sedang diisi di tab yang sama: isian yang belum disimpan ditawarkan untuk dipulihkan. Isian tidak dapat dipulihkan bila tab sudah ditutup atau Anda menekan Keluar, dan berkas PDF yang sudah dipilih perlu dipilih ulang.',
+    },
+    {
+        problem: 'Muncul pemberitahuan versi baru SIMSA',
+        answer: 'Simpan dahulu pekerjaan yang sedang diisi, lalu tekan Muat ulang pada pemberitahuan. Halaman tidak dimuat ulang sendiri selama formulir surat atau dialog Arsipkan masih memuat isian yang belum disimpan.',
+    },
+    {
+        problem: 'Unggah berkas PDF lama atau gagal',
+        answer: 'Persentase unggahan tampil di bilah tombol di bagian bawah formulir surat selama berkas diunggah. Bila unggahan melewati batas waktu, periksa koneksi internet, kecilkan ukuran PDF (misalnya dengan fitur kompres PDF), pilih berkas yang sudah dikecilkan, lalu simpan kembali; isian formulir tetap ada.',
     },
 ]
 
@@ -376,15 +476,24 @@ export default function UserGuide() {
                 title={<span id="panduan-title">Panduan Pengguna SIMSA</span>}
                 description="Pelajari alur kerja pengelolaan surat dan arsip secara bertahap sesuai peran Anda."
                 actions={(
-                    <Button
-                        type="button"
-                        variant="outline"
-                        className="min-h-11 print:hidden"
-                        onClick={() => window.print()}
-                    >
-                        <Printer className="mr-2 h-4 w-4" aria-hidden="true" />
-                        Cetak panduan
-                    </Button>
+                    <div className="flex flex-wrap gap-2 print:hidden">
+                        <Button asChild variant="outline" className="min-h-11">
+                            <a href={ALAMAT_PANDUAN_LENGKAP} target="_blank" rel="noopener noreferrer">
+                                <ExternalLink className="mr-2 h-4 w-4" aria-hidden="true" />
+                                Panduan lengkap
+                                <span className="sr-only"> (membuka tab baru)</span>
+                            </a>
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="min-h-11"
+                            onClick={() => window.print()}
+                        >
+                            <Printer className="mr-2 h-4 w-4" aria-hidden="true" />
+                            Cetak panduan
+                        </Button>
+                    </div>
                 )}
             />
 
@@ -693,7 +802,17 @@ export default function UserGuide() {
                 <ShieldCheck className="h-4 w-4" aria-hidden="true" />
                 <AlertTitle>Butuh bantuan lebih lanjut?</AlertTitle>
                 <AlertDescription>
-                    Catat halaman, waktu kejadian, dan pesan kesalahan lalu hubungi administrator SIMSA. Jangan menyertakan kata sandi atau mengirim dokumen arsip melalui kanal bantuan yang tidak disetujui.
+                    <p>
+                        Panduan lengkap tersedia di situs Panduan SIMSA:{' '}
+                        <a href={ALAMAT_PANDUAN_LENGKAP} target="_blank" rel="noopener noreferrer" className="font-medium text-primary underline underline-offset-4">
+                            {ALAMAT_PANDUAN_LENGKAP.replace('https://', '')}
+                            <span className="sr-only"> (membuka tab baru)</span>
+                        </a>.
+                    </p>
+                    <p className="mt-2">Hubungi Super Admin unit Anda bila masih ada kendala.</p>
+                    <p className="mt-2">
+                        Catat halaman, waktu kejadian, dan pesan kesalahan sebelum menghubungi. Jangan menyertakan kata sandi atau mengirim dokumen arsip melalui kanal bantuan yang tidak disetujui.
+                    </p>
                 </AlertDescription>
             </Alert>
         </article>

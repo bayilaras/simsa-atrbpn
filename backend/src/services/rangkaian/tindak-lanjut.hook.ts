@@ -106,6 +106,10 @@ export async function guardSuratMasukMutation(tx: Tx, ctx: {
     perubahan: Record<string, unknown> | 'hapus';
     alasan?: string | null;
     audit?: CriticalAuditContext;
+    /** Perubahan identitas oleh server (nomor surat otomatis saat pindah tahun); aturan rangkaian yang sama berlaku. */
+    perubahanOtomatis?: Partial<Record<KolomSensitif, string>>;
+    /** Alasan yang dicatat bila hanya perubahanOtomatis yang mengubah identitas; perubahan pengguna tetap wajib beralasan sendiri. */
+    alasanOtomatis?: string;
 }): Promise<GuardSuratMasukHasil | null> {
     const [sm] = rowsOf<{ nomor_surat: string | null; perihal: string | null; sifat_surat: string | null }>(await tx.execute(sql`
         SELECT nomor_surat, perihal, sifat_surat FROM surat_masuk WHERE id = ${ctx.suratMasukId} FOR UPDATE`));
@@ -114,10 +118,12 @@ export async function guardSuratMasukMutation(tx: Tx, ctx: {
         nomorSurat: sm.nomor_surat, perihal: sm.perihal, sifatSurat: sm.sifat_surat,
     };
     const perubahan = ctx.perubahan;
-    const kolom: string[] = perubahan === 'hapus'
-        ? ['hapus']
-        : KOLOM_SENSITIF.filter((nama) => perubahan[nama] !== undefined
-            && NORMALISASI[nama](perubahan[nama]) !== NORMALISASI[nama](lama[nama]));
+    const berubah = (sumber: Record<string, unknown>) => KOLOM_SENSITIF.filter((nama) => sumber[nama] !== undefined
+        && NORMALISASI[nama](sumber[nama]) !== NORMALISASI[nama](lama[nama]));
+    const kolomPengguna: string[] = perubahan === 'hapus' ? ['hapus'] : berubah(perubahan);
+    const kolomOtomatis = perubahan === 'hapus' || !ctx.perubahanOtomatis ? []
+        : berubah(ctx.perubahanOtomatis).filter((nama) => !kolomPengguna.includes(nama));
+    const kolom = [...kolomPengguna, ...kolomOtomatis];
     if (kolom.length === 0) return null;
 
     const bacaKeanggotaan = async () => rowsOf<{ rangkaian_id: string }>(await tx.execute(sql`
@@ -136,11 +142,21 @@ export async function guardSuratMasukMutation(tx: Tx, ctx: {
     if (rangkaian.status === 'diberkaskan') {
         throw new ConflictError('Surat ini bagian dari berkas rangkaian yang sudah diberkaskan; nomor, perihal, sifat, dan penghapusan dikunci.');
     }
-    const alasan = ctx.alasan?.trim() ?? '';
+    const alasan = (kolomPengguna.length > 0 ? ctx.alasan : ctx.alasan?.trim() || ctx.alasanOtomatis)?.trim() ?? '';
     if (alasan.length < 10) {
         throw new ValidationError('Perubahan nomor/perihal/sifat atau penghapusan surat dalam rangkaian wajib disertai alasan (minimal 10 karakter).');
     }
     return { rangkaianId, auditTertunda: ctx.audit ? { kolom, alasan, before: lama } : null };
+}
+
+/** true bila surat masuk anggota rangkaian yang sudah diberkaskan: nomor, perihal, dan sifatnya dikunci (§5). */
+export async function identitasDikunciBerkas(tx: Tx, suratMasukId: string): Promise<boolean> {
+    const [baris] = rowsOf<{ dikunci: boolean }>(await tx.execute(sql`
+        SELECT EXISTS (
+            SELECT 1 FROM rangkaian_anggota a JOIN rangkaian_surat rs ON rs.id = a.rangkaian_id
+            WHERE a.surat_masuk_id = ${suratMasukId} AND rs.status = 'diberkaskan'
+        ) AS dikunci`));
+    return baris?.dikunci === true;
 }
 
 /** Dipanggil hanya bila UPDATE/soft delete mengembalikan baris (T13-2): audit koreksi lalu recompute §8. */

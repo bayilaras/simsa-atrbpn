@@ -132,7 +132,7 @@ describe.each(letters)('persistent $kind list feedback', ({ kind, Component, emp
         fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
         await screen.findByRole('alert');
         expect(screen.queryByText(row.perihal)).not.toBeInTheDocument();
-        expect(screen.queryByRole('navigation', { name: 'pagination' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('navigation', { name: 'Navigasi halaman' })).not.toBeInTheDocument();
         expect(screen.queryByText(emptyText)).not.toBeInTheDocument();
         mocks[kind].getAll.mockResolvedValue(empty);
         fireEvent.click(screen.getByRole('button', { name: 'Coba lagi' }));

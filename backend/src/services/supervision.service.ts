@@ -11,7 +11,8 @@ import {
     retentionTriggerEvents,
     retentionTriggerVerifications,
 } from '../db/schema';
-import { eq, and, desc, sql, gte } from 'drizzle-orm';
+import { eq, and, desc, sql, gte, isNotNull, notInArray } from 'drizzle-orm';
+import { AUTHENTICATION_AUDIT_ACTIONS } from './audit-log.service.js';
 import {
     CURRENT_APPRAISAL_CASE_JOIN,
     CURRENT_APPRAISAL_DECISION_JOIN,
@@ -117,6 +118,12 @@ export class SupervisionService {
             })
             .from(auditLog)
             .leftJoin(users, eq(auditLog.userId, users.id))
+            // Work done in the application only: signing in and out is not
+            // activity, and failed sign-ins belong to no user.
+            .where(and(
+                isNotNull(auditLog.userId),
+                notInArray(auditLog.action, [...AUTHENTICATION_AUDIT_ACTIONS]),
+            ))
             .groupBy(auditLog.userId, users.name, users.email)
             .orderBy(desc(sql`count(*)`))
             .limit(limit);

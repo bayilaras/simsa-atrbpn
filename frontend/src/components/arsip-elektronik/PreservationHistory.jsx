@@ -86,7 +86,7 @@ export default function PreservationHistory({ arsipId, refreshVersion = 0 }) {
                                 )}
 
                                 {item.notes && (
-                                    <p className="text-sm text-muted-foreground italic">
+                                    <p className="text-sm text-muted-foreground italic whitespace-pre-line">
                                         "{item.notes}"
                                     </p>
                                 )}

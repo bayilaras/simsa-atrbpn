@@ -6,8 +6,10 @@ Hanya pengguna aktif dengan peran **Super Admin** dapat membuka **Manajemen Peng
 
 1. Buka **Administrasi → Manajemen Pengguna**, lalu **Tambah Pengguna**.
 2. Isi nama, email unik, peran dan unit kerja yang sesuai penugasan. Jabatan dan NIP membantu identifikasi pejabat; mengisinya tidak membuat tanda tangan elektronik.
-3. Untuk akun email/kata sandi, isi kata sandi 8 sampai 128 karakter. Berikan kata sandi awal melalui saluran internal yang disetujui, lalu minta pengguna menggantinya di [Pengaturan → Profil → Ubah Kata Sandi](settings.md#ubah-kata-sandi).
-4. Simpan, lalu uji login serta akses menggunakan akun tersebut.
+3. Untuk akun email/kata sandi, isi **Kata sandi**: minimal 12 karakter, tidak memuat nama atau bagian depan email pengguna, dan bukan kata sandi yang umum. Isian ini boleh dikosongkan; akun tanpa kata sandi hanya dapat masuk dengan Google. Berikan kata sandi awal melalui saluran internal yang disetujui, lalu minta pegawai menggantinya di [Pengaturan → Profil → Ubah Kata Sandi](settings.md#ubah-kata-sandi) setelah masuk pertama kali.
+4. Klik **Tambah Pengguna** pada dialog, lalu uji login serta akses menggunakan akun tersebut.
+
+Daftar pengguna dan pilihan unit kerja menampilkan nama unit kerja, bukan kodenya.
 
 Akun yang dibuat dengan kata sandi masuk memakai email dan kata sandi tersebut. Google hanya dapat digunakan jika integrasinya aktif dan emailnya sama. Jangan menganggap setiap akun baru otomatis dapat masuk melalui Google.
 
@@ -27,10 +29,13 @@ Unit kerja bukan sekadar isian pelengkap. Akun selain Super Admin yang belum dit
 Login Google pertama dengan email yang belum terdaftar membuat akun berperan **Pengguna** dengan status **Menunggu persetujuan**. Akun ini belum memiliki unit kerja dan belum dapat membuka data.
 
 1. Di **Manajemen Pengguna**, klik filter **Menunggu persetujuan**.
-2. Pastikan nama dan email milik pegawai yang memang memerlukan akses.
+2. Pastikan nama dan email milik pegawai yang memang memerlukan akses. Tanyakan langsung kepada pemilik email, misalnya lewat telepon atau tatap muka, bahwa dialah yang masuk dengan Google.
 3. Klik **Setujui akses** pada baris pengguna tersebut.
-4. Pada dialog **Setujui akses pengguna**, pilih **Peran**. Untuk **Admin Unit Kerja**, pilih juga **Unit kerja**; Super Admin tidak memiliki unit kerja.
-5. Klik **Setujui akses**.
+4. Pada dialog **Setujui akses pengguna**, periksa **Email akun yang meminta akses**, lalu pilih **Peran**. Untuk **Admin Unit Kerja**, pilih juga **Unit kerja**; Super Admin tidak memiliki unit kerja.
+5. Centang *Saya sudah memastikan langsung kepada pemilik email ini.* Tombol persetujuan baru aktif setelah kotak ini dicentang.
+6. Klik **Setujui akses**.
+
+Akun yang menunggu persetujuan hanya dapat disetujui lewat tombol ini. Pilihan **Ubah Peran/Unit** dan **Atur Ulang Kata Sandi** tidak tampil pada menu tindakannya.
 
 Persetujuan menutup sesi lama pengguna, sehingga pengguna perlu masuk kembali dengan Google. Jangan menyetujui akun yang tidak dikenal; pilih **Nonaktifkan** dari menu tindakannya.
 
@@ -38,7 +43,7 @@ Persetujuan menutup sesi lama pengguna, sehingga pengguna perlu masuk kembali de
 
 Cari pengguna, buka menu tindakan, pilih **Ubah Peran/Unit**, ubah peran/unit/status sesuai penugasan, lalu simpan. Sistem membatasi perubahan yang akan menghilangkan Super Admin aktif terakhir dan membatalkan sesi yang terdampak perubahan akses. Perubahan peran atau unit dan penonaktifan juga ditolak selama pengguna masih menjadi penyetuju aktif surat keluar yang menunggu persetujuan.
 
-Gunakan **Nonaktifkan** untuk menghentikan akses. Data identitas dan riwayat aktivitas tetap dipertahankan; tindakan ini bukan penghapusan permanen pengguna. Untuk mengaktifkan kembali, gunakan **Aktifkan** setelah penugasannya diperiksa.
+Gunakan **Nonaktifkan** untuk menghentikan akses. Dialog **Nonaktifkan pengguna?** menjelaskan bahwa akun tidak dapat dipakai untuk masuk sampai diaktifkan kembali; klik **Nonaktifkan** untuk melanjutkan. Data identitas dan riwayat aktivitas tetap dipertahankan; tindakan ini bukan penghapusan permanen pengguna. Untuk mengaktifkan kembali, gunakan **Aktifkan** lalu konfirmasi pada dialog **Aktifkan pengguna?** setelah penugasannya diperiksa.
 
 ### Mengubah akun lama menjadi Admin Unit Kerja
 
@@ -54,9 +59,9 @@ Perubahan ini satu arah: setelah disimpan, peran lama tidak dapat dipilih kembal
 SIMSA tidak mengirim email untuk mengatur ulang kata sandi. Bila pengguna lupa kata sandinya, Super Admin menetapkan kata sandi baru.
 
 1. Cari pengguna, buka menu tindakan, lalu pilih **Atur Ulang Kata Sandi**.
-2. Isi **Kata sandi baru** (8 sampai 128 karakter) dan **Konfirmasi kata sandi baru**.
+2. Isi **Kata sandi baru** (minimal 12 karakter, tidak memuat nama atau bagian depan email pengguna, dan bukan kata sandi yang umum) dan **Konfirmasi kata sandi baru**.
 3. Klik **Atur Ulang Kata Sandi**.
-4. Sampaikan kata sandi kepada pengguna secara langsung, lalu minta pengguna menggantinya di [Pengaturan → Profil → Ubah Kata Sandi](settings.md#ubah-kata-sandi).
+4. Sampaikan kata sandi kepada pengguna secara langsung, lalu minta pengguna menggantinya di [Pengaturan → Profil → Ubah Kata Sandi](settings.md#ubah-kata-sandi) setelah masuk pertama kali.
 
 - Kata sandi baru langsung berlaku, kata sandi lama tidak dapat dipakai lagi, dan semua sesi pengguna tersebut ditutup.
 - Hanya Super Admin yang dapat melakukannya, termasuk untuk akun Super Admin lain.

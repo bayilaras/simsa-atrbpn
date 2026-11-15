@@ -13,6 +13,7 @@ import { ocrLimiter, uploadLimiter } from '../middlewares/rate-limiter.middlewar
 import { createLogger } from '../utils/logger';
 import { resolveRecordUnitScope } from '../utils/record-unit-scope';
 import { uuidParamValidator } from '../middlewares/validate.middleware';
+import { badanGalatValidasi } from '../utils/galat-validasi.js';
 import { confirmBulkUploadSchema } from '../validators/schemas';
 
 const log = createLogger('BulkUploadRoutes');
@@ -35,7 +36,7 @@ function resolveUploadUnit(req: AuthRequest, res: Response): string | undefined 
     if (assignedScope === null && !requestedUnit) {
         res.status(400).json({
             success: false,
-            error: 'unitKerjaId diperlukan untuk super_admin',
+            error: 'Pilih unit kerja terlebih dahulu.',
         });
         return undefined;
     }
@@ -78,7 +79,7 @@ function resolveActiveBatchUnit(req: AuthRequest, res: Response): string | undef
     if (assignedScope === null && !requestedUnit) {
         res.status(400).json({
             success: false,
-            error: 'unitKerjaId diperlukan untuk super_admin',
+            error: 'Pilih unit kerja terlebih dahulu.',
         });
         return undefined;
     }
@@ -274,7 +275,7 @@ router.post(
                     batchId: batch.batchId,
                     totalFiles: batch.totalFiles,
                     status: batch.status,
-                    message: 'Upload tersimpan. Gunakan POST /api/bulk-upload/:batchId/process untuk memproses OCR dan GET untuk membaca status.'
+                    message: 'Berkas tersimpan dan menunggu pemrosesan OCR.'
                 }
             });
         } catch (error) {
@@ -419,14 +420,7 @@ router.post('/:batchId/confirm', authMiddleware, canWriteMiddleware(), async (re
 
         const parsed = confirmBulkUploadSchema.safeParse(req.body);
         if (!parsed.success) {
-            return res.status(400).json({
-                success: false,
-                error: 'Validation failed',
-                details: parsed.error.issues.map(issue => ({
-                    field: issue.path.join('.'),
-                    message: issue.message,
-                })),
-            });
+            return res.status(400).json(badanGalatValidasi(parsed.error.issues));
         }
 
         const result = await bulkUploadService.confirmBatch(

@@ -25,7 +25,7 @@ router.get('/suggest-jra/:klasifikasiKode', async (req: AuthRequest, res: Respon
         const klasifikasiKode = req.params.klasifikasiKode as string;
 
         if (!klasifikasiKode) {
-            return res.status(400).json({ error: 'klasifikasiKode is required' });
+            return res.status(400).json({ error: 'klasifikasiKode is required', message: 'Kode klasifikasi wajib diisi.' });
         }
 
         const result = await mappingService.getSuggestedJRA(klasifikasiKode);

@@ -16,6 +16,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/hooks/use-toast'
 import { arsipService } from '@/services/arsip.service'
 import { adaKelasTersembunyi, bolehMemilihKelas, PESAN_KELAS_TERBATAS_PERAN, saringOpsiKelas } from '@/lib/kelas-keamanan'
+import { dataSudahBerubah, versiDimuat } from '@/lib/data-sudah-berubah'
 import {
     FIELD_METADATA,
     KLASIFIKASI_KEAMANAN_OPTIONS,
@@ -90,15 +91,19 @@ function PilihanSelect({ field, value, options, onChange, disabled, galat, petun
     )
 }
 
-function FormUbahArsip({ arsip, saving, setSaving, onClose, onSaved }) {
+function FormUbahArsip({ arsip, saving, setSaving, onClose, onSaved, onMuatUlang }) {
     const { user } = useAuth()
     const { toast } = useToast()
     const role = user?.role
     // Isian awal dibekukan saat dialog dibuka; dialog dilepas saat ditutup.
     const [awal] = useState(() => formAwal(arsip))
+    // updatedAt saat dialog dibuka; server menolak bila arsip berubah sesudahnya.
+    const [versi] = useState(() => arsip?.updatedAt ?? null)
     const [form, setForm] = useState(awal)
     const [sudahDicoba, setSudahDicoba] = useState(false)
     const [galatServer, setGalatServer] = useState('')
+    const [konflikVersi, setKonflikVersi] = useState(false)
+    const [memuatUlang, setMemuatUlang] = useState(false)
 
     const berubah = useMemo(() => fieldBerubah(form, awal), [form, awal])
     const adaPerubahan = berubah.length > 0
@@ -125,6 +130,21 @@ function FormUbahArsip({ arsip, saving, setSaving, onClose, onSaved }) {
     const ubah = field => value => {
         setForm(current => ({ ...current, [field]: value }))
         setGalatServer('')
+        setKonflikVersi(false)
+    }
+
+    // Arsip diubah orang lain: muat data terbaru; formulir dipasang ulang dan isiannya dibuang.
+    const muatUlang = async () => {
+        if (!onMuatUlang) {
+            window.location.reload()
+            return
+        }
+        setMemuatUlang(true)
+        try {
+            await onMuatUlang()
+        } finally {
+            setMemuatUlang(false)
+        }
     }
     const ubahInput = field => event => ubah(field)(event.target.value)
 
@@ -142,12 +162,14 @@ function FormUbahArsip({ arsip, saving, setSaving, onClose, onSaved }) {
 
         const perubahan = payloadPerubahan(form, awal)
         setGalatServer('')
+        setKonflikVersi(false)
         setSaving(true)
         let hasil
         try {
-            hasil = await arsipService.update(arsip.id, perubahan)
+            hasil = await arsipService.update(arsip.id, { ...perubahan, ...versiDimuat(versi) })
         } catch (err) {
             setGalatServer(pesanGalatUbahArsip(err))
+            setKonflikVersi(dataSudahBerubah(err))
             setSaving(false)
             return
         }
@@ -353,7 +375,14 @@ function FormUbahArsip({ arsip, saving, setSaving, onClose, onSaved }) {
             {galatServer && (
                 <Alert variant="destructive">
                     <AlertTriangle aria-hidden="true" />
-                    <AlertDescription>{galatServer}</AlertDescription>
+                    <AlertDescription>
+                        <p>{galatServer}</p>
+                        {konflikVersi && (
+                            <Button type="button" variant="outline" size="sm" className="mt-2" onClick={muatUlang} disabled={saving || memuatUlang}>
+                                Muat ulang
+                            </Button>
+                        )}
+                    </AlertDescription>
                 </Alert>
             )}
 
@@ -385,9 +414,14 @@ function FormUbahArsip({ arsip, saving, setSaving, onClose, onSaved }) {
  * Koreksi metadata arsip lewat PUT /api/arsip/:id. Hanya field yang diubah
  * yang dikirim; klasifikasi/JRA dan retensi punya alur sendiri.
  */
-export function EditArsipDialog({ open, onOpenChange, arsip, onSaved }) {
+export function EditArsipDialog({ open, onOpenChange, arsip, onSaved, onMuatUlang }) {
     const [saving, setSaving] = useState(false)
+    // Naik setiap arsip berhasil dimuat ulang: formulir dipasang ulang dari data terbaru.
+    const [muatan, setMuatan] = useState(0)
     const tutup = () => onOpenChange(false)
+    const muatUlang = onMuatUlang
+        ? async () => { if (await onMuatUlang()) setMuatan(nilai => nilai + 1) }
+        : undefined
 
     return (
         <Dialog open={open} onOpenChange={next => !saving && onOpenChange(next)}>
@@ -407,11 +441,13 @@ export function EditArsipDialog({ open, onOpenChange, arsip, onSaved }) {
                 </DialogHeader>
                 {open && arsip && (
                     <FormUbahArsip
+                        key={muatan}
                         arsip={arsip}
                         saving={saving}
                         setSaving={setSaving}
                         onClose={tutup}
                         onSaved={onSaved}
+                        onMuatUlang={muatUlang}
                     />
                 )}
             </DialogContent>

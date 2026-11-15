@@ -80,17 +80,26 @@ Endpoint `POST /api/migration/surat-masuk` dan `/surat-keluar` tetap tersedia
 dengan kontrak yang sama untuk klien lama; frontend baru memakai impor CSV/XLSX di
 atas untuk surat masuk dan surat keluar.
 
-1. Pilih CSV dengan header unik, maksimal 1.000 rekod dan 10 MiB. Parser membatasi
-   ukuran satu rekod menjadi 64 KiB. Pecah sumber yang lebih besar menjadi batch.
+1. Pilih CSV dengan header unik, maksimal 1.000 rekod dan 4 MiB per berkas
+   (batas yang sama dengan impor CSV/XLSX surat). Parser membatasi ukuran satu
+   rekod menjadi 64 KiB. Pecah sumber yang lebih besar menjadi batch. Pemisah
+   kolom boleh koma, titik koma (CSV biasa dari Excel berpengaturan Indonesia),
+   atau tab, dan dibaca dari baris judul. Bila kolom wajib tidak ditemukan,
+   pesannya menyebut pemisah yang terbaca, misalnya *Pemisah kolom yang terbaca:
+   titik koma.*
 2. Tekan **Pratinjau**. Tidak ada penulisan rekod, alokasi nomor surat, atau
    pencatatan audit mutasi pada tahap ini.
 3. Periksa tanggal sumber, tanggal hasil, duplikasi, dan pesan setiap baris.
    Nomor baris menghitung record header sebagai 1; newline di dalam nilai CSV
    bertanda kutip tetap termasuk record yang sama.
-4. Koreksi sumber jika ada kesalahan. Tanggal kosong, tanggal yang tidak ada
-   dalam kalender, atau format tidak dikenal ditolak. Format yang diterima:
-   `YYYY-MM-DD`, `DD/MM/YYYY`, dan `DD/MM/YYYY HH:mm:ss`. Tanggal tidak pernah
-   diganti dengan tanggal hari impor.
+4. Koreksi sumber jika ada kesalahan. Tanggal dibaca dengan aturan yang sama
+   seperti impor surat: urutan hari, bulan, tahun (`03/11/2026`, `3-11-2026`,
+   `3.11.2026`, `03/11/26`, `3 November 2026`, `03-Nov-26`), atau `2026-11-03`,
+   boleh diikuti jam. Tahun dua angka 00–69 dibaca 2000-an dan 70–99 dibaca
+   1900-an. Tanggal kosong, tanggal yang tidak ada dalam kalender, tanggal yang
+   jelas ditulis bulan lebih dulu, format tidak dikenal, dan tahun di luar 1920
+   sampai 2199 ditolak. Tanggal tidak pernah ditebak atau diganti dengan tanggal
+   hari impor.
 5. Setelah pratinjau berhasil, tekan **Impor data valid**. Mengganti berkas,
    jenis rekod, atau unit tujuan membatalkan pratinjau sebelumnya.
 
@@ -100,7 +109,8 @@ bukan reservasi data: impor yang terjadi bersamaan dapat mengubah hasil.
 Penyimpanan dan audit setiap rekod tetap dalam transaksi kanoniknya. Bila satu
 baris gagal, baris yang telah berhasil tidak dibatalkan. Periksa ringkasan dan
 hasil baris sebelum mengulang; pemeriksaan duplikasi menggunakan identitas
-nomor/tahun/unit, atau tanggal/uraian/pihak untuk sumber tanpa nomor.
+nomor/tahun/unit (surat masuk bernomor: juga pengirim), atau
+tanggal/uraian/pihak untuk sumber tanpa nomor.
 
 Kode klasifikasi arsip lama tetap menjadi catatan sumber yang belum diverifikasi;
 impor tidak menetapkan JRA atau mengesahkan aturan retensi.
@@ -135,7 +145,10 @@ Impor (bukan pratinjau) dapat berjalan **per bagian**; lihat
 ## Impor Google Sheets
 
 Tombol **Impor dari Google Sheets** membaca spreadsheet yang dibagikan dengan
-akses "Siapa saja yang memiliki link".
+akses "Siapa saja yang memiliki link". Aktifkan berbagi link hanya selama impor,
+lalu matikan kembali setelah impor selesai; dialog impor mengingatkan hal ini.
+Register yang memuat surat Terbatas atau lebih tinggi jangan dibagikan lewat
+link: unduh sebagai Microsoft Excel (.xlsx), lalu impor dengan **Impor CSV/XLSX**.
 
 1. Tempel tautan spreadsheet. Bila tautan disalin saat tab tertentu terbuka
    (berisi `gid=`), tab itu langsung terpilih.
@@ -153,15 +166,60 @@ Kolom dikenali dari judulnya pada lima baris pertama, tidak pernah dari posisi.
 | Perihal | Perihal, Hal, Subject | Ya |
 | Pengirim (surat masuk) | Dari, Asal, Pengirim, From | Ya, surat masuk |
 | Kepada | Kepada, Tujuan, Penerima, To | Tidak |
-| No (nomor urut sumber, hanya untuk laporan) | No, Nomor Urut, No Urut; juga judul kolom pertama yang diakhiri kata "No" bila judul register menyatu dengannya (mis. `SURAT KELUAR 2026 No` pada ekspor CSV Google) | Tidak |
+| No. Agenda (surat masuk) / No. Urut (surat keluar) | No, Nomor Urut, No Urut, No Agenda, Nomor Agenda; juga judul kolom pertama yang diakhiri kata "No" bila judul register menyatu dengannya (mis. `SURAT KELUAR 2026 No` pada ekspor CSV Google). Bila ada kolom "No" dan kolom "No. Agenda", dipakai kolom No. Agenda | Tidak |
+| Jenis surat (surat masuk) / Jenis naskah (surat keluar) | Jenis Surat, Jenis Naskah, Naskah Dinas, Jenis | Tidak |
 | Sifat surat | Sifat Surat, Sifat | Tidak |
+| Disposisi (surat masuk) | Disposisi | Tidak |
 | Tautan dokumen (surat keluar) | Link Dokumen, Link, URL, Get link | Tidak |
+| Klasifikasi arsip, Kode klasifikasi, Jenis klasifikasi (surat keluar) | Klasifikasi Arsip, Klasifikasi; Kode Klasifikasi, Klasifikasi Kode, Kode; Jenis Klasifikasi, Klasifikasi Jenis | Tidak |
+| ID sumber; Status sumber (surat masuk) | ID; Status, Disposisi Status | Tidak (dikenali, tidak disimpan) |
+
+**Nomor dari sumber.** Nilai kolom No. Agenda/No. Urut disimpan sebagai nomor
+agenda surat masuk atau nomor urut surat keluar bila nomor itu belum dipakai di
+unit dan tahun yang sama, termasuk oleh surat yang sudah dihapus. Pemetaan pada
+pratinjau menulis **No. Agenda (disimpan bila belum dipakai)** atau **No. Urut
+(disimpan bila belum dipakai)**. Bila nomornya sudah terpakai atau bukan angka 1
+sampai 999999, baris tetap disimpan dengan nomor berikutnya dan keterangannya
+menyebut, misalnya, *Nomor agenda sumber 12 sudah dipakai; diberi nomor 57.*
+Karena itu, impor register lama sebelum mencatat surat baru untuk tahun yang
+sama; bila tidak, nomor yang sudah terpakai oleh surat baru membuat baris
+register mendapat nomor lain. Kolom "No" sumber tetap tercantum di rincian hasil
+per baris.
+
+**Kolom yang tidak disimpan.** Pemetaan menandai kolom yang dikenali tetapi tidak
+disimpan dengan **(tidak disimpan)**: ID sumber, Status sumber (surat masuk
+yang diimpor selalu mulai berstatus belum diproses), serta Klasifikasi arsip dan
+Kode klasifikasi bila tidak ada kolom Jenis klasifikasi (fasilitatif atau
+substantif), atau Jenis klasifikasi bila tidak ada kolom kode atau judul
+klasifikasi.
 
 Bila dua kolom tautan berjudul sama (misalnya label "file" dan URL), dipakai
 satu-satunya kolom yang berisi alamat web, atau kolom yang memuat setiap alamat
 kolom lainnya pada baris yang sama; hanya nilai `http(s)://` yang disimpan. Baris tanpa nomor surat (kosong atau "-") memerlukan Pengirim (surat
 masuk), atau Kepada maupun tautan dokumen (surat keluar), agar dapat dikenali
 saat impor ulang; baris tanpa keduanya ditolak per baris.
+
+### Pratinjau memeriksa setiap baris
+
+Pratinjau Google Sheets dan CSV/XLSX menjalankan pemeriksaan per baris yang sama
+dengan impor (tanggal, sifat dan batas kelas surat masuk, identitas impor, dan
+isian wajib), tanpa menyimpan apa pun. Hasilnya tampil sebelum **Impor**:
+
+- Kotak *n dari total baris akan ditolak* beserta daftar *Baris data ke-N:
+  alasan*. Baris lain tetap dapat diimpor.
+- Baris yang akan dilewati: *… baris sudah tercatat di SIMSA pada unit ini dan
+  akan dilewati, atau diperbarui bila Sinkronkan dipilih dan sumbernya
+  berubah.*, *… baris ganda di sumber akan dilewati.*, dan *… baris cocok dengan
+  surat yang sudah dihapus dan tidak akan dibuat ulang.*
+- Surat masuk bernomor dianggap sama bila nomor, tahun, dan pengirimnya sama.
+  Pengirim dibandingkan tanpa membedakan huruf besar-kecil dan spasi; baris atau
+  surat tanpa pengirim cocok dengan pengirim mana pun. Bila nomornya sama tetapi
+  pengirimnya berbeda, pratinjau menulis *… baris bernomor sama dengan surat yang
+  sudah tercatat tetapi pengirimnya berbeda; baris ini akan dicatat sebagai surat
+  baru. Periksa penulisan pengirim bila surat itu sama.*
+
+Pratinjau bukan reservasi: impor tetap memeriksa ulang setiap baris, sehingga
+perubahan data di antara pratinjau dan impor dapat mengubah hasilnya.
 
 ### Sifat surat masuk dan batas klasifikasi keamanan
 
@@ -199,10 +257,10 @@ hanya dapat diimpor oleh Super Admin.
   sebagai surat baru. Saat sinkron, baris yang cocok dengan surat yang sudah
   tercatat tetap memperbarui perihal, tanggal, dan jenis surat, karena sinkron
   tidak pernah mengubah sifat surat masuk.
-- Pratinjau Google Sheets dan berkas CSV/XLSX hanya menampilkan pemetaan kolom
-  dan contoh baris, tanpa memeriksa sifat per baris; penolakan baru terlihat di
-  rincian hasil setelah **Impor**. Hanya pratinjau CSV lama (`dryRun=true`) yang
-  sudah menandai kedua jenis baris itu tidak valid.
+- Pratinjau Google Sheets dan berkas CSV/XLSX memeriksa setiap baris dengan
+  pemeriksaan yang sama seperti impor, termasuk kedua jenis penolakan sifat ini,
+  dan mencantumkannya sebelum **Impor** (lihat
+  [Pratinjau](#pratinjau-memeriksa-setiap-baris)).
 - `POST` dan `PUT /api/surat-masuk` menolak sifat yang tidak dikenal dengan 400
   dan pesan yang sama; kelas yang dikenal di atas kewenangan tetap dijawab 403.
 - Surat keluar tidak terpengaruh: sifat surat keluar adalah urgensi, dan impor
@@ -269,7 +327,7 @@ otomatis).
 | Status | Arti |
 |---|---|
 | Tersimpan | Surat baru dibuat. |
-| Duplikat | Tidak ditulis: identitas impor sama dengan baris sumber sebelumnya (disebut nomor barisnya; `duplicate: source`), sudah tercatat di unit ini (`recorded`), atau cocok dengan surat yang sudah dihapus (`deleted`; tidak dibuat ulang). |
+| Duplikat | Tidak ditulis: identitas impor sama dengan baris sumber sebelumnya (disebut nomor barisnya; `duplicate: source`), sudah tercatat di unit ini (`recorded`), atau cocok dengan surat yang sudah dihapus (`deleted`; tidak dibuat ulang). Surat masuk bernomor sama bila nomor, tahun, dan pengirimnya sama (lihat [Pratinjau](#pratinjau-memeriksa-setiap-baris)). |
 | Ditolak | Baris tidak dapat disimpan, misalnya tanggal kosong/tidak valid, surat tanpa nomor yang tidak punya pengirim/tujuan, atau surat masuk Rahasia/Sangat Rahasia yang diimpor bukan oleh Super Admin (lihat [batas klasifikasi keamanan](#sifat-surat-masuk-dan-batas-klasifikasi-keamanan)). |
 | Kosong | Nomor surat dan perihal kosong. |
 | Diperbarui | (Sinkron) surat yang sudah tercatat diubah; keterangan memuat nilai lama → baru. |
@@ -328,6 +386,19 @@ Maksimal 10.000 rekod dapat diekspor dalam satu permintaan.
   Laporan tidak dipisah per fase dan tetap memuat semua arsip sesuai filter.
 - Ekspor besar secara asynchronous belum disediakan. Batas ini tidak
   membuktikan kapasitas atau waktu respons pada lingkungan produksi.
+
+Isi berkas ekspor:
+
+- Tanggal dan waktu ditulis dalam WIB (waktu cetak berakhiran "WIB"), dan label
+  nilai sama dengan label di layar.
+- Super Admin yang mengekspor daftar Surat Masuk, Surat Keluar, atau Arsip
+  dengan pilihan **Semua Unit Kerja** mendapat kolom **Unit Kerja** berisi nama
+  unit, bukan kodenya.
+- Ekspor memakai urutan yang dipilih pada **Urutkan** di daftar surat.
+- Pada PDF, teks panjang dibungkus dalam sel dan tinggi baris mengikuti isinya,
+  termasuk pada Formulir 4 dan Formulir 6. Baris yang lebih tinggi dari satu
+  halaman dipotong dengan catatan *Teks yang terlalu panjang dipotong; versi Excel
+  memuat isi lengkap.*
 
 Parser dipatok pada `csv-parse` 7.0.2 setelah pemeriksaan advisori
 [GHSA-8cw4-87c7-c6xx](https://github.com/adaltas/node-csv/security/advisories/GHSA-8cw4-87c7-c6xx).

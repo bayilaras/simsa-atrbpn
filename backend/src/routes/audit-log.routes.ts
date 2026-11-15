@@ -75,7 +75,7 @@ router.get('/', async (req: Request, res: Response) => {
         res.json({ success: true, ...result });
     } catch (error) {
         log.error({ err: error }, 'List audit logs error:');
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ error: 'Internal server error', message: 'Terjadi kesalahan pada server.' });
     }
 });
 
@@ -87,7 +87,7 @@ router.get('/:entityType/:entityId', async (req: Request, res: Response) => {
         res.json({ success: true, data: history });
     } catch (error) {
         log.error({ err: error }, 'Get entity history error:');
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ error: 'Internal server error', message: 'Terjadi kesalahan pada server.' });
     }
 });
 

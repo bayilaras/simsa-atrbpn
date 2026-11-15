@@ -1,7 +1,7 @@
 import { AppError, ValidationError, ConflictError } from '../utils/errors';
 import { db } from '../config/database';
 import { archiveLending, arsip, storageLocations, users } from '../db/schema';
-import { eq, and, desc, sql, lt, inArray, or, ilike, gte } from 'drizzle-orm';
+import { eq, and, desc, sql, lt, inArray, or, ilike, gte, type SQL } from 'drizzle-orm';
 import type { RecordUnitScope } from '../utils/record-unit-scope.js';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
 import { jakartaDate } from '../utils/jakarta-date.js';
@@ -66,20 +66,33 @@ export class ArchiveLendingService {
         return this.scopedWhere(unitKerjaId, readableTarget, ...conditions);
     }
 
+    /**
+     * Syarat penyaring status yang dipakai daftar Peminjaman dan Laporan.
+     * Terlambat dihitung dari jatuh tempo sebelum hari ini (WIB), bukan dari
+     * kolom status: tidak ada proses yang menulis status 'overdue'.
+     */
+    statusConditions(status: string | undefined, today: string): SQL[] {
+        if (status === 'overdue') {
+            return [inArray(archiveLending.status, ['borrowed', 'overdue']), lt(archiveLending.dueDate, today)];
+        }
+        if (status === 'borrowed') {
+            return [inArray(archiveLending.status, ['borrowed', 'overdue']), gte(archiveLending.dueDate, today)];
+        }
+        return status ? [eq(archiveLending.status, status)] : [];
+    }
+
+    /** Status yang ditampilkan: pinjaman belum kembali yang lewat jatuh tempo tampil 'overdue'. */
+    statusTampil(row: { status: string; dueDate: string }, today: string) {
+        return row.status !== 'returned' && row.dueDate < today ? 'overdue' : row.status;
+    }
+
     async findAll(filters: LendingFilters) {
         const { unitKerjaId, securityClassifications = [], status, lendingType, borrowerId, arsipId, storageLocationId, search, page = 1, limit = 20 } = filters;
         const offset = (page - 1) * limit;
         const today = jakartaDate();
 
-        const conditions: any[] = [];
+        const conditions: any[] = [...this.statusConditions(status, today)];
 
-        if (status === 'overdue') {
-            conditions.push(inArray(archiveLending.status, ['borrowed', 'overdue']), lt(archiveLending.dueDate, today));
-        } else if (status === 'borrowed') {
-            conditions.push(inArray(archiveLending.status, ['borrowed', 'overdue']), gte(archiveLending.dueDate, today));
-        } else if (status) {
-            conditions.push(eq(archiveLending.status, status));
-        }
         if (lendingType) {
             conditions.push(eq(archiveLending.lendingType, lendingType));
         }
@@ -134,7 +147,7 @@ export class ArchiveLendingService {
             .offset(offset);
 
         return {
-            data: data.map(d => ({ ...d.lending, status: d.lending.status !== 'returned' && d.lending.dueDate < today ? 'overdue' : d.lending.status, borrower: d.borrower, arsip: d.arsip, storageLocation: d.storageLocation })),
+            data: data.map(d => ({ ...d.lending, status: this.statusTampil(d.lending, today), borrower: d.borrower, arsip: d.arsip, storageLocation: d.storageLocation })),
             pagination: {
                 page,
                 limit,
@@ -186,10 +199,10 @@ export class ArchiveLendingService {
 
         // Validate type-specific IDs
         if (data.lendingType === 'arsip' && !data.arsipId) {
-            throw new ValidationError('arsipId is required for per-arsip lending');
+            throw new ValidationError('Pilih arsip yang akan dipinjam.');
         }
         if (data.lendingType === 'box' && !data.storageLocationId) {
-            throw new ValidationError('storageLocationId is required for per-box lending');
+            throw new ValidationError('Pilih box yang akan dipinjam.');
         }
 
         return await db.transaction(async (tx: any) => {
@@ -206,10 +219,10 @@ export class ArchiveLendingService {
                     .for('update');
 
                 if (!existingArsip) {
-                    throw new AppError('Arsip not found', 404);
+                    throw new AppError('Arsip tidak ditemukan.', 404);
                 }
                 if (existingArsip.lendingStatus === 'borrowed') {
-                    throw new ConflictError('Arsip is already borrowed');
+                    throw new ConflictError('Arsip ini sedang dipinjam.');
                 }
             }
 
@@ -228,7 +241,7 @@ export class ArchiveLendingService {
                     .for('update');
 
                 if (!box) {
-                    throw new AppError('Storage box not found', 404);
+                    throw new AppError('Box penyimpanan tidak ditemukan.', 404);
                 }
 
                 const [openBoxLending] = await tx
@@ -241,7 +254,7 @@ export class ArchiveLendingService {
                     .limit(1);
 
                 if (openBoxLending) {
-                    throw new ConflictError('Box is already borrowed');
+                    throw new ConflictError('Box ini sedang dipinjam.');
                 }
             }
 
@@ -259,11 +272,13 @@ export class ArchiveLendingService {
                 })
                 .returning();
 
-            // Update arsip lending status if per-arsip
+            // Update arsip lending status if per-arsip. Only the flag: updated_at is
+            // left alone so an open Ubah Metadata dialog is not rejected as stale;
+            // the lending row and its audit entry record the event.
             if (data.lendingType === 'arsip' && data.arsipId) {
                 await tx
                     .update(arsip)
-                    .set({ lendingStatus: 'borrowed', updatedAt: new Date() })
+                    .set({ lendingStatus: 'borrowed' })
                     .where(and(
                         eq(arsip.id, data.arsipId),
                         eq(arsip.unitKerjaId, unitKerjaId),
@@ -274,7 +289,7 @@ export class ArchiveLendingService {
             if (data.lendingType === 'box' && data.storageLocationId) {
                 await tx
                     .update(arsip)
-                    .set({ lendingStatus: 'borrowed', updatedAt: new Date() })
+                    .set({ lendingStatus: 'borrowed' })
                     .where(and(
                         eq(arsip.storageLocationId, data.storageLocationId),
                         eq(arsip.unitKerjaId, unitKerjaId),
@@ -322,10 +337,10 @@ export class ArchiveLendingService {
                 .for('update');
 
             if (!lending) {
-                throw new AppError('Lending record not found', 404);
+                throw new AppError('Data peminjaman tidak ditemukan.', 404);
             }
             if (lending.status === 'returned') {
-                throw new ConflictError('Already returned');
+                throw new ConflictError('Peminjaman ini sudah dikembalikan.');
             }
 
             // Update lending record
@@ -345,14 +360,14 @@ export class ArchiveLendingService {
                 .returning();
 
             if (!updated) {
-                throw new ConflictError('Lending record changed before it could be returned');
+                throw new ConflictError('Data peminjaman berubah sebelum pengembalian tersimpan. Muat ulang halaman, lalu coba lagi.');
             }
 
             // Update arsip lending status
             if (lending.lendingType === 'arsip' && lending.arsipId) {
                 await tx
                     .update(arsip)
-                    .set({ lendingStatus: 'available', updatedAt: new Date() })
+                    .set({ lendingStatus: 'available' })
                     .where(and(
                         eq(arsip.id, lending.arsipId),
                         eq(arsip.unitKerjaId, unitKerjaId),
@@ -369,7 +384,7 @@ export class ArchiveLendingService {
             if (lending.lendingType === 'box' && lending.storageLocationId) {
                 await tx
                     .update(arsip)
-                    .set({ lendingStatus: 'available', updatedAt: new Date() })
+                    .set({ lendingStatus: 'available' })
                     .where(and(
                         eq(arsip.storageLocationId, lending.storageLocationId),
                         eq(arsip.unitKerjaId, unitKerjaId),
@@ -409,10 +424,10 @@ export class ArchiveLendingService {
                 .for('update');
 
             if (!lending) {
-                throw new AppError('Lending record not found', 404);
+                throw new AppError('Data peminjaman tidak ditemukan.', 404);
             }
             if (lending.status === 'returned') {
-                throw new ConflictError('Cannot extend returned item');
+                throw new ConflictError('Peminjaman yang sudah dikembalikan tidak dapat diperpanjang.');
             }
 
             const [updated] = await tx
@@ -430,7 +445,7 @@ export class ArchiveLendingService {
                 .returning();
 
             if (!updated) {
-                throw new ConflictError('Lending record changed before it could be extended');
+                throw new ConflictError('Data peminjaman berubah sebelum perpanjangan tersimpan. Muat ulang halaman, lalu coba lagi.');
             }
 
             if (auditContext) {

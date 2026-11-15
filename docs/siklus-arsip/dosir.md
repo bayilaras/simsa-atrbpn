@@ -13,8 +13,10 @@ Panduan mengelola dosir di SIMSA.
 ## Melihat Daftar Dosir
 
 1. Di sidebar, klik **Pemberkasan (Dosir)**.
-2. Lihat tabel daftar dosir yang ada.
-3. Gunakan pencarian untuk menemukan dosir tertentu.
+2. Lihat kartu dosir yang ada. Menu tiga titik (⋯) pada kartu berisi **Lihat Detail**; pengguna yang berwenang mengubah data unit kerja dosir juga melihat **Edit** dan **Hapus**.
+3. Gunakan pencarian untuk menemukan dosir tertentu. Frasa tetap ditemukan walaupun teks aslinya terpotong baris baru.
+
+**Edit** pada kartu membuka dialog **Edit Dosir** dengan isian **Judul Perkara**, **Kategori**, **Tanggal Mulai**, dan **Deskripsi**; klik **Simpan Perubahan**. **Hapus** menghapus dosir setelah konfirmasi; pemberitahuan menegaskan bahwa surat yang pernah ditautkan tetap tersimpan.
 
 ---
 
@@ -23,7 +25,7 @@ Panduan mengelola dosir di SIMSA.
 1. Klik dosir untuk melihat detail.
 2. Halaman detail menampilkan:
    - Informasi dosir (judul, kode, deskripsi)
-   - Kronologi serta daftar surat masuk dan surat keluar yang tergabung di dosir tersebut
+   - Kronologi serta daftar surat masuk dan surat keluar yang tergabung di dosir tersebut, termasuk **Catatan:** yang diisi saat surat ditambahkan
    - Metadata (tanggal dibuat, pembuat, unit kerja)
 
 ---
@@ -45,6 +47,17 @@ Panduan mengelola dosir di SIMSA.
 4. Isi **Catatan** bila perlu, lalu klik **"Tambahkan ke Dosir"**.
 
 Surat yang sudah ada di dosir ditandai **Sudah di dosir** dan tidak dapat dipilih lagi. Tombol **"Tambah Surat"** hanya tampil bagi pengguna yang berwenang mengubah data unit kerja dosir.
+
+---
+
+## Mengubah Dosir dan Melepas Surat
+
+Pengguna yang berwenang mengubah data unit kerja dosir dapat:
+
+- Klik **Edit Dosir** di halaman detail untuk mengubah judul, status, kategori, tanggal mulai dan selesai, serta deskripsi pada dialog **Edit Informasi Dosir**.
+- Klik ikon **Lepas dari dosir** pada baris surat, lalu konfirmasi. Pemberitahuan *Surat dilepas dari dosir* muncul bila berhasil; surat itu sendiri tidak terhapus.
+
+Kode dosir tidak dipakai ulang, juga setelah dosirnya dihapus.
 
 ---
 

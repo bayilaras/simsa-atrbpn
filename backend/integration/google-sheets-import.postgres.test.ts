@@ -114,7 +114,7 @@ describe('atomic Sheets import on real PostgreSQL transactions', () => {
             expect(results.reduce((sum, row) => sum + row.duplicateRows, 0)).toBe(1);
             expect(results.every(row => row.success && row.skippedRows === 0 && row.errors.length === 0)).toBe(true);
             const records = (await pools[0].query(`SELECT * FROM surat_${kind} WHERE unit_kerja_id=$1`, [unit])).rows;
-            expect(records).toHaveLength(1); expect(records[0].no_urut).toBe(1); expect(records[0].nomor_surat).toBe(number);
+            expect(records).toHaveLength(1); expect([17, 99]).toContain(records[0].no_urut); expect(records[0].nomor_surat).toBe(number);
             expect(Number((await pools[0].query('SELECT count(*) FROM audit_log WHERE entity_id=$1 AND action=$2', [records[0].id, 'create'])).rows[0].count)).toBe(1);
             await pools[0].query(`UPDATE surat_${kind} SET is_deleted=true,deleted_at=now() WHERE id=$1`, [records[0].id]);
             expect(await importRow(service(sheet(kind, number, '400')), kind, unit)).toMatchObject({ importedRows: 0, duplicateRows: 1 });
@@ -204,11 +204,19 @@ describe('atomic Sheets import on real PostgreSQL transactions', () => {
             tanggalSurat: '2025-09-02', status: 'belum_dibalas', createdBy: userId, ...row });
         expect(await service(sheet('masuk', 'SM-lookup').replace('2026-09-12', '2025-09-02')
             + '\n18,-,2025-09-02,Laporan,Kantah sintetis').importSuratMasuk('sheet', 'Data', unit, audit)).toMatchObject({ importedRows: 2 });
-        const incomingProbes = [incoming({ nomorSurat: 'SM-lookup', perihal: 'Lain', dari: 'Lain' }),
+        // A numbered incoming letter is also told apart by its sender, read with spaces collapsed and case ignored.
+        const incomingProbes = [incoming({ nomorSurat: 'SM-lookup', perihal: 'Lain', dari: ' KANTAH  Sintetis ' }),
+            incoming({ nomorSurat: 'SM-lookup', perihal: 'Lain', dari: 'Kantah lain' }),
+            incoming({ nomorSurat: 'SM-lookup', perihal: 'Tanpa pengirim', dari: '' }),
             incoming({ nomorSurat: '-', perihal: 'Laporan', dari: 'Kantah sintetis' }),
             incoming({ nomorSurat: '-', perihal: 'Laporan', dari: 'Kantah lain' })];
-        expect(await suratMasukService.existingImportIdentities(incomingProbes.map(probe => suratMasukService.importIdentityKey(probe))))
-            .toEqual([true, true, false]);
+        const incomingFound = await suratMasukService.existingImportIdentities(incomingProbes.map(probe => suratMasukService.importIdentityKey(probe)));
+        expect(incomingFound).toEqual([true, false, true, true, false]);
+        for (const [index, probe] of incomingProbes.entries()) {
+            const outcome = await suratMasukService.createImported(probe, audit).then(() => false,
+                (error: unknown) => { if (error instanceof DuplicateSuratImportError) return true; throw error; });
+            expect([index, outcome]).toEqual([index, incomingFound[index]]);
+        }
     });
 
     it('imports a sheet in resumable parts exactly once, in sheet order, with one audit row each', async () => {

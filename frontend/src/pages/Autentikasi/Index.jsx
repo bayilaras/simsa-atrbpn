@@ -49,7 +49,7 @@ export default function AutentikasiIndex() {
             URL.revokeObjectURL(url);
         } catch {
             toast({
-                title: "Error",
+                title: "Gagal",
                 description: "Gagal mengunduh dokumen",
                 variant: "destructive"
             });

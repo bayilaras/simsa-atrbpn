@@ -48,6 +48,11 @@ test('the hourly monitor limits repeat comments; the daily recovery reports ever
   assert.equal(recovery.workflow.jobs['notify-failure'].steps.at(-1).env.FAILURE_ISSUE_MIN_HOURS, undefined);
 });
 
+test('the daily recovery backup is scheduled at 22:30 WIB, after office hours', () => {
+  assert.deepEqual(recovery.workflow.on.schedule, [{ cron: '30 15 * * *' }]);
+  assert.ok('workflow_dispatch' in recovery.workflow.on);
+});
+
 test('the recovery workflow passes the optional document budget settings and allows time for the default budget', () => {
   const job = recovery.workflow.jobs.recovery, run = job.steps.find(step => step.run === 'node scripts/operations-recovery.mjs run');
   for (const name of ['OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES', 'OPERATIONS_RECOVERY_MAX_DOCUMENT_OBJECTS', 'OPERATIONS_RECOVERY_MAX_DOCUMENT_REFERENCES'])

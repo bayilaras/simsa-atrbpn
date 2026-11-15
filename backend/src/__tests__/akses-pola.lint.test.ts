@@ -114,6 +114,7 @@ describe('pola akses kelas keamanan', () => {
                 'services/import-sync.ts': 'impor sinkron',
                 'services/surat-import-identity.ts': 'impor sinkron',
                 'services/surat-keluar.service.ts': 'impor sinkron',
+                'validators/pesan-zod.ts': 'nama isian pada pesan validasi',
                 'validators/schemas.ts': 'validasi masukan',
             },
             fileOriginalName: {
@@ -122,6 +123,7 @@ describe('pola akses kelas keamanan', () => {
                 'routes/surat-masuk.routes.ts': 'unggah berkas',
                 'services/surat-keluar.service.ts': 'lampiran',
                 'services/surat-masuk.service.ts': 'lampiran',
+                'validators/pesan-zod.ts': 'nama isian pada pesan validasi',
                 'validators/schemas.ts': 'validasi masukan',
             },
         };

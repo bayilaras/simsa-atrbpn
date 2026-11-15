@@ -11,7 +11,7 @@ Arsip aktif adalah **arsip yang masih digunakan secara langsung** dalam pelaksan
 Halaman **Manajemen Arsip** memiliki tiga tab:
 - **Arsip Surat Keluar** — Arsip yang berasal dari surat keluar
 - **Arsip Surat Masuk** — Arsip yang berasal dari surat masuk
-- **Status Retensi** — Ringkasan arsip menurut tahap retensinya
+- **Status Retensi** — Ringkasan arsip menurut tahap retensinya. Super Admin memilih satu unit kerja terlebih dahulu; selama **Semua Unit Kerja** terpilih tertulis *Pilih unit kerja untuk melihat status retensi.* Bila ringkasan gagal dimuat, tertulis *Status retensi belum dapat dimuat. Silakan coba lagi.*
 
 ---
 
@@ -34,10 +34,10 @@ Tabel menampilkan:
 | Tanggal / Unit | Tanggal arsip dan unit kerjanya |
 | Lokasi | Lokasi penyimpanan fisik |
 | Retensi | Masa aktif dan inaktif |
-| Nasib Akhir | Permanen atau Musnah menurut JRA |
+| Nasib Akhir | Permanen atau Musnah menurut JRA. Selama pemicu retensi belum terverifikasi tertulis **Menunggu verifikasi**; selama klasifikasi dan JRA arsip belum direkonsiliasi tertulis **Menunggu rekonsiliasi** |
 | Aksi | Menu tiga titik (⋯) berisi **Detail Arsip** |
 
-Gunakan kotak **Cari arsip** (nomor berkas, nomor surat, atau perihal) dan tombol **Filter** untuk menyaring menurut tahun. Tombol **Perbarui**, **Impor CSV**, dan **Export** ada di kanan atas; **Impor CSV** hanya tampil bagi admin setelah satu unit kerja dipilih.
+Gunakan kotak **Cari arsip** (nomor berkas, nomor surat, atau perihal) dan tombol **Filter** untuk menyaring menurut tahun. Frasa tetap ditemukan walaupun teks aslinya terpotong baris baru. Tombol **Perbarui**, **Impor CSV**, dan **Export** ada di kanan atas; **Impor CSV** hanya tampil bagi admin setelah satu unit kerja dipilih.
 
 Bila daftar dibuka dari halaman [Lokasi Simpan](../layanan-fisik/lokasi-simpan.md), daftar tersaring untuk lokasi itu beserta sub-lokasinya dan menampilkan tanda **Lokasi simpan: nama (kode)** yang dapat dihapus. Bila lokasi itu juga menyimpan arsip jenis lain, di bawahnya ada tautan untuk melihat arsip surat masuk atau arsip surat keluar di lokasi yang sama.
 
@@ -89,12 +89,16 @@ Bagi admin tersebut, kedua tombol pertama tetap tampil tetapi nonaktif, disertai
 |-----|-----|
 | **Identifikasi** | Nomor berkas, klasifikasi, jenis arsip, uraian, kurun waktu, dan unit pengolah |
 | **Item Arsip** | Daftar item dalam berkas |
-| **Retensi & Lokasi** | Lokasi penyimpanan (Filing Cabinet, Laci, Folder, dan **Lokasi Simpan** bila sudah dipilih), JRA, masa retensi, dan **Progress Retensi Aktif** |
+| **Retensi & Lokasi** | Lokasi penyimpanan (Filing Cabinet, Laci, Folder, dan **Lokasi Simpan** bila sudah dipilih), JRA, masa retensi, **Status Penyusutan**, dan **Kemajuan Masa Aktif** |
 | **Jejak Aturan** | Riwayat klasifikasi dan JRA yang pernah dipakai arsip ini |
-| **Keamanan** | Klasifikasi keamanan, PIC, dan keterangan |
+| **Keamanan** | Bagian **Keamanan & Penanggung Jawab**: klasifikasi keamanan, Penanggung Jawab, dan keterangan |
 | **Surat Asli** | Nomor, tanggal, dan perihal surat asal arsip |
 
 Baris **Lokasi Simpan** menampilkan nama dari gedung sampai lokasi terpilih diikuti kodenya, misalnya *Gedung Arsip / Ruang Sentral / Rak Satu / Boks Dua (G1-R1-RAK1-B2)*.
+
+### Kemajuan masa aktif
+
+Bagian **Kemajuan Masa Aktif** pada tab **Retensi & Lokasi** baru tampil setelah peristiwa pemicu retensi dicatat dan diverifikasi petugas berbeda melalui **Tata Kelola Retensi**. Bagian ini menunjukkan berapa tahun masa aktif yang sudah berjalan dan menulis *Dihitung sejak tanggal pemicu retensi …*. Sebelum itu, isian retensi menulis *Menunggu verifikasi pemicu retensi*, atau *Menunggu rekonsiliasi klasifikasi dan JRA* bila aturan arsip lama belum dicocokkan melalui **Rekonsiliasi Klasifikasi/JRA**. Tanggal arsip saja tidak dipakai sebagai awal perhitungan.
 
 ### Jika Tampil "Perlu persetujuan akses"
 
@@ -107,8 +111,10 @@ Arsip berkelas Terbatas atau lebih tinggi yang belum boleh kamu buka menampilkan
 Bila ada data berkas yang salah catat, admin yang berwenang atas unit arsip dapat memperbaikinya dari halaman detail:
 
 1. Klik **Ubah Metadata** di bagian atas halaman atau di kartu **Aksi Cepat**.
-2. Perbaiki isian yang salah: Nomor Berkas, Unit Pengolah, Uraian Berkas, Kurun Waktu, Nomor Item, Tingkat Perkembangan, Uraian Item, Tanggal Arsip, Jumlah, Media, No. Filing Cabinet, No. Laci, No. Folder, Lokasi Simpan, Klasifikasi Keamanan, PIC, atau Keterangan.
+2. Perbaiki isian yang salah: Nomor Berkas, Unit Pengolah, Uraian Berkas, Kurun Waktu, Nomor Item, Tingkat Perkembangan, Uraian Item, Tanggal Arsip, Jumlah, Media, No. Filing Cabinet, No. Laci, No. Folder, Lokasi Simpan, Klasifikasi Keamanan, Penanggung Jawab, atau Keterangan.
 3. Klik **Simpan**. Hanya isian yang diubah yang disimpan, dan perubahannya tercatat di log audit.
+
+Bila arsip sudah diubah orang lain sejak dialog **Ubah Metadata Arsip** dibuka, penyimpanan ditolak dengan pesan *Data ini sudah diubah pengguna lain sejak Anda membukanya. Muat ulang halaman untuk melihat perubahan terbaru, lalu ulangi perubahan Anda.*
 
 Kode klasifikasi arsip dan JRA tidak diubah di sini; gunakan **Rekonsiliasi Klasifikasi/JRA**. Tombol **Ubah Metadata** dikunci bila arsip sedang legal hold, sedang dalam proses penyusutan, atau penyusutannya sudah dilaksanakan.
 
@@ -152,7 +158,7 @@ Kamu bisa mengarsipkan surat dari daftar surat (menu tiga titik ⋯, lalu **Arsi
 2. Isi **Identifikasi Berkas**: Nomor Berkas, **Klasifikasi Arsip & Jadwal Retensi**, Uraian Informasi Berkas, Unit Pengolah, dan Kurun Waktu.
 3. Isi **Detail Item Arsip**. Klik **Tambah Item** bila berkas berisi lebih dari satu item. Tiap item memiliki No. Filing Cabinet, No. Laci, dan No. Folder sendiri.
 4. Bila perlu, pilih **Lokasi Simpan** (gedung, ruang, rak, atau boks). Daftarnya dikelola di menu Lokasi Simpan.
-5. Isi **Klasifikasi Keamanan**, PIC, dan keterangan.
+5. Pada bagian **Keamanan & Catatan Lain**, isi **Klasifikasi Keamanan**, **Penanggung Jawab**, dan **Keterangan Tambahan**.
 6. Baca peringatan **Pengarsipan bersifat permanen.**, lalu centang *Saya memahami bahwa pengarsipan ini permanen dan tidak dapat dibatalkan.*
 7. Klik **"Simpan Arsip"**.
 
@@ -160,7 +166,17 @@ Kamu bisa mengarsipkan surat dari daftar surat (menu tiga titik ⋯, lalu **Arsi
 
 Bila kotak pernyataan belum dicentang, tampil pesan *Centang pernyataan di atas sebelum menyimpan arsip.*
 
+Isian dialog **Arsipkan Surat** yang belum disimpan disimpan sementara di tab peramban yang sama. Bila sesi berakhir atau halaman dimuat ulang, buka lagi dialog untuk surat yang sama lalu pilih **Pulihkan isian**. Tombol **Batal**, tombol tutup, atau tombol Esc membuang isian dialog.
+
 Hal yang sama berlaku untuk **Impor CSV** arsip: dialognya menampilkan *Impor arsip bersifat permanen.* dan tombol **Impor data valid** baru aktif setelah kamu mencentang *Saya sudah memeriksa pratinjau dan memahami bahwa impor ini permanen.*
+
+Ketentuan berkas **Impor CSV** arsip:
+
+- Kolom utama: Nomor Berkas, Tanggal, Uraian, dan Jenis Arsip (`masuk` atau `keluar`). Beri setiap kolom judul yang berbeda.
+- Pemisah kolom boleh koma, titik koma, atau tab, dan dibaca dari baris judul. Sebaiknya simpan sebagai "CSV UTF-8"; CSV biasa dari Excel juga dapat dibaca.
+- Maksimal 1.000 rekod dan 4 MiB per berkas; pecah berkas besar sebelum diimpor.
+- Tanggal ditulis dengan urutan hari, bulan, tahun, misalnya `03/11/2026`, `3-11-2026`, atau `3 November 2026`; penulisan `2026-11-03` juga diterima. Tanggal yang tidak dapat dibaca atau bertahun di luar 1920 sampai 2199 ditolak, tidak ditebak atau diganti dengan tanggal hari ini.
+- Bila kolom wajib tidak ditemukan, pesan galat menyebut pemisah kolom yang terbaca agar judul kolom dapat diperiksa.
 
 ---
 

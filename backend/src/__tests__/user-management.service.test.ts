@@ -95,7 +95,7 @@ describe('userManagementService', () => {
         });
         it('rejects a nonexistent unit before inserting an account', async () => {
             enqueue([activeSuperAdmin], [], []);
-            await expect(userManagementService.createUser({ email: 'unit@example.test', name: 'Admin Unit', role: 'admin_unit', unitKerjaId: 'missing' }, actorContext)).rejects.toThrow(/Invalid unitKerjaId/);
+            await expect(userManagementService.createUser({ email: 'unit@example.test', name: 'Admin Unit', role: 'admin_unit', unitKerjaId: 'missing' }, actorContext)).rejects.toThrow(/Unit kerja tidak dikenali|unit kerja yang sudah ditetapkan/);
             expect(mockDb.insert).not.toHaveBeenCalled();
         });
         it('does not allow removing an existing admin_unit mandate', async () => {
@@ -131,10 +131,25 @@ describe('userManagementService', () => {
         it('approves explicit role and valid unit atomically with audit and session revocation', async () => {
             const approved = { ...pending, role: 'admin_unit', unitKerjaId: 'unit-a' };
             enqueue([activeSuperAdmin], [pending], [], [{ id: 'unit-a' }], [approved], [], [approved]);
-            await expect(userManagementService.updateUser(pending.id, { role: 'admin_unit', unitKerjaId: 'unit-a' }, actorContext)).resolves.toMatchObject(approved);
+            await expect(userManagementService.updateUser(pending.id, { role: 'admin_unit', unitKerjaId: 'unit-a', ownerConfirmed: true }, actorContext)).resolves.toMatchObject(approved);
             expect(transactionCommits).toBe(1);
             expect(mockDb.delete).toHaveBeenCalledOnce();
-            expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(expect.objectContaining({ entityId: pending.id, changes: expect.objectContaining({ after: expect.objectContaining({ role: 'admin_unit', unitKerjaId: 'unit-a' }) }) }), mockDb);
+            expect(auditMocks.logActionOrThrow).toHaveBeenCalledWith(expect.objectContaining({ entityId: pending.id, changes: expect.objectContaining({
+                after: expect.objectContaining({ role: 'admin_unit', unitKerjaId: 'unit-a' }),
+                fields: ['role', 'unitKerjaId'],
+                pemilikEmailDikonfirmasi: true,
+            }) }), mockDb);
+        });
+        it.each(['admin_unit', 'super_admin'])('refuses to give a pending identity the %s role without the owner confirmation', async role => {
+            enqueue([activeSuperAdmin], [pending]);
+            const data = { role, unitKerjaId: role === 'admin_unit' ? 'unit-a' : null };
+            await expect(userManagementService.updateUser(pending.id, data, actorContext))
+                .rejects.toThrow('Setujui akun ini melalui Setujui akses setelah memastikan langsung kepada pemilik emailnya.');
+            enqueue([activeSuperAdmin], [pending]);
+            await expect(userManagementService.updateUser(pending.id, { ...data, ownerConfirmed: false }, actorContext))
+                .rejects.toThrow(/memastikan langsung kepada pemilik emailnya/);
+            expect(mockDb.update).not.toHaveBeenCalled();
+            expect(auditMocks.logActionOrThrow).not.toHaveBeenCalled();
         });
     });
     describe('getRoles', () => {
@@ -191,13 +206,13 @@ describe('userManagementService', () => {
 
         it('rejects explicit null or mismatched fixed-unit assignments', () => {
             expect(() => normalizeUserUnitAssignment('admin_dirjen', null, true))
-                .toThrow(/Invalid unitKerjaId/);
+                .toThrow(/Unit kerja tidak dikenali|unit kerja yang sudah ditetapkan/);
             expect(() => normalizeUserUnitAssignment('admin_dirjen', 'sesditjen', true))
-                .toThrow(/Invalid unitKerjaId/);
+                .toThrow(/Unit kerja tidak dikenali|unit kerja yang sudah ditetapkan/);
             expect(() => normalizeUserUnitAssignment('admin_sesditjen', null, true))
-                .toThrow(/Invalid unitKerjaId/);
+                .toThrow(/Unit kerja tidak dikenali|unit kerja yang sudah ditetapkan/);
             expect(() => normalizeUserUnitAssignment('admin_sesditjen', 'ditjen', true))
-                .toThrow(/Invalid unitKerjaId/);
+                .toThrow(/Unit kerja tidak dikenali|unit kerja yang sudah ditetapkan/);
         });
 
         it('canonicalizes every super-admin assignment to cross-unit null', () => {
@@ -330,7 +345,7 @@ describe('userManagementService', () => {
         it('should reject invalid role', async () => {
             await expect(
                 userManagementService.updateUser('u1', { role: 'invalid' as any }, actorContext)
-            ).rejects.toMatchObject({ statusCode: 400, message: 'Invalid role: invalid' });
+            ).rejects.toMatchObject({ statusCode: 400, message: 'Peran tidak dikenali.' });
         });
 
         it('rejects an in-flight mutation when the actor is no longer an active super admin', async () => {
@@ -371,7 +386,7 @@ describe('userManagementService', () => {
                 [{ id: 'u1', role: 'admin_unit' }],
             );
 
-            const result = await userManagementService.updateUser('u1', { role: 'admin_unit', unitKerjaId: 'u1' }, actorContext);
+            const result = await userManagementService.updateUser('u1', { role: 'admin_unit', unitKerjaId: 'u1', ownerConfirmed: true }, actorContext);
 
             expect(result).toEqual({ id: 'u1', role: 'admin_unit' });
             expect(mockDb.delete).toHaveBeenCalledTimes(1);

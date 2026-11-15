@@ -98,7 +98,7 @@ router.get('/:kode', async (req: AuthRequest, res: Response, next) => {
         const item = await jraService.getByKode(kode, req.query.ruleSetId as string);
 
         if (!item) {
-            return res.status(404).json({ error: 'JRA not found' });
+            return res.status(404).json({ error: 'JRA not found', message: 'Butir JRA tidak ditemukan.' });
         }
 
         res.json({ success: true, data: item });
@@ -116,12 +116,12 @@ router.post('/', roleMiddleware(['super_admin']), async (req: AuthRequest, res: 
         } = req.body;
 
         if (!ruleSetId || !kode || !uraian || !tipe) {
-            return res.status(400).json({ error: 'ruleSetId, kode, uraian, and tipe are required' });
+            return res.status(400).json({ error: 'ruleSetId, kode, uraian, and tipe are required', message: 'Versi aturan, kode, uraian, dan tipe wajib diisi.' });
         }
 
         const existing = await jraService.getByKode(kode, ruleSetId);
         if (existing) {
-            return res.status(400).json({ error: 'Kode already exists' });
+            return res.status(400).json({ error: 'Kode already exists', message: 'Kode sudah dipakai.' });
         }
 
         const created = await jraService.create({

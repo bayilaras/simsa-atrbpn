@@ -206,6 +206,6 @@ describe('Google Sheets preview after extracting the shared preview', () => {
         const fetch = vi.spyOn(service, 'fetchSheetAsCSV');
         await expect(service.previewData('sheet', 'Data', 0)).rejects.toThrow('maxRows');
         expect(fetch).not.toHaveBeenCalled();
-        expect(() => googleDriveImportService.previewRows([], 101, 'surat-keluar')).toThrow('maxRows');
+        await expect(googleDriveImportService.previewRows([], 101, 'surat-keluar')).rejects.toThrow('maxRows');
     });
 });

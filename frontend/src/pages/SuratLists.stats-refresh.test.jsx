@@ -43,7 +43,7 @@ const halaman = [
         kind: 'keluar', Component: SuratKeluar, menu: 'Buka menu tindakan surat keluar',
         row: { id: 'sk-1', nomorSurat: 'SK-1/2026', perihal: 'Surat keluar uji', tanggalSurat: '2026-09-12', kepada: 'Unit tujuan', isArchived: false },
         stats: total => ({ total, diarsipkan: 0 }),
-        isiAlasan: () => {},
+        isiAlasan: () => fireEvent.change(screen.getByLabelText(/^Alasan penghapusan/), { target: { value: 'Draf ganda, sudah dibuat ulang' } }),
     },
 ]
 

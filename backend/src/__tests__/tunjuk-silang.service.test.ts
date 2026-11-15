@@ -59,7 +59,7 @@ describe('TunjukSilangService', () => {
                 sourceType: 'invalid', sourceId: '1',
                 targetType: 'arsip', targetId: '2',
                 jenisRelasi: 'balasan',
-            } as any)).rejects.toThrow('Invalid sourceType');
+            } as any)).rejects.toThrow('Jenis data sumber tidak dikenali.');
         });
 
         it('should reject invalid targetType', async () => {
@@ -67,7 +67,7 @@ describe('TunjukSilangService', () => {
                 sourceType: 'arsip', sourceId: '1',
                 targetType: 'invalid', targetId: '2',
                 jenisRelasi: 'balasan',
-            } as any)).rejects.toThrow('Invalid targetType');
+            } as any)).rejects.toThrow('Jenis data tujuan tidak dikenali.');
         });
 
         it('should reject invalid jenisRelasi', async () => {
@@ -75,7 +75,7 @@ describe('TunjukSilangService', () => {
                 sourceType: 'arsip', sourceId: '1',
                 targetType: 'surat_masuk', targetId: '2',
                 jenisRelasi: 'invalid_rel',
-            } as any)).rejects.toThrow('Invalid jenisRelasi');
+            } as any)).rejects.toThrow('Jenis hubungan tidak dikenali.');
         });
 
         it('should accept all valid entity types', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pesanGalat } from './pesan-galat'
+import { PESAN_VALIDASI_UMUM, adalahPesanValidasiUmum, gabungPesanValidasi, pesanGalat } from './pesan-galat'
 
 /**
  * Bentuk galat nyata: backend `publicErrorResponse` (backend/src/utils/public-error.ts) mengirim
@@ -30,7 +30,24 @@ describe('pesanGalat', () => {
     it('tanpa message di body memakai err.message sebelum data.error', () => {
         const err = Object.assign(new Error('Sesi telah berakhir. Silakan login kembali.'), { data: { error: 'Unauthorized' } })
         expect(pesanGalat(err, 'cadangan')).toBe('Sesi telah berakhir. Silakan login kembali.')
-        expect(pesanGalat({ data: { error: 'Validation failed' } }, 'cadangan')).toBe('Validation failed')
+        expect(pesanGalat({ data: { error: 'Konflik data' } }, 'cadangan')).toBe('Konflik data')
+    })
+
+    it('galat validasi umum ditampilkan bersama rincian per isian, juga dari server lama', () => {
+        const details = [{ field: 'judul', message: 'Judul wajib diisi' }, { field: 'judul', message: 'Judul wajib diisi' }]
+        expect(pesanGalat(galatApi(400, { error: PESAN_VALIDASI_UMUM, message: PESAN_VALIDASI_UMUM, details }), 'cadangan'))
+            .toBe('Data yang dikirim belum valid. Periksa isian berikut: Judul wajib diisi')
+        expect(pesanGalat({ data: { error: 'Validation failed', details } }, 'cadangan'))
+            .toBe('Data yang dikirim belum valid. Periksa isian berikut: Judul wajib diisi')
+        expect(pesanGalat({ data: { error: 'Validation failed' } }, 'cadangan'))
+            .toBe('Data yang dikirim belum valid. Periksa kembali isian Anda.')
+    })
+
+    it('pesan validasi umum dikenali untuk teks baru dan lama saja', () => {
+        expect(adalahPesanValidasiUmum(PESAN_VALIDASI_UMUM)).toBe(true)
+        expect(adalahPesanValidasiUmum('Validation failed')).toBe(true)
+        expect(adalahPesanValidasiUmum('Judul wajib diisi')).toBe(false)
+        expect(gabungPesanValidasi('Kata sandi minimal 12 karakter.', [{ message: 'lain' }])).toBe('Kata sandi minimal 12 karakter.')
     })
 
     it('memakai cadangan bila tidak ada pesan apa pun', () => {

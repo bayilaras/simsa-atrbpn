@@ -57,7 +57,7 @@ describe('Pengaturan — Ubah Kata Sandi', () => {
 
     it.each([
         [{ saatIni: '' }, 'Masukkan kata sandi saat ini.'],
-        [{ baru: 'pendek7' }, 'Kata sandi minimal 8 karakter.'],
+        [{ baru: 'pendek-11ch' }, 'Kata sandi minimal 12 karakter.'],
         [{ konfirmasi: 'sintetis-lain-01' }, 'Konfirmasi kata sandi tidak sama.'],
         [{ baru: SAAT_INI }, 'Kata sandi baru harus berbeda dari kata sandi saat ini.'],
     ])('memeriksa isian sebelum mengirim (%o)', async (isian, pesan) => {

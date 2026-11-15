@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { pesanGalat } from '@/lib/pesan-galat'
-import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, newPasswordError } from '@/lib/password-policy'
+import { FIRST_LOGIN_PASSWORD_NOTE, PASSWORD_MAX_LENGTH, PASSWORD_RULES_HINT, newPasswordError } from '@/lib/password-policy'
 import userManagementService from '@/services/user-management.service'
 
 export function UserPasswordResetDialog({ user, onClose, onReset }) {
@@ -21,7 +21,7 @@ export function UserPasswordResetDialog({ user, onClose, onReset }) {
     async function submit(event) {
         event.preventDefault()
         if (saving) return
-        const invalid = newPasswordError(password, confirmation)
+        const invalid = newPasswordError(password, confirmation, user)
         setError(invalid)
         if (invalid) return
         setSaving(true)
@@ -88,7 +88,7 @@ export function UserPasswordResetDialog({ user, onClose, onReset }) {
                         </Button>
                     </div>
                     <p id="reset-password-hint" className="text-xs text-muted-foreground">
-                        {PASSWORD_MIN_LENGTH} sampai {PASSWORD_MAX_LENGTH} karakter.
+                        {PASSWORD_RULES_HINT} {FIRST_LOGIN_PASSWORD_NOTE}
                     </p>
                 </div>
                 <div className="space-y-2">

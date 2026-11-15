@@ -1,8 +1,8 @@
 import { db } from '../config/database';
 import { arsip } from '../db/schema';
-import { and, or, ilike, eq, desc, sql, inArray, type AnyColumn } from 'drizzle-orm';
+import { and, or, eq, desc, sql, inArray, type AnyColumn } from 'drizzle-orm';
 import { bacaArsipSql, type PenggunaVisibilitas } from './access/visibility-spec';
-import { escapeLike, LIKE_ESCAPE } from '../utils/nomor-surat';
+import { cocokTeksCari } from '../utils/cari-teks.js';
 
 export interface FullTextSearchParams {
     query: string;
@@ -55,7 +55,7 @@ class FullTextSearchService {
     }
 
     private contains(column: AnyColumn, value: string) {
-        return sql`${column} ILIKE ${`%${escapeLike(value)}%`} ${LIKE_ESCAPE}`;
+        return cocokTeksCari(column, value, { lolosWildcard: true });
     }
 
     // Extract and clean search terms from query
@@ -341,7 +341,6 @@ class FullTextSearchService {
         limit: number = 10,
         securityClassifications?: string[] | null,
     ): Promise<string[]> {
-        const searchPattern = `%${query}%`;
         const classificationCondition = this.classificationCondition(securityClassifications);
 
         // Get distinct matching values from various fields
@@ -351,7 +350,7 @@ class FullTextSearchService {
             .where(and(
                 eq(arsip.unitKerjaId, unitKerjaId),
                 ...(classificationCondition ? [classificationCondition] : []),
-                ilike(arsip.nomorSuratOriginal, searchPattern)
+                cocokTeksCari(arsip.nomorSuratOriginal, query)
             ))
             .limit(limit);
 
@@ -361,7 +360,7 @@ class FullTextSearchService {
             .where(and(
                 eq(arsip.unitKerjaId, unitKerjaId),
                 ...(classificationCondition ? [classificationCondition] : []),
-                ilike(arsip.perihalOriginal, searchPattern)
+                cocokTeksCari(arsip.perihalOriginal, query)
             ))
             .limit(limit);
 

@@ -17,6 +17,10 @@ Baca panduan ini dengan seksama agar kamu bisa menggunakan SIMSA dengan lancar t
 SIMSA mengelola surat dan arsip secara mandiri; integrasi SRIKANDI tidak menjadi prasyarat fitur inti dan tetap nonaktif pada penerapan saat ini. Mulai dengan metadata dan arsip fisik; fitur digital digunakan setelah penyimpanan serta pemeriksaan berkas siap. Gunakan instrumen instansi yang berlaku. [Baca profil aplikasi internal](/profil-aplikasi-internal) untuk konfigurasi, kontrol, dan batas klaim produk.
 :::
 
+:::tip Perubahan November 2026
+Ada perubahan pada sesi, kata sandi, nomor agenda, impor, dan beberapa layar. [Baca ringkasan perubahan](/perubahan-november-2026).
+:::
+
 ---
 
 ## 🚀 Mulai dari Sini
@@ -174,7 +178,7 @@ SIMSA mengelola surat dan arsip secara mandiri; integrasi SRIKANDI tidak menjadi
 ---
 
 :::info Butuh Bantuan?
-Hubungi Administrator IT atau Super Admin di unit kerja kamu.
+Hubungi Administrator IT atau Super Admin di unit kerja kamu. Di dalam aplikasi, menu **Panduan** memuat topik singkat untuk pekerjaan harian dan tombol **Panduan lengkap** yang membuka situs ini.
 :::
 
 *© 2026 Kementerian Agraria dan Tata Ruang / BPN — SIMSA v1.0.0 (INTERNAL BETA)*

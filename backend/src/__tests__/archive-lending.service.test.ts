@@ -115,7 +115,7 @@ describe('ArchiveLendingService', () => {
             await expect(archiveLendingService.borrow({
                 lendingType: 'arsip', arsipId: 'nonexistent',
                 borrowerId: 'u1', borrowerName: 'John', dueDate: '2026-03-01',
-            }, 'u1')).rejects.toThrow('Arsip not found');
+            }, 'u1')).rejects.toThrow('Arsip tidak ditemukan.');
         });
 
         it('should reject if arsip already borrowed', async () => {
@@ -123,14 +123,14 @@ describe('ArchiveLendingService', () => {
             await expect(archiveLendingService.borrow({
                 lendingType: 'arsip', arsipId: 'a1',
                 borrowerId: 'u1', borrowerName: 'John', dueDate: '2026-03-01',
-            }, 'u1')).rejects.toThrow('Arsip is already borrowed');
+            }, 'u1')).rejects.toThrow('Arsip ini sedang dipinjam.');
         });
 
         it('should reject arsip lending without arsipId', async () => {
             await expect(archiveLendingService.borrow({
                 lendingType: 'arsip',
                 borrowerId: 'u1', borrowerName: 'John', dueDate: '2026-03-01',
-            }, 'u1')).rejects.toThrow('arsipId is required');
+            }, 'u1')).rejects.toThrow('Pilih arsip yang akan dipinjam.');
         });
     });
 
@@ -147,12 +147,12 @@ describe('ArchiveLendingService', () => {
 
         it('should throw if already returned', async () => {
             enqueue([{ id: 'l1', status: 'returned' }]);
-            await expect(archiveLendingService.return('l1', 'u1')).rejects.toThrow('Already returned');
+            await expect(archiveLendingService.return('l1', 'u1')).rejects.toThrow('Peminjaman ini sudah dikembalikan.');
         });
 
         it('should throw if not found', async () => {
             enqueue([]); // findById returns undefined
-            await expect(archiveLendingService.return('nonexistent', 'u1')).rejects.toThrow('Lending record not found');
+            await expect(archiveLendingService.return('nonexistent', 'u1')).rejects.toThrow('Data peminjaman tidak ditemukan.');
         });
 
         it('fails closed when the conditional return mutation loses the race', async () => {
@@ -160,7 +160,7 @@ describe('ArchiveLendingService', () => {
             enqueue([]); // status/unit predicate no longer matches
 
             await expect(archiveLendingService.return('l1', 'u1'))
-                .rejects.toThrow('changed before it could be returned');
+                .rejects.toThrow('berubah sebelum pengembalian tersimpan');
         });
     });
 
@@ -178,7 +178,7 @@ describe('ArchiveLendingService', () => {
             enqueue([]);
 
             await expect(archiveLendingService.extend('l1', 'u1', '2026-04-01'))
-                .rejects.toThrow('changed before it could be extended');
+                .rejects.toThrow('berubah sebelum perpanjangan tersimpan');
         });
     });
 

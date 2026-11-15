@@ -35,7 +35,7 @@ describe('operational alert aggregation', () => {
     const readiness = { status: 'ready', dependencies: { database: { ready: true },
         blobStorage: { required: true, runtime: { ready: true } },
         malwareScanner: { state: 'on_demand' }, malwareWorker: { state: 'ready', required: true } } };
-    const queues = { scanWaiting: 0, scanOverdue: 0, scanErrors: 0, scanInfected: 0, fixityOverdue: 0, fixityErrors: 0, fixityUnscheduled: 0, mismatched: 0 };
+    const queues = { scanWaiting: 0, scanOverdue: 0, scanErrors: 0, scanInfected: 0, fixityOverdue: 0, fixityErrors: 0, fixityUnscheduled: 0, mismatched: 0, uploadLeasesStale: 0 };
     it('exposes stale scanner and stalled queues even when other checks succeed', () => {
         const result = buildOperationsStatus({ now, readiness: { ...readiness, dependencies: { ...readiness.dependencies,
             malwareWorker: { state: 'not_ready', required: true, reason: 'on_demand_verification_missing_or_expired' } } },
@@ -72,6 +72,23 @@ describe('operational alert aggregation', () => {
         const result = buildOperationsStatus({ now, readiness, queues: Object.fromEntries(Object.keys(queues).map(key => [key, '0'])), recovery: { backup: proof(), restore: proof() } });
         expect(result.status).toBe('healthy');
     });
+    it('asks for attention when expired direct uploads are still not cleaned up, and follows the storage setting', () => {
+        const build = (uploadLeasesStale: number, blobStorage: unknown = readiness.dependencies.blobStorage) => buildOperationsStatus({ now,
+            readiness: { ...readiness, dependencies: { ...readiness.dependencies, blobStorage } }, queues: { ...queues, uploadLeasesStale }, recovery: { backup: proof(), restore: proof() } });
+        const clean = build(0);
+        expect(clean.status).toBe('healthy');
+        expect(clean.checks.at(-1)).toEqual({ id: 'upload_cleanup', label: 'Pembersihan unggahan langsung', status: 'healthy',
+            message: 'Tidak ada berkas unggahan langsung yang tertinggal lebih dari 48 jam setelah masa tunggunya habis.', counts: { stale: 0 } });
+        const stale = build(3);
+        expect(stale.status).toBe('attention');
+        expect(stale.checks.at(-1)).toMatchObject({ id: 'upload_cleanup', status: 'attention', counts: { stale: 3 },
+            message: 'Ada berkas unggahan langsung yang tidak jadi dipakai dan belum terhapus lebih dari 48 jam setelah masa tunggunya habis. Pembersihan harian belum berhasil menghapusnya.' });
+        expect(build(3, { required: false }).checks.at(-1)).toEqual({ id: 'upload_cleanup', label: 'Pembersihan unggahan langsung',
+            status: 'disabled', message: 'Penyimpanan berkas tidak diaktifkan.' });
+        const unknown = buildOperationsStatus({ now, readiness, queues: null, recovery: null }).checks.at(-1);
+        expect(unknown).toMatchObject({ id: 'upload_cleanup', status: 'unknown', message: 'Pembersihan unggahan langsung belum dapat diperiksa.' });
+        expect(unknown).not.toHaveProperty('counts');
+    });
     it('alerts for clean files not enrolled in the fixity schedule', () => {
         const result = buildOperationsStatus({ now, readiness, queues: { ...queues, fixityUnscheduled: 1 }, recovery: { backup: proof(), restore: proof() } });
         expect(result.checks.find(c => c.id === 'fixity')?.status).toBe('attention');
@@ -91,10 +108,11 @@ describe('operational collector uses the workers actual SQL membership', () => {
             id text PRIMARY KEY, entity_type text NOT NULL DEFAULT 'arsip', file_url text DEFAULT 'gs://private/qa.pdf',
             drive_file_id text, storage_access text DEFAULT 'private', malware_scan_status text DEFAULT 'clean',
             integrity_status text DEFAULT 'verified', sha256 text DEFAULT repeat('a',64), created_at timestamptz DEFAULT now()-interval '2 hours', last_fixity_check_at timestamptz);
-            CREATE TABLE file_fixity_jobs (attachment_id text PRIMARY KEY REFERENCES file_attachments(id), next_check_at timestamptz DEFAULT now()-interval '29 hours', last_result text);`);
+            CREATE TABLE file_fixity_jobs (attachment_id text PRIMARY KEY REFERENCES file_attachments(id), next_check_at timestamptz DEFAULT now()-interval '29 hours', last_result text);
+            CREATE TABLE client_blob_uploads (id text PRIMARY KEY, status text NOT NULL, expires_at timestamptz NOT NULL);`);
     }, 30_000);
     beforeEach(async () => {
-        await database.exec('TRUNCATE file_fixity_jobs, file_attachments');
+        await database.exec('TRUNCATE file_fixity_jobs, file_attachments, client_blob_uploads');
         io.query.mockReset().mockImplementation(({ text }: { text: string }) => database.query(text));
         io.readiness.mockReset().mockResolvedValue({});
         io.blob.mockReset().mockResolvedValue(null);
@@ -174,6 +192,17 @@ describe('operational collector uses the workers actual SQL membership', () => {
         expect(check(await collectOperationsStatus(), 'scan_queue')).toMatchObject({ status: 'healthy',
             message: 'Tidak ada berkas yang terlambat dipindai, gagal dipindai, atau terdeteksi berbahaya.' });
     });
+    it('counts only unclaimed direct-upload leases that expired more than 48 hours ago', async () => {
+        await database.exec(`INSERT INTO client_blob_uploads(id,status,expires_at) VALUES
+            ('pending-old','pending',now()-interval '49 hours'), ('authorized-old','authorized',now()-interval '3 days'),
+            ('release-old','release_cleanup',now()-interval '50 hours'), ('cleanup-old','cleanup_started',now()-interval '50 hours'),
+            ('pending-recent','pending',now()-interval '47 hours'), ('pending-live','pending',now()+interval '1 hour'),
+            ('claimed-old','claimed',now()-interval '30 days'), ('deleted-old','deleted',now()-interval '30 days');`);
+        const stale = check(await collectOperationsStatus(), 'upload_cleanup');
+        expect(stale).toMatchObject({ status: 'attention', counts: { stale: 4 } });
+        await database.exec(`UPDATE client_blob_uploads SET status='deleted' WHERE id LIKE '%-old'`);
+        expect(check(await collectOperationsStatus(), 'upload_cleanup')).toMatchObject({ status: 'healthy', counts: { stale: 0 } });
+    });
     it('keeps a rejected database query unknown without exposing its error', async () => {
         io.query.mockRejectedValueOnce(new Error('private database connection string'));
         const result = await collectOperationsStatus();
@@ -238,7 +267,7 @@ describe('served operations status reuses private recovery evidence', () => {
 
 describe('served operations status after a change to the scan queue', () => {
     const row = (scanErrors: number) => ({ rows: [{ scanWaiting: '0', scanOverdue: '0', scanErrors: String(scanErrors), scanInfected: '0',
-        fixityOverdue: '0', fixityErrors: '0', fixityUnscheduled: '0', mismatched: '0' }] });
+        fixityOverdue: '0', fixityErrors: '0', fixityUnscheduled: '0', mismatched: '0', uploadLeasesStale: '0' }] });
     const errors = (result: Awaited<ReturnType<typeof getOperationsStatus>>) => result.checks.find(item => item.id === 'scan_queue')!.counts!.errors;
     beforeEach(() => {
         invalidateOperationsStatus();

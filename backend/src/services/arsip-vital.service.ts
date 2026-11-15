@@ -93,6 +93,7 @@ class ArsipVitalService {
                 nomorSuratOriginal: arsip.nomorSuratOriginal,
                 perihalOriginal: arsip.perihalOriginal,
                 kurunWaktu: arsip.kurunWaktu,
+                mediaType: arsip.mediaType,
             })
                 .from(arsipVital)
                 .innerJoin(arsip, and(

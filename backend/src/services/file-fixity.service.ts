@@ -27,13 +27,13 @@ export function loadFixityConfig(source: NodeJS.ProcessEnv = process.env): Fixit
 }
 
 // Enrolling is one INSERT with no Blob read, so it is bounded separately from
-// the read batch: a run schedules up to five read batches of new files (100 at
-// the workflow batch of 20, two bulk uploads), and the rest wait for the next
-// run. Each later batch falls due one scheduled run (12 hours) after the one
+// the read batch: a run schedules up to five read batches of new files (500 at
+// the workflow batch of 100, ten bulk uploads), and the rest wait for the next
+// run. Each later batch falls due one scheduled run (6 hours) after the one
 // before it. A bulk upload is then read at the pace of the schedule and never
 // goes ahead of 7-day re-checks that fall due before its later batches.
 const FIXITY_ENROLLMENT_BATCHES = 5;
-export const FIXITY_ENROLLMENT_SPACING_SECONDS = 12 * 3600;
+export const FIXITY_ENROLLMENT_SPACING_SECONDS = 6 * 3600;
 export const fixityEnrollmentLimit = (config: Pick<FixityConfig, 'batchSize'>) => config.batchSize * FIXITY_ENROLLMENT_BATCHES;
 
 interface ClaimedFile extends BitstreamBaseline { id: string; claimToken: string }

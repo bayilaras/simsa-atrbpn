@@ -1,6 +1,7 @@
 import { CATATAN_LAMPIRAN_OPSIONAL, PETUNJUK_LAMPIRAN_MENYUSUL, buildSuratFormPayload, linkDokumenError } from '@/lib/surat-form-payload'
 import { buildSuratArchiveSelection, readSuratArchiveSelection, selectedSuratArchiveRules, validateSuratArchiveSelection } from '@/lib/surat-archive-selection'
 import { archiveUploadError } from '@/lib/archive-upload';
+import { JENIS_NASKAH_DINAS } from '@/lib/jenis-naskah';
 import { createElement, useCallback, useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -10,7 +11,11 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { suratMasukService } from '@/services/surat-masuk.service';
 import { rekamanPerluPersetujuan } from '@/lib/akses-rekaman';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
-import { useAutoSave } from '@/hooks/useAutoSave';
+import { useDrafIsian } from '@/hooks/use-draf-isian';
+import { useKonfirmasi } from '@/hooks/use-konfirmasi';
+import { DialogKonfirmasi } from '@/components/DialogKonfirmasi';
+import { KemajuanUnggah, StatusDrafIsian } from '@/components/surat/DrafIsianFormulir';
+import { permintaanPulihkanDraf } from '@/lib/draf-isian';
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
 import { KlasifikasiPicker } from '@/components/KlasifikasiPicker';
@@ -42,6 +47,12 @@ import { DisposisiRegistrasiSection } from '@/components/surat-masuk/DisposisiRe
 import { PESAN_TERKENDALI, isSifatTerkendali } from '@/lib/tindak-lanjut';
 import { PESAN_KELAS_TERBATAS_PERAN, PESAN_SURAT_MASUK_PERLU_PERSETUJUAN, adaKelasTersembunyi, bolehMemilihKelas, normalisasiKelas, saringOpsiKelas } from '@/lib/kelas-keamanan';
 import {
+    PESAN_TAHUN_DI_LUAR_RENTANG, PETUNJUK_NO_AGENDA, TANGGAL_SURAT_MAKS, TANGGAL_SURAT_MIN, catatanPindahTahun, galatNomorUrut,
+    konfirmasiNomorJauh, nomorJauhDiAtas, nomorUrutDiketik, tahunDiLuarRentang, tahunUrutanBaru,
+} from '@/lib/surat-nomor-urut';
+import { dataSudahBerubah, versiDimuat } from '@/lib/data-sudah-berubah';
+import { adalahPesanValidasiUmum } from '@/lib/pesan-galat';
+import {
     MailOpen,
     ChevronLeft,
     Save,
@@ -63,55 +74,6 @@ import {
     CheckCircle2,
     Clock
 } from 'lucide-react';
-
-// Jenis Surat options
-const JENIS_SURAT_OPTIONS = [
-    'Keputusan',
-    'Surat Tugas',
-    'Surat Perintah',
-    'Nota Dinas',
-    'Memorandum',
-    'Surat Dinas',
-    'Surat Undangan',
-    'Surat Perjanjian/MoU',
-    'Surat Kuasa',
-    'Berita Acara',
-    'Surat Keterangan',
-    'Surat Pengantar',
-    'Pemberitahuan',
-    'Pengumuman',
-    'Laporan',
-    'Telaahan Staf',
-    'Piagam',
-    'Umum',
-    'Naskah Dinas Arahan',
-    'Naskah Dinas Korespondensi',
-    'Naskah Dinas Khusus',
-    'Naskah Dinas Lainnya',
-    'Peraturan',
-    'Pedoman',
-    'Petunjuk Pelaksanaan',
-    'Instruksi',
-    'Prosedur Tetap (Protap)',
-    'Surat Edaran',
-    'Pengaduan',
-    'Tindak Lanjut Pengaduan',
-    'Surat Keputusan Hak Milik',
-    'Surat Keputusan Hak Guna Usaha',
-    'Surat Keputusan Hak Guna Bangunan',
-    'Surat Keputusan Hak Pakai',
-    'Surat Keputusan Hak Pengelolaan',
-    'Surat Keputusan Hak Rumah Susun',
-    'Surat Keputusan Hak Wakaf',
-    'Permohonan Hak Milik',
-    'Permohonan Hak Guna Usaha',
-    'Permohonan Hak Guna Bangunan',
-    'Permohonan Hak Pakai',
-    'Permohonan Hak Pengelolaan',
-    'Permohonan Hak Rumah Susun',
-    'Permohonan Hak Wakaf',
-    'Pembatalan Hak',
-];
 
 // Sifat Surat options with colors. Terbatas, Rahasia, dan Sangat Rahasia adalah
 // kelas keamanan; saringOpsiKelas menyembunyikan yang di atas plafon peran.
@@ -161,7 +123,7 @@ function uraikanGalatSimpan(err) {
     if (pesan.length > 0) {
         return { ringkasan: `Surat belum dapat disimpan. Periksa isian berikut: ${pesan.join('; ')}`, perIsian };
     }
-    const umum = err?.message && err.message !== 'Validation failed' ? err.message : '';
+    const umum = err?.message && !adalahPesanValidasiUmum(err.message) ? err.message : '';
     return { ringkasan: umum || 'Gagal menyimpan surat masuk. Periksa kembali isian Anda, lalu coba lagi.', perIsian };
 }
 
@@ -181,6 +143,7 @@ export default function TambahSuratMasuk() {
     const saveLockedRef = useRef(false);
     const navigationTimerRef = useRef(null);
     const mountedRef = useRef(true);
+    const menungguKonfirmasiRef = useRef(false);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -189,6 +152,8 @@ export default function TambahSuratMasuk() {
     const [success, setSuccess] = useState(false);
     const saveLocked = isSubmitting || success;
     const [selectedFile, setSelectedFile] = useState(null);
+    // Persen unggah berkas saat menyimpan; null bila tidak ada berkas yang diunggah.
+    const [kemajuanUnggah, setKemajuanUnggah] = useState(null);
     const [existingFile, setExistingFile] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
     const [recordUnitKerjaId, setRecordUnitKerjaId] = useState('');
@@ -197,6 +162,9 @@ export default function TambahSuratMasuk() {
     const [alasanKoreksi, setAlasanKoreksi] = useState('');
     const [referensi, setReferensi] = useState(null);
     const [sifatTersimpan, setSifatTersimpan] = useState(null);
+    // Edit: tanggal, tahun, dan updatedAt surat saat formulir dimuat.
+    const [dimuat, setDimuat] = useState(null);
+    const [konflikVersi, setKonflikVersi] = useState(false);
     const originalRef = useRef({ nomorSurat: '', perihal: '', sifatSurat: 'biasa' });
     const unitScope = useRequiredUnitKerjaScope(user, {
         fixedUnitKerjaId: isEditMode ? recordUnitKerjaId : '',
@@ -217,11 +185,16 @@ export default function TambahSuratMasuk() {
         errorRef.current?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' });
     }, [error, fieldErrors, isLoading, reducedMotion]);
 
-    // Unsaved changes warning & auto-save draft
-    const { setDirty, resetDirty } = useUnsavedChanges();
-    const { saveDraft, clearDraft, restoreDraft, saveStatus } = useAutoSave(
-        isEditMode ? `edit-surat-masuk-${id}` : 'tambah-surat-masuk'
-    );
+    // Draf isian di sessionStorage tab ini: bertahan saat sesi berakhir atau
+    // halaman dimuat ulang, dihapus saat tersimpan, Batal, atau keluar.
+    const { simpanDraf, simpanSekarang, bacaDraf, hapusDraf, tandaiDipulihkan, status: statusDraf } = useDrafIsian({
+        userId: user?.id, formulir: 'surat-masuk', idRekod: id,
+    });
+    const { isDirty, setDirty, resetDirty, dialogTinggalkan } = useUnsavedChanges({ onTinggalkan: hapusDraf });
+    const [konfirmasi, dialogKonfirmasi] = useKonfirmasi();
+    // Draf yang ditawarkan untuk dipulihkan; surat baru memeriksanya saat dibuka,
+    // surat yang diubah setelah datanya dimuat.
+    const [tawaranDraf, setTawaranDraf] = useState(() => (isEditMode ? null : bacaDraf()));
 
     // Form state
     const [formData, setFormData] = useState({
@@ -229,6 +202,8 @@ export default function TambahSuratMasuk() {
         sifatSurat: 'biasa',
         nomorSurat: '',
         tanggalSurat: '',
+        // No. Agenda; kosong berarti nomor otomatis (hanya saat tambah).
+        noUrut: '',
         perihal: '',
         dari: '',
         kepada: '',
@@ -262,22 +237,6 @@ export default function TambahSuratMasuk() {
         && (!isEditMode || normalisasiKelas(sifatSurat) !== normalisasiKelas(sifatTersimpan));
     const bantuanSifat = sifatDiganti || sifatDibatasi || sifatPerluPersetujuan;
     const labelSifat = (value) => SIFAT_SURAT_OPTIONS.find(opt => opt.value === value)?.label ?? value;
-
-    // Restore draft on mount (only for new entries, not edit mode)
-    useEffect(() => {
-        if (!isEditMode) {
-            const draft = restoreDraft();
-            if (draft) {
-                const shouldRestore = window.confirm('Ditemukan draft yang belum disimpan. Muat draft tersebut?');
-                if (shouldRestore) {
-                    setFormData(draft);
-                    setDirty();
-                } else {
-                    clearDraft();
-                }
-            }
-        }
-    }, [clearDraft, isEditMode, restoreDraft, setDirty]);
 
     const fetchSuratData = useCallback(async () => {
         setIsLoading(true);
@@ -316,6 +275,11 @@ export default function TambahSuratMasuk() {
                 sifatSurat: sifatAwal,
             };
             setSifatTersimpan(sifatAwal);
+            setDimuat({
+                tanggalSurat: data.tanggalSurat ? data.tanggalSurat.split('T')[0] : '',
+                tahun: data.tahun,
+                updatedAt: data.updatedAt ?? null,
+            });
             // Map fetched data to form fields
             setFormData({
                 jenisSurat: data.jenisSurat || '',
@@ -339,6 +303,7 @@ export default function TambahSuratMasuk() {
                     name: data.fileOriginalName || (data.filePath.startsWith('blob:') || data.filePath.startsWith('gdrive:') ? 'Dokumen Lampiran' : data.filePath.split('/').pop()),
                 });
             }
+            setTawaranDraf(bacaDraf());
         } catch (err) {
             // Surat berkelas terkendali tanpa persetujuan akses: halaman detail
             // menjelaskan keadaannya dan menyediakan tombol Minta Akses.
@@ -351,7 +316,7 @@ export default function TambahSuratMasuk() {
         } finally {
             setIsLoading(false);
         }
-    }, [id, navigate, toast]);
+    }, [bacaDraf, id, navigate, toast]);
 
     // Fetch existing data for edit mode.
     useEffect(() => {
@@ -360,6 +325,9 @@ export default function TambahSuratMasuk() {
         }
     }, [fetchSuratData, id, isEditMode]);
 
+    // No. Agenda yang diketik dipakai template nomor surat; pratinjau mengikutinya.
+    const noAgendaPratinjau = isEditMode ? undefined : nomorUrutDiketik(formData.noUrut);
+
     useEffect(() => {
         if (isEditMode || !resolvedUnitKerjaId || !formData.tanggalSurat) return;
         let active = true;
@@ -367,17 +335,19 @@ export default function TambahSuratMasuk() {
             unitKerjaId: resolvedUnitKerjaId,
             tahun: Number(formData.tanggalSurat.slice(0, 4)),
             tanggalSurat: formData.tanggalSurat,
+            noUrut: noAgendaPratinjau,
         }).then((preview) => {
             if (active) setNumberPreview({
                 ...preview,
                 unitKerjaId: resolvedUnitKerjaId,
                 tanggalSurat: formData.tanggalSurat,
+                noUrut: noAgendaPratinjau,
             });
         }).catch(() => {
             // Creation remains authoritative and allocates the number in its transaction.
         });
         return () => { active = false; };
-    }, [formData.tanggalSurat, isEditMode, resolvedUnitKerjaId]);
+    }, [formData.tanggalSurat, isEditMode, noAgendaPratinjau, resolvedUnitKerjaId]);
 
     // Unit tujuan disposisi (D6) & chip instruksi + status jalur akses (§7); tidak dimuat pada edit.
     const { units, instruksi: opsiInstruksi, jalurAksesTerkendali, loading: loadingUnits } = useDisposisiOpsi(isEditMode ? '' : resolvedUnitKerjaId);
@@ -390,6 +360,15 @@ export default function TambahSuratMasuk() {
     const cekNomor = useLacakSearch(isEditMode ? '' : formData.nomorSurat, { mode: 'cek' });
     const duplikat = cekNomor.data?.kelompok ?? [];
 
+    // Tanggal ke tahun lain: server memindahkan surat ke urutan No. Agenda tahun itu.
+    const tahunBaru = isEditMode ? tahunUrutanBaru(dimuat, formData.tanggalSurat) : null;
+    // Batas tanggal 2000-2100 seperti server; surat lama di luar rentang tetap dapat diubah tanpa pindah tahun.
+    const batasTanggal = !isEditMode || !tahunDiLuarRentang(dimuat?.tanggalSurat);
+    // Nomor otomatis berikutnya dari pratinjau, untuk isian No. Agenda.
+    const noAgendaOtomatis = !isEditMode && numberPreview?.unitKerjaId === resolvedUnitKerjaId
+        && numberPreview?.tanggalSurat === formData.tanggalSurat && Number.isInteger(numberPreview?.nextNumber)
+        ? numberPreview.nextNumber : undefined;
+
     // T24-3: surat bagian rangkaian yang identitasnya berubah wajib disertai alasan koreksi.
     const rangkaianTerkunci = isEditMode && rangkaian?.status === 'diberkaskan';
     const perluAlasanKoreksi = isEditMode && rangkaian != null && (
@@ -398,14 +377,51 @@ export default function TambahSuratMasuk() {
         || formData.sifatSurat !== originalRef.current.sifatSurat
     );
 
+    // Isian yang sudah diubah ditulis ke draf tab ini setelah jeda singkat.
+    // Selama tawaran pemulihan terbuka, draf lama tidak ditimpa.
+    const namaBerkas = selectedFile?.name ?? null;
+    useEffect(() => {
+        if (!isDirty || tawaranDraf || saveLocked) return;
+        simpanDraf({ formData, alasanKoreksi, referensi, namaBerkas, ...(isEditMode ? { dimuat } : {}) });
+    }, [alasanKoreksi, dimuat, formData, isDirty, isEditMode, namaBerkas, referensi, saveLocked, simpanDraf, tawaranDraf]);
+
+    const jawabTawaranDraf = (pulihkan) => {
+        const data = tawaranDraf?.data;
+        setTawaranDraf(null);
+        if (!pulihkan || !data) {
+            hapusDraf();
+            return;
+        }
+        if (data.formData && typeof data.formData === 'object') setFormData(prev => ({ ...prev, ...data.formData }));
+        if (typeof data.alasanKoreksi === 'string') setAlasanKoreksi(data.alasanKoreksi);
+        if (!isEditMode) setReferensi(data.referensi ?? null);
+        // Versi rekod saat isian mulai diubah: bila surat sudah diubah orang lain
+        // sejak itu, server menolak penyimpanan alih-alih menimpanya diam-diam.
+        if (isEditMode && data.dimuat && typeof data.dimuat === 'object') setDimuat(data.dimuat);
+        setDirty();
+        tandaiDipulihkan();
+    };
+
+    // Konfirmasi lewat dialog aplikasi; kiriman lain diabaikan selama dialog terbuka.
+    const tanya = async (permintaan) => {
+        menungguKonfirmasiRef.current = true;
+        try {
+            return await konfirmasi(permintaan);
+        } finally {
+            menungguKonfirmasiRef.current = false;
+        }
+    };
+
+    const batal = () => {
+        // Formulir yang sudah diubah ditanya dulu; drafnya dihapus bila ditinggalkan.
+        if (!isDirty) hapusDraf();
+        navigate('/surat/masuk');
+    };
+
     // Handle input changes
     const handleChange = (field, value) => {
         if (saveLockedRef.current) return;
-        setFormData(prev => {
-            const updated = { ...prev, [field]: value };
-            saveDraft(updated);
-            return updated;
-        });
+        setFormData(prev => ({ ...prev, [field]: value }));
         setError(null);
         setFieldErrors(prev => ({ ...prev, [field]: undefined }));
         setDirty();
@@ -445,6 +461,11 @@ export default function TambahSuratMasuk() {
         if (archiveSelectionError) return { message: archiveSelectionError };
         if (!formData.jenisSurat) return { field: 'jenisSurat', message: 'Jenis Surat wajib diisi' };
         if (!formData.tanggalSurat) return { field: 'tanggalSurat', message: 'Tanggal Surat wajib diisi' };
+        if ((!isEditMode || tahunBaru !== null) && tahunDiLuarRentang(formData.tanggalSurat)) {
+            return { field: 'tanggalSurat', message: PESAN_TAHUN_DI_LUAR_RENTANG };
+        }
+        const galatNoAgenda = isEditMode ? null : galatNomorUrut(formData.noUrut, 'No. Agenda');
+        if (galatNoAgenda) return { field: 'noUrut', message: galatNoAgenda };
         if (!formData.perihal) return { field: 'perihal', message: 'Perihal wajib diisi' };
         if (!formData.dari) return { field: 'dari', message: 'Pengirim (Dari) wajib diisi' };
         if (!formData.kepada) return { field: 'kepada', message: 'Penerima (Kepada) wajib diisi' };
@@ -460,18 +481,15 @@ export default function TambahSuratMasuk() {
                 return { field: 'disposisi', message: PESAN_TERKENDALI };
             }
         }
-        if (!formData.disposisi || formData.disposisi.length === 0) {
-            if (!window.confirm('Surat belum didisposisikan. Simpan tanpa disposisi?')) {
-                return { field: 'disposisi', message: 'Disposisi wajib diisi' };
-            }
-        }
         return null;
     };
 
     // Handle form submission
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (saveLockedRef.current) return;
+        if (saveLockedRef.current || menungguKonfirmasiRef.current) return;
+        // Isian terakhir ikut tersimpan di draf bila sesi ternyata sudah berakhir.
+        simpanSekarang();
 
         const validationError = validateForm();
         if (validationError) {
@@ -479,16 +497,49 @@ export default function TambahSuratMasuk() {
             setFieldErrors(validationError.field ? { [validationError.field]: validationError.message } : {});
             return;
         }
+        if (!formData.disposisi || formData.disposisi.length === 0) {
+            const tanpaDisposisi = await tanya({
+                judul: 'Simpan tanpa disposisi?',
+                pesan: 'Surat belum didisposisikan. Simpan tanpa disposisi?',
+                aksi: 'Simpan tanpa disposisi',
+                batal: 'Kembali ke formulir',
+            });
+            if (!mountedRef.current) return;
+            if (!tanpaDisposisi) {
+                setError('Disposisi wajib diisi');
+                setFieldErrors({ disposisi: 'Disposisi wajib diisi' });
+                return;
+            }
+        }
+        // Nomor jauh di atas urutan otomatis tidak dapat diturunkan lagi setelah tersimpan.
+        if (!isEditMode && nomorJauhDiAtas(nomorUrutDiketik(formData.noUrut), noAgendaOtomatis)) {
+            const lanjut = await tanya({
+                judul: 'Simpan dengan nomor ini?',
+                pesan: konfirmasiNomorJauh(noAgendaOtomatis),
+                aksi: 'Simpan dengan nomor ini',
+                batal: 'Ubah nomor',
+            });
+            if (!lanjut || !mountedRef.current) return;
+        }
 
         // Lock synchronously: consecutive submit events can precede React's next render.
         saveLockedRef.current = true;
         setIsSubmitting(true);
         setError(null);
         setFieldErrors({});
+        setKonflikVersi(false);
+        const berkasDiunggah = filesEnabled && selectedFile ? selectedFile : null;
+        setKemajuanUnggah(berkasDiunggah ? 0 : null);
+        // Opsi unggah hanya dikirim bila ada berkas; tanpa berkas pemanggilan layanan tetap tiga argumen.
+        const opsiUnggah = berkasDiunggah ? [{
+            onProgress: ({ percentage } = {}) => {
+                if (mountedRef.current) setKemajuanUnggah(Math.min(100, Math.max(0, Math.round(Number(percentage) || 0))));
+            },
+        }] : [];
 
         try {
             const dataToSubmit = buildSuratFormPayload({ ...formData, sifatSurat }, resolvedUnitKerjaId, filesEnabled);
-            const { disposisiPj, disposisiBatasWaktu, disposisiInstruksi, disposisi: pilihan, ...dasar } = dataToSubmit;
+            const { disposisiPj, disposisiBatasWaktu, disposisiInstruksi, disposisi: pilihan, noUrut: noAgenda, ...dasar } = dataToSubmit;
 
             if (isEditMode) {
                 // F-I1: nomor/perihal/sifat hanya dikirim bila pengguna mengubahnya.
@@ -496,12 +547,14 @@ export default function TambahSuratMasuk() {
                 // impor) jangan sampai terbaca server sebagai koreksi identitas.
                 const identitasBerubah = Object.fromEntries(Object.entries(dasar)
                     .filter(([kolom]) => !KOLOM_IDENTITAS.includes(kolom) || formData[kolom] !== originalRef.current[kolom]))
-                // Tahun tidak dikirim saat edit agar tahun asli surat tidak tertimpa
+                // Tahun tidak dikirim: server mengikutkannya pada tanggal surat.
+                // Versi yang dimuat mencegah perubahan orang lain tertimpa diam-diam.
                 await suratMasukService.update(id, {
                     ...identitasBerubah,
                     disposisi: pilihan,
                     ...(perluAlasanKoreksi ? { alasan: alasanKoreksi.trim() } : {}),
-                }, filesEnabled ? selectedFile : null);
+                    ...versiDimuat(dimuat?.updatedAt),
+                }, berkasDiunggah, ...opsiUnggah);
             } else {
                 // Create new surat
                 const { targets, labels } = pisahkanDisposisi(pilihan);
@@ -514,16 +567,18 @@ export default function TambahSuratMasuk() {
                     instruksi: disposisiInstruksi?.trim() || null,
                     labelTambahan: labels,
                 } : labels;
+                const noUrut = nomorUrutDiketik(noAgenda);
                 await suratMasukService.create({
                     ...dasar,
                     disposisi,
                     ...(referensi ? { referensi: { jenis: 'surat_keluar', id: referensi.suratId } } : {}),
+                    ...(noUrut !== undefined ? { noUrut } : {}),
                     tahun: Number(formData.tanggalSurat.slice(0, 4)) || new Date().getFullYear(),
-                }, filesEnabled ? selectedFile : null);
+                }, berkasDiunggah, ...opsiUnggah);
             }
             if (!mountedRef.current) return;
             resetDirty();
-            clearDraft();
+            hapusDraf();
             setSuccess(true);
 
             navigationTimerRef.current = setTimeout(() => {
@@ -537,9 +592,27 @@ export default function TambahSuratMasuk() {
             const { ringkasan, perIsian } = uraikanGalatSimpan(err);
             setError(ringkasan);
             setFieldErrors(perIsian);
+            setKonflikVersi(dataSudahBerubah(err));
         } finally {
-            if (mountedRef.current) setIsSubmitting(false);
+            if (mountedRef.current) {
+                setIsSubmitting(false);
+                setKemajuanUnggah(null);
+            }
         }
+    };
+
+    // Data diubah orang lain: muat ulang dari server; isian di formulir ini dibuang.
+    const muatUlangData = () => {
+        hapusDraf();
+        setKonflikVersi(false);
+        setError(null);
+        setFieldErrors({});
+        setSelectedFile(null);
+        setExistingFile(null);
+        setAlasanKoreksi('');
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        resetDirty();
+        void fetchSuratData();
     };
 
     const formatFileSize = (bytes) => {
@@ -645,7 +718,14 @@ export default function TambahSuratMasuk() {
             {error && (
                 <Alert ref={errorRef} tabIndex={-1} variant="destructive" className="animate-in slide-in-from-top-2">
                     <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>{error}</AlertDescription>
+                    <AlertDescription>
+                        <p>{error}</p>
+                        {konflikVersi && (
+                            <Button type="button" variant="outline" size="sm" className="mt-2" onClick={muatUlangData}>
+                                Muat ulang
+                            </Button>
+                        )}
+                    </AlertDescription>
                 </Alert>
             )}
 
@@ -683,7 +763,7 @@ export default function TambahSuratMasuk() {
                                     aria-invalid={Boolean(fieldErrors.jenisSurat)}
                                     aria-describedby={fieldErrors.jenisSurat ? 'jenis-surat-error' : undefined}
                                     disabled={saveLocked}
-                                    options={JENIS_SURAT_OPTIONS}
+                                    options={JENIS_NASKAH_DINAS}
                                     value={formData.jenisSurat}
                                     onValueChange={(v) => handleChange('jenisSurat', v)}
                                     placeholder="Pilih jenis naskah dinas..."
@@ -778,6 +858,7 @@ export default function TambahSuratMasuk() {
                                 </p>
                                 {numberPreview?.unitKerjaId === resolvedUnitKerjaId
                                     && numberPreview?.tanggalSurat === formData.tanggalSurat
+                                    && numberPreview?.noUrut === noAgendaPratinjau
                                     && numberPreview?.nomorSurat && (
                                     <p className="text-xs text-primary">Preview nomor otomatis: <code>{numberPreview.nomorSurat}</code></p>
                                 )}
@@ -797,15 +878,52 @@ export default function TambahSuratMasuk() {
                                     id="tanggal-surat"
                                     type="date"
                                     required
+                                    min={batasTanggal ? TANGGAL_SURAT_MIN : undefined}
+                                    max={batasTanggal ? TANGGAL_SURAT_MAKS : undefined}
                                     aria-invalid={Boolean(fieldErrors.tanggalSurat)}
-                                    aria-describedby={fieldErrors.tanggalSurat ? 'tanggal-surat-error' : undefined}
+                                    aria-describedby={[fieldErrors.tanggalSurat && 'tanggal-surat-error', tahunBaru && 'tanggal-surat-tahun'].filter(Boolean).join(' ') || undefined}
                                     value={formData.tanggalSurat}
                                     onChange={(e) => handleChange('tanggalSurat', e.target.value)}
                                     className="h-11 focus-visible:ring-primary"
                                 />
                                 <PesanIsian id="tanggal-surat-error" pesan={fieldErrors.tanggalSurat} />
+                                {tahunBaru && (
+                                    <p id="tanggal-surat-tahun" className="text-xs font-medium text-amber-700 dark:text-amber-300 flex items-start gap-1">
+                                        <Info className="h-3 w-3 mt-0.5 shrink-0" aria-hidden="true" />
+                                        {catatanPindahTahun(tahunBaru, 'nomor agenda')}
+                                    </p>
+                                )}
                             </div>
                         </div>
+
+                        {!isEditMode && (
+                            <div className="space-y-2 md:max-w-xs">
+                                <Label htmlFor="no-agenda" className="text-sm font-medium flex items-center gap-2">
+                                    <Hash className="h-4 w-4 text-muted-foreground" />
+                                    No. Agenda
+                                </Label>
+                                <Input
+                                    id="no-agenda"
+                                    inputMode="numeric"
+                                    autoComplete="off"
+                                    maxLength={6}
+                                    aria-invalid={Boolean(fieldErrors.noUrut)}
+                                    aria-describedby={[fieldErrors.noUrut && 'no-agenda-error', 'no-agenda-bantuan', noAgendaOtomatis && 'no-agenda-otomatis'].filter(Boolean).join(' ')}
+                                    value={formData.noUrut ?? ''}
+                                    onChange={(e) => handleChange('noUrut', e.target.value)}
+                                    placeholder="Otomatis"
+                                    className="h-11 focus-visible:ring-primary"
+                                />
+                                <PesanIsian id="no-agenda-error" pesan={fieldErrors.noUrut} />
+                                <p id="no-agenda-bantuan" className="text-xs text-muted-foreground flex items-start gap-1">
+                                    <Info className="h-3 w-3 mt-0.5 shrink-0" aria-hidden="true" />
+                                    {PETUNJUK_NO_AGENDA}
+                                </p>
+                                {noAgendaOtomatis && (
+                                    <p id="no-agenda-otomatis" className="text-xs text-primary">{`Nomor otomatis berikutnya: ${noAgendaOtomatis}`}</p>
+                                )}
+                            </div>
+                        )}
 
                         <div className="space-y-2">
                             <Label htmlFor="perihal-surat" className="text-sm font-medium">
@@ -1007,14 +1125,10 @@ export default function TambahSuratMasuk() {
                                 disabled={saveLocked}
                                 onChange={(kode, klasifikasi, jra) => {
                                     if (saveLockedRef.current) return;
-                                    setFormData(prev => {
-                                        const updated = {
-                                            ...prev,
-                                            ...buildSuratArchiveSelection(kode, klasifikasi, jra),
-                                        };
-                                        saveDraft(updated);
-                                        return updated;
-                                    });
+                                    setFormData(prev => ({
+                                        ...prev,
+                                        ...buildSuratArchiveSelection(kode, klasifikasi, jra),
+                                    }));
                                     setError(null);
                                     setDirty();
                                 }}
@@ -1195,18 +1309,14 @@ export default function TambahSuratMasuk() {
 
                 {/* Floating Action Bar */}
                 <div className="fixed bottom-0 left-0 right-0 p-4 bg-card/80 backdrop-blur-md border-t border-border/50 z-40 flex items-center justify-between sm:justify-end gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-                    <div className="hidden sm:block mr-auto">
-                        {/* Auto-save status indicator */}
-                        {saveStatus && (
-                            <span className="text-xs text-muted-foreground flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted">
-                                {saveStatus === 'saving' && <><Loader2 className="h-3 w-3 animate-spin" /> Menyimpan draft...</>}
-                                {saveStatus === 'saved' && <><CheckCircle2 className="h-3 w-3 text-emerald-500" /> Draft sementara tersimpan</>}
-                                {saveStatus === 'restored' && <><FileText className="h-3 w-3 text-blue-500" /> Draft dimuat</>}
-                            </span>
-                        )}
+                    <div className="mr-auto flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+                        <div className="hidden sm:block">
+                            <StatusDrafIsian status={statusDraf} />
+                        </div>
+                        <KemajuanUnggah persen={kemajuanUnggah} />
                     </div>
 
-                    <Button type="button" variant="outline" size="lg" disabled={saveLocked} onClick={() => navigate('/surat/masuk')} className="rounded-full px-6">
+                    <Button type="button" variant="outline" size="lg" disabled={saveLocked} onClick={batal} className="rounded-full px-6">
                         Batal
                     </Button>
                     <Button
@@ -1218,7 +1328,7 @@ export default function TambahSuratMasuk() {
                         {isSubmitting ? (
                             <>
                                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                Menyimpan...
+                                {kemajuanUnggah !== null && kemajuanUnggah < 100 ? `Mengunggah ${kemajuanUnggah}%` : 'Menyimpan...'}
                             </>
                         ) : (
                             <>
@@ -1230,6 +1340,15 @@ export default function TambahSuratMasuk() {
                 </div>
                 </fieldset>
             </form>
+
+            <DialogKonfirmasi
+                terbuka={Boolean(tawaranDraf)}
+                wajibMemilih
+                permintaan={permintaanPulihkanDraf(tawaranDraf)}
+                onJawab={jawabTawaranDraf}
+            />
+            {dialogKonfirmasi}
+            {dialogTinggalkan}
         </div>
     );
 }

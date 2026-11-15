@@ -9,6 +9,7 @@ import {
 } from '../validations/user-management.validation';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
+import { badanGalatValidasi } from '../utils/galat-validasi.js';
 
 const router = Router();
 
@@ -27,7 +28,7 @@ function requireSuperAdmin(req: AuthRequest, res: Response, next: NextFunction) 
     if (req.user?.role !== 'super_admin') {
         return res.status(403).json({
             error: 'Access denied',
-            message: 'Super admin access required'
+            message: 'Hanya Super Admin yang dapat mengelola pengguna.'
         });
     }
 
@@ -43,10 +44,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const parseResult = listUsersSchema.safeParse(req.query);
         if (!parseResult.success) {
-            return res.status(400).json({
-                error: 'Validation error',
-                details: parseResult.error.issues
-            });
+            return res.status(400).json(badanGalatValidasi(parseResult.error.issues));
         }
 
         const result = await userManagementService.listUsers(parseResult.data);
@@ -58,11 +56,13 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     try {
+        // Zod issues carry the rule and path, never the submitted value.
         const bodyResult = createUserSchema.safeParse(req.body);
         if (!bodyResult.success) {
+            const passwordIssue = bodyResult.error.issues.find(issue => issue.path[0] === 'password');
             return res.status(400).json({
-                error: 'Validation error',
-                details: bodyResult.error.issues
+                ...badanGalatValidasi(bodyResult.error.issues),
+                ...(passwordIssue ? { message: passwordIssue.message } : {}),
             });
         }
 
@@ -101,15 +101,12 @@ router.get('/:userId', async (req: Request, res: Response, next: NextFunction) =
     try {
         const parseResult = userIdParamSchema.safeParse(req.params);
         if (!parseResult.success) {
-            return res.status(400).json({
-                error: 'Validation error',
-                details: parseResult.error.issues
-            });
+            return res.status(400).json(badanGalatValidasi(parseResult.error.issues));
         }
 
         const user = await userManagementService.getUserById(parseResult.data.userId);
         if (!user) {
-            return res.status(404).json({ error: 'User not found' });
+            return res.status(404).json({ error: 'User not found', message: 'Pengguna tidak ditemukan.' });
         }
 
         res.json({ success: true, data: user });
@@ -122,18 +119,12 @@ router.put('/:userId', async (req: Request, res: Response, next: NextFunction) =
     try {
         const paramResult = userIdParamSchema.safeParse(req.params);
         if (!paramResult.success) {
-            return res.status(400).json({
-                error: 'Validation error',
-                details: paramResult.error.issues
-            });
+            return res.status(400).json(badanGalatValidasi(paramResult.error.issues));
         }
 
         const bodyResult = updateUserSchema.safeParse(req.body);
         if (!bodyResult.success) {
-            return res.status(400).json({
-                error: 'Validation error',
-                details: bodyResult.error.issues
-            });
+            return res.status(400).json(badanGalatValidasi(bodyResult.error.issues));
         }
 
         // Keep the current administrator capable of completing this request.
@@ -159,7 +150,7 @@ router.put('/:userId', async (req: Request, res: Response, next: NextFunction) =
         );
 
         if (!updatedUser) {
-            return res.status(404).json({ error: 'User not found' });
+            return res.status(404).json({ error: 'User not found', message: 'Pengguna tidak ditemukan.' });
         }
 
         res.json({ success: true, data: updatedUser });
@@ -172,19 +163,15 @@ router.post('/:userId/password', async (req: Request, res: Response, next: NextF
     try {
         const paramResult = userIdParamSchema.safeParse(req.params);
         if (!paramResult.success) {
-            return res.status(400).json({
-                error: 'Validation error',
-                details: paramResult.error.issues
-            });
+            return res.status(400).json(badanGalatValidasi(paramResult.error.issues));
         }
 
         // Zod issues carry the rule and path, never the submitted value.
         const bodyResult = resetPasswordSchema.safeParse(req.body);
         if (!bodyResult.success) {
             return res.status(400).json({
-                error: 'Validation error',
+                ...badanGalatValidasi(bodyResult.error.issues),
                 message: bodyResult.error.issues[0]?.message,
-                details: bodyResult.error.issues
             });
         }
 
@@ -199,7 +186,7 @@ router.post('/:userId/password', async (req: Request, res: Response, next: NextF
             { userId: currentUser.id, userEmail: currentUser.email, ipAddress: req.ip },
         );
         if (!result) {
-            return res.status(404).json({ error: 'User not found' });
+            return res.status(404).json({ error: 'User not found', message: 'Pengguna tidak ditemukan.' });
         }
 
         res.json({
@@ -216,17 +203,15 @@ router.delete('/:userId', async (req: Request, res: Response, next: NextFunction
     try {
         const parseResult = userIdParamSchema.safeParse(req.params);
         if (!parseResult.success) {
-            return res.status(400).json({
-                error: 'Validation error',
-                details: parseResult.error.issues
-            });
+            return res.status(400).json(badanGalatValidasi(parseResult.error.issues));
         }
 
         // Prevent self-deactivation
         const currentUser = (req as any).currentUser;
         if (parseResult.data.userId === currentUser.id) {
             return res.status(400).json({
-                error: 'Cannot deactivate your own account'
+                error: 'Cannot deactivate your own account',
+                message: 'Anda tidak dapat menonaktifkan akun sendiri.',
             });
         }
 
@@ -235,10 +220,10 @@ router.delete('/:userId', async (req: Request, res: Response, next: NextFunction
             { userId: currentUser.id, userEmail: currentUser.email, ipAddress: req.ip },
         );
         if (!deactivatedUser) {
-            return res.status(404).json({ error: 'User not found' });
+            return res.status(404).json({ error: 'User not found', message: 'Pengguna tidak ditemukan.' });
         }
 
-        res.json({ success: true, data: deactivatedUser, message: 'User deactivated' });
+        res.json({ success: true, data: deactivatedUser, message: 'Pengguna dinonaktifkan.' });
     } catch (error) {
         next(error);
     }

@@ -4,6 +4,8 @@ export interface SuratNumberContext {
     tahun?: number;
     tanggalSurat?: string | Date | null;
     naskahDinas?: string | null;
+    /** Preview only: the No. Agenda / No. Urut typed on the form, used in place of the next number. */
+    noUrut?: number;
 }
 
 export interface SuratNumberPreview {

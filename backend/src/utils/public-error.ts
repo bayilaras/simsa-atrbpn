@@ -1,4 +1,4 @@
-import { AppError, CatalogNotReadyError } from './errors.js';
+import { AppError, CatalogNotReadyError, DataSudahBerubahError } from './errors.js';
 
 const codes: Record<number, string> = {
     400: 'VALIDATION_ERROR', 401: 'UNAUTHORIZED', 403: 'FORBIDDEN',
@@ -32,7 +32,9 @@ export function publicErrorResponse(error: unknown, requestId?: string) {
         message: clientError ? error.message : status === 503
             ? 'Layanan sementara tidak tersedia. Silakan coba lagi.'
             : status === 501 ? 'Fitur ini belum tersedia.' : 'Terjadi kesalahan pada server.',
-        code: codes[status] || (status < 500 ? 'REQUEST_REJECTED' : 'INTERNAL_ERROR'),
+        // Forms tell a stale edit apart from other conflicts by this code.
+        code: error instanceof DataSudahBerubahError && status === 409 ? error.code
+            : codes[status] || (status < 500 ? 'REQUEST_REJECTED' : 'INTERNAL_ERROR'),
         ...(requestId ? { requestId } : {}),
     };
 }

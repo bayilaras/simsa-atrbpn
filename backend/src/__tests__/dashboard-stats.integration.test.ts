@@ -123,6 +123,27 @@ describe('dashboard statistics SQL', () => {
             arsipMasuk: 0, arsipKeluar: 0, masukBulanIni: 0, keluarBulanIni: 0 });
     });
 
+    it('menghitung "bulan ini" dan tahun bawaan menurut WIB walau server berjalan dalam UTC', async () => {
+        vi.stubEnv('TZ', 'UTC');
+        // 1 September 01.00 WIB, masih 31 Agustus menurut UTC.
+        vi.setSystemTime(new Date('2026-08-31T18:00:00Z'));
+        const awalBulan = await service.getStats('unit-a', year, ['biasa']);
+        expect(awalBulan.masukBulanIni).toBe(2);
+        expect(awalBulan.keluarBulanIni).toBe(2);
+        // 1 Januari 2026 01.00 WIB: tanpa pilihan tahun, tahun berjalan adalah 2026.
+        vi.setSystemTime(new Date('2025-12-31T18:00:00Z'));
+        const tahunBaru = await service.getStats('unit-a', undefined, ['biasa']);
+        expect(tahunBaru.statusBreakdown.keluar).toEqual([{ status: 'Surat Dinas', count: 3 }]);
+    });
+
+    it('menghitung sisa hari arsip yang akan kedaluwarsa dari tanggal WIB', async () => {
+        vi.stubEnv('TZ', 'UTC');
+        vi.setSystemTime(new Date('2026-09-14T18:00:00Z'));
+        const { arsipService } = await import('../services/arsip.service');
+        vi.mocked(arsipService.getExpiring).mockResolvedValueOnce([{ id: 'a', tanggalKadaluarsa: '2026-09-16' }] as any);
+        expect((await service.getExpiringArchives('unit-a'))[0].daysLeft).toBe(1);
+    });
+
     it('limits ordinary statistics to seven SQL queries and skips the canonical expiry evaluation', async () => {
         const { arsipService } = await import('../services/arsip.service');
         vi.mocked(arsipService.getExpiring).mockClear();

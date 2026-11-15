@@ -60,23 +60,27 @@ describe('tautan ke modul opsional yang dimatikan', () => {
         expect(within(enabledCard).queryByText(/dilakukan di luar SIMSA/)).not.toBeInTheDocument()
     })
 
-    it('daftar formulir tetap menampilkan semua template tanpa tombol modul yang mati', () => {
+    it('daftar formulir menampilkan semua template; tombol hanya untuk formulir yang dibuat dari data aplikasi', () => {
         const page = show(<FormulirIndex />)
-        expect(screen.getAllByRole('button', { name: 'Lihat Template Kosong' })).toHaveLength(33)
-        expect(screen.queryByRole('link', { name: 'Buka Penyusutan' })).not.toBeInTheDocument()
-        expect(screen.queryByRole('link', { name: 'Buka Arsip Terjaga' })).not.toBeInTheDocument()
-        expect(screen.getAllByRole('link', { name: 'Buka Peminjaman' })).toHaveLength(3)
-        expect(screen.getAllByText(/Modul Penyusutan belum diaktifkan/)).toHaveLength(15)
-        expect(screen.getAllByText(/Modul Arsip Terjaga belum diaktifkan/)).toHaveLength(5)
+        const periksa = () => {
+            expect(screen.getAllByRole('button', { name: 'Lihat Template Kosong' })).toHaveLength(33)
+            expect(screen.getAllByRole('link', { name: 'Ekspor dari Arsip' })).toHaveLength(2)
+            expect(screen.getByRole('link', { name: 'Buka Arsip Vital' })).toHaveAttribute('href', '/arsip-vital')
+            expect(screen.getAllByText('Diisi manual dari template')).toHaveLength(30)
+            for (const nama of ['Buka Penyusutan', 'Buka Arsip Terjaga', 'Buka Peminjaman', 'Buka Laporan', 'Buka Tunjuk Silang']) {
+                expect(screen.queryByRole('link', { name: nama })).not.toBeInTheDocument()
+            }
+            expect(screen.queryByText(/belum diaktifkan/)).not.toBeInTheDocument()
+        }
+        periksa()
 
+        // Modul opsional yang menyala tidak menambah tautan ke Penyusutan atau Arsip Terjaga.
         state.capabilities = { ...ON }
         page.rerender(<MemoryRouter><FormulirIndex /></MemoryRouter>)
-        expect(screen.getAllByRole('link', { name: 'Buka Penyusutan' })).toHaveLength(15)
-        expect(screen.getAllByRole('link', { name: 'Buka Arsip Terjaga' })).toHaveLength(5)
-        expect(screen.queryByText(/belum diaktifkan/)).not.toBeInTheDocument()
+        periksa()
     })
 
-    it('pratinjau formulir tetap dapat dicetak tanpa tautan ke modul yang mati', async () => {
+    it('pratinjau formulir tetap dapat dicetak tanpa tautan ke Penyusutan', async () => {
         const viewer = () => (
             <MemoryRouter initialEntries={['/formulir/cetak/13']}>
                 <Suspense fallback={null}><Routes><Route path="/formulir/cetak/:id" element={<FormulirViewer />} /></Routes></Suspense>
@@ -89,7 +93,7 @@ describe('tautan ke modul opsional yang dimatikan', () => {
 
         state.capabilities = { ...ON }
         page.rerender(viewer())
-        expect(screen.getByRole('link', { name: 'Buka Penyusutan' })).toHaveAttribute('href', '/penyusutan')
+        expect(screen.queryByRole('link', { name: 'Buka Penyusutan' })).not.toBeInTheDocument()
     })
 
     it('dashboard menyembunyikan pipeline penyusutan dan ringkasan arsip terjaga', async () => {

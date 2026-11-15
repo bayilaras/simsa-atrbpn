@@ -145,6 +145,31 @@ test('regulatory-source-only database has a valid document backup and restore',a
  const proof=await restoreDocuments({directory,key,targetDirectory:join(root,'restored'),targetKey:randomBytes(32),expectedArchiveSha256:archive});
  assert.equal(proof.restoredObjects,1);assert.equal(proof.allHashesMatch,true);
 });
+test('Berita Acara Autentikasi PDFs are inventoried, hash-checked and restored like other documents',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'simsa-autentikasi-unit-')),key=randomBytes(32),directory=join(root,'backup');
+ const baId='00000000-0000-4000-8000-0000000000b1',baUrl='https://teststore123.private.blob.vercel-storage.com/autentikasi/BA_Autentikasi_001-x1.pdf',ba=Buffer.from('%PDF-1.7 berita acara');
+ // COPY rows: a record without a generated PDF has no document to back up.
+ const autentikasi=[{id:baId,nomor_berita_acara:'BA/001',file_lampiran:baUrl,file_lampiran_sha256:sha256(ba).toUpperCase(),file_lampiran_size_bytes:String(ba.length)},
+  {id:'00000000-0000-4000-8000-0000000000b2',nomor_berita_acara:'BA/002',file_lampiran:null,file_lampiran_sha256:null,file_lampiran_size_bytes:null}];
+ const references=documentReferences([{id,entity_type:'arsip',entity_id:id,file_url:url,sha256:hash,size_bytes:String(bytes.length),storage_access:'private'}],[],{autentikasi});
+ assert.deepEqual(references.at(-1),{id:baId,kind:'autentikasi',url:baUrl,sha256:sha256(ba),sizeBytes:ba.length,storageAccess:'private'});
+ assert.deepEqual(references.map(ref=>ref.kind),['attachment','autentikasi']);
+ assert.equal(documentReferences([],[],{autentikasi}).length,1);
+ const served=target=>new Response(target.pathname.startsWith('/autentikasi/')?ba:bytes,{status:200}),fetched=[];
+ const backup=await backupDocuments({references,token,directory,key,archiveSha256:archive,fetchImpl:async target=>{fetched.push(target.pathname);return served(target);}});
+ assert.deepEqual([backup.references,backup.objects,fetched.sort()],[2,2,['/autentikasi/BA_Autentikasi_001-x1.pdf','/test.pdf']]);
+ const proof=await restoreDocuments({directory,key,targetDirectory:join(root,'restored'),targetKey:randomBytes(32),expectedArchiveSha256:archive});
+ assert.deepEqual([proof.restoredObjects,proof.authorizedDownloads,proof.allHashesMatch],[2,2,true]);
+ // A changed PDF stops the document backup, as for any other document.
+ await assert.rejects(backupDocuments({references,token,directory:join(root,'changed'),key,archiveSha256:archive,
+  fetchImpl:async target=>target.pathname.startsWith('/autentikasi/')?new Response(Buffer.from('%PDF-1.7 berita acaRA'),{status:200}):served(target)}),/DOCUMENT_HASH_MISMATCH/);
+});
+test('restore still refuses a manifest that names an unknown document kind',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'simsa-kind-unit-')),key=randomBytes(32),directory=join(root,'backup');
+ const other={...reference,id:'00000000-0000-4000-8000-000000000002',kind:'lainnya',url:'https://teststore123.private.blob.vercel-storage.com/lain.pdf'};
+ await backupDocuments({references:[reference,other],token,directory,key,archiveSha256:archive,fetchImpl:async()=>new Response(bytes,{status:200})});
+ await assert.rejects(restoreDocuments({directory,key,targetDirectory:join(root,'restored'),targetKey:randomBytes(32),expectedArchiveSha256:archive}),/DOCUMENT_MANIFEST_INVALID/);
+});
 test('a backup made with a raised limit restores without repeating the setting',async()=>{
  const root=await mkdtemp(join(tmpdir(),'simsa-raised-unit-')),key=randomBytes(32),directory=join(root,'backup');
  const rows=Array.from({length:DOCUMENT_BUDGET_DEFAULTS.maxReferences+1},(_,n)=>({id:`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`,entity_type:'arsip',entity_id:id,file_url:url,sha256:hash,size_bytes:bytes.length,storage_access:'private'}));

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import RetentionManagement from './RetentionManagement'
@@ -6,8 +6,10 @@ import UserGuide from './UserGuide'
 
 const state = vi.hoisted(() => ({
     capabilities: {},
+    toast: vi.fn(),
     retention: { getSummary: vi.fn(), getCandidates: vi.fn(), getHolds: vi.fn(), generateDisposalReport: vi.fn() },
 }))
+vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: state.toast }) }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { id: 'arsiparis', role: 'admin_unit', unitKerjaId: 'unit-a' } }) }))
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ loading: false, compatible: true,
     capabilities: state.capabilities, features: {}, authentication: {} }) }))
@@ -71,5 +73,47 @@ describe('berita acara pemusnahan di manajemen retensi', () => {
         expect(html).toContain('Unit Kerja: Sekretariat Ditjen')
         expect(html).not.toMatch(/Nomor: (null|undefined|BA-)/)
         expect(printWindow.print).toHaveBeenCalledOnce()
+    })
+
+    it('teks arsip lama yang memuat tag atau tanda < > & tercetak sebagai teks biasa', async () => {
+        const arsip = {
+            ...DRAF.daftarArsip[0],
+            nomorBerkas: 'B-2/<script>alert(1)</script>',
+            uraian: '<img src=x onerror=alert(1)>',
+            keterangan: 'Luas < 5 ha & > 2 ha',
+            retentionTriggerEvidence: '"bukti" \'lama\'',
+        }
+        state.retention.generateDisposalReport.mockResolvedValue({ success: true, data: {
+            ...DRAF, unitKerja: 'Biro <Umum> & TU', daftarArsip: [arsip],
+        } })
+        show()
+        fireEvent.click(await screen.findByRole('button', { name: /Generate Berita Acara/ }))
+        const dialog = within(await screen.findByRole('dialog'))
+        const printWindow = { document: { write: vi.fn(), close: vi.fn() }, print: vi.fn() }
+        vi.stubGlobal('open', vi.fn(() => printWindow))
+        fireEvent.click(dialog.getByRole('button', { name: /Cetak PDF/ }))
+
+        const html = printWindow.document.write.mock.calls[0][0]
+        expect(html).toContain('<td>&lt;img src=x onerror=alert(1)&gt;</td>')
+        expect(html).toContain('Unit Kerja: Biro &lt;Umum&gt; &amp; TU')
+        const cetakan = new DOMParser().parseFromString(html, 'text/html')
+        expect(cetakan.querySelector('tbody img, tbody script')).toBeNull()
+        const sel = [...cetakan.querySelectorAll('tbody td')].map(td => td.textContent)
+        expect(sel).toEqual(expect.arrayContaining([arsip.nomorBerkas, arsip.uraian, arsip.keterangan, arsip.retentionTriggerEvidence]))
+        expect(cetakan.body.textContent).toContain('Unit Kerja: Biro <Umum> & TU')
+    })
+
+    it('tanpa arsip yang memenuhi syarat: pesan ditampilkan dan tidak ada draf kosong yang dibuka atau dicetak', async () => {
+        state.retention.generateDisposalReport.mockResolvedValue({ success: true, data: { ...DRAF, totalBerkas: 0, daftarArsip: [] } })
+        vi.stubGlobal('open', vi.fn())
+        show()
+        fireEvent.click(await screen.findByRole('button', { name: /Generate Berita Acara/ }))
+
+        await waitFor(() => expect(state.toast).toHaveBeenCalledWith({
+            title: 'Belum ada arsip yang memenuhi syarat',
+            description: 'Berita acara pemusnahan hanya memuat arsip Musnah yang retensinya telah berakhir, memiliki pemicu, tidak di-hold, dan belum masuk proses penyusutan. Draf tidak dibuat.',
+        }))
+        expect(screen.queryByRole('dialog')).toBeNull()
+        expect(window.open).not.toHaveBeenCalled()
     })
 })

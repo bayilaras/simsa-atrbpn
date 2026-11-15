@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // ─── Chainable DB Mock ───
 const resultQueue: any[] = [];
 const whereCalls: any[] = [];
+const valuesCalls: any[] = [];
+const urutan: string[] = [];
 let transactionCommits = 0;
 let transactionRollbacks = 0;
 function enqueue(...results: any[]) { resultQueue.push(...results); }
@@ -16,16 +18,19 @@ const mockChain: any = new Proxy({}, {
         }
         return (...args: any[]) => {
             if (prop === 'where') whereCalls.push(args[0]);
+            if (prop === 'values') valuesCalls.push(args[0]);
             return mockChain;
         };
     },
 });
 
 const mockDb = {
-    select: (..._a: any[]) => mockChain,
-    insert: (..._a: any[]) => mockChain,
+    select: (..._a: any[]) => { urutan.push('select'); return mockChain; },
+    insert: (..._a: any[]) => { urutan.push('insert'); return mockChain; },
     update: (..._a: any[]) => mockChain,
     delete: (..._a: any[]) => mockChain,
+    // Kunci kode per unit; hasilnya tidak dipakai.
+    execute: async (..._a: any[]) => { urutan.push('execute'); return []; },
     transaction: async (fn: any) => {
         try {
             const result = await fn(mockDb);
@@ -41,12 +46,15 @@ const mockDb = {
 vi.mock('../config/database', () => ({ db: mockDb }));
 vi.mock('../services/audit-log.service.js', () => ({ default: auditMocks }));
 
-const { dosirService } = await import('../services/dosir.service');
+const { dosirService, pesanKodeDosirTerpakai } = await import('../services/dosir.service');
+const { ConflictError } = await import('../utils/errors');
 
 describe('DosirService', () => {
     beforeEach(() => {
         resultQueue.length = 0;
         whereCalls.length = 0;
+        valuesCalls.length = 0;
+        urutan.length = 0;
         transactionCommits = 0;
         transactionRollbacks = 0;
         auditMocks.logActionOrThrow.mockReset();
@@ -54,8 +62,9 @@ describe('DosirService', () => {
     });
 
     describe('create', () => {
+        // Urutan kueri create: kode dosir unit, lalu kode di audit_log, lalu insert.
         it('should create new dosir', async () => {
-            enqueue([{ id: 'dosir-1', kode: 'D-001', judul: 'Test' }]);
+            enqueue([], [], [{ id: 'dosir-1', kode: 'D-001', judul: 'Test' }]);
             const result = await dosirService.create({
                 unitKerjaId: 'u1', kode: 'D-001', judul: 'Test',
             });
@@ -63,7 +72,7 @@ describe('DosirService', () => {
         });
 
         it('rolls back dosir creation when critical audit storage fails', async () => {
-            enqueue([{ id: 'dosir-1', kode: 'D-001', judul: 'Test' }]);
+            enqueue([], [], [{ id: 'dosir-1', kode: 'D-001', judul: 'Test' }]);
             auditMocks.logActionOrThrow.mockRejectedValueOnce(new Error('audit unavailable'));
 
             await expect(dosirService.create({
@@ -71,6 +80,27 @@ describe('DosirService', () => {
             }, { userId: 'user-1' })).rejects.toThrow('audit unavailable');
 
             expect(transactionCommits).toBe(0);
+            expect(transactionRollbacks).toBe(1);
+        });
+
+        it('membuat kode berikutnya di bawah kunci unit, melewati kode dosir yang sudah dihapus', async () => {
+            const year = new Date().getFullYear();
+            enqueue(
+                [{ kode: `u1-${year}-001` }],
+                [{ kode: `u1-${year}-001` }, { kode: `u1-${year}-002` }],
+                [{ id: 'dosir-3', kode: `u1-${year}-003`, judul: 'Perkara' }],
+            );
+            await dosirService.create({ unitKerjaId: 'u1', judul: 'Perkara' });
+            expect(valuesCalls[0]).toMatchObject({ unitKerjaId: 'u1', kode: `u1-${year}-003`, judul: 'Perkara' });
+            expect(urutan).toEqual(['execute', 'select', 'select', 'insert']);
+        });
+
+        it('menolak kode yang sudah pernah dipakai di unit dengan 409, tanpa membedakan huruf besar', async () => {
+            enqueue([], [{ kode: 'U1-2026-002' }]);
+            const gagal = dosirService.create({ unitKerjaId: 'u1', kode: 'u1-2026-002', judul: 'Perkara' });
+            await expect(gagal).rejects.toBeInstanceOf(ConflictError);
+            await expect(gagal).rejects.toMatchObject({ statusCode: 409, message: pesanKodeDosirTerpakai('u1-2026-002') });
+            expect(urutan).not.toContain('insert');
             expect(transactionRollbacks).toBe(1);
         });
     });
@@ -261,7 +291,7 @@ describe('DosirService', () => {
 
     describe('generateKode', () => {
         it('should generate next kode when no existing', async () => {
-            enqueue([]); // no existing kodes
+            enqueue([], []); // no existing kodes
             const result = await dosirService.generateKode('u1');
             expect(result).toContain('u1-');
             expect(result).toContain('-001');
@@ -269,9 +299,21 @@ describe('DosirService', () => {
 
         it('should increment from last existing kode', async () => {
             const year = new Date().getFullYear();
-            enqueue([{ kode: `u1-${year}-005` }]);
+            enqueue([{ kode: `u1-${year}-005` }], []);
             const result = await dosirService.generateKode('u1');
             expect(result).toContain('-006');
+        });
+
+        it('tidak membagikan lagi kode dosir yang sudah dihapus', async () => {
+            const year = new Date().getFullYear();
+            enqueue([{ kode: `u1-${year}-001` }], [{ kode: `u1-${year}-001` }, { kode: `u1-${year}-004` }]);
+            expect(await dosirService.generateKode('u1')).toBe(`u1-${year}-005`);
+        });
+
+        it('membandingkan nomor sebagai angka dan mengabaikan kode berpola lain', async () => {
+            const year = new Date().getFullYear();
+            enqueue([{ kode: `u1-${year}-999` }, { kode: `u1-${year}-1000` }, { kode: `u1-${year}-0999x` }], []);
+            expect(await dosirService.generateKode('u1')).toBe(`u1-${year}-1001`);
         });
     });
 });

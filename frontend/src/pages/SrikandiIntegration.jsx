@@ -113,10 +113,10 @@ export default function SrikandiIntegration() {
             );
             setRetryItem(null);
             setRetryReason('');
-            toast({ title: 'Retry dijadwalkan', description: response.message });
+            toast({ title: 'Pengiriman ulang dijadwalkan', description: response.message });
             await load();
         } catch (error) {
-            toast({ title: 'Retry gagal', description: error.message, variant: 'destructive' });
+            toast({ title: 'Pengiriman ulang gagal', description: error.message, variant: 'destructive' });
         } finally {
             setWorkingId(null);
         }
@@ -193,7 +193,7 @@ export default function SrikandiIntegration() {
                                                 <TableCell className="text-right">
                                                     <div className="flex justify-end gap-2">
                                                         {['pending', 'retry_scheduled'].includes(item.status) && <Button size="sm" variant="outline" disabled={!configuration?.ready || workingId === item.id} onClick={() => dispatch(item)}><Send className="mr-1 h-3.5 w-3.5" /> Kirim</Button>}
-                                                        {item.status === 'dead_letter' && <Button size="sm" variant="outline" disabled={workingId === item.id} onClick={() => setRetryItem(item)}><RotateCcw className="mr-1 h-3.5 w-3.5" /> Retry</Button>}
+                                                        {item.status === 'dead_letter' && <Button size="sm" variant="outline" disabled={workingId === item.id} onClick={() => setRetryItem(item)}><RotateCcw className="mr-1 h-3.5 w-3.5" /> Kirim Ulang</Button>}
                                                     </div>
                                                 </TableCell>
                                             </TableRow>
@@ -209,7 +209,7 @@ export default function SrikandiIntegration() {
 
             <Dialog open={Boolean(retryItem)} onOpenChange={(open) => !open && setRetryItem(null)}>
                 <DialogContent>
-                    <DialogHeader><DialogTitle>Jadwalkan ulang pesan</DialogTitle><DialogDescription>Alasan operasional disimpan pada audit append-only. Retry belum berarti tersinkron.</DialogDescription></DialogHeader>
+                    <DialogHeader><DialogTitle>Jadwalkan ulang pesan</DialogTitle><DialogDescription>Alasan operasional disimpan pada audit append-only. Pengiriman ulang belum berarti tersinkron.</DialogDescription></DialogHeader>
                     <div className="space-y-2"><Label>Alasan retry</Label><Textarea rows={4} value={retryReason} onChange={(event) => setRetryReason(event.target.value)} placeholder="Minimal 10 karakter." /></div>
                     <DialogFooter><Button variant="outline" onClick={() => setRetryItem(null)}>Batal</Button><Button disabled={retryReason.trim().length < 10 || Boolean(workingId)} onClick={retry}>Jadwalkan retry</Button></DialogFooter>
                 </DialogContent>

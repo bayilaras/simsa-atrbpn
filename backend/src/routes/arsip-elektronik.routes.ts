@@ -4,6 +4,7 @@ import { arsipElektronikService } from '../services/arsip-elektronik.service.js'
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware.js';
 import { permissionMiddleware } from '../middlewares/role.middleware.js';
 import { uuidParamValidator } from '../middlewares/validate.middleware.js';
+import { badanGalatValidasi } from '../utils/galat-validasi.js';
 import { resolveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import {
     allowedSecurityClassifications,
@@ -79,10 +80,7 @@ async function getAuthorizedRecord(
 }
 
 function validationError(res: Response, error: z.ZodError) {
-    return res.status(400).json({
-        error: 'Validation failed',
-        details: error.issues.map(issue => ({ field: issue.path.join('.'), message: issue.message })),
-    });
+    return res.status(400).json(badanGalatValidasi(error.issues));
 }
 
 // GET /api/arsip-elektronik — List all with filters
@@ -145,7 +143,7 @@ router.get('/arsip/:arsipId', async (req: AuthRequest, res: Response, next: Next
     try {
         const arsipId = String(req.params.arsipId);
         if (!(await canReadArsip(req, arsipId))) {
-            return res.status(404).json({ error: 'Record not found' });
+            return res.status(404).json({ error: 'Record not found', message: 'Data tidak ditemukan.' });
         }
         const data = await arsipElektronikService.findByArsipId(arsipId);
         res.json({ data });
@@ -160,7 +158,7 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
         const id = String(req.params.id);
         const record = await getAuthorizedRecord(req, id);
         if (!record) {
-            return res.status(404).json({ error: 'Record not found' });
+            return res.status(404).json({ error: 'Record not found', message: 'Data tidak ditemukan.' });
         }
         res.json(record);
     } catch (error) {
@@ -174,7 +172,7 @@ router.post('/', permissionMiddleware('arsip', 'create'), async (req: AuthReques
         const parsed = electronicInputSchema.safeParse(req.body);
         if (!parsed.success) return validationError(res, parsed.error);
         if (!(await canMutateArsip(req, parsed.data.arsipId))) {
-            return res.status(404).json({ error: 'Record not found' });
+            return res.status(404).json({ error: 'Record not found', message: 'Data tidak ditemukan.' });
         }
         const result = await arsipElektronikService.create(parsed.data, req.user!.id, {
             userId: req.user?.id,
@@ -191,7 +189,7 @@ router.put('/:id', permissionMiddleware('arsip', 'update'), async (req: AuthRequ
         const id = String(req.params.id);
         const record = await getAuthorizedRecord(req, id, 'mutate');
         if (!record) {
-            return res.status(404).json({ error: 'Record not found' });
+            return res.status(404).json({ error: 'Record not found', message: 'Data tidak ditemukan.' });
         }
         const parsed = electronicUpdateSchema.safeParse(req.body);
         if (!parsed.success) return validationError(res, parsed.error);
@@ -207,18 +205,18 @@ router.post('/:id/verify', permissionMiddleware('arsip', 'update'), async (req: 
     try {
         const id = String(req.params.id);
         if (!(await getAuthorizedRecord(req, id, 'mutate'))) {
-            return res.status(404).json({ error: 'Record not found' });
+            return res.status(404).json({ error: 'Record not found', message: 'Data tidak ditemukan.' });
         }
         const { status, catatan } = req.body;
         if (!status || !['verified', 'rejected'].includes(status)) {
-            return res.status(400).json({ error: 'status must be "verified" or "rejected"' });
+            return res.status(400).json({ error: 'status must be "verified" or "rejected"', message: 'Hasil verifikasi harus disetujui atau ditolak.' });
         }
         const userId = req.user?.id || 'system';
         const result = await arsipElektronikService.verify(id, userId, status, catatan, {
             userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip,
         });
         if (!result) {
-            return res.status(404).json({ error: 'Record not found' });
+            return res.status(404).json({ error: 'Record not found', message: 'Data tidak ditemukan.' });
         }
         res.json(result);
     } catch (error) { next(error); }
@@ -228,7 +226,7 @@ router.post('/:id/verify', permissionMiddleware('arsip', 'update'), async (req: 
 router.get('/:id/preservasi/options', permissionMiddleware('arsip', 'update'), async (req: AuthRequest, res, next) => {
     try {
         const id = String(req.params.id);
-        if (!(await getAuthorizedRecord(req, id, 'mutate'))) return res.status(404).json({ error: 'Record not found' });
+        if (!(await getAuthorizedRecord(req, id, 'mutate'))) return res.status(404).json({ error: 'Record not found', message: 'Data tidak ditemukan.' });
         res.json(await preservationAttachmentOptions(id));
     } catch (error) { next(error); }
 });
@@ -237,7 +235,7 @@ router.post('/:id/preservasi', permissionMiddleware('arsip', 'update'), async (r
     try {
         const id = String(req.params.id);
         if (!(await getAuthorizedRecord(req, id, 'mutate'))) {
-            return res.status(404).json({ error: 'Record not found' });
+            return res.status(404).json({ error: 'Record not found', message: 'Data tidak ditemukan.' });
         }
         const parsed = preservationActivitySchema.safeParse(req.body);
         if (!parsed.success) return validationError(res, parsed.error);
@@ -260,7 +258,7 @@ router.get('/:id/preservasi', async (req: AuthRequest, res: Response, next: Next
     try {
         const id = String(req.params.id);
         if (!(await getAuthorizedRecord(req, id))) {
-            return res.status(404).json({ error: 'Record not found' });
+            return res.status(404).json({ error: 'Record not found', message: 'Data tidak ditemukan.' });
         }
         const history = await arsipElektronikService.getPreservationHistory(id);
         res.json(history);
@@ -274,15 +272,15 @@ router.delete('/:id', permissionMiddleware('arsip', 'delete'), async (req: AuthR
     try {
         const id = String(req.params.id);
         if (req.user?.role !== 'super_admin') {
-            return res.status(403).json({ error: 'Only super_admin may remove unverified metadata' });
+            return res.status(403).json({ error: 'Only super_admin may remove unverified metadata', message: 'Hanya Super Admin yang dapat menghapus metadata yang belum diverifikasi.' });
         }
         if (!(await getAuthorizedRecord(req, id, 'mutate'))) {
-            return res.status(404).json({ error: 'Record not found' });
+            return res.status(404).json({ error: 'Record not found', message: 'Data tidak ditemukan.' });
         }
         const deleted = await arsipElektronikService.delete(id, {
             userId: req.user?.id, userEmail: req.user?.email, ipAddress: req.ip,
         });
-        if (!deleted) return res.status(404).json({ error: 'Record not found' });
+        if (!deleted) return res.status(404).json({ error: 'Record not found', message: 'Data tidak ditemukan.' });
         res.json({ success: true });
     } catch (error) { next(error); }
 });

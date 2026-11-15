@@ -17,7 +17,8 @@ import {
     type StorageLocation,
     archiveLending,
 } from '../db/schema';
-import { eq, and, desc, sql, ilike, or, isNotNull, isNull, ne, inArray, getTableColumns, type SQL } from 'drizzle-orm';
+import { eq, and, desc, sql, or, isNotNull, isNull, ne, inArray, getTableColumns, type SQL } from 'drizzle-orm';
+import { cocokTeksCari } from '../utils/cari-teks.js';
 import { AppError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors';
 import {
     PESAN_BOKS_TUJUAN_SEDANG_DIPINJAM,
@@ -27,6 +28,8 @@ import {
 } from '../constants/pesan-akses.js';
 import { hasPermission, type Role } from '../config/permissions';
 import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-lock';
+import { pastikanBelumBerubah } from '../utils/versi-rekaman.js';
+import { jakartaTanggalPanjang } from '../utils/jakarta-date.js';
 import { isAllowedForClassification, recordAccessService } from './record-access.service';
 import { barisDari, kelasSumberSurat, normalizeSecurityClassification, rankKelas } from './access/visibility-spec';
 import { alasanArsipTerkunci } from './access/arsip-aksi';
@@ -408,10 +411,10 @@ export class ArsipService {
         if (search) {
             conditions.push(
                 or(
-                    ilike(arsip.nomorBerkas, `%${search}%`),
-                    ilike(arsip.uraianBerkas, `%${search}%`),
-                    ilike(arsip.nomorSuratOriginal, `%${search}%`),
-                    ilike(arsip.perihalOriginal, `%${search}%`)
+                    cocokTeksCari(arsip.nomorBerkas, search),
+                    cocokTeksCari(arsip.uraianBerkas, search),
+                    cocokTeksCari(arsip.nomorSuratOriginal, search),
+                    cocokTeksCari(arsip.perihalOriginal, search)
                 )!
             );
         }
@@ -434,7 +437,7 @@ export class ArsipService {
             .leftJoin(jraAppraisalDecisions, CURRENT_APPRAISAL_DECISION_JOIN)
             .leftJoin(jraAppraisalCases, CURRENT_APPRAISAL_CASE_JOIN)
             .where(and(...conditions))
-            .orderBy(desc(arsip.createdAt))
+            .orderBy(desc(arsip.createdAt), desc(arsip.id))
             .limit(limit)
             .offset(offset);
         const data = rows.map((row) => this.toCanonicalReadModel(row as ArchiveWithRuleSnapshot));
@@ -631,7 +634,7 @@ export class ArsipService {
 
             if (!existing) throw new NotFoundError('Arsip');
             if (existing.disposalStatus === 'executed') {
-                throw new ConflictError('Arsip yang penyusutannya telah dieksekusi bersifat immutable.');
+                throw new ConflictError('Arsip yang penyusutannya sudah dilaksanakan tidak dapat diubah.');
             }
             if (existing.legalHold || existing.disposalStatus !== 'active' || existing.disposalBatchId) {
                 throw new ConflictError(
@@ -696,7 +699,13 @@ export class ArsipService {
         });
     }
 
-    async update(id: string, data: Partial<Arsip>, auditContext?: CriticalAuditContext) {
+    async update(
+        id: string,
+        data: Partial<Arsip>,
+        auditContext?: CriticalAuditContext,
+        /** expectedUpdatedAt: the updatedAt the Ubah Metadata dialog loaded; a different stored value is a 409. */
+        { expectedUpdatedAt }: { expectedUpdatedAt?: Date } = {},
+    ) {
         // HTTP callers supply this context on the server, never from the body.
         // Retain the existing trusted internal, unaudited metadata API contract.
         if (auditContext && !auditContext.userId) {
@@ -740,7 +749,7 @@ export class ArsipService {
             if (!existing) return undefined;
             if (existing.disposalStatus === 'executed') {
                 throw new ConflictError(
-                    'Arsip yang penyusutannya telah dieksekusi bersifat immutable.'
+                    'Arsip yang penyusutannya sudah dilaksanakan tidak dapat diubah.'
                 );
             }
 
@@ -782,6 +791,8 @@ export class ArsipService {
                 }
                 actorAudit = { ...auditContext, userId: actor.id, userEmail: actor.email };
             }
+            // Baris sudah dikunci: perubahan orang lain sejak dialog dibuka tidak ditimpa.
+            pastikanBelumBerubah(existing.updatedAt, expectedUpdatedAt);
             // Plafon peran di atas hanya membatasi kenaikan; arsip tertaut juga
             // tidak boleh diturunkan di bawah kelas surat sumbernya (NULL = biasa).
             if (data.klasifikasiKeamanan !== undefined && existing.sourceSuratId) {
@@ -1984,7 +1995,6 @@ export class ArsipService {
             );
         }
 
-        const now = new Date();
         const [unit] = await db
             .select({ name: unitKerja.name })
             .from(unitKerja)
@@ -1996,7 +2006,8 @@ export class ArsipService {
         return {
             draf: true as const,
             reportNumber: null,
-            tanggal: now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
+            // Tanggal naskah mengikuti WIB, bukan zona waktu server (UTC).
+            tanggal: jakartaTanggalPanjang(),
             unitKerjaId,
             unitKerja: unit?.name || unitKerjaId,
             totalBerkas: archives.length,

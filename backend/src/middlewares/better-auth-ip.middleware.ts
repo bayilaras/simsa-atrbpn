@@ -8,6 +8,12 @@ export const betterAuthIpOptions = {
     ipv6Subnet: 56,
 };
 
+/** The client address prepareBetterAuthClientIp handed to Better Auth, if any. */
+export function betterAuthClientIp(headers: Headers | null | undefined): string | undefined {
+    const address = headers?.get(INTERNAL_IP_HEADER);
+    return address && isIP(address) ? address : undefined;
+}
+
 /** Replace any caller-supplied value with Express's trusted-proxy resolution. */
 export function prepareBetterAuthClientIp(req: Request): void {
     delete req.headers[INTERNAL_IP_HEADER];

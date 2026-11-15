@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { createLogger } from '../utils/logger';
 import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import type { Role } from '../config/permissions.js';
-import { verifyRequestIdentity } from '../services/request-identity.service.js';
+import { forwardSessionCookies, verifyRequestIdentity } from '../services/request-identity.service.js';
 import {
     archiveAccessProvisioningIssue,
     findProvisionedIdentityUser,
@@ -27,6 +27,7 @@ export async function authMiddleware(
 ) {
     try {
         const identity = await verifyRequestIdentity(req);
+        forwardSessionCookies(req, res);
 
         if (!identity) {
             return res.status(401).json({ error: 'Unauthorized: No valid session' });
@@ -56,7 +57,7 @@ export async function authMiddleware(
         if (provisioningIssue === 'role') {
             return res.status(403).json({
                 error: 'Access pending',
-                message: 'Akun belum memiliki role kearsipan. Hubungi administrator.',
+                message: 'Akun belum memiliki peran kearsipan. Hubungi administrator.',
             });
         }
 
@@ -80,6 +81,6 @@ export async function authMiddleware(
         next();
     } catch (error) {
         log.error({ err: error }, 'Auth middleware error');
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ error: 'Internal server error', message: 'Terjadi kesalahan pada server.' });
     }
 }

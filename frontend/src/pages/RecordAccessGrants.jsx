@@ -40,6 +40,8 @@ const STATUS = {
 };
 
 const ENTITY_LABEL = LABEL_JENIS_REKAMAN;
+// Mode tayang membatasi tombol di penampil berkas; isi berkas tetap terkirim ke layar peminta.
+const CATATAN_TAYANG_SAJA = 'Tayang saja hanya menyembunyikan tombol unduh, cetak, dan buka di tab baru. Isi berkas tetap tampil di layar peminta dan dapat disalin; setiap penayangan tercatat di Audit Log.';
 const FORM_KOSONG = { entityType: 'arsip', entityId: '', purpose: '', accessMode: 'view' };
 
 function formatDate(value) {
@@ -308,6 +310,7 @@ export default function RecordAccessGrants() {
                                     <SelectItem value="manage">Tayang dan kelola (tanpa unduh)</SelectItem>
                                 </SelectContent>
                             </Select>
+                            {requestForm.accessMode === 'view' && <p className="text-xs text-muted-foreground">{CATATAN_TAYANG_SAJA}</p>}
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="request-purpose">Tujuan kedinasan</Label>
@@ -328,6 +331,9 @@ export default function RecordAccessGrants() {
                         <DialogDescription>Keputusan disimpan permanen bersama pelaku, waktu, alasan, rekod, dan pemohon.</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">
+                        {decision?.action === 'approve' && decision.grant.accessMode === 'view' && (
+                            <p className="rounded-md border bg-muted/40 p-3 text-sm">{CATATAN_TAYANG_SAJA}</p>
+                        )}
                         {decision?.action === 'approve' && (
                             <div className="space-y-2">
                                 <Label>Berlaku sampai</Label>

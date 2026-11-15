@@ -61,3 +61,21 @@ describe('surat upload failure propagation', () => {
         expect(mocked.upload).toHaveBeenCalledOnce();
     });
 });
+
+describe('surat upload progress', () => {
+    beforeEach(() => vi.clearAllMocks());
+
+    it.each([
+        ['masuk create', (file, opsi) => suratMasukService.create({ perihal: 'Surat' }, file, opsi), 'surat-masuk', 'post'],
+        ['masuk update', (file, opsi) => suratMasukService.update('record-id', { perihal: 'Surat' }, file, opsi), 'surat-masuk', 'put'],
+        ['keluar create', (file, opsi) => suratKeluarService.create({ perihal: 'Surat' }, file, opsi), 'surat-keluar', 'post'],
+        ['keluar update', (file, opsi) => suratKeluarService.update('record-id', { perihal: 'Surat' }, file, opsi), 'surat-keluar', 'put'],
+    ])('%s passes the form progress callback to the PDF upload', async (_name, save, folder, method) => {
+        mocked[method].mockResolvedValue({ data: { id: 'record-id' } });
+        mocked.upload.mockResolvedValue({ url: 'https://private.blob.vercel-storage.com/surat.pdf' });
+        const onProgress = vi.fn();
+        const file = new File(['pdf'], 'surat.pdf', { type: 'application/pdf' });
+        await save(file, { onProgress });
+        expect(mocked.upload).toHaveBeenCalledWith(file, { folder, onProgress });
+    });
+});

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { PESAN_KELAS_TERBATAS_PERAN } from '@/lib/kelas-keamanan'
@@ -76,7 +77,7 @@ describe('EditArsipDialog', () => {
         expect(screen.getByLabelText(/^No\. Filing Cabinet/)).toHaveValue('FC-01')
         expect(screen.getByLabelText(/^No\. Laci/)).toHaveValue('L-02')
         expect(screen.getByLabelText(/^No\. Folder/)).toHaveValue('F-003')
-        expect(screen.getByLabelText('Person In Charge (PIC)')).toHaveValue('Rina')
+        expect(screen.getByLabelText('Penanggung Jawab')).toHaveValue('Rina')
         expect(selectNative('unitPengolah')).toHaveValue('Ditjen')
         expect(selectNative('tingkatPerkembangan')).toHaveValue('Asli')
         expect(selectNative('mediaType')).toHaveValue('kertas')
@@ -215,5 +216,58 @@ describe('EditArsipDialog', () => {
         expect(onOpenChange).not.toHaveBeenCalled()
         expect(onSaved).not.toHaveBeenCalled()
         expect(mocks.toast).not.toHaveBeenCalled()
+    })
+})
+
+// Induk seperti ArsipDetail: Muat ulang mengganti rekod dengan data terbaru.
+function IndukMuatUlang({ awal, terbaru, onMuatUlang }) {
+    const [arsip, setArsip] = useState(awal)
+    return <EditArsipDialog open onOpenChange={() => {}} arsip={arsip} onSaved={() => {}}
+        onMuatUlang={async () => { onMuatUlang(); setArsip(terbaru); return true }} />
+}
+
+describe('EditArsipDialog: arsip diubah orang lain sejak dialog dibuka', () => {
+    const PESAN_VERSI = 'Data ini sudah diubah pengguna lain sejak Anda membukanya. Muat ulang halaman untuk melihat perubahan terbaru, lalu ulangi perubahan Anda.'
+    const galatVersi = () => Object.assign(new Error(PESAN_VERSI), {
+        status: 409, data: { success: false, error: 'DataSudahBerubahError', message: PESAN_VERSI, code: 'DATA_SUDAH_BERUBAH' },
+    })
+
+    it('mengirim updatedAt yang dimuat bersama perubahan, bukan sebagai metadata', async () => {
+        const { onSaved } = tampilkan({ ...rekod, updatedAt: '2026-03-04T08:00:00.123Z' })
+        ketik(/^Nomor Berkas/, 'B-002/2026')
+        fireEvent.click(tombolSimpan())
+        await waitFor(() => expect(mocks.update).toHaveBeenCalledWith('arsip-1', { nomorBerkas: 'B-002/2026', expectedUpdatedAt: '2026-03-04T08:00:00.123Z' }))
+        expect(onSaved).toHaveBeenCalledWith({ nomorBerkas: 'B-002/2026' }, { id: 'arsip-1' })
+    })
+
+    it('menampilkan pesan dengan Muat ulang yang memasang ulang formulir dari data terbaru', async () => {
+        mocks.update.mockRejectedValueOnce(galatVersi())
+        const onMuatUlang = vi.fn()
+        render(<IndukMuatUlang awal={{ ...rekod, updatedAt: '2026-03-04T08:00:00.123Z' }}
+            terbaru={{ ...rekod, nomorBerkas: 'B-077/2026', updatedAt: '2026-03-04T09:30:00.000Z' }} onMuatUlang={onMuatUlang} />)
+        ketik(/^Nomor Berkas/, 'B-002/2026')
+        fireEvent.click(tombolSimpan())
+        const alert = await screen.findByRole('alert')
+        expect(within(alert).getByText(PESAN_VERSI)).toBeInTheDocument()
+
+        fireEvent.click(within(alert).getByRole('button', { name: 'Muat ulang' }))
+        expect(await screen.findByDisplayValue('B-077/2026')).toBeInTheDocument()
+        expect(onMuatUlang).toHaveBeenCalledTimes(1)
+        expect(screen.queryByText(PESAN_VERSI)).toBeNull()
+
+        ketik(/^Uraian Berkas/, 'Berkas pengadaan barang')
+        fireEvent.click(tombolSimpan())
+        await waitFor(() => expect(mocks.update).toHaveBeenLastCalledWith('arsip-1',
+            { uraianBerkas: 'Berkas pengadaan barang', expectedUpdatedAt: '2026-03-04T09:30:00.000Z' }))
+    })
+
+    it('konflik lain tidak menawarkan Muat ulang', async () => {
+        mocks.update.mockRejectedValueOnce(Object.assign(new Error('Konflik'), { status: 409, data: { error: 'ConflictError', message: 'Konflik lain.', code: 'CONFLICT' } }))
+        tampilkan()
+        ketik(/^Nomor Berkas/, 'B-002/2026')
+        fireEvent.click(tombolSimpan())
+        const alert = await screen.findByRole('alert')
+        expect(within(alert).getByText('Konflik lain.')).toBeInTheDocument()
+        expect(within(alert).queryByRole('button', { name: 'Muat ulang' })).toBeNull()
     })
 })

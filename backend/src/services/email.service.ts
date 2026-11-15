@@ -1,5 +1,6 @@
 import type { Transporter } from 'nodemailer';
 import { createLogger } from '../utils/logger';
+import { escapeHtml } from '../utils/escape-html.js';
 import {
     buildEmailConfig,
     getEmailConfigurationStatus,
@@ -7,18 +8,6 @@ import {
 } from '../config/email.js';
 
 const log = createLogger('EmailService');
-
-const HTML_ENTITIES: Record<string, string> = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-};
-
-export function escapeEmailHtml(value: string): string {
-    return value.replace(/[&<>"']/g, character => HTML_ENTITIES[character]);
-}
 
 function assertSafeEmailLink(value: string): string {
     let parsed: URL;
@@ -109,9 +98,9 @@ export class EmailService {
 
     async sendApprovalNotification(to: string, suratNomor: string, requesterName: string, link: string) {
         const safeLink = assertSafeEmailLink(link);
-        const safeRequesterName = escapeEmailHtml(requesterName);
-        const safeSuratNomor = escapeEmailHtml(suratNomor);
-        const safeLinkHtml = escapeEmailHtml(safeLink);
+        const safeRequesterName = escapeHtml(requesterName);
+        const safeSuratNomor = escapeHtml(suratNomor);
+        const safeLinkHtml = escapeHtml(safeLink);
         const safeSubjectNomor = suratNomor.replace(/[\r\n]+/g, ' ').trim();
         return this.sendEmail({
             to,

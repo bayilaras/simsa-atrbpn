@@ -101,8 +101,10 @@ describe('importing rows above the importer\'s class ceiling', () => {
             [5, 'SM-5/2026', 'imported', undefined],
         ]);
         expect(createdNumbers()).toEqual(['SM-1/2026', 'SM-4/2026', 'SM-5/2026']);
-        // Like any row rejected before a write, it is not even looked up.
-        expect(lookedUp()).toEqual(['SM-1/2026', 'SM-4/2026', 'SM-5/2026']);
+        // Like any row rejected before a write, it is not even looked up: neither for its identity nor, as a new
+        // letter naming a sender, for a recorded letter of that number from another sender.
+        expect(mocks.matches.mock.calls.map(([keys]) => keys.map((key: { nomorSurat: string }) => key.nomorSurat)))
+            .toEqual([['SM-1/2026', 'SM-4/2026', 'SM-5/2026'], ['SM-1/2026', 'SM-4/2026', 'SM-5/2026']]);
     });
 
     it('imports every row for a super admin, with the sifat as written', async () => {

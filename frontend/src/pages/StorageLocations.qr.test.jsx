@@ -29,7 +29,7 @@ describe('storage QR generation', () => {
         expect(screen.queryByText('Membuat QR Code...')).not.toBeInTheDocument()
         let download
         vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () { download = { href: this.href, file: this.download } })
-        fireEvent.click(screen.getByRole('button', { name: 'Download QR Code' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Unduh Kode QR' }))
         expect(download).toEqual({ href: qrDataUrl, file: 'qr-G1.png' })
         expect(mocks.generateQR).toHaveBeenCalledWith('location-a', 'ditjen')
     })

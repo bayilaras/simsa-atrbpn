@@ -28,10 +28,18 @@ import {
     statusAksiArsip,
 } from '@/components/arsip/edit-arsip-form'
 import { namaJalurLokasi } from '@/components/arsip/lokasi-simpan'
+import {
+    formatTahun,
+    kemajuanRetensiAktif,
+    keteranganRetensiKosong,
+    PESAN_MENUNGGU_PEMICU_RETENSI,
+} from '@/components/arsip/retensi-arsip'
 import { arsipService } from '@/services/arsip.service'
 import { useAuth } from '@/context/AuthContext'
 import { PerluPersetujuanAkses } from '@/components/PerluPersetujuanAkses'
 import { rekamanPerluPersetujuan } from '@/lib/akses-rekaman'
+import { pesanGalat } from '@/lib/pesan-galat'
+import { labelKelasKeamanan, labelStatusPenyusutan } from '@/lib/label-arsip'
 import { useToast } from '@/hooks/use-toast'
 import { format, formatDistanceToNow, differenceInDays } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
@@ -58,7 +66,7 @@ function formatRelative(dateStr) {
 
 // ─── Sub-Components ─────────────────────────────────────────
 
-function EnhancedInfoField({ icon: Icon, label, value, badge, variant = 'secondary', className = '' }) {
+function EnhancedInfoField({ icon: Icon, label, value, badge, variant = 'secondary', className = '', teksKosong = '—' }) {
     return (
         <div className={`group relative p-4 rounded-xl border border-border transition-all duration-200 hover:shadow-md hover:border-emerald-200 hover:bg-emerald-50/30 ${className}`}>
             <div className="flex items-center gap-2 mb-2">
@@ -73,7 +81,7 @@ function EnhancedInfoField({ icon: Icon, label, value, badge, variant = 'seconda
                 <Badge variant={variant} className="mt-0.5">{value}</Badge>
             ) : (
                 <p className={`text-sm font-semibold break-words ${!value ? 'text-muted-foreground italic font-normal' : 'text-foreground'}`}>
-                    {value || '—'}
+                    {value || teksKosong}
                 </p>
             )}
         </div>
@@ -236,7 +244,7 @@ function RuleHistoryEntry({ entry, current }) {
             </div>
 
             {entry.reason && (
-                <div className="mt-3 rounded-lg bg-muted/60 p-3 text-sm">
+                <div className="mt-3 rounded-lg bg-muted/60 p-3 text-sm whitespace-pre-line">
                     <span className="font-medium">Alasan: </span>{entry.reason}
                 </div>
             )}
@@ -398,6 +406,23 @@ export default function ArsipDetail() {
         }
     }
 
+    // Ubah Metadata ditolak karena arsip diubah orang lain: muat data terbaru
+    // tanpa skeleton. true bila berhasil, agar dialog memasang ulang formulirnya.
+    const muatUlangArsip = async () => {
+        try {
+            const refreshed = await arsipService.getById(id)
+            setArsip(refreshed?.data || refreshed)
+            return true
+        } catch (err) {
+            toast({
+                title: 'Data terbaru belum dapat dimuat',
+                description: pesanGalat(err, 'Muat ulang halaman untuk melihat data terbaru.'),
+                variant: 'destructive',
+            })
+            return false
+        }
+    }
+
     // Respons PUT adalah baris mentah, bukan read model detail; gabungkan hanya
     // field yang dikirim lalu muat ulang tanpa skeleton.
     const handleMetadataSaved = async (perubahan, hasil) => {
@@ -407,6 +432,8 @@ export default function ArsipDetail() {
                 field,
                 hasil && Object.hasOwn(hasil, field) ? hasil[field] : perubahan[field],
             ])),
+            // Versi baru untuk suntingan berikutnya, juga bila muat ulang di bawah gagal.
+            ...(hasil?.updatedAt ? { updatedAt: hasil.updatedAt } : {}),
             // Nama lokasi baru datang dari muat ulang; nama lama tidak ditampilkan.
             ...(Object.hasOwn(perubahan, 'storageLocationId') ? { lokasiSimpan: null } : {}),
         }))
@@ -500,9 +527,9 @@ export default function ArsipDetail() {
     const retensiAktifYears = parseInt(arsip.retensiAktif) || 0
     const retensiInaktifYears = parseInt(arsip.retensiInaktif) || 0
     const totalRetensi = retensiAktifYears + retensiInaktifYears
-    const daysSinceArchived = arsip.createdAt ? differenceInDays(new Date(), new Date(arsip.createdAt)) : 0
-    const yearsSinceArchived = daysSinceArchived / 365
-    const progressAktif = retensiAktifYears > 0 ? Math.min((yearsSinceArchived / retensiAktifYears) * 100, 100) : 0
+    // Retensi berjalan sejak pemicu terverifikasi, bukan sejak rekod dibuat di SIMSA.
+    const kemajuan = kemajuanRetensiAktif(arsip)
+    const keteranganRetensi = keteranganRetensiKosong(arsip)
 
     const daysUntilExpiry = arsip.tanggalKadaluarsa ? differenceInDays(new Date(arsip.tanggalKadaluarsa), new Date()) : null
 
@@ -512,7 +539,7 @@ export default function ArsipDetail() {
     // Timeline events
     const timelineEvents = [
         arsip.disposalStatus === 'executed' && {
-            icon: Trash2, label: 'Disposal Dilakukan', date: arsip.updatedAt, color: 'red'
+            icon: Trash2, label: 'Penyusutan Dilaksanakan', date: arsip.updatedAt, color: 'red'
         },
         { icon: Archive, label: 'Diarsipkan', date: arsip.createdAt, color: 'emerald' },
         arsip.tanggalSuratOriginal && {
@@ -590,11 +617,11 @@ export default function ArsipDetail() {
                                         ? 'bg-red-500/20 text-red-200 border-red-400/30'
                                         : 'bg-card/10 text-white/70 border-white/20'
                                     }`}>
-                                    {arsip.disposalStatus || 'Active'}
+                                    {labelStatusPenyusutan(arsip.disposalStatus)}
                                 </Badge>
                                 {arsip.klasifikasiKeamanan && (
                                     <Badge className="bg-amber-500/20 text-amber-200 border-amber-400/30 border">
-                                        <Shield className="mr-1 h-3 w-3" /> {arsip.klasifikasiKeamanan}
+                                        <Shield className="mr-1 h-3 w-3" /> {labelKelasKeamanan(arsip.klasifikasiKeamanan)}
                                     </Badge>
                                 )}
                                 <RuleProvenanceBadge
@@ -610,7 +637,7 @@ export default function ArsipDetail() {
                         <QuickStatBox icon={Layers} label="Item Arsip" value={`${itemCount} Item`} />
                         <QuickStatBox icon={Clock} label="Retensi" value={totalRetensi > 0 ? `${totalRetensi} Tahun` : '-'} />
                         <QuickStatBox icon={MapPin} label="Lokasi" value={lokasiStr} />
-                        <QuickStatBox icon={Shield} label="Keamanan" value={arsip.klasifikasiKeamanan || 'Biasa'} />
+                        <QuickStatBox icon={Shield} label="Keamanan" value={labelKelasKeamanan(arsip.klasifikasiKeamanan)} />
                     </div>
                 </div>
             </div>
@@ -664,7 +691,7 @@ export default function ArsipDetail() {
                                         <EnhancedInfoField icon={FileText} label="Uraian Klasifikasi" value={arsip.klasifikasiArsip} className="sm:col-span-2" />
                                         <EnhancedInfoField icon={Layers} label="Jenis Arsip" value={jenisLabel} badge variant="secondary" />
                                         <EnhancedInfoField icon={Calendar} label="Tahun" value={arsip.tahun?.toString()} />
-                                        <EnhancedInfoField icon={FileText} label="Uraian Berkas" value={arsip.uraianBerkas} className="sm:col-span-2" />
+                                        <EnhancedInfoField icon={FileText} label="Uraian Berkas" value={arsip.uraianBerkas} className="sm:col-span-2 whitespace-pre-line" />
                                         <EnhancedInfoField icon={Calendar} label="Tanggal Arsip" value={formatDate(arsip.tanggalArsip)} />
                                         <EnhancedInfoField icon={Clock} label="Kurun Waktu" value={arsip.kurunWaktu} />
                                         <EnhancedInfoField icon={Info} label="Unit Pengolah" value={arsip.unitPengolah} className="sm:col-span-2 lg:col-span-4" />
@@ -809,25 +836,33 @@ export default function ArsipDetail() {
                                         <EnhancedInfoField icon={FileText} label="Uraian JRA" value={arsip.jraUraian} />
                                         <EnhancedInfoField icon={Clock} label="Retensi Aktif" value={arsip.retensiAktif} />
                                         <EnhancedInfoField icon={Clock} label="Retensi Inaktif" value={arsip.retensiInaktif} />
-                                        <EnhancedInfoField icon={Info} label="Hasil Akhir" value={arsip.hasilAkhir} badge variant={arsip.hasilAkhir === 'Permanen' ? 'default' : 'destructive'} />
-                                        <EnhancedInfoField icon={Calendar} label="Tanggal Kadaluarsa" value={formatDate(arsip.tanggalKadaluarsa)} />
-                                        <EnhancedInfoField icon={Info} label="Status Disposal" value={arsip.disposalStatus} badge variant={statusColor} className="sm:col-span-2" />
+                                        <EnhancedInfoField icon={Info} label="Hasil Akhir" value={arsip.hasilAkhir} teksKosong={keteranganRetensi || undefined} badge variant={arsip.hasilAkhir === 'Permanen' ? 'default' : 'destructive'} />
+                                        <EnhancedInfoField icon={Calendar} label="Tanggal Kadaluarsa" value={arsip.tanggalKadaluarsa ? formatDate(arsip.tanggalKadaluarsa) : null} teksKosong={keteranganRetensi || undefined} />
+                                        <EnhancedInfoField icon={Info} label="Status Penyusutan" value={labelStatusPenyusutan(arsip.disposalStatus)} badge variant={statusColor} className="sm:col-span-2" />
                                     </div>
+                                    {keteranganRetensi === PESAN_MENUNGGU_PEMICU_RETENSI && (
+                                        <p className="mt-3 text-xs text-muted-foreground">
+                                            Hasil akhir, tanggal kedaluwarsa, dan kemajuan retensi baru dihitung setelah pemicu retensi dicatat dan diverifikasi petugas berbeda melalui Tata Kelola Retensi.
+                                        </p>
+                                    )}
 
                                     {/* Progress Visual */}
-                                    {retensiAktifYears > 0 && (
+                                    {kemajuan && (
                                         <>
                                             <Separator className="my-4" />
                                             <div className="space-y-3">
                                                 <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                                                    <Clock className="h-4 w-4 text-orange-500" /> Progress Retensi Aktif
+                                                    <Clock className="h-4 w-4 text-orange-500" /> Kemajuan Masa Aktif
                                                 </h4>
                                                 <div>
                                                     <div className="flex justify-between text-xs mb-1.5 text-muted-foreground">
-                                                        <span>{Math.min(yearsSinceArchived, retensiAktifYears).toFixed(1)} dari {retensiAktifYears} tahun</span>
-                                                        <span className="font-semibold text-foreground">{Math.round(progressAktif)}%</span>
+                                                        <span>{formatTahun(kemajuan.tahunBerjalan)} dari {formatTahun(kemajuan.tahunAktif, 0)} tahun</span>
+                                                        <span className="font-semibold text-foreground">{Math.round(kemajuan.persen)}%</span>
                                                     </div>
-                                                    <Progress value={progressAktif} className="h-2.5" />
+                                                    <Progress value={kemajuan.persen} aria-label="Kemajuan masa aktif" className="h-2.5" />
+                                                    <p className="mt-1.5 text-xs text-muted-foreground">
+                                                        Dihitung sejak tanggal pemicu retensi {formatDate(kemajuan.tanggalPemicu)}.
+                                                    </p>
                                                 </div>
                                                 {daysUntilExpiry !== null && (
                                                     <div className={`flex items-center gap-2 text-sm p-3 rounded-lg ${daysUntilExpiry <= 30
@@ -942,9 +977,9 @@ export default function ArsipDetail() {
                                 </CardHeader>
                                 <CardContent>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <EnhancedInfoField icon={Shield} label="Klasifikasi Keamanan" value={arsip.klasifikasiKeamanan} badge variant="outline" />
-                                        <EnhancedInfoField icon={User} label="Person In Charge (PIC)" value={arsip.personInCharge} />
-                                        <EnhancedInfoField icon={FileText} label="Keterangan" value={arsip.keterangan} className="sm:col-span-2" />
+                                        <EnhancedInfoField icon={Shield} label="Klasifikasi Keamanan" value={labelKelasKeamanan(arsip.klasifikasiKeamanan)} badge variant="outline" />
+                                        <EnhancedInfoField icon={User} label="Penanggung Jawab" value={arsip.personInCharge} />
+                                        <EnhancedInfoField icon={FileText} label="Keterangan" value={arsip.keterangan} className="sm:col-span-2 whitespace-pre-line" />
                                     </div>
                                 </CardContent>
                             </Card>
@@ -994,10 +1029,10 @@ export default function ArsipDetail() {
                         </CardHeader>
                         <CardContent className="space-y-3 pt-0">
                             <StatusIndicator
-                                label="Status disposal"
+                                label="Status penyusutan"
                                 active={arsip.disposalStatus === 'active'}
                                 activeLabel="Aktif"
-                                inactiveLabel={arsip.disposalStatus || 'Tidak diketahui'}
+                                inactiveLabel={labelStatusPenyusutan(arsip.disposalStatus)}
                                 activeColor="emerald"
                                 icon={Archive}
                             />
@@ -1082,21 +1117,25 @@ export default function ArsipDetail() {
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="pt-0 space-y-3">
-                                <div>
-                                    <div className="flex justify-between text-xs mb-1">
-                                        <span className="text-muted-foreground">Aktif</span>
-                                        <span className="font-medium">{Math.round(progressAktif)}%</span>
-                                    </div>
-                                    <Progress value={progressAktif} className="h-2" />
-                                    <p className="text-xs text-muted-foreground mt-1">
-                                        {Math.min(yearsSinceArchived, retensiAktifYears).toFixed(1)} / {retensiAktifYears} tahun
-                                    </p>
-                                </div>
-                                <Separator />
+                                {kemajuan && (
+                                    <>
+                                        <div>
+                                            <div className="flex justify-between text-xs mb-1">
+                                                <span className="text-muted-foreground">Aktif</span>
+                                                <span className="font-medium">{Math.round(kemajuan.persen)}%</span>
+                                            </div>
+                                            <Progress value={kemajuan.persen} aria-label="Kemajuan masa aktif" className="h-2" />
+                                            <p className="text-xs text-muted-foreground mt-1">
+                                                {formatTahun(kemajuan.tahunBerjalan)} / {formatTahun(kemajuan.tahunAktif, 0)} tahun
+                                            </p>
+                                        </div>
+                                        <Separator />
+                                    </>
+                                )}
                                 <div className="flex items-center gap-2 text-xs">
                                     <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
                                     <span className="text-muted-foreground">
-                                        Kadaluarsa: <strong className="text-foreground">{formatDate(arsip.tanggalKadaluarsa)}</strong>
+                                        Kadaluarsa: <strong className="text-foreground">{arsip.tanggalKadaluarsa ? formatDate(arsip.tanggalKadaluarsa) : (keteranganRetensi || '-')}</strong>
                                     </span>
                                 </div>
                                 {arsip.hasilAkhir && (
@@ -1165,6 +1204,7 @@ export default function ArsipDetail() {
                     onOpenChange={setEditOpen}
                     arsip={arsip}
                     onSaved={handleMetadataSaved}
+                    onMuatUlang={muatUlangArsip}
                 />
             )}
 

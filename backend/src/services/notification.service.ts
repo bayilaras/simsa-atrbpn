@@ -263,7 +263,7 @@ export class NotificationService {
                 type,
                 category: 'surat-masuk' as const,
                 title: `Surat ${sifatLabel} belum diproses`,
-                message: `${surat.nomorSurat || 'Surat'} dari ${surat.dari || 'Unknown'} - ${(surat.perihal || '').substring(0, 50)}${(surat.perihal || '').length > 50 ? '...' : ''}`,
+                message: `${surat.nomorSurat || 'Surat'} dari ${surat.dari || 'pengirim tidak diketahui'} - ${(surat.perihal || '').substring(0, 50)}${(surat.perihal || '').length > 50 ? '...' : ''}`,
                 daysLeft: daysSince,
                 referenceId: surat.id,
                 createdAt: surat.createdAt,

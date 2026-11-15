@@ -31,7 +31,7 @@ Arsip yang pemicu retensinya belum terverifikasi dan arsip yang terkena legal ho
 
 ## Tindakan pada Halaman Ini
 
-- **Generate Berita Acara** — mencetak draf berita acara pemusnahan tanpa nomor untuk arsip di daftar; nomor diisi manual. Selama modul Penyusutan belum diaktifkan, pemindahan dan pemusnahan arsip dilakukan di luar SIMSA.
+- **Generate Berita Acara** — mencetak draf berita acara pemusnahan tanpa nomor untuk arsip di daftar; nomor diisi manual. Tanggal draf mengikuti WIB. Berita acara hanya memuat arsip Musnah yang retensinya telah berakhir, memiliki pemicu, tidak di-hold, dan belum masuk proses penyusutan. Bila tidak ada arsip seperti itu, tampil pemberitahuan *Belum ada arsip yang memenuhi syarat* dan draf tidak dibuat. Selama modul Penyusutan belum diaktifkan, pemindahan dan pemusnahan arsip dilakukan di luar SIMSA.
 - **Terapkan legal hold** — menangguhkan arsip dari penyusutan karena sengketa, audit, pemeriksaan, atau kewajiban hukum. Alasan minimal 10 karakter dan dicatat dalam audit.
 - **Lepas Hold** — melepas legal hold pada bagian **Legal Hold Aktif**, juga dengan alasan minimal 10 karakter.
 

@@ -117,8 +117,9 @@ export async function syncImportedLetter(
         if (!changes.length) return { status: 'duplicate', duplicate: 'recorded', reason: SYNC_REASONS.unchanged };
         access ??= await check();
         if (!access.allowed) return { status: 'locked', reason: SYNC_REASONS.noAccess };
-        // The identity of a numbered letter is its number and year only; another
-        // sender or recipient in the source means it may be a different letter.
+        // A numbered surat keluar is identified by its number and year only (a
+        // surat masuk also by its sender, when both sides name one); another
+        // recipient in the source means it may be a different letter.
         const recordedCounterpart = counterpart ? syncSourceText(match.values[counterpart.field] ?? '') : '';
         const sourceCounterpart = counterpart ? syncSourceText(counterpart.value) : '';
         if (counterpart && recordedCounterpart && sourceCounterpart && !sameText(sourceCounterpart, recordedCounterpart)) {

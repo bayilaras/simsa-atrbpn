@@ -42,8 +42,26 @@ yang menyimpan surat atau PDF regulasi. Migrasi
 
 ## Jadwal operasi
 
-Jalankan one-shot worker berikut melalui scheduler persisten sedikitnya setiap
-jam (Kubernetes CronJob, systemd timer, atau scheduler container yang setara):
+Di Vercel, entri cron harian di `backend/vercel.json` memanggil
+`GET /api/operations/upload-reconcile` pukul 18:37 UTC (01:37 WIB) dengan
+`Authorization: Bearer $CRON_SECRET`, sama seperti cron `scanner-wake`. Setiap
+run menghapus objek dari paling banyak 100 lease unggahan langsung yang
+kedaluwarsa tanpa dipakai. Penghapusan yang gagal tetap tercatat pada lease dan
+dicoba lagi pada run berikutnya; respons run itu 503 (`incomplete`). Batch
+unggah massal yang kedaluwarsa tidak termasuk; batch itu dibersihkan saat unggah
+massal baru dibuat atau oleh worker di bawah.
+
+Kegagalan cron tidak hanya terlihat di log Vercel. Monitoring Operasional
+memuat pemeriksaan **Pembersihan unggahan langsung** (`upload_cleanup`): bila
+ada lease berstatus `authorized`, `pending`, `release_cleanup`, atau
+`cleanup_started` yang sudah lebih dari 48 jam melewati `expires_at`,
+pemeriksaan itu berstatus perlu perhatian dan menampilkan jumlahnya
+(**Belum terhapus**). Tanda di header Super Admin dan probe Operations Monitor
+ikut menampilkannya.
+
+Di luar Vercel, jalankan one-shot worker berikut melalui scheduler persisten
+sedikitnya setiap jam (Kubernetes CronJob, systemd timer, atau scheduler
+container yang setara):
 
 ```text
 npm run start:blob-reconciler
@@ -55,7 +73,7 @@ memberi alarm dan menjalankan ulang. Endpoint admin
 `POST /api/client-upload/reconcile` menyediakan operasi manual yang sama untuk
 `super_admin`; endpoint itu tetap dilindungi session dan CSRF.
 
-Tanpa scheduler, lease tetap mencegah salah-hapus dan dapat direkonsiliasi
-manual, tetapi objek direct-upload yang tidak pernah diklaim tidak akan dibuang
-tepat waktu. Karena itu scheduler merupakan dependency deployment, bukan proses
-serverless Vercel.
+Tanpa cron atau scheduler, lease tetap mencegah salah-hapus dan dapat
+direkonsiliasi manual, tetapi objek direct-upload yang tidak pernah diklaim
+tidak akan dibuang tepat waktu. Karena itu cron atau scheduler merupakan
+dependency deployment.

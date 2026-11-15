@@ -5,7 +5,7 @@ import { resolve,join,isAbsolute } from 'node:path';
 import { randomBytes,scryptSync } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
-import { parseNeonBackupOperation } from './neon-backup-core.mjs';
+import { parseNeonBackupOperation,appliedMigrations } from './neon-backup-core.mjs';
 import { runNeonBackup } from './neon-backup.mjs';
 import { makeBackupWorkspace } from './neon-backup-runtime.mjs';
 import { authenticatedDatabaseBundle,restoreDatabaseProof } from './operations-recovery-database.mjs';
@@ -78,7 +78,7 @@ export async function runRecovery(environment){
   stage='database_snapshot';const backup=await runNeonBackup(operation);
   const workspace=await makeBackupWorkspace(pgBin,join(parent,'verification'));
   stage='authenticate_database';plain=await authenticatedDatabaseBundle(backup,workspace);
-  report.sourceSnapshotAt=plain.body.snapshot_at;report.archiveSha256=sha256(plain.archive);report.migrations=plain.body.migrations.length;report.backup.databaseVerified=true;
+  report.sourceSnapshotAt=plain.body.snapshot_at;report.archiveSha256=sha256(plain.archive);report.migrations=appliedMigrations(plain.body).length;report.backup.databaseVerified=true;
   // Persist encrypted database and recoverable wrapped keys before later phases,
   // so a failed document fetch/restore cannot erase a valid database capture.
   documentKey=randomBytes(32);targetKey=randomBytes(32);
@@ -93,8 +93,8 @@ export async function runRecovery(environment){
    report.backup.deliveryVerified=true;
   }finally{wrappingKey.fill(0);keys.fill(0);}
   stage='document_inventory';if(invalidDocumentBudget)throw invalidDocumentBudget;
-  const sql=await workspace.command('pg_restore',['--data-only','--schema=public','--table=file_attachments','--table=regulatory_rule_sets','--file=-'],{input:plain.archive,metadata:true,maximum:20*1024*1024});
-  let references;try{references=documentReferences(parseCopyTable(sql.toString(),'file_attachments'),parseCopyTable(sql.toString(),'regulatory_rule_sets'),{captureMissingHashes:environment.OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES==='true',limits});}finally{sql.fill(0);}
+  const sql=await workspace.command('pg_restore',['--data-only','--schema=public','--table=file_attachments','--table=regulatory_rule_sets','--table=autentikasi','--file=-'],{input:plain.archive,metadata:true,maximum:20*1024*1024});
+  let references;try{references=documentReferences(parseCopyTable(sql.toString(),'file_attachments'),parseCopyTable(sql.toString(),'regulatory_rule_sets'),{captureMissingHashes:environment.OPERATIONS_RECOVERY_CAPTURE_MISSING_HASHES==='true',limits,autentikasi:parseCopyTable(sql.toString(),'autentikasi')});}finally{sql.fill(0);}
   report.documentBudget=documentBudgetUsage(references,limits);
   const annotation=documentBudgetAnnotation(report.documentBudget);if(annotation&&environment.GITHUB_ACTIONS==='true')console.log(annotation);
   stage='document_backup';const documentDirectory=join(output,'documents');

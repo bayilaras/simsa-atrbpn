@@ -69,7 +69,6 @@ describe('surat date field state', () => {
         services.masuk.getById.mockResolvedValue({
             id: 'existing-letter', unitKerjaId: 'unit-a', perihal: 'Surat yang sudah tercatat',
         });
-        const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
         const editRouter = createMemoryRouter([
             { path: '/edit/:id', element: <TambahSuratMasuk /> },
         ], { initialEntries: ['/edit/existing-letter'] });
@@ -85,7 +84,7 @@ describe('surat date field state', () => {
         const createRouter = createMemoryRouter([{ path: '/', element: <TambahSuratMasuk /> }]);
         render(<RouterProvider router={createRouter} />);
         expect(screen.getByLabelText(/^Perihal/)).toHaveValue('');
-        expect(confirm).not.toHaveBeenCalled();
+        expect(screen.queryByRole('alertdialog')).toBeNull();
         // Let the mocked disposition options settle inside act().
         await act(async () => {});
         createRouter.dispose();

@@ -236,7 +236,7 @@ class ArsipElektronikService {
             .for('update');
         if (!record) return null;
         if (record.immutable || record.statusVerifikasi === 'verified') {
-            throw new ConflictError('Metadata versi terverifikasi bersifat immutable; buat versi baru untuk perubahan');
+            throw new ConflictError('Metadata versi terverifikasi tidak dapat diubah; buat versi baru untuk perubahan');
         }
 
         const sourceType = data.sourceType || record.sourceType as ElectronicSourceType;

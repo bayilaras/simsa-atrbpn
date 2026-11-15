@@ -3,7 +3,9 @@
 **Sistem Informasi Manajemen Surat & Arsip**
 *Kementerian ATR/BPN — Dirjen PTPP*
 
-> Versi 1.2.0 (BETA) | Terakhir diperbarui: 13 November 2026
+> Untuk aplikasi SIMSA v1.0.0 (BETA) | Panduan terakhir diperbarui: 14 November 2026
+>
+> Panduan yang selalu mengikuti versi terbaru ada di situs panduan (tombol **Panduan lengkap** di menu **Panduan** aplikasi). Ringkasan perubahan terbaru ada di [12. Perubahan November 2026](#12-perubahan-november-2026).
 
 ---
 
@@ -20,6 +22,7 @@
    - 5.4 Rangkaian Surat & Lacak Surat
    - 5.5 Berkas Rangkaian, Koreksi Berkas & Data Lama
    - 5.6 Perlu Dilengkapi
+   - 5.7 Impor Daftar Surat
 6. [Siklus Hidup Arsip](#6-siklus-hidup-arsip)
    - 6.1 Arsip Aktif
    - 6.2 Pemberkasan (Dosir)
@@ -43,8 +46,10 @@
    - 9.4 Master Data
    - 9.5 Pengaturan
    - 9.6 Persetujuan Akses Arsip
+   - 9.7 Monitoring Operasional
 10. [Hak Akses Berdasarkan Role](#10-hak-akses-berdasarkan-role)
 11. [Notifikasi & Fitur Tambahan](#11-notifikasi--fitur-tambahan)
+12. [Perubahan November 2026](#12-perubahan-november-2026)
 
 ---
 
@@ -87,7 +92,7 @@ mindmap
 
 | Komponen | Minimum |
 |----------|---------|
-| Browser | Google Chrome 90+, Firefox 90+, Edge 90+ |
+| Browser | Google Chrome 111+, Microsoft Edge 111+, Mozilla Firefox 128+, Safari 16.4+ (macOS, iPhone, iPad). Peramban yang lebih lama menampilkan *Peramban ini tidak didukung SIMSA. Gunakan Chrome, Edge, Firefox, atau Safari versi terbaru.* |
 | Koneksi Internet | Stabil (minimal 1 Mbps) |
 | Resolusi Layar | 1024 × 768 (direkomendasikan 1920 × 1080) |
 
@@ -154,6 +159,17 @@ Halaman login terdiri dari:
 
 > [!WARNING]
 > Jika login gagal, pesan kesalahan muncul di bagian atas form. Periksa kembali email dan kata sandi Anda, atau hubungi Super Admin.
+
+Bila masuk dengan Google ditolak, halaman masuk menjelaskan sebabnya, misalnya *Akun Anda tidak aktif atau belum disetujui. Hubungi Super Admin.*, *Email akun Google Anda belum terverifikasi. …*, *Akun Google ini belum terdaftar di SIMSA. Minta Super Admin mendaftarkan akun Anda.*, atau *Masuk dengan Google gagal. …*
+
+### 2.3 Sesi, Isian yang Belum Disimpan, dan Versi Baru
+
+- Setelah 25 menit tanpa aktivitas muncul peringatan *Sesi Anda akan berakhir dalam 5 menit karena tidak ada aktivitas.* Klik **Tetap Masuk** untuk melanjutkan atau **Keluar Sekarang**.
+- Setelah 30 menit tanpa aktivitas, SIMSA keluar otomatis dan halaman masuk menampilkan *Sesi berakhir karena tidak ada aktivitas. Silakan masuk kembali.*
+- Isian **Tambah/Edit Surat Masuk**, **Tambah/Edit Surat Keluar** (termasuk surat inisiatif), dan dialog **Arsipkan Surat** yang belum disimpan disimpan sementara di tab peramban yang sama (tertulis *Isian tersimpan sementara di tab ini*). Setelah masuk kembali atau memuat ulang halaman, buka lagi formulirnya: SIMSA menanyakan *Pulihkan isian yang belum disimpan?* dengan pilihan **Pulihkan isian** atau **Buang isian**. Berkas PDF yang sudah dipilih perlu dipilih ulang.
+- Isian sementara hilang bila tab ditutup, bila Anda menekan **Keluar**, **Batal**, atau **Tinggalkan halaman**, dan setelah data tersimpan. Isian yang lebih lama dari 12 jam tidak ditawarkan lagi.
+- Berpindah halaman saat formulir berisi perubahan memunculkan *Tinggalkan halaman ini?* dengan pilihan **Tinggalkan halaman** atau **Tetap di halaman**.
+- Bila muncul *Versi baru SIMSA tersedia. Simpan pekerjaan Anda, lalu muat ulang.*, simpan pekerjaan lalu klik **Muat ulang** (atau **Nanti**). Halaman tidak dimuat ulang sendiri selama formulir surat atau dialog Arsipkan masih berisi isian yang belum disimpan.
 
 ---
 
@@ -232,7 +248,7 @@ Setelah berhasil login, Anda akan diarahkan ke halaman **Dashboard** yang menamp
 
 | Komponen | Deskripsi |
 |----------|-----------|
-| **Bagian Salam** | Menampilkan salam, tanggal hari ini, dan pemilih Unit Kerja (Super Admin) |
+| **Bagian Salam** | Menampilkan salam, tanggal hari ini, nama unit kerja Anda (bukan kodenya), dan pemilih Unit Kerja (Super Admin). Angka "bulan ini" mengikuti WIB |
 | **Kartu Statistik** | 6 kartu ringkasan: Surat Masuk, Surat Keluar, Total Arsip, Arsip Masuk, Arsip Keluar, Perlu Telaah Retensi |
 | **Analisis Trend** | Grafik garis perbandingan volume surat masuk & keluar dalam 12 bulan terakhir |
 | **Perbandingan Unit Kerja** | Grafik batang horizontal volume surat per unit kerja bulan ini |
@@ -350,8 +366,10 @@ Halaman **Surat Masuk** menampilkan daftar semua surat yang diterima oleh unit k
    - **Aksi** — Menu tiga titik (⋯)
 
 3. Gunakan **kolom pencarian** di bagian atas untuk mencari berdasarkan nomor surat, perihal, atau pengirim.
-4. Klik **Filter** untuk menyaring berdasarkan Tahun, Jenis Surat, Status, Sifat Surat, Rentang Tanggal, atau Disposisi Ke.
-5. Menu tiga titik (⋯) pada tiap baris berisi **Detail & File**, **Edit Surat**, **Distribusi**, **Arsipkan**, dan **Hapus Surat**. Selain **Detail & File**, pilihan hanya tampil bagi admin.
+4. Pilih **Urutkan**: **Terakhir dicatat**, **Tanggal surat (terbaru)**, atau **Tanggal surat (terlama)**. Urutan ini juga dipakai saat **Export**.
+5. Klik **Filter** untuk menyaring berdasarkan Tahun, Jenis Surat, Status, Sifat Surat, Rentang Tanggal, atau Disposisi Ke. **Disposisi Ke** memuat nama unit kerja tujuan disposisi serta **Kabag Program dan Hukum** dan **Kabag Kepegawaian Keuangan dan Umum**.
+6. Menu tiga titik (⋯) pada tiap baris berisi **Detail & File**, **Edit Surat**, **Distribusi**, **Arsipkan**, dan **Hapus Surat**. Selain **Detail & File**, pilihan hanya tampil bagi admin.
+7. Super Admin yang memilih **Semua Unit Kerja** melihat kolom **Unit Kerja**, serta tab **Daftar Surat** dan **Surat Terhapus** di atas tabel.
 
 #### Menambah Surat Masuk Baru
 
@@ -372,8 +390,9 @@ flowchart LR
 |-------|-----------|-------|
 | Jenis Surat | Jenis naskah dinas surat yang diterima | ✅ |
 | Sifat Surat | Biasa / Segera / Sangat Segera / Terbatas / Rahasia / Sangat Rahasia / Undangan / Penting. Terbatas, Rahasia, dan Sangat Rahasia adalah kelas keamanan surat. Admin Unit Kerja dapat memilih Terbatas; Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin, dan Admin Unit Kerja tidak melihat kedua pilihan itu kecuali sifat itu sudah tersimpan pada surat. Surat Terbatas, Rahasia, atau Sangat Rahasia hanya dapat dibuka atau diubah dengan persetujuan akses berjangka, juga oleh pencatatnya; ajukan persetujuan akses setelah menyimpan. | ✅ |
-| Nomor Surat | Nomor surat sesuai yang tertera pada surat. Bila dikosongkan, nomor dibuat otomatis dari template unit | ❌ |
-| Tanggal Surat | Tanggal yang tertulis pada surat | ✅ |
+| Nomor Surat | Nomor surat sesuai yang tertera pada surat. Bila dikosongkan, nomor dibuat otomatis dari template unit. Nomor yang sudah tercatat memunculkan peringatan **Nomor sudah terdaftar** (tidak menghalangi penyimpanan) | ❌ |
+| Tanggal Surat | Tanggal yang tertulis pada surat; tahun antara 2000 dan 2100 | ✅ |
+| No. Agenda | Hanya saat menambah surat. Kosongkan untuk nomor otomatis (tertulis *Nomor otomatis berikutnya: N*), atau isi untuk melanjutkan nomor dari buku agenda kantor. Nomor yang sudah dipakai, termasuk milik surat yang sudah dihapus, ditolak | ❌ |
 | Perihal | Subjek / topik surat | ✅ |
 | Dari (Pengirim) | Nama instansi / perorangan pengirim | ✅ |
 | Kepada (Penerima) | Unit kerja / pejabat penerima | ✅ |
@@ -383,10 +402,12 @@ flowchart LR
 | Link Dokumen | Alamat lengkap dokumen, misalnya `https://contoh.go.id/berkas` | ❌ |
 | Upload Berkas | Hasil pindai surat berbentuk PDF, paling besar 10 MiB | ❌ |
 
-3. Klik tombol **"Simpan"** untuk menyimpan surat.
+3. Klik tombol **"Simpan"** untuk menyimpan surat. Bila **Disposisi ke** kosong, SIMSA bertanya **Simpan tanpa disposisi?** (pilih **Simpan tanpa disposisi** atau **Kembali ke formulir**). Bila No. Agenda lebih dari 100 di atas nomor otomatis berikutnya, SIMSA bertanya **Simpan dengan nomor ini?** (pilih **Simpan dengan nomor ini** atau **Ubah nomor**), karena nomor otomatis berikutnya melanjutkan dari angka itu.
 4. Klik **"Batal"** untuk membatalkan dan kembali ke daftar.
 
-Link dokumen dan berkas tidak wajib diisi. Surat dapat disimpan tanpa lampiran; hasil pindai dapat ditambahkan nanti lewat menu **Edit Surat**.
+Link dokumen dan berkas tidak wajib diisi. Surat dapat disimpan tanpa lampiran; hasil pindai dapat ditambahkan nanti lewat menu **Edit Surat**. Saat menyimpan dengan berkas PDF, kemajuan unggah tampil di bilah tombol, misalnya *Mengunggah berkas: 45%*. Bila unggahan melewati batas waktu, periksa koneksi, kecilkan ukuran PDF, lalu simpan kembali.
+
+Isian boleh memuat tanda kurung sudut, misalnya `Luas < 5 ha` atau `<e-Office>`; teks disimpan seperti diketik dan hanya tag HTML yang dibuang. Baris baru pada perihal tetap tampil di halaman detail.
 
 Bila ada isian yang ditolak, pesannya tampil di bawah isian terkait (misalnya *Perihal wajib diisi*, *Tanggal tidak valid*, atau *Link dokumen harus berupa alamat lengkap, misalnya https://contoh.go.id/berkas*) dan ringkasan di atas form berbunyi *Surat belum dapat disimpan. Periksa isian berikut: ...*
 
@@ -399,7 +420,7 @@ Bila ada isian yang ditolak, pesannya tampil di bawah isian terkait (misalnya *P
    - **Tindak Lanjut** — Menu berisi **Saya Balas**, **Buat Nota Dinas**, **Buat ND Penjelas**, **Disposisi ke Direktorat**, **Terima Disposisi**, **Penyelesaian**, dan **Tautkan ke Rangkaian**, sesuai kewenangan atas surat itu
    - **Arsipkan** — Pindahkan ke arsip (Admin/Super Admin)
 
-Menghapus surat dilakukan dari daftar lewat **Hapus Surat**, dengan alasan penghapusan minimal 10 karakter.
+Menghapus surat dilakukan dari daftar lewat **Hapus Surat**. Dialog **Hapus Surat Masuk?** menjelaskan *Surat akan hilang dari semua daftar. Hanya Super Admin yang dapat memulihkannya.*; isi **Alasan penghapusan** (minimal 10 karakter), lalu klik **Hapus**.
 
 **Bila tampil "Perlu persetujuan akses":** surat berkelas Terbatas, Rahasia, atau Sangat Rahasia tetap tampil di daftar, tetapi isinya baru dapat dibuka setelah permohonan akses Anda disetujui Super Admin. Klik **Minta Akses** pada halaman itu; formulir permohonan terbuka dengan surat tersebut sudah terpilih. Lihat [9.6 Persetujuan Akses Arsip](#96-persetujuan-akses-arsip). Bila tampil **Surat Tidak Ditemukan**, surat itu milik unit lain, di atas kewenangan kelas peran Anda, atau memang tidak ada.
 
@@ -438,6 +459,16 @@ flowchart LR
 
 Sifat Rahasia yang sudah tersimpan boleh dipertahankan. Bila diganti lalu disimpan, sifat itu hanya dapat dipilih kembali oleh Super Admin.
 
+Bila tanggal surat diubah ke tahun lain, formulir menulis *Tahun berubah. Surat akan mendapat nomor agenda baru di tahun …; nomor surat yang dibuat otomatis ikut diperbarui.* Bila surat sudah diubah orang lain sejak Anda membukanya, penyimpanan ditolak dengan pesan *Data ini sudah diubah pengguna lain sejak Anda membukanya. Muat ulang halaman untuk melihat perubahan terbaru, lalu ulangi perubahan Anda.*; klik **Muat ulang**, lalu ulangi perubahan.
+
+#### Memulihkan Surat yang Terhapus (Super Admin)
+
+1. Di halaman Surat Masuk atau Surat Keluar, pilih tab **Surat Terhapus**.
+2. Cari surat; tabel memuat Nomor Surat, Perihal, Unit Kerja, Dihapus oleh, Waktu hapus, dan Alasan hapus.
+3. Klik **Pulihkan**, isi **Alasan pemulihan** (minimal 10 karakter) pada dialog **Pulihkan surat?**, lalu klik **Pulihkan**.
+
+Surat kembali dengan nomor agenda (surat masuk) atau nomor urut (surat keluar) dan nomor surat semula; pemulihan dicatat di log audit. Bila nomor surat yang sama dipakai surat aktif lain di unit itu, pemberitahuan setelah pemulihan menyebutkannya. Surat yang rangkaiannya sudah diberkaskan tidak dapat dipulihkan.
+
 ---
 
 ### 5.2 Surat Keluar
@@ -448,7 +479,7 @@ Halaman **Surat Keluar** mengelola semua surat yang dikirim dari unit kerja Anda
 
 1. Klik menu **Surat** > **Surat Keluar** pada sidebar.
 2. Tabel menampilkan informasi serupa dengan Surat Masuk, dengan kolom **Perihal & Tujuan** (penerima surat). Kolom **Status** menampilkan status persetujuan: **Draft**, **Menunggu Persetujuan**, **Disetujui**, atau **Perlu Perbaikan**.
-3. Klik **Filter**; di panelnya, penyaring **Persetujuan** menyediakan pilihan **Semua surat**, **Menunggu keputusan saya**, dan **Buatan saya, belum diajukan**.
+3. Klik **Filter**; di panelnya, penyaring **Persetujuan** menyediakan pilihan **Semua surat**, **Menunggu keputusan saya**, dan **Buatan saya, belum diajukan**. Pilihan **Urutkan** sama dengan Surat Masuk.
 
 #### Menambah Surat Keluar Baru
 
@@ -458,8 +489,9 @@ Halaman **Surat Keluar** mengelola semua surat yang dikirim dari unit kerja Anda
 | Field | Keterangan | Wajib |
 |-------|-----------|-------|
 | Naskah Dinas | Jenis naskah yang akan dikirim | ✅ |
-| Nomor Surat | Nomor manual; kosongkan untuk nomor otomatis dari template unit | ❌ |
-| Tanggal Surat | Tanggal surat dibuat | ✅ |
+| Nomor Surat | Nomor manual; kosongkan untuk nomor otomatis dari template unit. Nomor yang sudah tercatat memunculkan peringatan **Nomor sudah terdaftar** | ❌ |
+| Tanggal Surat | Tanggal surat dibuat; tahun antara 2000 dan 2100 | ✅ |
+| No. Urut | Hanya saat menambah surat. Kosongkan untuk nomor urut otomatis, atau isi untuk melanjutkan nomor urut dari buku agenda kantor; aturannya sama dengan No. Agenda surat masuk | ❌ |
 | Perihal | Subjek / topik surat | ✅ |
 | Sifat Surat | Biasa / Penting / Segera / Sangat Segera (tingkat urgensi, bukan kerahasiaan) | ❌ |
 | Kepada | Tujuan pengiriman surat | ✅ |
@@ -471,6 +503,8 @@ Halaman **Surat Keluar** mengelola semua surat yang dikirim dari unit kerja Anda
 3. Klik **"Simpan"** untuk menyimpan surat keluar. Surat baru berstatus **Draft**.
 
 Link dokumen dan berkas tidak wajib diisi. Hasil pindai dapat ditambahkan lewat menu **Edit Surat** selama surat masih draf atau ditolak, yaitu sebelum diajukan untuk persetujuan.
+
+Surat keluar berstatus Draft atau Perlu Perbaikan dihapus lewat **Hapus Surat** di daftar. Dialog **Hapus Surat Keluar?** meminta **Alasan penghapusan** (minimal 10 karakter). Super Admin dapat memulihkannya dari tab **Surat Terhapus** seperti surat masuk.
 
 #### Persetujuan Surat Keluar
 
@@ -546,6 +580,26 @@ Baris dikelompokkan dalam **enam kategori**: Surat masuk belum ditindaklanjuti, 
 - Centang **"Tampilkan data lama"** untuk menyertakan rangkaian data lama dalam daftar.
 - **Tandai Inisiatif** menandai surat keluar sebagai surat atas prakarsa sendiri (tanpa induk surat masuk); perubahan ini diaudit dan tidak mengubah isi surat.
 
+
+### 5.7 Impor Daftar Surat
+
+Admin dapat mengimpor register surat yang sudah ada lewat **Impor CSV/XLSX** atau **Impor dari Google Sheets** pada daftar Surat Masuk atau Surat Keluar. Super Admin memilih satu unit kerja terlebih dahulu.
+
+1. Pilih berkas `.csv` atau `.xlsx` (maksimal 1.000 baris data dan 4 MiB), atau tempel tautan Google Sheets.
+2. Klik **Pratinjau**. Pratinjau memeriksa setiap baris seperti impor dan menampilkan *n dari total baris akan ditolak* beserta alasannya, serta baris yang akan dilewati karena sudah tercatat, ganda di sumber, atau cocok dengan surat yang sudah dihapus.
+3. Periksa pemetaan kolom. Kolom yang dikenali tetapi tidak disimpan ditandai **(tidak disimpan)**.
+4. Klik **Impor**, lalu periksa **Rincian hasil impor per baris** atau **Unduh laporan (CSV)**.
+
+> [!IMPORTANT]
+> Kolom **No**, **No. Agenda**, atau **Nomor Agenda** disimpan sebagai nomor agenda (surat masuk) atau nomor urut (surat keluar) bila nomor itu belum dipakai. **Impor register lama lebih dahulu, sebelum mencatat surat baru untuk tahun yang sama.** Bila tidak, baris yang nomornya sudah terpakai mendapat nomor lain, misalnya *Nomor agenda sumber 12 sudah dipakai; diberi nomor 57.*
+
+- Surat masuk bernomor dianggap sama bila nomor, tahun, dan pengirimnya sama.
+- Tanggal ditulis dengan urutan hari, bulan, tahun (misalnya `03/11/2026` atau `3 November 2026`), atau `2026-11-03`.
+- Untuk Google Sheets, aktifkan berbagi link hanya selama impor lalu matikan kembali. Register yang memuat surat Terbatas atau lebih tinggi diunduh sebagai Excel (.xlsx) lalu diimpor dengan **Impor CSV/XLSX**.
+- Baris surat masuk bersifat Rahasia atau Sangat Rahasia hanya dapat diimpor Super Admin.
+
+Rincian lengkap ada di situs panduan, bagian Impor daftar CSV atau XLSX pada Panduan Pengguna Lengkap ([docs-site/docs/panduan-pengguna.md](docs-site/docs/panduan-pengguna.md#impor-daftar-csv-atau-xlsx)).
+
 ---
 
 ## 6. Siklus Hidup Arsip
@@ -570,7 +624,8 @@ Arsip aktif terbagi menjadi dua sub-halaman:
    - Nasib Akhir
    - Aksi (menu tiga titik berisi **Detail Arsip**)
 
-3. Gunakan kotak **Cari arsip** dan tombol **Filter** untuk mempersempit hasil. Tab **Status Retensi** merangkum arsip menurut tahap retensinya.
+3. Gunakan kotak **Cari arsip** dan tombol **Filter** untuk mempersempit hasil. Tab **Status Retensi** merangkum arsip menurut tahap retensinya; Super Admin memilih satu unit kerja terlebih dahulu (selama **Semua Unit Kerja** terpilih tertulis *Pilih unit kerja untuk melihat status retensi.*).
+   Kolom **Nasib Akhir** menulis **Menunggu verifikasi** atau **Menunggu rekonsiliasi** selama nasib akhir arsip belum dapat dihitung.
 4. Bila daftar dibuka dari halaman Lokasi Simpan, daftar tersaring untuk lokasi itu dan menampilkan tanda **Lokasi simpan: nama (kode)** yang dapat dihapus.
 
 #### Ekspor Formulir 4 dan Formulir 6
@@ -597,9 +652,9 @@ Bila belum ada arsip inaktif untuk filter yang dipilih, Formulir 6 tidak diunduh
    - **Header** — Nomor berkas dan ringkasan (item arsip, retensi, lokasi, keamanan)
    - **Tab Identifikasi** — Data berkas
    - **Tab Item Arsip** — Daftar item dalam berkas
-   - **Tab Retensi & Lokasi** — Lokasi penyimpanan, JRA, dan kemajuan masa retensi
+   - **Tab Retensi & Lokasi** — Lokasi penyimpanan, JRA, **Status Penyusutan**, dan **Kemajuan Masa Aktif**. Kemajuan baru dihitung setelah pemicu retensi terverifikasi (*Dihitung sejak tanggal pemicu retensi …*); sebelum itu tertulis *Menunggu verifikasi pemicu retensi* atau *Menunggu rekonsiliasi klasifikasi dan JRA*
    - **Tab Jejak Aturan** — Riwayat klasifikasi dan JRA yang dipakai
-   - **Tab Keamanan** — Klasifikasi keamanan, PIC, dan keterangan
+   - **Tab Keamanan** — Klasifikasi keamanan, **Penanggung Jawab**, dan keterangan
    - **Tab Surat Asli** — Surat asal arsip
    - **Kartu Tunjuk Silang** — Dokumen lain yang ditautkan dengan arsip ini
 
@@ -633,8 +688,8 @@ Bagi admin tersebut, kedua tombol pertama tetap tampil tetapi nonaktif, disertai
 Bila ada data berkas yang salah catat, admin yang berwenang atas unit arsip dapat memperbaikinya dari halaman detail:
 
 1. Klik **Ubah Metadata** di bagian atas halaman atau di kartu **Aksi Cepat**.
-2. Perbaiki isian yang salah: Nomor Berkas, Unit Pengolah, Uraian Berkas, Kurun Waktu, Nomor Item, Tingkat Perkembangan, Uraian Item, Tanggal Arsip, Jumlah, Media, No. Filing Cabinet, No. Laci, No. Folder, Lokasi Simpan, Klasifikasi Keamanan, PIC, atau Keterangan.
-3. Klik **Simpan**. Hanya isian yang diubah yang disimpan, dan perubahannya tercatat di log audit.
+2. Perbaiki isian yang salah: Nomor Berkas, Unit Pengolah, Uraian Berkas, Kurun Waktu, Nomor Item, Tingkat Perkembangan, Uraian Item, Tanggal Arsip, Jumlah, Media, No. Filing Cabinet, No. Laci, No. Folder, Lokasi Simpan, Klasifikasi Keamanan, Penanggung Jawab, atau Keterangan.
+3. Klik **Simpan**. Hanya isian yang diubah yang disimpan, dan perubahannya tercatat di log audit. Bila arsip sudah diubah orang lain sejak dialog dibuka, penyimpanan ditolak dengan pesan *Data ini sudah diubah pengguna lain sejak Anda membukanya…*; muat ulang halaman lalu ulangi perubahan.
 
 Kode klasifikasi arsip dan JRA tidak diubah di sini; gunakan **Rekonsiliasi Klasifikasi/JRA**. Tombol **Ubah Metadata** dikunci bila arsip sedang legal hold, sedang dalam proses penyusutan, atau penyusutannya sudah dilaksanakan.
 
@@ -663,11 +718,13 @@ Admin Unit Kerja hanya dapat memilih klasifikasi keamanan Biasa/Terbuka atau Ter
 #### Mengarsipkan Surat
 
 1. Dari daftar surat (menu tiga titik > **Arsipkan**) atau dari halaman detail surat, klik **Arsipkan**. Surat keluar harus sudah disetujui admin lain.
-2. Pada dialog **Arsipkan Surat**, isi Nomor Berkas, **Klasifikasi Arsip & Jadwal Retensi**, uraian, unit pengolah, kurun waktu, item arsip beserta No. Filing Cabinet, No. Laci, dan No. Folder, serta klasifikasi keamanan. Bila perlu, pilih **Lokasi Simpan**.
+2. Pada dialog **Arsipkan Surat**, isi Nomor Berkas, **Klasifikasi Arsip & Jadwal Retensi**, uraian, unit pengolah, kurun waktu, item arsip beserta No. Filing Cabinet, No. Laci, dan No. Folder, serta klasifikasi keamanan dan **Penanggung Jawab**. Bila perlu, pilih **Lokasi Simpan**. Isian yang belum disimpan dapat dipulihkan di tab yang sama bila sesi berakhir (lihat [2.3](#23-sesi-isian-yang-belum-disimpan-dan-versi-baru)).
 3. Centang *Saya memahami bahwa pengarsipan ini permanen dan tidak dapat dibatalkan.*, lalu klik **Simpan Arsip**.
 
 > [!CAUTION]
 > **Pengarsipan bersifat permanen.** Setelah disimpan, surat terkunci: tidak dapat diubah atau dihapus, dan berkas PDF tidak dapat lagi ditambahkan dari halaman surat. Pengarsipan tidak dapat dibatalkan, dan arsip tidak dapat dihapus dari aplikasi. Hal yang sama berlaku untuk **Impor CSV** arsip: tombol **Impor data valid** baru aktif setelah pernyataan *Saya sudah memeriksa pratinjau dan memahami bahwa impor ini permanen.* dicentang.
+
+**Impor CSV** arsip memakai kolom Nomor Berkas, Tanggal, Uraian, dan Jenis Arsip (`masuk` atau `keluar`). Pemisah kolom boleh koma, titik koma, atau tab (CSV biasa dari Excel juga dapat dibaca), maksimal 1.000 rekod dan 4 MiB per berkas, dan tanggal ditulis dengan urutan hari, bulan, tahun (tahun 1920 sampai 2199).
 
 ---
 
@@ -677,7 +734,8 @@ Admin Unit Kerja hanya dapat memilih klasifikasi keamanan Biasa/Terbuka atau Ter
 
 1. Klik **Pemberkasan (Dosir)** pada sidebar.
 2. Lihat daftar dosir yang ada, atau klik **Buat Dosir Baru** (judul perkara, kategori, tanggal mulai, deskripsi).
-3. Klik **Lihat Detail** pada sebuah dosir untuk melihat kronologi serta daftar surat masuk dan surat keluar di dalamnya. Gunakan **Tambah Surat** untuk menambahkan surat milik unit kerja dosir.
+3. Klik **Lihat Detail** pada sebuah dosir untuk melihat kronologi serta daftar surat masuk dan surat keluar di dalamnya, termasuk **Catatan:** yang diisi saat surat ditambahkan. Gunakan **Tambah Surat** untuk menambahkan surat milik unit kerja dosir.
+4. Pengguna yang berwenang atas unit dosir dapat memakai **Edit** (dialog **Edit Dosir**) dan **Hapus** pada menu kartu dosir, **Edit Dosir** di halaman detail, serta ikon **Lepas dari dosir** pada baris surat. Melepas surat tidak menghapus surat itu, dan kode dosir tidak dipakai ulang.
 
 Untuk berkas naskah surat masuk–keluar gunakan Berkas Rangkaian (5.5); Dosir tetap map kasus manual.
 
@@ -703,7 +761,7 @@ Halaman ini menampilkan arsip yang status retensinya perlu perhatian.
 1. Klik **Manajemen Retensi** pada sidebar.
 2. Baca kartu **Akan Inaktif**, **Sudah Inaktif**, **Akan Kadaluarsa**, dan **Sudah Kadaluarsa**.
 3. Lihat **Daftar Kandidat Penyusutan**; saring menurut status atau hasil akhir.
-4. Gunakan **Generate Berita Acara** untuk mencetak draf berita acara pemusnahan tanpa nomor, serta **Terapkan legal hold** atau **Lepas Hold** (alasan minimal 10 karakter) untuk menangguhkan atau melepas penangguhan penyusutan sebuah arsip.
+4. Gunakan **Generate Berita Acara** untuk mencetak draf berita acara pemusnahan tanpa nomor, serta **Terapkan legal hold** atau **Lepas Hold** (alasan minimal 10 karakter) untuk menangguhkan atau melepas penangguhan penyusutan sebuah arsip. Berita acara hanya memuat arsip Musnah yang retensinya telah berakhir, memiliki pemicu, tidak di-hold, dan belum masuk proses penyusutan; bila tidak ada, tampil *Belum ada arsip yang memenuhi syarat* dan draf tidak dibuat.
 
 ---
 
@@ -768,7 +826,7 @@ Mengelola daftar lokasi fisik penyimpanan arsip, bertingkat dari **Gedung**, **R
 1. Klik **Lokasi Simpan** pada sidebar.
 2. Lihat susunan lokasi. Boks menampilkan **Isi: N / kapasitas**; tingkat lain menampilkan **Arsip: N** (termasuk sub-lokasinya). Angka dihitung dari arsip yang ditautkan ke lokasi itu.
 3. Klik **"Tambah Lokasi"** atau ikon **Tambah Sub-lokasi**, isi Level, Kode, Nama, dan Kapasitas (untuk boks).
-4. Ikon **Lihat arsip di lokasi ini** membuka daftar Arsip yang tersaring untuk lokasi itu. Ikon **QR Code** menampilkan kode yang dapat ditempel pada rak atau boks.
+4. Ikon **Lihat arsip di lokasi ini** membuka daftar Arsip yang tersaring untuk lokasi itu. Ikon **QR Code** menampilkan kode yang dapat diunduh lewat **Unduh Kode QR** dan ditempel pada rak atau boks.
 5. Arsip ditautkan ke lokasi lewat pilihan **Lokasi Simpan** saat mengarsipkan surat atau lewat **Ubah Metadata** pada detail arsip.
 
 Lokasi yang masih ditautkan arsip tidak dapat dihapus; pindahkan arsipnya terlebih dahulu.
@@ -785,6 +843,7 @@ Arsip Vital adalah arsip yang sangat penting bagi kelangsungan organisasi dan me
 1. Klik **Arsip Vital** (🔒) pada sidebar.
 2. Lihat tab **Daftar Arsip Vital** dan **Monitoring Proteksi**.
 3. Klik **"Tetapkan Arsip Vital"**, cari dan pilih arsip, lalu isi kategori vital, tingkat kekritisan, alasan penetapan, serta metode proteksi dan backup.
+4. **Cetak Daftar** mengunduh Daftar Arsip Vital (PDF) sesuai pencarian dan penyaring yang sedang dipakai, lengkap dengan nama unit kerja, tanggal cetak, dan kolom **Lokasi Cadangan** serta **Kategori**.
 
 > [!CAUTION]
 > Menu ini hanya tersedia untuk **Admin**. Perubahan pada arsip vital bersifat sangat sensitif.
@@ -849,6 +908,9 @@ Menampilkan ringkasan dan daftar surat, arsip, serta peminjaman untuk satu perio
 3. Klik **"Tampilkan Data"**.
 4. Buka tab **Ringkasan**, **Surat Masuk**, **Surat Keluar**, **Arsip**, atau **Peminjaman**.
 5. Pada tab Surat Masuk, Surat Keluar, atau Arsip, klik **Excel** atau **PDF** untuk mengekspor. Isi berkas surat sama dengan tabel di layar, dan judulnya menyebut periode bila tanggal diisi. Ekspor arsip hanya memakai tahun.
+6. Pada tab **Peminjaman**, peminjaman yang lewat jatuh tempo berstatus **Terlambat** dan dapat disaring dengan pilihan **Terlambat**.
+
+Tanggal dan waktu pada laporan dan berkas ekspor mengikuti WIB. Pada PDF, baris yang lebih tinggi dari satu halaman dipotong dengan catatan *Teks yang terlalu panjang dipotong; versi Excel memuat isi lengkap.*
 
 ---
 
@@ -863,6 +925,7 @@ Mencatat aktivitas pengguna dalam sistem untuk keperluan audit dan keamanan.
    - Kapan tindakan dilakukan
    - Data apa yang berubah
 3. Gunakan pencarian, rentang tanggal, serta penyaring **Tipe Entity** dan **Aksi** untuk mempersempit pencarian log.
+4. Selain perubahan data, Audit Log mencatat **Masuk**, **Gagal masuk**, **Keluar**, **Mengganti kata sandi** (rinciannya hanya *kata sandi: diganti*), dan **Menjalankan Pemindai**.
 
 > [!NOTE]
 > Audit Log hanya dapat diakses oleh **Super Admin**.
@@ -887,9 +950,9 @@ Mengelola akun pengguna sistem SIMSA.
 | Unit Kerja | Wajib untuk Admin Unit Kerja; Super Admin tidak memiliki unit kerja | ❌ |
 | Jabatan | Jabatan/posisi, dipakai pada berita acara autentikasi | ❌ |
 | NIP | Nomor Induk Pegawai | ❌ |
-| Kata sandi | Minimal 8 karakter. Bila diisi, pengguna dapat masuk dengan email dan kata sandi | ❌ |
+| Kata sandi | Minimal 12 karakter, tidak memuat nama atau bagian depan email pengguna, dan bukan kata sandi yang umum. Boleh dikosongkan: akun tanpa kata sandi hanya dapat masuk dengan Google | ❌ |
 
-   - Simpan, lalu sampaikan kata sandi awal kepada pengguna melalui saluran internal.
+   - Klik **Tambah Pengguna**, lalu sampaikan kata sandi awal kepada pengguna melalui saluran internal. Minta pegawai mengganti kata sandi itu di **Pengaturan › Profil** setelah masuk pertama kali.
 
 > [!TIP]
 > Pengguna baru masuk dengan **email dan kata sandi** yang disiapkan Super Admin, lalu mengganti kata sandinya di **Pengaturan > Profil > Ubah Kata Sandi**. Login Google hanya dapat dipakai bila diaktifkan operator dan emailnya sama.
@@ -899,9 +962,9 @@ Mengelola akun pengguna sistem SIMSA.
    - Ubah peran, unit kerja, jabatan, NIP, atau status akun.
    - Klik **"Simpan Perubahan"**.
 5. **Menonaktifkan pengguna:**
-   - Pilih **Nonaktifkan** dari menu tindakan. Pengguna yang dinonaktifkan tidak bisa login; gunakan **Aktifkan** untuk memulihkannya.
+   - Pilih **Nonaktifkan** dari menu tindakan, lalu konfirmasi pada dialog **Nonaktifkan pengguna?**. Pengguna yang dinonaktifkan tidak bisa login; gunakan **Aktifkan** (dialog **Aktifkan pengguna?**) untuk memulihkannya.
 6. **Mengatur ulang kata sandi:** pilih **Atur Ulang Kata Sandi** dari menu tindakan, isi kata sandi baru, lalu sampaikan kepada pengguna.
-7. **Menyetujui akun Google baru:** klik filter **Menunggu persetujuan**, lalu **Setujui akses** dan tetapkan peran serta unit kerjanya.
+7. **Menyetujui akun Google baru:** klik filter **Menunggu persetujuan**, lalu **Setujui akses**. Pastikan langsung kepada pemilik email, tetapkan peran serta unit kerjanya, centang *Saya sudah memastikan langsung kepada pemilik email ini.*, lalu klik **Setujui akses**. Pilihan **Ubah Peran/Unit** dan **Atur Ulang Kata Sandi** tidak tampil untuk akun yang belum disetujui.
 
 > [!CAUTION]
 > Menu ini **hanya** tersedia untuk **Super Admin**. Perubahan peran pengguna berdampak langsung pada hak akses mereka.
@@ -932,7 +995,7 @@ Pengaturan profil pengguna, preferensi, unit kerja, dan template nomor surat.
 > [!IMPORTANT]
 > Menu **Pengaturan** (⚙️) di sidebar tersedia untuk semua pengguna. Tab yang muncul bergantung pada role: tab Template untuk admin, dan tab Unit Kerja hanya untuk **Super Admin**.
 
-1. Klik **Pengaturan** (⚙️) di sidebar. Super Admin juga dapat membukanya dari menu avatar di header.
+1. Klik **Pengaturan** (⚙️) di sidebar, atau pilih **Pengaturan** dari menu akun (avatar) di header. Keduanya tersedia untuk semua peran.
 
 #### Tab Profil
 
@@ -941,7 +1004,7 @@ Tab ini tersedia untuk **semua pengguna** yang login.
 1. Buka tab **Profil**.
 2. Ubah **Nama Lengkap** Anda di kolom yang tersedia.
 3. Klik **"Simpan Profil"** untuk menyimpan.
-4. Untuk mengganti kata sandi, isi kartu **Ubah Kata Sandi** (kata sandi saat ini, kata sandi baru, konfirmasi), lalu klik **"Simpan Kata Sandi"**.
+4. Untuk mengganti kata sandi, isi kartu **Ubah Kata Sandi** (kata sandi saat ini, kata sandi baru, konfirmasi), lalu klik **"Simpan Kata Sandi"**. Kata sandi baru minimal 12 karakter, tidak memuat nama atau bagian depan email Anda, dan bukan kata sandi yang umum. Kata sandi lama tetap dapat dipakai untuk masuk sampai diganti.
 
 > [!NOTE]
 > Perubahan nama akan langsung berlaku di seluruh sistem.
@@ -974,6 +1037,20 @@ Surat dan arsip berkelas **Terbatas**, **Rahasia**, atau **Sangat Rahasia** hany
 4. Pantau status permohonan di menu **Persetujuan Akses Arsip**, tab **Permohonan Saya**.
 
 Super Admin memutuskan permohonan pada tab **Perlu Keputusan**, menetapkan masa berlaku antara 15 menit dan 30 hari, dan dapat mencabut akses sewaktu-waktu. Pemohon tidak dapat menyetujui permohonannya sendiri.
+
+> [!NOTE]
+> Mode **Tayang saja** hanya menyembunyikan tombol unduh, cetak, dan buka di tab baru. Isi berkas tetap tampil di layar peminta dan dapat disalin; setiap penayangan tercatat di Audit Log.
+
+---
+
+### 9.7 Monitoring Operasional
+
+Menu ini khusus Super Admin. Halaman **Monitoring Operasional** menampilkan kartu pemeriksaan (misalnya Database, Penyimpanan dokumen, Pemindai keamanan dokumen, Antrean pemindaian, Integritas dokumen berkala, dan Pembersihan unggahan langsung) dengan status **Sehat**, **Perlu perhatian**, **Gagal**, **Belum terverifikasi**, atau **Tidak diaktifkan**. Status diperbarui setiap menit selama halaman terbuka; klik **Perbarui** untuk memeriksa sekarang.
+
+- Bila ada pemeriksaan yang tidak sehat, header menampilkan tanda **Operasional: perlu perhatian** atau **Operasional: gagal** yang membuka halaman ini.
+- Kartu **Pemindai keamanan dokumen** memiliki tombol **Jalankan pemindai** untuk berkas yang lama menunggu pemindaian.
+- Kartu **Antrean pemindaian** menunjukkan berkas **Menunggu**, **Terlambat**, **Gagal**, dan **Terdeteksi berbahaya**. Berkas yang gagal dipindai dapat diantre ulang dengan **Antre ulang** atau **Antre ulang semua yang gagal dipindai**; berkas yang terdeteksi berbahaya tetap dikunci dan perlu diganti.
+- Kartu **Pembersihan unggahan langsung** menghitung berkas yang diunggah tetapi tidak jadi disimpan pada surat atau arsip (**Belum terhapus**). Berkas itu dihapus otomatis setiap hari; hubungi pengelola sistem bila angkanya tidak turun dalam beberapa hari.
 
 ---
 
@@ -1016,7 +1093,7 @@ Super Admin hanya dapat menetapkan dua role untuk akun: **Super Admin** (seluruh
 > [!NOTE]
 > - Admin Unit Kerja hanya melihat dan mengelola data unit kerjanya.
 > - Akun lama berperan Admin Dirjen atau Admin Sesditjen tetap terbatas pada unit semulanya. Akun lama Staff dan Auditor hanya dapat melihat data unitnya dan tidak mendapat kewenangan menulis.
-> - Semua pengguna dapat mengakses **Profil** melalui menu **Pengaturan** di sidebar.
+> - Semua pengguna dapat mengakses **Profil** melalui menu **Pengaturan** di sidebar atau di menu akun (avatar).
 > - Surat dan arsip berkelas Terbatas atau lebih tinggi tetap memerlukan persetujuan akses per rekod, juga bagi Super Admin.
 
 ### Cara Kerja Filter Data per Unit Kerja
@@ -1116,7 +1193,9 @@ Jika Anda login sebagai **Super Admin**, panel notifikasi menampilkan **dropdown
 ### 11.2 Pencarian Global
 
 - Klik **bar pencarian** di header atau tekan **⌘K** / **Ctrl+K** untuk membuka pencarian global.
-- Cari surat atau arsip di seluruh sistem berdasarkan kata kunci.
+- Cari surat atau arsip di seluruh sistem berdasarkan kata kunci (minimal 2 karakter).
+- Bila hasilnya banyak, tertulis misalnya *Menampilkan 10 dari 37 hasil.*; klik **Tampilkan lebih banyak** untuk hasil berikutnya.
+- Pencarian mencakup data surat dan arsip yang dicatat, tidak termasuk isi PDF hasil pindaian.
 
 ---
 
@@ -1136,7 +1215,7 @@ Klik **avatar** dan **nama Anda** di pojok kanan atas header untuk membuka menu 
 
 | Menu | Keterangan |
 |------|------------|
-| **Pengaturan** | Buka halaman Pengaturan. Butir ini tampil bagi Super Admin; pengguna lain membuka Pengaturan dari sidebar |
+| **Pengaturan** | Buka halaman Pengaturan, termasuk **Ubah Kata Sandi** di tab Profil. Tersedia untuk semua peran |
 | **Panduan Pengguna** | Buka panduan di dalam aplikasi (halaman `/panduan`) |
 | **Keluar** | Keluar dari sistem |
 
@@ -1144,22 +1223,42 @@ Klik **avatar** dan **nama Anda** di pojok kanan atas header untuk membuka menu 
 
 ### 11.5 Link Panduan di Sidebar
 
-Di bagian bawah sidebar, terdapat link **📖 Panduan** yang membuka panduan di dalam aplikasi (halaman `/panduan`). Link ini tersedia untuk **semua pengguna**.
+Di bagian bawah sidebar, terdapat link **📖 Panduan** yang membuka panduan di dalam aplikasi (halaman `/panduan`). Link ini tersedia untuk **semua pengguna**. Halaman itu memuat topik singkat untuk pekerjaan harian (misalnya *Mengganti kata sandi*, *Persetujuan surat keluar sebelum diarsipkan*, *Menu Tindak Lanjut*, *Lacak Surat*, dan *Menemukan surat yang terhapus*), kotak **Butuh bantuan lebih lanjut?**, dan tombol **Panduan lengkap** yang membuka situs panduan di tab baru.
 
 ---
 
-### 11.6 Bulk Upload
+### 11.6 Unggah Massal
 - Klik **Unggah Massal** di Dashboard atau di halaman Arsip Aktif untuk membuka halaman **Unggah Massal & OCR**. Tombol ini hanya muncul untuk admin bila modul Unggah Massal & OCR diaktifkan operator dan unggah file tersedia; bila tidak muncul, gunakan pencatatan manual atau impor metadata.
 - Unggah beberapa berkas PDF sekaligus untuk disiapkan menjadi draf arsip.
 
 ### 11.7 Formulir
 - Akses melalui menu **Formulir** pada sidebar.
-- Lihat dan cetak template kosong formulir-formulir kearsipan standar. Template ini tidak terisi otomatis dari data aplikasi.
+- Lihat dan cetak template kosong formulir-formulir kearsipan standar lewat **Lihat Template Kosong**. Template ini tidak terisi otomatis dari data aplikasi.
+- Hanya tiga formulir yang dapat dibuat dari data aplikasi: Formulir 4 dan Formulir 6 lewat tombol **Ekspor dari Arsip** (menu **Export** di halaman Arsip), serta Formulir 27 lewat tombol **Buka Arsip Vital** (tombol **Cetak Daftar**). Formulir lain bertanda **Diisi manual dari template**.
 
 ### 11.8 Ekspor Data
-- Pada halaman daftar surat/arsip, klik tombol **"Export"** untuk mengunduh data dalam format Excel atau PDF.
+- Pada halaman daftar surat/arsip, klik tombol **"Export"** untuk mengunduh data dalam format Excel atau PDF. Ekspor mengikuti penyaring dan **Urutkan** yang dipilih. Waktu ditulis dalam WIB, dan Super Admin yang mengekspor **Semua Unit Kerja** mendapat kolom **Unit Kerja** berisi nama unit.
 - Ekspor Excel Surat Keluar menampilkan **Balasan Untuk** sebagai nomor surat masuk (bukan kode internal). Bila surat masuk berada di unit lain tertulis `(lintas unit)`, bila kelasnya tidak boleh Anda baca tertulis `Dikecualikan`, dan bila sudah dihapus tertulis `(tidak tersedia)`. Sejak integrasi rangkaian, sistem hanya mengisi relasi Balasan Untuk untuk balasan dari unit yang sama; rantai balasan lintas unit dilihat di panel Alur Surat. Relasi ini dikosongkan bila tautan balasannya dibatalkan, sehingga kolomnya ikut kosong. Kolom **Asal Naskah** berisi `Inisiatif` atau `Tindak Lanjut`.
 - Pada daftar arsip, pilih **Formulir 4** (Daftar Arsip Aktif) atau **Formulir 6** (Daftar Arsip Inaktif); isi masing-masing dijelaskan pada bagian 6.1 Arsip Aktif. Formulir 6 tidak diunduh bila belum ada arsip inaktif untuk filter yang dipilih.
+
+
+---
+
+## 12. Perubahan November 2026
+
+Ringkasan perubahan yang langsung terasa saat bekerja (rincian ada di bagian terkait panduan ini dan di [situs panduan](docs-site/docs/perubahan-november-2026.md)):
+
+- Setelah pembaruan dipasang, sebagian besar pengguna diminta masuk sekali lagi.
+- Sesi berakhir setelah 30 menit tanpa aktivitas; isian formulir surat dan dialog Arsipkan yang belum disimpan dapat dipulihkan di tab yang sama ([2.3](#23-sesi-isian-yang-belum-disimpan-dan-versi-baru)).
+- Kata sandi baru minimal 12 karakter, tidak memuat nama atau bagian depan email, dan bukan kata sandi yang umum. **Pengaturan** ada di menu akun untuk semua peran.
+- Peramban yang didukung: Chrome/Edge 111+, Firefox 128+, Safari 16.4+.
+- **No. Agenda** dan **No. Urut** dapat diisi saat menambah surat; tanggal yang dipindah ke tahun lain memberi nomor baru di tahun itu.
+- Menghapus surat keluar juga meminta alasan; Super Admin dapat memulihkan surat dari tab **Surat Terhapus**.
+- Impor menyimpan kolom No sebagai nomor agenda bila belum dipakai, dan pratinjau memeriksa setiap baris.
+- Arsip: **Kemajuan Masa Aktif** baru dihitung setelah pemicu retensi terverifikasi; **PIC** kini bernama **Penanggung Jawab**.
+- Dosir dapat diedit dari kartunya dan surat dapat dilepas dengan **Lepas dari dosir**.
+- Ekspor memakai waktu WIB; **Cetak Daftar** Arsip Vital mengikuti penyaring di layar; kode QR diunduh lewat **Unduh Kode QR**.
+- Super Admin: persetujuan akun Google memerlukan konfirmasi langsung kepada pemilik email; Audit Log mencatat masuk, keluar, dan penggantian kata sandi; Monitoring Operasional memberi tanda di header.
 
 ---
 

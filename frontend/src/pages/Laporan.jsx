@@ -204,7 +204,7 @@ export default function Laporan() {
         } catch (error) {
             console.error('Error loading report:', error);
             toast({
-                title: 'Error',
+                title: 'Gagal',
                 description: 'Gagal memuat data laporan',
                 variant: 'destructive',
             });
@@ -246,7 +246,7 @@ export default function Laporan() {
         } catch (error) {
             console.error('Export error:', error);
             toast({
-                title: 'Error',
+                title: 'Gagal',
                 description: error?.message || 'Gagal mengexport laporan',
                 variant: 'destructive',
             });

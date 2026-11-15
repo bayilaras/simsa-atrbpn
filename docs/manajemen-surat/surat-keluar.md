@@ -18,7 +18,9 @@ Tabel daftar surat keluar mirip dengan surat masuk, dengan perbedaan:
 - Kolom **Status** menampilkan status persetujuan: **Draft**, **Menunggu Persetujuan**, **Disetujui**, atau **Perlu Perbaikan** (surat yang ditolak penyetuju). Surat yang sudah diarsipkan bertanda **Arsip**
 - Tanda tambahan: **File**, **Balasan**, **Inisiatif** atau **Tindak Lanjut**, dan klasifikasi keamanan surat
 - Menu tiga titik (⋯) berisi **Detail & File**, **Edit Surat** dan **Hapus Surat** (hanya untuk Draft atau Perlu Perbaikan), serta **Arsipkan** (hanya setelah Disetujui)
-- Klik **Filter**; di panelnya ada penyaring **Persetujuan**: **Semua surat**, **Menunggu keputusan saya**, atau **Buatan saya, belum diajukan**
+- Klik **Filter**; di panelnya ada penyaring Tahun, **Naskah Dinas** (daftar lengkap jenis naskah dinas), Rentang Tanggal, dan **Persetujuan**: **Semua surat**, **Menunggu keputusan saya**, atau **Buatan saya, belum diajukan**
+- Pilihan **Urutkan** sama dengan Surat Masuk: **Terakhir dicatat**, **Tanggal surat (terbaru)**, atau **Tanggal surat (terlama)**
+- Super Admin yang memilih **Semua Unit Kerja** melihat kolom **Unit Kerja**, serta tab **Daftar Surat** dan **Surat Terhapus** di atas tabel
 
 ---
 
@@ -39,8 +41,9 @@ Kolom ekspor **Asal Naskah** mencatat pilihan ini.
 |-------|-----------|:-----:|
 | **Nomor Referensi** / **Asal Naskah** | Surat masuk atau surat keluar yang ditindaklanjuti. Pada surat inisiatif bagian ini menerangkan bahwa surat memulai rangkaian baru | ❌ |
 | **Naskah Dinas** | Jenis naskah yang akan dikirim | ✅ |
-| **Nomor Surat** | Nomor manual; kosongkan untuk nomor otomatis dari template unit | ❌ |
-| **Tanggal Surat** | Tanggal surat dibuat | ✅ |
+| **Nomor Surat** | Nomor manual; kosongkan untuk nomor otomatis dari template unit. Bila nomor yang diketik sudah tercatat, tampil peringatan **Nomor sudah terdaftar** (tidak menghalangi penyimpanan) | ❌ |
+| **Tanggal Surat** | Tanggal surat dibuat. Tahun harus antara 2000 dan 2100 | ✅ |
+| **No. Urut** | Hanya saat menambah surat. Kosongkan (tertulis *Otomatis*) untuk nomor urut otomatis; di bawahnya tampil *Nomor otomatis berikutnya: N*. Isi bila ingin melanjutkan nomor urut dari buku agenda kantor. Nomor yang sudah dipakai, termasuk milik surat yang sudah dihapus, ditolak | ❌ |
 | **Perihal** | Subjek / topik surat | ✅ |
 | **Sifat Surat** | Biasa / Penting / Segera / Sangat Segera (tingkat urgensi, bukan kerahasiaan) | ❌ |
 | **Kepada** | Tujuan pengiriman surat | ✅ |
@@ -54,8 +57,11 @@ Di bagian lampiran tertulis *Catatan: Link dokumen dan berkas tidak wajib diisi.
 ### Langkah 3: Simpan
 
 1. Periksa kembali data.
-2. Klik tombol **"Simpan"**.
-3. Surat keluar baru akan muncul di daftar dengan status **Draft**.
+2. Klik tombol **"Simpan"**. Bila ada berkas PDF, kemajuan unggah tampil di bilah tombol, misalnya *Mengunggah berkas: 45%*.
+3. Bila **No. Urut** yang diisi lebih dari 100 di atas nomor otomatis berikutnya, SIMSA bertanya **Simpan dengan nomor ini?**; pilih **Ubah nomor** bila salah ketik.
+4. Surat keluar baru akan muncul di daftar dengan status **Draft**.
+
+Selama formulir belum disimpan, isiannya disimpan sementara di tab peramban ini. Bila sesi berakhir atau halaman dimuat ulang, buka lagi formulir di tab yang sama dan pilih **Pulihkan isian**; berkas PDF perlu dipilih ulang. Isian boleh memuat tanda kurung sudut, misalnya `<e-Office>`; teks disimpan seperti diketik.
 
 > **Lengkapi lampiran sebelum mengajukan**
 >
@@ -133,6 +139,10 @@ Surat berkelas Terbatas atau lebih tinggi yang belum boleh kamu buka menampilkan
 ## Mengedit dan Menghapus
 
 Edit dan hapus hanya tersedia bagi admin berwenang ketika surat masih **Draft** atau **Perlu Perbaikan** dan belum diarsipkan. Saat surat **Menunggu Persetujuan** atau **Disetujui**, perubahan ditolak untuk menjaga konsistensi keputusan. Jangan menghapus surat hanya untuk memperbaiki metadata; gunakan edit pada status yang diizinkan agar jejak proses tetap dapat ditelusuri.
+
+Untuk menghapus, pilih **Hapus Surat** dari menu tiga titik (⋯). Dialog **Hapus Surat Keluar?** menjelaskan *Surat akan hilang dari semua daftar. Hanya Super Admin yang dapat memulihkannya.* Isi **Alasan penghapusan** (minimal 10 karakter), lalu klik **Hapus**. Super Admin dapat memulihkan surat dari tab **Surat Terhapus** dengan nomor urut dan nomor surat semula; caranya sama seperti [Memulihkan Surat yang Terhapus](surat-masuk.md#memulihkan-surat-yang-terhapus) pada Surat Masuk.
+
+Bila tanggal surat diubah ke tahun lain, surat mendapat nomor urut baru di tahun itu dan nomor surat yang dibuat otomatis ikut diperbarui. Bila surat sudah diubah orang lain sejak kamu membukanya, penyimpanan ditolak dengan pesan *Data ini sudah diubah pengguna lain sejak Anda membukanya…*; klik **Muat ulang**, lalu ulangi perubahan.
 
 Klasifikasi keamanan Rahasia atau Sangat Rahasia yang sudah tersimpan boleh dipertahankan saat mengedit. Bila diganti lalu disimpan, kelas itu hanya dapat dipilih kembali oleh Super Admin.
 

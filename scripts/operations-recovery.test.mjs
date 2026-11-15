@@ -69,6 +69,13 @@ test('a mistyped document limit is raised only after the encrypted database is d
  assert.equal(body.split('throw invalidDocumentBudget').length,2);
  assert.equal(body.includes('documentBudgetFromEnvironment('),false);
 });
+test('the document inventory also reads the Berita Acara Autentikasi locators from the dump',async()=>{
+ // runRecovery needs Linux, Node 24 and PostgreSQL 18; the inventory step is checked on the source.
+ const source=await readFile(new URL('./operations-recovery.mjs',import.meta.url),'utf8');
+ const inventory=source.slice(source.indexOf("stage='document_inventory'"),source.indexOf("stage='document_backup'"));
+ assert.match(inventory,/'--table=file_attachments','--table=regulatory_rule_sets','--table=autentikasi'/);
+ assert.match(inventory,/autentikasi:parseCopyTable\(sql\.toString\(\),'autentikasi'\)/);
+});
 test('status keeps completion age and binds sanitized evidence hash',()=>{
  const actual=recoveryAttestation(report);assert.equal(actual.backup.completedAt,time);assert.match(actual.backup.evidenceSha256,/^[a-f0-9]{64}$/);
  assert.notEqual(actual.backup.evidenceSha256,recoveryAttestation({...report,failureCode:'changed'}).backup.evidenceSha256);

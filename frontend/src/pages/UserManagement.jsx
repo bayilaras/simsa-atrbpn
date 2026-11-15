@@ -3,6 +3,8 @@ import { hasProvisionedAccess, isPendingAccess } from '@/lib/provisioning-access
 import { UserAccessApprovalDialog } from '@/components/UserAccessApprovalDialog';
 import { UserPasswordResetDialog } from '@/components/UserPasswordResetDialog';
 import { pesanGalat } from '@/lib/pesan-galat';
+import { useKonfirmasi } from '@/hooks/use-konfirmasi';
+import { FIRST_LOGIN_PASSWORD_NOTE, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_RULES_HINT, passwordRuleError } from '@/lib/password-policy';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Search, Filter, Users, Edit2, UserX, MoreHorizontal, Loader2, AlertTriangle, Shield, Building2, UserPlus, Mail, CheckCircle2, Ban, Eye, EyeOff, Lock, KeyRound } from 'lucide-react';
 import { Label } from '@/components/ui/label';
@@ -81,6 +83,7 @@ export default function UserManagement() {
     const [approvalTarget, setApprovalTarget] = useState(null);
     const [approvalMessage, setApprovalMessage] = useState('');
     const [passwordResetTarget, setPasswordResetTarget] = useState(null);
+    const [konfirmasi, dialogKonfirmasi] = useKonfirmasi();
 
     // Filters
     const [search, setSearch] = useState('');
@@ -232,10 +235,8 @@ export default function UserManagement() {
         }
         const roleError = managedUserRoleError(addData.role, addData.unitKerjaId);
         if (roleError) { setAddError(roleError); return; }
-        if (addData.password && addData.password.length < 8) {
-            setAddError('Password minimal 8 karakter');
-            return;
-        }
+        const passwordError = addData.password ? passwordRuleError(addData.password, addData) : '';
+        if (passwordError) { setAddError(passwordError); return; }
         try {
             setCreating(true);
             setAddError('');
@@ -264,9 +265,14 @@ export default function UserManagement() {
             return;
         }
 
-        if (!window.confirm(`Yakin ingin menonaktifkan user ${user.name || user.email}?`)) {
-            return;
-        }
+        const setuju = await konfirmasi({
+            judul: 'Nonaktifkan pengguna?',
+            pesan: `Akun ${user.name || user.email} tidak dapat dipakai untuk masuk sampai diaktifkan kembali.`,
+            aksi: 'Nonaktifkan',
+            batal: 'Batal',
+            berbahaya: true,
+        });
+        if (!setuju) return;
 
         try {
             await userManagementService.deactivateUser(user.id);
@@ -278,9 +284,13 @@ export default function UserManagement() {
     };
 
     const handleActivate = async (user) => {
-        if (!window.confirm(`Yakin ingin mengaktifkan user ${user.name || user.email}?`)) {
-            return;
-        }
+        const setuju = await konfirmasi({
+            judul: 'Aktifkan pengguna?',
+            pesan: `Akun ${user.name || user.email} akan diaktifkan kembali.`,
+            aksi: 'Aktifkan',
+            batal: 'Batal',
+        });
+        if (!setuju) return;
 
         try {
             await userManagementService.updateUser(user.id, { isActive: true });
@@ -305,6 +315,8 @@ export default function UserManagement() {
 
     const editMandatedUnitKerjaId = getRoleMandatedUnitKerjaId(editData.role);
     const addMandatedUnitKerjaId = getRoleMandatedUnitKerjaId(addData.role);
+    // Staff see the unit's name, never its internal code.
+    const editMandatedUnitName = unitKerjaList.find(unit => unit.id === editMandatedUnitKerjaId)?.name || '';
     const editUnitLocked = editData.role === 'super_admin' || Boolean(editMandatedUnitKerjaId);
     const addUnitLocked = addData.role === 'super_admin' || Boolean(addMandatedUnitKerjaId);
 
@@ -313,8 +325,8 @@ export default function UserManagement() {
         const pw = addData.password || '';
         if (!pw) return { score: 0, label: '', color: '' };
         let score = 0;
-        if (pw.length >= 8) score++;
-        if (pw.length >= 12) score++;
+        if (pw.length >= PASSWORD_MIN_LENGTH) score++;
+        if (pw.length >= 16) score++;
         if (/[A-Z]/.test(pw)) score++;
         if (/[a-z]/.test(pw)) score++;
         if (/[0-9]/.test(pw)) score++;
@@ -541,10 +553,13 @@ export default function UserManagement() {
                                                 <DropdownMenuContent align="end" className="w-56">
                                                     <DropdownMenuLabel>Tindakan Pengguna</DropdownMenuLabel>
                                                     <DropdownMenuSeparator />
-                                                    <DropdownMenuItem onClick={() => handleEdit(user)}>
-                                                        <Edit2 className="h-4 w-4 mr-2" />
-                                                        Ubah Peran/Unit
-                                                    </DropdownMenuItem>
+                                                    {/* A pending account gets its role only through Setujui akses. */}
+                                                    {user.role !== 'user' && (
+                                                        <DropdownMenuItem onClick={() => handleEdit(user)}>
+                                                            <Edit2 className="h-4 w-4 mr-2" />
+                                                            Ubah Peran/Unit
+                                                        </DropdownMenuItem>
+                                                    )}
                                                     {/* Own password: Pengaturan. Pending identities are approved first. */}
                                                     {user.id !== currentUser?.id && user.role !== 'user' && (
                                                         <DropdownMenuItem onClick={() => setPasswordResetTarget(user)}>
@@ -637,13 +652,13 @@ export default function UserManagement() {
 
                     <div className="py-6 space-y-6">
                         <div className="space-y-2">
-                            <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Peran Pengguna</label>
+                            <label htmlFor="edit-user-role" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Peran Pengguna</label>
                             <Select
                                 value={editData.role}
                                 onValueChange={(v) => setEditData(d => applyRoleMandate(d, v))}
                                 disabled={editingUser?.id === currentUser?.id}
                             >
-                                <SelectTrigger aria-label="Peran pengguna">
+                                <SelectTrigger id="edit-user-role" aria-label="Peran pengguna">
                                     <SelectValue placeholder="Pilih peran" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -665,13 +680,13 @@ export default function UserManagement() {
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Unit Kerja</label>
+                            <label htmlFor="edit-user-unit" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Unit Kerja</label>
                             <Select
                                 value={editData.unitKerjaId || 'none'}
                                 onValueChange={(v) => setEditData(d => ({ ...d, unitKerjaId: v === 'none' ? '' : v }))}
                                 disabled={editUnitLocked}
                             >
-                                <SelectTrigger aria-label="Unit kerja pengguna">
+                                <SelectTrigger id="edit-user-unit" aria-label="Unit kerja pengguna">
                                     <SelectValue placeholder="Pilih Unit Kerja" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -687,19 +702,19 @@ export default function UserManagement() {
                                 {editData.role === 'super_admin'
                                     ? 'Super admin bekerja lintas unit dan tidak memiliki unit kerja tersimpan.'
                                     : editMandatedUnitKerjaId
-                                    ? `Unit ${editMandatedUnitKerjaId} ditetapkan otomatis oleh mandat peran.`
+                                    ? `${editMandatedUnitName ? `Unit ${editMandatedUnitName}` : 'Unit kerja'} ditetapkan otomatis oleh mandat peran.`
                                     : 'Unit kerja wajib dipilih untuk Admin Unit Kerja; akses dibatasi ke unit ini.'}
                             </p>
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Status Akun</label>
+                            <label htmlFor="edit-user-status" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Status Akun</label>
                             <Select
                                 value={String(editData.isActive)}
                                 onValueChange={(v) => setEditData(d => ({ ...d, isActive: v === 'true' }))}
                                 disabled={editingUser?.id === currentUser?.id}
                             >
-                                <SelectTrigger className={editData.isActive ? "border-green-200 bg-green-50 dark:bg-green-500/15 text-green-900 dark:text-green-300" : "border-red-200 bg-red-50 dark:bg-red-500/15 text-red-900 dark:text-red-300"}>
+                                <SelectTrigger id="edit-user-status" className={editData.isActive ? "border-green-200 bg-green-50 dark:bg-green-500/15 text-green-900 dark:text-green-300" : "border-red-200 bg-red-50 dark:bg-red-500/15 text-red-900 dark:text-red-300"}>
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -725,8 +740,9 @@ export default function UserManagement() {
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-sm font-medium leading-none">Jabatan</label>
+                            <label htmlFor="edit-user-jabatan" className="text-sm font-medium leading-none">Jabatan</label>
                             <Input
+                                id="edit-user-jabatan"
                                 placeholder="Contoh: Arsiparis, Kepala Seksi"
                                 value={editData.jabatan}
                                 onChange={(e) => setEditData(d => ({ ...d, jabatan: e.target.value }))}
@@ -738,8 +754,9 @@ export default function UserManagement() {
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-sm font-medium leading-none">NIP</label>
+                            <label htmlFor="edit-user-nip" className="text-sm font-medium leading-none">NIP</label>
                             <Input
+                                id="edit-user-nip"
                                 placeholder="Nomor Induk Pegawai"
                                 value={editData.nip}
                                 onChange={(e) => setEditData(d => ({ ...d, nip: e.target.value }))}
@@ -806,9 +823,9 @@ export default function UserManagement() {
                         </div>
 
                         <div className="space-y-2">
-                            <Label>Peran</Label>
+                            <Label htmlFor="new-user-role">Peran</Label>
                             <Select value={addData.role} onValueChange={(v) => setAddData(d => applyRoleMandate(d, v))}>
-                                <SelectTrigger aria-label="Peran pengguna baru">
+                                <SelectTrigger id="new-user-role" aria-label="Peran pengguna baru">
                                     <SelectValue placeholder="Pilih peran" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -822,13 +839,13 @@ export default function UserManagement() {
                         </div>
 
                         <div className="space-y-2">
-                            <Label>Unit Kerja</Label>
+                            <Label htmlFor="new-user-unit">Unit Kerja</Label>
                             <Select
                                 value={addData.unitKerjaId || 'none'}
                                 onValueChange={(v) => setAddData(d => ({ ...d, unitKerjaId: v === 'none' ? '' : v }))}
                                 disabled={addUnitLocked}
                             >
-                                <SelectTrigger aria-label="Unit kerja pengguna baru">
+                                <SelectTrigger id="new-user-unit" aria-label="Unit kerja pengguna baru">
                                     <SelectValue placeholder="Pilih Unit Kerja" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -851,8 +868,9 @@ export default function UserManagement() {
 
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div className="space-y-2">
-                                <Label>Jabatan</Label>
+                                <Label htmlFor="new-user-jabatan">Jabatan</Label>
                                 <Input
+                                    id="new-user-jabatan"
                                     placeholder="Contoh: Arsiparis"
                                     value={addData.jabatan}
                                     onChange={(e) => setAddData(d => ({ ...d, jabatan: e.target.value }))}
@@ -860,8 +878,9 @@ export default function UserManagement() {
                                 />
                             </div>
                             <div className="space-y-2">
-                                <Label>NIP</Label>
+                                <Label htmlFor="new-user-nip">NIP</Label>
                                 <Input
+                                    id="new-user-nip"
                                     placeholder="Nomor Induk Pegawai"
                                     value={addData.nip}
                                     onChange={(e) => setAddData(d => ({ ...d, nip: e.target.value }))}
@@ -871,17 +890,19 @@ export default function UserManagement() {
                         </div>
 
                         <div className="space-y-2">
-                            <Label className="flex items-center gap-1.5">
+                            <Label htmlFor="new-user-password" className="flex items-center gap-1.5">
                                 <Lock className="h-3.5 w-3.5 text-muted-foreground" />
                                 Kata sandi
                             </Label>
                             <div className="relative">
                                 <Input
                                     type={showPassword ? 'text' : 'password'}
-                                    placeholder="Minimal 8 karakter"
+                                    id="new-user-password"
+                                    placeholder={`Minimal ${PASSWORD_MIN_LENGTH} karakter`}
                                     value={addData.password}
                                     onChange={(e) => setAddData(d => ({ ...d, password: e.target.value }))}
-                                    maxLength={128}
+                                    maxLength={PASSWORD_MAX_LENGTH}
+                                    aria-describedby="new-user-password-hint"
                                     className="pr-10"
                                 />
                                 <Button
@@ -911,8 +932,8 @@ export default function UserManagement() {
                                     </p>
                                 </div>
                             )}
-                            <p className="text-xs text-muted-foreground">
-                                Opsional. Jika diisi, pengguna dapat masuk dengan email dan kata sandi. Jika tidak, gunakan akun Google yang telah diprovisi.
+                            <p id="new-user-password-hint" className="text-xs text-muted-foreground">
+                                {PASSWORD_RULES_HINT} {FIRST_LOGIN_PASSWORD_NOTE} Boleh dikosongkan: akun tanpa kata sandi hanya dapat masuk dengan Google.
                             </p>
                         </div>
                     </div>
@@ -928,6 +949,8 @@ export default function UserManagement() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {dialogKonfirmasi}
         </div>
     );
 }

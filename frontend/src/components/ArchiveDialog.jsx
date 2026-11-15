@@ -51,6 +51,10 @@ import { useAuth } from '@/context/AuthContext'
 import { PESAN_KELAS_TERBATAS_PERAN, adaKelasTersembunyi, bolehMemilihKelas, saringOpsiKelas } from '@/lib/kelas-keamanan'
 import { LokasiSimpanPicker } from '@/components/arsip/LokasiSimpanPicker'
 import { LABEL_LOKASI_SIMPAN, PETUNJUK_LOKASI_SIMPAN, bolehMemilihLokasiUnit } from '@/components/arsip/lokasi-simpan'
+import { DialogKonfirmasi } from '@/components/DialogKonfirmasi'
+import { useDrafIsian } from '@/hooks/use-draf-isian'
+import { permintaanPulihkanDraf } from '@/lib/draf-isian'
+import { tandaiBelumDisimpan } from '@/lib/perubahan-belum-disimpan'
 
 const TINGKAT_PERKEMBANGAN_OPTIONS = [
     { value: 'Asli', label: 'Asli' },
@@ -87,7 +91,7 @@ const GALAT_PERNYATAAN_ARSIP = 'Centang pernyataan di atas sebelum menyimpan ars
 
 const UNIT_PENGOLAH_OPTIONS = [
     { value: 'Ditjen', label: 'Ditjen' },
-    { value: 'SekDitjen', label: 'SekDitjen' },
+    { value: 'SekDitjen', label: 'Sesditjen' },
     { value: 'Dit. BPPT', label: 'Dit. BPPT' },
     { value: 'Dit. PTEP', label: 'Dit. PTEP' },
     { value: 'Dit. KTPP', label: 'Dit. KTPP' },
@@ -148,18 +152,21 @@ function SectionHeader({ number, title, icon, colorClass = "text-teal-700 dark:t
     )
 }
 
-// Field with helper text
-function FormField({ label, required, hint, children, icon: Icon }) {
+// Isian dengan teks bantuan. htmlFor menghubungkan label ke kontrolnya; teks
+// bantuan memakai id `${htmlFor}-petunjuk` agar dapat dirujuk aria-describedby.
+const idPetunjuk = (id) => `${id}-petunjuk`
+
+function FormField({ label, required, hint, children, icon: Icon, htmlFor }) {
     return (
         <div className="space-y-1.5">
-            <Label className="text-foreground font-medium flex items-center gap-2">
-                {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground" />}
+            <Label htmlFor={htmlFor} className="text-foreground font-medium flex items-center gap-2">
+                {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />}
                 {label}
                 {required && <span className="text-red-500">*</span>}
             </Label>
             {children}
             {hint && (
-                <p className="text-[11px] text-muted-foreground italic mt-0.5">{hint}</p>
+                <p id={htmlFor ? idPetunjuk(htmlFor) : undefined} className="text-[11px] text-muted-foreground italic mt-0.5">{hint}</p>
             )}
         </div>
     )
@@ -210,6 +217,14 @@ export function ArchiveDialog({
     // Items state
     const [items, setItems] = useState(() => buildItems({ perihal, tanggalSurat }))
 
+    // Draf isian per surat di sessionStorage tab ini (lib/draf-isian.js): bertahan
+    // saat sesi berakhir, dihapus saat arsip tersimpan, Batal, atau keluar.
+    const { simpanDraf, bacaDraf, hapusDraf } = useDrafIsian({
+        userId: user?.id, formulir: `arsip-surat-${suratType || 'masuk'}`, idRekod: suratData?.id,
+    })
+    const [diubah, setDiubah] = useState(false)
+    const [tawaranDraf, setTawaranDraf] = useState(null)
+
     // Dialog stays mounted between surat, so refill the form from the surat being archived
     useEffect(() => {
         if (!open) return
@@ -219,19 +234,55 @@ export function ArchiveDialog({
         setFormError('')
         setPaham(false)
         setGalatPaham(false)
-    }, [open, sourceData, suratType])
+        setDiubah(false)
+        setTawaranDraf(bacaDraf())
+    }, [bacaDraf, open, sourceData, suratType])
+
+    useEffect(() => {
+        if (!open || !diubah || tawaranDraf || loading) return
+        simpanDraf({ formData, items })
+    }, [diubah, formData, items, loading, open, simpanDraf, tawaranDraf])
+
+    // Dialog yang sedang diisi tidak dimuat ulang oleh pembaruan aplikasi.
+    useEffect(() => {
+        if (!open || !diubah) return undefined
+        const token = {}
+        tandaiBelumDisimpan(token, true)
+        return () => tandaiBelumDisimpan(token, false)
+    }, [diubah, open])
+
+    const jawabTawaranDraf = (pulihkan) => {
+        const data = tawaranDraf?.data
+        setTawaranDraf(null)
+        if (!pulihkan || !data) {
+            hapusDraf()
+            return
+        }
+        if (data.formData && typeof data.formData === 'object') setFormData(prev => ({ ...prev, ...data.formData }))
+        if (Array.isArray(data.items) && data.items.length > 0) setItems(data.items)
+        setDiubah(true)
+    }
+
+    // Batal, tombol tutup, dan Esc membuang isian dialog beserta drafnya.
+    const tutup = () => {
+        hapusDraf()
+        onOpenChange(false)
+    }
 
     const handleChange = (field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }))
+        setDiubah(true)
     }
 
     const handleItemChange = (index, field, value) => {
         const newItems = [...items]
         newItems[index] = { ...newItems[index], [field]: value }
         setItems(newItems)
+        setDiubah(true)
     }
 
     const addItem = () => {
+        setDiubah(true)
         setItems([...items, {
             nomor: String(items.length + 1),
             uraian: '',
@@ -246,6 +297,7 @@ export function ArchiveDialog({
 
     const removeItem = (index) => {
         if (items.length > 1) {
+            setDiubah(true)
             const newItems = items.filter((_, i) => i !== index)
             // Renumber items
             newItems.forEach((item, i) => {
@@ -304,6 +356,8 @@ export function ArchiveDialog({
                 items: items,
             }
             await onArchive(payload)
+            hapusDraf()
+            setDiubah(false)
             onOpenChange(false)
         } catch (error) {
             const detailMessage = Array.isArray(error?.details)
@@ -316,7 +370,7 @@ export function ArchiveDialog({
     }
 
     return (
-        <Dialog open={open} onOpenChange={(nextOpen) => !loading && onOpenChange(nextOpen)}>
+        <Dialog open={open} onOpenChange={(nextOpen) => { if (loading) return; if (nextOpen) onOpenChange(true); else tutup() }}>
             {/* Added: data-[state=open] styling directly here to ensure checks pass, but DialogContent handles animation via class */}
             <DialogContent
                 showCloseButton={false}
@@ -367,9 +421,12 @@ export function ArchiveDialog({
                                         label="Nomor Berkas"
                                         required
                                         icon={Hash}
+                                        htmlFor="arsip-nomor-berkas"
                                         hint="Otomatis terisi dari nomor surat, dapat diedit jika perlu"
                                     >
                                         <Input
+                                            id="arsip-nomor-berkas"
+                                            aria-describedby={idPetunjuk('arsip-nomor-berkas')}
                                             value={formData.nomorBerkas}
                                             onChange={(e) => handleChange('nomorBerkas', e.target.value)}
                                             placeholder="Contoh: AT.02.02/2172-32/VIII/2025"
@@ -381,9 +438,11 @@ export function ArchiveDialog({
                                         label="Klasifikasi Arsip & Jadwal Retensi"
                                         required
                                         icon={FileArchive}
+                                        htmlFor="arsip-klasifikasi"
                                         hint="Pilih klasifikasi arsip, lalu pilih jadwal retensi yang sesuai dari saran yang muncul"
                                     >
                                         <KlasifikasiPicker
+                                            id="arsip-klasifikasi"
                                             value={formData.kodeKlasifikasi}
                                             disabled={loading}
                                             selectedClassification={{ id: formData.klasifikasiItemId, kode: formData.kodeKlasifikasi, jenis: formData.klasifikasiArsip }}
@@ -422,9 +481,12 @@ export function ArchiveDialog({
                                 <FormField
                                     label="Kode Klasifikasi"
                                     required
+                                    htmlFor="arsip-kode-klasifikasi"
                                     hint="Otomatis terisi dari klasifikasi arsip yang dipilih"
                                 >
                                     <Input
+                                        id="arsip-kode-klasifikasi"
+                                        aria-describedby={idPetunjuk('arsip-kode-klasifikasi')}
                                         value={formData.kodeKlasifikasi}
                                         readOnly
                                         placeholder="Otomatis dari klasifikasi arsip"
@@ -459,11 +521,14 @@ export function ArchiveDialog({
                                     <FormField
                                         label="Aktif"
                                         required
+                                        htmlFor="arsip-retensi-aktif"
                                         hint="Masa simpan aktif"
                                     >
                                         <div className="flex items-center gap-2">
                                             <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 shadow-sm shadow-emerald-200"></div>
                                             <Input
+                                                id="arsip-retensi-aktif"
+                                                aria-describedby={idPetunjuk('arsip-retensi-aktif')}
                                                 value={formData.retensiAktifPreview}
                                                 readOnly
                                                 placeholder="--"
@@ -475,11 +540,14 @@ export function ArchiveDialog({
                                     <FormField
                                         label="Inaktif"
                                         required
+                                        htmlFor="arsip-retensi-inaktif"
                                         hint="Masa simpan inaktif"
                                     >
                                         <div className="flex items-center gap-2">
                                             <div className="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0 shadow-sm shadow-amber-200"></div>
                                             <Input
+                                                id="arsip-retensi-inaktif"
+                                                aria-describedby={idPetunjuk('arsip-retensi-inaktif')}
                                                 value={formData.retensiInaktifPreview}
                                                 readOnly
                                                 placeholder="--"
@@ -490,11 +558,14 @@ export function ArchiveDialog({
 
                                     <FormField
                                         label="Hasil JRA (pratinjau)"
+                                        htmlFor="arsip-hasil-jra"
                                         hint="Dibaca dari butir JRA; tidak dikirim sebagai keputusan manual"
                                     >
                                         <div className="flex items-center gap-2">
                                             <div className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0 shadow-sm shadow-red-200"></div>
                                             <Input
+                                                id="arsip-hasil-jra"
+                                                aria-describedby={idPetunjuk('arsip-hasil-jra')}
                                                 value={formData.hasilAkhirPreview}
                                                 readOnly
                                                 placeholder="--"
@@ -515,16 +586,20 @@ export function ArchiveDialog({
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                        <FormField label="Versi JRA" hint="Tahun/versi jadwal retensi yang digunakan">
+                                        <FormField label="Versi JRA" htmlFor="arsip-versi-jra" hint="Tahun/versi jadwal retensi yang digunakan">
                                             <Input
+                                                id="arsip-versi-jra"
+                                                aria-describedby={idPetunjuk('arsip-versi-jra')}
                                                 value={formData.jraVersionPreview}
                                                 readOnly
                                                 placeholder="Contoh: JRA 2026 / Revisi 1"
                                                 className="bg-card border-border h-10"
                                             />
                                         </FormField>
-                                        <FormField label="Referensi JRA" hint="Nomor peraturan/keputusan atau referensi baris JRA">
+                                        <FormField label="Referensi JRA" htmlFor="arsip-referensi-jra" hint="Nomor peraturan/keputusan atau referensi baris JRA">
                                             <Input
+                                                id="arsip-referensi-jra"
+                                                aria-describedby={idPetunjuk('arsip-referensi-jra')}
                                                 value={formData.jraReferencePreview}
                                                 readOnly
                                                 placeholder="Nomor dan referensi JRA"
@@ -549,9 +624,12 @@ export function ArchiveDialog({
                                 <FormField
                                     label="Uraian Informasi Berkas"
                                     required
+                                    htmlFor="arsip-uraian-berkas"
                                     hint="Deskripsi umum tentang berkas atau dokumen"
                                 >
                                     <Textarea
+                                        id="arsip-uraian-berkas"
+                                        aria-describedby={idPetunjuk('arsip-uraian-berkas')}
                                         value={formData.uraianBerkas}
                                         onChange={(e) => handleChange('uraianBerkas', e.target.value)}
                                         placeholder="Uraian lengkap tentang berkas ini..."
@@ -565,10 +643,11 @@ export function ArchiveDialog({
                                         label="Unit Pengolah"
                                         required
                                         icon={Building2}
+                                        htmlFor="arsip-unit-pengolah"
                                         hint="Pilih unit yang mengolah/bertanggung jawab atas arsip ini"
                                     >
                                         <Select value={formData.unitPengolah} onValueChange={(v) => handleChange('unitPengolah', v)}>
-                                            <SelectTrigger className="bg-muted/50 border-border h-10 focus:ring-teal-500">
+                                            <SelectTrigger id="arsip-unit-pengolah" aria-describedby={idPetunjuk('arsip-unit-pengolah')} className="bg-muted/50 border-border h-10 focus:ring-teal-500">
                                                 <SelectValue placeholder="-- Pilih Unit Pengolah --" />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -583,11 +662,14 @@ export function ArchiveDialog({
                                         label="Kurun Waktu"
                                         required
                                         icon={Calendar}
+                                        htmlFor="arsip-kurun-waktu-dari"
                                         hint="Rentang waktu periode arsip"
                                     >
                                         <div className="flex items-center gap-3">
                                             <div className="flex-1">
                                                 <Input
+                                                    id="arsip-kurun-waktu-dari"
+                                                    aria-describedby={idPetunjuk('arsip-kurun-waktu-dari')}
                                                     type="date"
                                                     required
                                                     value={formData.kurunWaktuDari}
@@ -598,6 +680,8 @@ export function ArchiveDialog({
                                             <span className="text-muted-foreground font-medium text-sm">s/d</span>
                                             <div className="flex-1">
                                                 <Input
+                                                    id="arsip-kurun-waktu-sampai"
+                                                    aria-label="Kurun Waktu sampai tanggal"
                                                     type="date"
                                                     required
                                                     value={formData.kurunWaktuSampai}
@@ -656,9 +740,10 @@ export function ArchiveDialog({
                                                     variant="ghost"
                                                     size="sm"
                                                     onClick={() => removeItem(index)}
+                                                    aria-label={`Hapus item arsip #${index + 1}`}
                                                     className="text-white/90 hover:text-white hover:bg-card/20 h-7 w-7 p-0 rounded-full transition-colors"
                                                 >
-                                                    <X className="h-4 w-4" />
+                                                    <X className="h-4 w-4" aria-hidden="true" />
                                                 </Button>
                                             )}
                                         </div>
@@ -667,8 +752,9 @@ export function ArchiveDialog({
                                             {/* Row 1: Nomor & Uraian */}
                                             <div className="grid grid-cols-12 gap-5">
                                                 <div className="col-span-12 md:col-span-3">
-                                                    <FormField label="Nomor Item">
+                                                    <FormField label="Nomor Item" htmlFor={`arsip-item-${index}-nomor`}>
                                                         <Input
+                                                            id={`arsip-item-${index}-nomor`}
                                                             value={item.nomor}
                                                             onChange={(e) => handleItemChange(index, 'nomor', e.target.value)}
                                                             className="bg-muted/50 h-9"
@@ -676,8 +762,9 @@ export function ArchiveDialog({
                                                     </FormField>
                                                 </div>
                                                 <div className="col-span-12 md:col-span-9">
-                                                    <FormField label="Uraian Informasi Item" required>
+                                                    <FormField label="Uraian Informasi Item" required htmlFor={`arsip-item-${index}-uraian`}>
                                                         <Input
+                                                            id={`arsip-item-${index}-uraian`}
                                                             value={item.uraian}
                                                             onChange={(e) => handleItemChange(index, 'uraian', e.target.value)}
                                                             placeholder="Deskripsi detail item arsip..."
@@ -690,12 +777,12 @@ export function ArchiveDialog({
                                             {/* Row 2: Tingkat Perkembangan, Tanggal, Jumlah */}
                                             <div className="grid grid-cols-12 gap-5">
                                                 <div className="col-span-12 md:col-span-4">
-                                                    <FormField label="Tingkat Perkembangan" required>
+                                                    <FormField label="Tingkat Perkembangan" required htmlFor={`arsip-item-${index}-perkembangan`}>
                                                         <Select
                                                             value={item.perkembangan}
                                                             onValueChange={(v) => handleItemChange(index, 'perkembangan', v)}
                                                         >
-                                                            <SelectTrigger className="bg-muted/50 h-9">
+                                                            <SelectTrigger id={`arsip-item-${index}-perkembangan`} className="bg-muted/50 h-9">
                                                                 <SelectValue placeholder="Pilih..." />
                                                             </SelectTrigger>
                                                             <SelectContent>
@@ -707,8 +794,9 @@ export function ArchiveDialog({
                                                     </FormField>
                                                 </div>
                                                 <div className="col-span-12 md:col-span-4">
-                                                    <FormField label="Tanggal Arsip" required>
+                                                    <FormField label="Tanggal Arsip" required htmlFor={`arsip-item-${index}-tanggal`}>
                                                         <Input
+                                                            id={`arsip-item-${index}-tanggal`}
                                                             type="date"
                                                             value={item.tanggal}
                                                             onChange={(e) => handleItemChange(index, 'tanggal', e.target.value)}
@@ -717,8 +805,9 @@ export function ArchiveDialog({
                                                     </FormField>
                                                 </div>
                                                 <div className="col-span-12 md:col-span-4">
-                                                    <FormField label="Jumlah">
+                                                    <FormField label="Jumlah" htmlFor={`arsip-item-${index}-jumlah`}>
                                                         <Input
+                                                            id={`arsip-item-${index}-jumlah`}
                                                             type="number"
                                                             min="1"
                                                             value={item.jumlah}
@@ -736,8 +825,9 @@ export function ArchiveDialog({
                                                     Lokasi Penyimpanan Fisik
                                                 </Label>
                                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-amber-50/30 p-4 rounded-lg border border-amber-100/50">
-                                                    <FormField label="No. Filing Cabinet" required>
+                                                    <FormField label="No. Filing Cabinet" required htmlFor={`arsip-item-${index}-lokasiFc`}>
                                                         <Input
+                                                            id={`arsip-item-${index}-lokasiFc`}
                                                             required
                                                             value={item.lokasiFc}
                                                             onChange={(e) => handleItemChange(index, 'lokasiFc', e.target.value)}
@@ -745,8 +835,9 @@ export function ArchiveDialog({
                                                             className="bg-card h-9 border-amber-200 focus:border-amber-400 focus:ring-amber-400"
                                                         />
                                                     </FormField>
-                                                    <FormField label="No. Laci" required>
+                                                    <FormField label="No. Laci" required htmlFor={`arsip-item-${index}-lokasiLaci`}>
                                                         <Input
+                                                            id={`arsip-item-${index}-lokasiLaci`}
                                                             required
                                                             value={item.lokasiLaci}
                                                             onChange={(e) => handleItemChange(index, 'lokasiLaci', e.target.value)}
@@ -754,8 +845,9 @@ export function ArchiveDialog({
                                                             className="bg-card h-9 border-amber-200 focus:border-amber-400 focus:ring-amber-400"
                                                         />
                                                     </FormField>
-                                                    <FormField label="No. Folder" required>
+                                                    <FormField label="No. Folder" required htmlFor={`arsip-item-${index}-lokasiFolder`}>
                                                         <Input
+                                                            id={`arsip-item-${index}-lokasiFolder`}
                                                             required
                                                             value={item.lokasiFolder}
                                                             onChange={(e) => handleItemChange(index, 'lokasiFolder', e.target.value)}
@@ -808,6 +900,7 @@ export function ArchiveDialog({
                                     <FormField
                                         label="Klasifikasi Keamanan"
                                         icon={Shield}
+                                        htmlFor="arsip-klasifikasi-keamanan"
                                         hint={rankSumber === undefined
                                             ? 'Kelas keamanan surat sumber tidak dikenali; perbaiki sifat surat sebelum mengarsipkan'
                                             : `Tingkat kerahasiaan dokumen, minimal ${KLASIFIKASI_KEAMANAN_OPTIONS.find(opt => opt.value === kelasSumber)?.label} sesuai surat sumber`}
@@ -817,6 +910,7 @@ export function ArchiveDialog({
                                             onValueChange={(v) => handleChange('klasifikasiKeamanan', v)}
                                         >
                                             <SelectTrigger
+                                                id="arsip-klasifikasi-keamanan"
                                                 aria-label="Klasifikasi keamanan arsip"
                                                 aria-describedby={bantuanKelas ? 'klasifikasi-arsip-bantuan' : undefined}
                                                 className="bg-muted/50 border-border h-10"
@@ -845,12 +939,15 @@ export function ArchiveDialog({
                                     </FormField>
 
                                     <FormField
-                                        label="Person In Charge (PIC)"
+                                        label="Penanggung Jawab"
                                         required
                                         icon={User}
+                                        htmlFor="arsip-pic"
                                         hint="Nama yang bertanggung jawab atas pengarsipan"
                                     >
                                         <Input
+                                            id="arsip-pic"
+                                            aria-describedby={idPetunjuk('arsip-pic')}
                                             required
                                             value={formData.personInCharge}
                                             onChange={(e) => handleChange('personInCharge', e.target.value)}
@@ -862,9 +959,12 @@ export function ArchiveDialog({
 
                                 <FormField
                                     label="Keterangan Tambahan"
+                                    htmlFor="arsip-keterangan"
                                     hint="Informasi tambahan lain jika diperlukan"
                                 >
                                     <Textarea
+                                        id="arsip-keterangan"
+                                        aria-describedby={idPetunjuk('arsip-keterangan')}
                                         value={formData.keterangan}
                                         onChange={(e) => handleChange('keterangan', e.target.value)}
                                         placeholder="Catatan..."
@@ -910,7 +1010,7 @@ export function ArchiveDialog({
                         <Button
                             type="button"
                             variant="secondary"
-                            onClick={() => onOpenChange(false)}
+                            onClick={tutup}
                             disabled={loading}
                             className="w-full border border-border bg-card text-foreground shadow-sm hover:bg-muted/50 sm:w-auto sm:min-w-[100px]"
                         >
@@ -933,6 +1033,12 @@ export function ArchiveDialog({
                     </div>
                 </div>
             </DialogContent>
+            <DialogKonfirmasi
+                terbuka={open && Boolean(tawaranDraf)}
+                wajibMemilih
+                permintaan={permintaanPulihkanDraf(tawaranDraf)}
+                onJawab={jawabTawaranDraf}
+            />
         </Dialog>
     )
 }

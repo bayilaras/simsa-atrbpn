@@ -22,6 +22,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/context/AuthContext';
 import { layananUserInitial, layananUserName } from './layanan-display';
+import { pesanGalat } from '@/lib/pesan-galat';
 
 export default function LayananArsipDetail() {
     const { id } = useParams();
@@ -45,7 +46,7 @@ export default function LayananArsipDetail() {
             setData(result);
         } catch (error) {
             console.error(error);
-            toast({ title: "Error", description: error.message || "Gagal memuat detail", variant: "destructive" });
+            toast({ title: "Gagal", description: pesanGalat(error, "Gagal memuat detail permohonan"), variant: "destructive" });
         } finally {
             setLoading(false);
         }
@@ -70,8 +71,9 @@ export default function LayananArsipDetail() {
             toast({ title: "Sukses", description: "Status berhasil diperbarui" });
             fetchDetail();
             setIsDialogOpen(false);
-        } catch {
-            toast({ title: "Error", description: "Gagal memperbarui status", variant: "destructive" });
+        } catch (error) {
+            // Pesan server (mis. status sudah berubah) lebih jelas daripada pesan umum.
+            toast({ title: "Gagal", description: pesanGalat(error, "Gagal memperbarui status"), variant: "destructive" });
         } finally {
             setProcessing(false);
         }
@@ -83,7 +85,14 @@ export default function LayananArsipDetail() {
         setIsDialogOpen(true);
     };
 
-    if (loading) return <div>Loading...</div>;
+    if (loading) {
+        return (
+            <div role="status" className="flex items-center justify-center h-[50vh] gap-2 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                <span>Memuat detail permohonan...</span>
+            </div>
+        );
+    }
     if (!data) return <div>Data tidak ditemukan</div>;
 
     return (
@@ -134,7 +143,7 @@ export default function LayananArsipDetail() {
                             {data.keterangan && (
                                 <div>
                                     <Label className="text-muted-foreground">Keterangan Tambahan</Label>
-                                    <p className="mt-1 text-sm">{data.keterangan}</p>
+                                    <p className="mt-1 text-sm whitespace-pre-line">{data.keterangan}</p>
                                 </div>
                             )}
                         </CardContent>
@@ -182,7 +191,7 @@ export default function LayananArsipDetail() {
                                 {data.catatanPersetujuan && (
                                     <div className="flex items-start gap-4 p-3 bg-yellow-50 dark:bg-yellow-500/15 rounded-md">
                                         <MessageSquare className="h-5 w-5 text-yellow-600 mt-0.5" />
-                                        <p className="text-sm text-yellow-800 dark:text-yellow-300">{data.catatanPersetujuan}</p>
+                                        <p className="text-sm text-yellow-800 dark:text-yellow-300 whitespace-pre-line">{data.catatanPersetujuan}</p>
                                     </div>
                                 )}
                             </CardContent>

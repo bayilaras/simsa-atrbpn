@@ -110,12 +110,12 @@ describe('galat validasi surat masuk', () => {
         expect(rincian(res)).toEqual({ tanggalSurat: 'Tanggal surat wajib diisi' });
     });
 
-    // Jumlah unit tujuan atau label yang melebihi batas dilaporkan dengan pesan umum disposisi.
+    // Jumlah unit tujuan atau label yang melebihi batas dilaporkan dengan batasnya.
     it.each([
         [{ instruksi: 'x'.repeat(2001) }, 'Instruksi disposisi maksimal 2000 karakter'],
-        [{ targets: Array.from({ length: 11 }, (_, i) => ({ unitKerjaId: `unit_${i}` })) }, 'Disposisi tidak valid. Periksa unit tujuan dan batas waktunya.'],
+        [{ targets: Array.from({ length: 11 }, (_, i) => ({ unitKerjaId: `unit_${i}` })) }, 'Unit tujuan disposisi maksimal 10'],
         [{ targets: [{ unitKerjaId: '' }] }, 'Unit tujuan disposisi wajib diisi'],
-        [{ labelTambahan: Array.from({ length: 11 }, (_, i) => `Label ${i}`) }, 'Disposisi tidak valid. Periksa unit tujuan dan batas waktunya.'],
+        [{ labelTambahan: Array.from({ length: 11 }, (_, i) => `Label ${i}`) }, 'Label disposisi maksimal 10'],
         [{ labelTambahan: ['x'.repeat(101)] }, 'Label disposisi maksimal 100 karakter'],
     ])('POST menyebut isian disposisi yang salah dalam bahasa Indonesia (%#)', async (ubahan, pesan) => {
         const disposisi = { targets: [{ unitKerjaId: 'dir_a', penanggungJawab: true }], ...ubahan };

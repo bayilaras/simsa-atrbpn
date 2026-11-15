@@ -14,6 +14,7 @@ import { printTemplateService } from '../services/print-template.service';
 import { resolveEffectiveUnitKerjaId, resolveUnitKerjaId } from '../utils/resolve-unit-kerja';
 import { allowedSecurityClassifications } from '../services/record-access.service.js';
 import { LEGACY_PERMANENT_TRANSFER_READ_ONLY_MESSAGE } from '../utils/permanent-transfer-policy';
+import { sanitizeMultipartInput } from '../middlewares/sanitize.middleware.js';
 
 const router = Router();
 const evidenceUpload = multer({ storage: multer.memoryStorage(),
@@ -28,7 +29,7 @@ router.param('id', uuidParamValidator);
 function requireConcreteUnitScope(req: AuthRequest, res: Response): string | null {
     const unitKerjaId = resolveUnitKerjaId(req);
     if (!unitKerjaId) {
-        res.status(400).json({ error: 'unitKerjaId is required' });
+        res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
         return null;
     }
     return unitKerjaId;
@@ -97,7 +98,7 @@ router.get('/candidates', async (req: AuthRequest, res, next) => {
         const { type } = req.query;
         if (!unitKerjaId) return;
         if (!type || typeof type !== 'string') {
-            return res.status(400).json({ error: 'type (pemindahan|pemusnahan|penyerahan) is required' });
+            return res.status(400).json({ error: 'type (pemindahan|pemusnahan|penyerahan) is required', message: 'Pilih jenis penyusutan.' });
         }
         const candidates = await penyusutanService.getCandidates(
             unitKerjaId,
@@ -143,7 +144,7 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
             allowedSecurityClassifications(req.user),
         );
         if (!result) {
-            return res.status(404).json({ error: 'Batch not found' });
+            return res.status(404).json({ error: 'Batch not found', message: 'Batch tidak ditemukan.' });
         }
         res.json({ success: true, data: result });
     } catch (error) {
@@ -166,7 +167,8 @@ router.post('/', canWriteMiddleware(), sensitiveLimiter, validateBody(createPeny
         );
         if (!unitKerjaId || !jenisPenyusutan || !arsipIds || !Array.isArray(arsipIds)) {
             return res.status(400).json({
-                error: 'unitKerjaId, jenisPenyusutan, and arsipIds[] are required'
+                error: 'unitKerjaId, jenisPenyusutan, and arsipIds[] are required',
+                message: 'Unit kerja, jenis penyusutan, dan daftar arsip wajib diisi.',
             });
         }
         // unitKerjaId is client-supplied, so the caller must be scoped to that unit
@@ -227,7 +229,7 @@ router.get('/:id/execution-options', canWriteMiddleware(), async (req: AuthReque
 router.post('/:id/evidence', canWriteMiddleware(), uploadLimiter, (req: AuthRequest, res, next) => {
     if (req.user?.role !== 'super_admin') return res.status(403).json({ error: 'Akses pencatat pelaksanaan diperlukan.' });
     next();
-}, evidenceUpload.single('file'), async (req: AuthRequest, res, next) => {
+}, evidenceUpload.single('file'), sanitizeMultipartInput, async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = requireConcreteUnitScope(req, res);
         if (!unitKerjaId || !req.user) return;
@@ -269,7 +271,7 @@ router.post('/:id/items', canWriteMiddleware(), async (req: AuthRequest, res, ne
     try {
         const { arsipIds } = req.body;
         if (!arsipIds || !Array.isArray(arsipIds)) {
-            return res.status(400).json({ error: 'arsipIds[] is required' });
+            return res.status(400).json({ error: 'arsipIds[] is required', message: 'Pilih minimal satu arsip.' });
         }
         const unitKerjaId = requireConcreteUnitScope(req, res);
         if (!unitKerjaId) return;
@@ -292,7 +294,7 @@ router.delete('/:id/items', canWriteMiddleware(), sensitiveLimiter, validateBody
     try {
         const { arsipIds } = req.body;
         if (!arsipIds || !Array.isArray(arsipIds)) {
-            return res.status(400).json({ error: 'arsipIds[] is required' });
+            return res.status(400).json({ error: 'arsipIds[] is required', message: 'Pilih minimal satu arsip.' });
         }
         const unitKerjaId = requireConcreteUnitScope(req, res);
         if (!unitKerjaId) return;

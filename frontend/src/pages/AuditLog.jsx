@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, Filter, Clock, User, FileText, Edit, Trash2, Archive, Plus, RefreshCw, Loader2, AlertTriangle, ChevronDown, ChevronRight, Laptop, CalendarRange, Shield, Eye, GitMerge, Link, X, Send, Inbox, CheckCircle2, XCircle } from 'lucide-react';
+import { Search, Filter, Clock, User, FileText, Edit, Trash2, Archive, Plus, RefreshCw, Loader2, AlertTriangle, ChevronDown, ChevronRight, Laptop, CalendarRange, Shield, Eye, GitMerge, Link, X, Send, Inbox, CheckCircle2, XCircle, LogIn, LogOut, ShieldAlert, KeyRound } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,6 +35,11 @@ const ACTION_CONFIG = {
     'receive_distribution': { label: 'Menerima Disposisi', icon: Inbox, color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300', borderColor: 'border-blue-200', iconColor: 'text-blue-600' },
     'process_distribution': { label: 'Menyelesaikan Disposisi', icon: CheckCircle2, color: 'bg-green-100 dark:bg-green-500/15 text-green-800 dark:text-green-300', borderColor: 'border-green-200', iconColor: 'text-green-600' },
     'reject_distribution': { label: 'Menolak Disposisi', icon: XCircle, color: 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300', borderColor: 'border-red-200', iconColor: 'text-red-600' },
+    'run_scanner': { label: 'Menjalankan Pemindai', icon: Shield, color: 'bg-sky-100 dark:bg-sky-500/15 text-sky-800 dark:text-sky-300', borderColor: 'border-sky-200', iconColor: 'text-sky-600' },
+    'sign_in': { label: 'Masuk', icon: LogIn, color: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300', borderColor: 'border-emerald-200', iconColor: 'text-emerald-600' },
+    'sign_in_failed': { label: 'Gagal masuk', icon: ShieldAlert, color: 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300', borderColor: 'border-red-200', iconColor: 'text-red-600' },
+    'sign_out': { label: 'Keluar', icon: LogOut, color: 'bg-slate-100 dark:bg-slate-500/15 text-slate-800 dark:text-slate-300', borderColor: 'border-slate-200', iconColor: 'text-slate-600' },
+    'change_password': { label: 'Mengganti kata sandi', icon: KeyRound, color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300', borderColor: 'border-blue-200', iconColor: 'text-blue-600' },
 };
 
 const ENTITY_CONFIG = {
@@ -46,6 +51,7 @@ const ENTITY_CONFIG = {
     'rangkaian_surat': { label: 'Rangkaian Surat', color: 'text-cyan-700', bgColor: 'bg-cyan-50 dark:bg-cyan-500/15' },
     'rangkaian_relasi': { label: 'Relasi Rangkaian', color: 'text-sky-700', bgColor: 'bg-sky-50 dark:bg-sky-500/15' },
     'surat_distribution': { label: 'Disposisi', color: 'text-teal-700', bgColor: 'bg-teal-50 dark:bg-teal-500/15' },
+    'file_attachment': { label: 'Berkas', color: 'text-slate-700', bgColor: 'bg-slate-50 dark:bg-slate-500/15' },
 };
 
 // Status changes.itemSync pada audit ubah arsip (StatusSinkronItemArsip di
@@ -298,6 +304,10 @@ export default function AuditLog() {
                                     <SelectItem value="receive_distribution">Menerima Disposisi</SelectItem>
                                     <SelectItem value="process_distribution">Menyelesaikan Disposisi</SelectItem>
                                     <SelectItem value="reject_distribution">Menolak Disposisi</SelectItem>
+                                    <SelectItem value="sign_in">Masuk</SelectItem>
+                                    <SelectItem value="sign_in_failed">Gagal masuk</SelectItem>
+                                    <SelectItem value="sign_out">Keluar</SelectItem>
+                                    <SelectItem value="change_password">Mengganti kata sandi</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
@@ -378,7 +388,7 @@ export default function AuditLog() {
                                                             <div className="space-y-1">
                                                                 <div className="flex flex-wrap items-center gap-2">
                                                                     <span className="font-semibold text-sm text-foreground">
-                                                                        {log.userName || log.userEmail || 'System'}
+                                                                        {log.userName || log.userEmail || (log.action === 'sign_in_failed' ? 'Pengguna tidak dikenal' : 'System')}
                                                                     </span>
                                                                     <span className="text-muted-foreground text-xs">melakukan</span>
                                                                     <Badge variant="outline" className={`${actionConfig.color} border-0 font-normal`}>

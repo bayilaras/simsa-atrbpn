@@ -39,16 +39,16 @@ class ErrorBoundary extends React.Component {
                     <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-500/15 flex items-center justify-center mb-4">
                         <AlertTriangle className="w-8 h-8 text-red-600 dark:text-red-400" />
                     </div>
-                    <h2 className="text-2xl font-bold mb-2">Oops! Something went wrong</h2>
+                    <h2 className="text-2xl font-bold mb-2">Terjadi kesalahan pada halaman ini</h2>
                     <p className="text-muted-foreground mb-6 text-center max-w-md">
                         {this.props.fallbackMessage ||
-                            'An unexpected error occurred. Please try again or contact support if the problem persists.'}
+                            'Halaman tidak dapat ditampilkan karena terjadi kesalahan. Coba lagi, atau hubungi administrator bila masalah berlanjut.'}
                     </p>
 
                     {import.meta.env.DEV && this.state.error && (
                         <details className="mb-6 w-full max-w-2xl">
                             <summary className="cursor-pointer text-sm text-muted-foreground mb-2">
-                                Error Details (Development Only)
+                                Rincian galat (hanya mode pengembangan)
                             </summary>
                             <pre className="bg-muted p-4 rounded text-xs overflow-auto max-h-60">
                                 {this.state.error.toString()}
@@ -60,10 +60,10 @@ class ErrorBoundary extends React.Component {
 
                     <div className="flex gap-3">
                         <Button onClick={this.handleReset}>
-                            Try Again
+                            Coba Lagi
                         </Button>
                         <Button variant="outline" onClick={() => window.location.href = '/'}>
-                            Go to Dashboard
+                            Ke Dashboard
                         </Button>
                     </div>
                 </div>

@@ -33,7 +33,7 @@ Dashboard SIMSA terdiri dari beberapa bagian utama (dari atas ke bawah):
 Bagian paling atas halaman:
 - Menampilkan **salam** "Halo, [nama kamu]"
 - Menampilkan **tanggal hari ini**
-- Menampilkan **unit kerja** kamu
+- Menampilkan **nama unit kerja** kamu (bukan kodenya)
 - Untuk **Super Admin**: ada dropdown untuk memilih unit kerja yang datanya ingin dilihat
 
 ### 2. Kartu Statistik (6 Kartu)
@@ -42,8 +42,8 @@ Baris kartu yang menampilkan angka-angka ringkasan:
 
 | Kartu | Isi |
 |-------|-----|
-| **Surat Masuk** | Total surat masuk + jumlah bulan ini |
-| **Surat Keluar** | Total surat keluar + jumlah bulan ini |
+| **Surat Masuk** | Total surat masuk + jumlah bulan ini (bulan berjalan menurut WIB) |
+| **Surat Keluar** | Total surat keluar + jumlah bulan ini (bulan berjalan menurut WIB) |
 | **Total Arsip** | Jumlah total arsip |
 | **Arsip Masuk** | Jumlah arsip dari surat masuk |
 | **Arsip Keluar** | Jumlah arsip dari surat keluar |

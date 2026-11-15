@@ -1,4 +1,4 @@
-import { googleDriveImportService } from './google-drive-import.service.js';
+import { googleDriveImportService, type ImportPreviewCheck } from './google-drive-import.service.js';
 import { linkColumns, type GoogleSheetsImportType } from './google-sheets-import-mapping.js';
 import type { GoogleSheetsRequestOptions } from './google-sheets-source.js';
 import type { ImportAuditContext } from './import-plafon-kelas.js';
@@ -36,10 +36,10 @@ export const fileImportService = {
         return listImportFileSheets(file);
     },
 
-    async preview(file: ImportFileUpload, sheet: string | undefined, maxRows: number, type: GoogleSheetsImportType) {
+    async preview(file: ImportFileUpload, sheet: string | undefined, maxRows: number, type: GoogleSheetsImportType, check?: ImportPreviewCheck) {
         const content = await readImportFile(file, sheet);
         return { format: content.format, sheets: content.sheets, sheet: content.sheet,
-            ...googleDriveImportService.previewRows(sourceRows(content, type), maxRows, type) };
+            ...await googleDriveImportService.previewRows(sourceRows(content, type), maxRows, type, check) };
     },
 
     async importSurat(type: GoogleSheetsImportType, file: ImportFileUpload, sheet: string | undefined, unitKerjaId: string,

@@ -52,12 +52,29 @@ export function createAuthService({
             return prefetched ?? readSession();
         },
 
+        /**
+         * Asks the server about the current session, which extends a session
+         * in use. Returns 'aktif', 'berakhir' when the server no longer accepts
+         * the session, or 'tidak-diketahui' when the server could not answer.
+         */
+        async refreshSession() {
+            try {
+                const result = await legacyClient.getSession();
+                if (result?.error) return 'tidak-diketahui';
+                return result?.data?.user ? 'aktif' : 'berakhir';
+            } catch {
+                return 'tidak-diketahui';
+            }
+        },
+
         async signInWithGoogle() {
             prefetchedSession = null;
             try {
                 const result = await legacyClient.signIn.social({
                     provider: 'google',
                     callbackURL: window.location.origin,
+                    // A refused Google sign-in returns here with ?error=<code>.
+                    errorCallbackURL: `${window.location.origin}/login`,
                 });
                 if (result?.error) throw new Error(result.error.message || 'Login Google gagal. Silakan coba lagi.');
                 return result;
@@ -83,7 +100,7 @@ export function createAuthService({
             prefetchedSession = null;
             try {
                 const result = await legacyClient.signUp.email({ email, password, name });
-                if (result.error) throw new Error(result.error.message || 'Sign up failed');
+                if (result.error) throw new Error(result.error.message || 'Pendaftaran akun gagal. Silakan coba lagi.');
                 return result;
             } catch (error) {
                 console.error('Sign up failed:', error);

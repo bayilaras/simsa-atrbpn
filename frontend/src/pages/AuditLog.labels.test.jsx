@@ -39,3 +39,15 @@ it('menampilkan label Indonesia untuk kode aksi dan entitas audit P3', async () 
     expect(screen.queryByText('rangkaian_relasi')).toBeNull()
     expect(screen.queryByText('surat_distribution')).toBeNull()
 })
+
+it('menampilkan label Indonesia saat Super Admin menjalankan pemindai berkas', async () => {
+    mocks.listLogs.mockResolvedValue({
+        data: [{ id: 'log-pemindai', action: 'run_scanner', entityType: 'file_attachment', entityId: null, userName: 'Super Admin',
+            createdAt: '2026-11-14T01:00:00.000Z', changes: { reason: 'manual_scanner_run' } }],
+        pagination: { total: 1, totalPages: 1 },
+    })
+    render(<AuditLog />)
+    expect(await screen.findByText('Menjalankan Pemindai')).toBeInTheDocument()
+    expect(screen.getByText('Berkas')).toBeInTheDocument()
+    for (const kode of ['run_scanner', 'file_attachment', 'manual_scanner_run']) expect(screen.queryByText(kode)).toBeNull()
+})

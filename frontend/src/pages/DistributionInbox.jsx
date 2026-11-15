@@ -95,7 +95,7 @@ export default function DistributionInbox() {
             console.error('Error loading distribution stats:', error)
             setStatsSnapshot({ unitKerjaId, revision: statsRevision, data: null })
             toast({
-                title: 'Error',
+                title: 'Gagal',
                 description: 'Gagal memuat ringkasan distribusi',
                 variant: 'destructive',
             })
@@ -152,7 +152,7 @@ export default function DistributionInbox() {
             refreshInbox()
         } catch (error) {
             toast({
-                title: 'Error',
+                title: 'Gagal',
                 description: pesanGalat(error, 'Gagal menerima surat'),
                 variant: 'destructive',
             })
@@ -181,7 +181,7 @@ export default function DistributionInbox() {
             refreshInbox()
         } catch (error) {
             toast({
-                title: 'Error',
+                title: 'Gagal',
                 description: pesanGalat(error, 'Gagal menolak surat'),
                 variant: 'destructive',
             })

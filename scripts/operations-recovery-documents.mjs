@@ -133,12 +133,17 @@ export function parseCopyTable(sql, table) {
   return lines.map(line => { const cells = line.split('\t');
     check(cells.length === columns.length, 'COPY_ROW_WIDTH'); return Object.fromEntries(columns.map((key, i) => [key, decode(cells[i])])); });
 }
-export function documentReferences(attachments, ruleSets, {captureMissingHashes=false, limits=DOCUMENT_BUDGET_DEFAULTS}={}) {
+// Every stored document of record: attachments, regulatory source PDFs, and the
+// Berita Acara Autentikasi PDF kept in autentikasi.file_lampiran. A manifest
+// written before a kind existed simply holds none of it and restores as before.
+export function documentReferences(attachments, ruleSets, {captureMissingHashes=false, limits=DOCUMENT_BUDGET_DEFAULTS, autentikasi=[]}={}) {
   const refs = attachments.map(row => ({id:row.id, kind:'attachment', entityType:row.entity_type, entityId:row.entity_id,
     url:row.file_url, sha256:row.sha256?.toLowerCase(), sizeBytes:Number(row.size_bytes), storageAccess:row.storage_access,
     fileName:row.file_name ?? null}));
   for (const row of ruleSets) if (row.source_document_blob_url) refs.push({id:row.id,kind:'regulatory_source',url:row.source_document_blob_url,
     sha256:row.source_document_sha256?.toLowerCase(),sizeBytes:Number(row.source_document_size_bytes),storageAccess:'private'});
+  for (const row of autentikasi) if (row.file_lampiran) refs.push({id:row.id,kind:'autentikasi',url:row.file_lampiran,
+    sha256:row.file_lampiran_sha256?.toLowerCase(),sizeBytes:Number(row.file_lampiran_size_bytes),storageAccess:'private'});
   check(refs.length > 0, 'DOCUMENT_COUNT_OUTSIDE_BUDGET');
   for (const ref of refs) check(/^[a-f0-9-]{36}$/i.test(ref.id) && (/^[a-f0-9]{64}$/.test(ref.sha256 || '') || captureMissingHashes && ref.sha256 == null)
     && Number.isSafeInteger(ref.sizeBytes) && ref.sizeBytes > 0 && ref.sizeBytes <= MAX_OBJECT && ref.storageAccess === 'private', 'DOCUMENT_METADATA_INCOMPLETE');
@@ -189,7 +194,8 @@ export async function restoreDocuments({directory,key,targetDirectory,targetKey,
   let manifest;try{manifest=JSON.parse(manifestBytes);}finally{manifestBytes.fill(0);}
   check(manifest.schemaVersion===1 && manifest.archiveSha256===expectedArchiveSha256,'DOCUMENT_DATABASE_BINDING_MISMATCH');
   const expected=documentReferences(manifest.references.filter(r=>r.kind==='attachment').map(r=>({id:r.id,entity_type:r.entityType,entity_id:r.entityId,file_url:r.url,sha256:r.sha256,size_bytes:r.sizeBytes,storage_access:r.storageAccess})),
-    manifest.references.filter(r=>r.kind==='regulatory_source').map(r=>({id:r.id,source_document_blob_url:r.url,source_document_sha256:r.sha256,source_document_size_bytes:r.sizeBytes})),{captureMissingHashes:true,limits:DOCUMENT_BUDGET_CEILINGS});
+    manifest.references.filter(r=>r.kind==='regulatory_source').map(r=>({id:r.id,source_document_blob_url:r.url,source_document_sha256:r.sha256,source_document_size_bytes:r.sizeBytes})),{captureMissingHashes:true,limits:DOCUMENT_BUDGET_CEILINGS,
+    autentikasi:manifest.references.filter(r=>r.kind==='autentikasi').map(r=>({id:r.id,file_lampiran:r.url,file_lampiran_sha256:r.sha256,file_lampiran_size_bytes:r.sizeBytes}))});
   check(expected.length===manifest.references.length && manifest.objects.length>0,'DOCUMENT_MANIFEST_INVALID');
   await exclusiveDirectory(targetDirectory);
   const restored=[];

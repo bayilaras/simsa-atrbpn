@@ -138,7 +138,7 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
         const result = await archiveLendingService.findById(id as string, unitKerjaId, allowedSecurityClassifications(req.user));
 
         if (!result) {
-            return res.status(404).json({ error: 'Lending record not found' });
+            return res.status(404).json({ error: 'Lending record not found', message: 'Data peminjaman tidak ditemukan.' });
         }
 
         res.json({ success: true, data: result });
@@ -157,10 +157,10 @@ router.post('/borrow', canWriteMiddleware(), sensitiveLimiter, validateBody(borr
         }
 
         if (!lendingType || !['arsip', 'box'].includes(lendingType)) {
-            return res.status(400).json({ error: 'lendingType must be "arsip" or "box"' });
+            return res.status(400).json({ error: 'lendingType must be "arsip" or "box"', message: 'Jenis peminjaman harus arsip atau box.' });
         }
         if (!borrowerName || !dueDate) {
-            return res.status(400).json({ error: 'borrowerName and dueDate are required' });
+            return res.status(400).json({ error: 'borrowerName and dueDate are required', message: 'Nama peminjam dan batas pengembalian wajib diisi.' });
         }
 
         const result = await archiveLendingService.borrow({
@@ -219,7 +219,7 @@ router.put('/:id/extend', canWriteMiddleware(), validateBody(extendLendingSchema
         }
 
         if (!newDueDate) {
-            return res.status(400).json({ error: 'newDueDate is required' });
+            return res.status(400).json({ error: 'newDueDate is required', message: 'Batas pengembalian baru wajib diisi.' });
         }
 
         const result = await archiveLendingService.extend(id as string, unitKerjaId, newDueDate, {
@@ -248,7 +248,7 @@ router.get('/qr/arsip/:arsipId', async (req: AuthRequest, res, next) => {
             unitKerjaId,
         );
         if (!result.arsip || !isAllowedForClassification(req.user, result.arsip.klasifikasiKeamanan)) {
-            return res.status(404).json({ error: 'Arsip not found' });
+            return res.status(404).json({ error: 'Arsip not found', message: 'Arsip tidak ditemukan.' });
         }
         res.json({ success: true, data: result });
     } catch (error) {

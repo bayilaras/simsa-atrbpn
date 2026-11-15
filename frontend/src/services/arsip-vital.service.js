@@ -24,8 +24,9 @@ export const arsipVitalService = {
         return response.data
     },
 
-    async printDaftar(unitKerjaId) {
-        return api.get('/api/arsip-vital/print/daftar', { unitKerjaId }, { responseType: 'blob' })
+    // filters: { search, kategoriVital, statusProteksi } yang sedang dipakai tabel.
+    async printDaftar(unitKerjaId, filters = {}) {
+        return api.get('/api/arsip-vital/print/daftar', { ...filters, unitKerjaId }, { responseType: 'blob' })
     },
 
     // Create / designate

@@ -4,6 +4,8 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import SuratKeluarDetail from './SuratKeluarDetail'
 
 const mocks = vi.hoisted(() => ({ getById: vi.fn(), toast: vi.fn(), canWrite: false, getBySurat: vi.fn(), getHistory: vi.fn(), getEligibleApprovers: vi.fn() }))
+// Nama unit dimuat dari daftar unit kerja; halaman tidak pernah menampilkan kodenya.
+vi.mock('@/hooks/use-nama-unit-kerja', () => ({ useNamaUnitKerja: (id) => (id === 'unit-a' ? 'Direktorat Uji A' : '') }))
 vi.mock('@/components/tunjuk-silang/KartuTunjukSilang', () => ({ KartuTunjukSilang: ({ tipe, id }) => <div data-testid="kartu-tunjuk-silang">{`${tipe}:${id}`}</div> }))
 vi.mock('@/components/surat/KoreksiBerkasSection', () => ({ default: () => null }))
 vi.mock('@/services/surat-keluar.service', () => ({ default: { getById: mocks.getById } }))
@@ -71,6 +73,22 @@ it('links the owner to the archive detail page when the response carries arsipId
     })
     render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
     expect(await screen.findByRole('link', { name: /lihat di arsip/i })).toHaveAttribute('href', '/arsip/detail/arsip-1')
+})
+
+it('shows a multi-line perihal with its line breaks', async () => {
+    mocks.getById.mockResolvedValue({ id: 'surat-id', nomorSurat: '007/2026', perihal: 'Undangan\nRapat Koordinasi', unitKerjaId: 'unit-a', aksesMelalui: 'owner' })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    const label = await screen.findByText('Perihal', { selector: 'label' })
+    expect(within(label.parentElement).getByText(/Rapat Koordinasi/)).toHaveClass('whitespace-pre-line')
+})
+
+it('shows multi-line approval notes in the history with their line breaks', async () => {
+    mocks.canWrite = true
+    mocks.getById.mockResolvedValue({ id: 'surat-id', nomorSurat: '008/2026', perihal: 'Riwayat catatan', unitKerjaId: 'unit-a', aksesMelalui: 'owner', approvalStatus: 'rejected' })
+    mocks.getHistory.mockResolvedValue([{ action: 'rejected', createdAt: '2026-11-10T03:00:00.000Z', userName: 'Penyetuju', notes: 'Perbaiki lampiran\nTambahkan paraf' }])
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    const catatan = await screen.findAllByText(/Tambahkan paraf/)
+    catatan.forEach((elemen) => expect(elemen).toHaveClass('whitespace-pre-line'))
 })
 
 it('breadcrumb Surat points to an existing list route', async () => {
@@ -172,4 +190,12 @@ it('does not offer submission to another administrator while the creator still s
     expect(screen.queryByRole('button', { name: 'Ajukan Persetujuan' })).toBeNull()
     expect(screen.queryByText(/mengajukan atas nama pembuat/)).toBeNull()
     expect(mocks.getEligibleApprovers).not.toHaveBeenCalled()
+})
+
+it('menampilkan nama unit kerja pemilik, bukan kode unitnya', async () => {
+    mocks.getById.mockResolvedValue({ id: 'surat-id', nomorSurat: '009/2026', perihal: 'Surat unit A', unitKerjaId: 'unit-a', aksesMelalui: 'owner' })
+    render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
+    // Informasi Surat dan Metadata sama-sama menyebut unit kerja.
+    expect(await screen.findAllByText('Direktorat Uji A')).toHaveLength(2)
+    expect(screen.queryByText('unit-a')).toBeNull()
 })

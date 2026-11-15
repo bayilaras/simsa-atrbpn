@@ -102,7 +102,7 @@ router.get('/status', authMiddleware as any, writeGuard, async (req: AuthRequest
             throw new ValidationError('Locator dan tujuan unggahan diperlukan.');
         }
         if (purpose === 'regulatory_source' && req.user?.role !== 'super_admin') {
-            return res.status(403).json({ error: 'Regulatory source upload requires super_admin.' });
+            return res.status(403).json({ error: 'Regulatory source upload requires super_admin.', message: 'Unggah sumber regulasi hanya dapat dilakukan Super Admin.' });
         }
         const status = await clientBlobUploadService.getReadiness({
             blobUrl, purpose: purpose as ClientBlobPurpose, uploadedBy: req.user!.id,
@@ -141,7 +141,7 @@ router.post('/', authorizeTokenGeneration, limitTokenGeneration, async (req: Aut
             && body.payload.pathname.startsWith('regulatory-sources/')
             && req.user?.role !== 'super_admin'
         ) {
-            return res.status(403).json({ error: 'Regulatory source upload requires super_admin.' });
+            return res.status(403).json({ error: 'Regulatory source upload requires super_admin.', message: 'Unggah sumber regulasi hanya dapat dilakukan Super Admin.' });
         }
 
         // Reconstruct a Web API Request object for handleUpload
@@ -265,6 +265,7 @@ router.post('/', authorizeTokenGeneration, limitTokenGeneration, async (req: Aut
         log.error({ err: error }, 'Client upload handler error');
         res.status(400).json({
             error: 'Upload request rejected',
+            message: 'Berkas tidak dapat diunggah. Pastikan berkas berformat PDF dan namanya tidak memuat dua titik berurutan (".."), lalu coba lagi.',
             code: 'CLIENT_UPLOAD_REJECTED',
         });
     }

@@ -48,6 +48,13 @@ describe('ArchivePreviewPanel', () => {
         vi.unstubAllGlobals()
     })
 
+    it('shows a multi-line uraian berkas with its line breaks', async () => {
+        mocks.files = false
+        mocks.getArchive.mockResolvedValue({ ...archive, uraianBerkas: 'Berkas penetapan hak\nTahap kedua' })
+        renderPanel()
+        expect(await screen.findByText(/Tahap kedua/)).toHaveClass('whitespace-pre-line')
+    })
+
     it('focuses its heading and offers keyboard and button dismissal while loading', () => {
         mocks.getArchive.mockReturnValue(new Promise(() => {}))
         const onClose = vi.fn()

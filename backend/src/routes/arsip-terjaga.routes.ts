@@ -34,7 +34,7 @@ router.use(authMiddleware);
 router.get('/print/daftar', canReadMiddleware(), async (req: AuthRequest, res, next) => {
     try {
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
-        if (!unitKerjaId) return res.status(400).json({ error: 'Unit Kerja ID required' });
+        if (!unitKerjaId) return res.status(400).json({ error: 'Unit Kerja ID required', message: 'Pilih unit kerja terlebih dahulu.' });
 
         const pdfBuffer = await printTemplateService.generateDaftarArsipTerjaga(
             unitKerjaId,
@@ -81,7 +81,7 @@ router.get('/', async (req: AuthRequest, res, next) => {
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
 
         if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
+            return res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
         }
 
         const result = await arsipTerjagaService.findAll({
@@ -107,7 +107,7 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
         const unitKerjaId = resolveUnitKerjaId(req) || req.user?.unitKerjaId;
 
         if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
+            return res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
         }
 
         const stats = await arsipTerjagaService.getStats(
@@ -127,7 +127,7 @@ router.get('/due-reporting', async (req: AuthRequest, res, next) => {
         const { daysAhead } = req.query;
 
         if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
+            return res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
         }
 
         const data = await arsipTerjagaService.getDueForReporting(
@@ -149,7 +149,7 @@ router.get('/laporan-anri', async (req: AuthRequest, res, next) => {
         const { tahun } = req.query;
 
         if (!unitKerjaId) {
-            return res.status(400).json({ error: 'unitKerjaId is required' });
+            return res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
         }
 
         const data = await arsipTerjagaService.generateLaporanANRI(
@@ -175,7 +175,7 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
         );
 
         if (!result) {
-            return res.status(404).json({ error: 'Arsip terjaga not found' });
+            return res.status(404).json({ error: 'Arsip terjaga not found', message: 'Arsip terjaga tidak ditemukan.' });
         }
 
         res.json({ success: true, data: result });
@@ -192,7 +192,7 @@ router.post('/',
         try {
             const access = await recordAccessService.check(req.user, 'arsip', req.body.arsipId);
             if (!access.exists || !access.mutable || !access.unitKerjaId) {
-                return res.status(404).json({ error: 'Arsip not found' });
+                return res.status(404).json({ error: 'Arsip not found', message: 'Arsip tidak ditemukan.' });
             }
 
             const result = await arsipTerjagaService.create({
@@ -225,7 +225,7 @@ router.put('/:id',
             );
 
             if (!existing) {
-                return res.status(404).json({ error: 'Arsip terjaga not found' });
+                return res.status(404).json({ error: 'Arsip terjaga not found', message: 'Arsip terjaga tidak ditemukan.' });
             }
 
             const result = await arsipTerjagaService.update(
@@ -235,7 +235,7 @@ router.put('/:id',
                 criticalAuditContext(req),
             );
             if (!result) {
-                return res.status(404).json({ error: 'Arsip terjaga not found' });
+                return res.status(404).json({ error: 'Arsip terjaga not found', message: 'Arsip terjaga tidak ditemukan.' });
             }
 
             res.json({ success: true, data: result });
@@ -257,7 +257,7 @@ router.put('/:id/report',
             const unitScope = resolveRecordUnitScope(req);
 
             if (!nomorLaporan || !tanggalPelaporan) {
-                return res.status(400).json({ error: 'nomorLaporan and tanggalPelaporan are required' });
+                return res.status(400).json({ error: 'nomorLaporan and tanggalPelaporan are required', message: 'Nomor laporan dan tanggal pelaporan wajib diisi.' });
             }
 
             const existing = await arsipTerjagaService.findById(
@@ -266,7 +266,7 @@ router.put('/:id/report',
                 allowedSecurityClassifications(req.user),
             );
             if (!existing) {
-                return res.status(404).json({ error: 'Arsip terjaga not found' });
+                return res.status(404).json({ error: 'Arsip terjaga not found', message: 'Arsip terjaga tidak ditemukan.' });
             }
 
             const result = await arsipTerjagaService.markAsReported(
@@ -277,7 +277,7 @@ router.put('/:id/report',
                 criticalAuditContext(req),
             );
             if (!result) {
-                return res.status(404).json({ error: 'Arsip terjaga not found' });
+                return res.status(404).json({ error: 'Arsip terjaga not found', message: 'Arsip terjaga tidak ditemukan.' });
             }
 
             res.json({ success: true, data: result });
@@ -299,7 +299,7 @@ router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res, next) 
         );
 
         if (!existing) {
-            return res.status(404).json({ error: 'Arsip terjaga not found' });
+            return res.status(404).json({ error: 'Arsip terjaga not found', message: 'Arsip terjaga tidak ditemukan.' });
         }
 
         const deleted = await arsipTerjagaService.delete(
@@ -308,7 +308,7 @@ router.delete('/:id', canWriteMiddleware(), async (req: AuthRequest, res, next) 
             criticalAuditContext(req),
         );
         if (!deleted) {
-            return res.status(404).json({ error: 'Arsip terjaga not found' });
+            return res.status(404).json({ error: 'Arsip terjaga not found', message: 'Arsip terjaga tidak ditemukan.' });
         }
 
         res.json({ success: true, message: 'Arsip terjaga designation removed' });

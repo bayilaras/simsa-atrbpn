@@ -1,15 +1,14 @@
-// optionalModule menandai modul yang dapat dimatikan per layanan; template
-// tetap tersedia, hanya tombol menuju modulnya yang disembunyikan.
+// Tombol hanya untuk formulir yang benar-benar dibuat dari data aplikasi di
+// halaman tujuannya; formulir lain diisi manual dari template kosong. Modul
+// Penyusutan dan Arsip Terjaga (advancedArchiveWorkflows) mati di produksi,
+// jadi tidak dirujuk.
 const moduleFor = (id) => {
-    if (id <= 3) return { path: '/archive-lending', label: 'Buka Peminjaman' };
     // Formulir 4 dan 6 berisi data hanya lewat menu Export di halaman Arsip;
     // ekspor Laporan tidak dipisah per fase arsip.
     if (id === 4 || id === 6) return { path: '/arsip', label: 'Ekspor dari Arsip' };
-    if (id <= 11) return { path: '/laporan', label: 'Buka Laporan' };
-    if (id <= 26) return { path: '/penyusutan', label: 'Buka Penyusutan', moduleName: 'Penyusutan', optionalModule: 'advancedArchiveWorkflows' };
+    // Tombol Cetak Daftar di halaman Arsip Vital.
     if (id === 27) return { path: '/arsip-vital', label: 'Buka Arsip Vital' };
-    if (id === 28) return { path: '/tunjuk-silang', label: 'Buka Tunjuk Silang' };
-    return { path: '/arsip-terjaga', label: 'Buka Arsip Terjaga', moduleName: 'Arsip Terjaga', optionalModule: 'advancedArchiveWorkflows' };
+    return {};
 };
 
 const names = [
@@ -57,7 +56,4 @@ export function getFormulirMetadata(id) {
     return formulirMetadata.find((form) => form.id === Number(id));
 }
 
-// Sama dengan sidebar: hanya nilai false eksplisit yang menandai modul mati.
-export function isFormulirModuleAvailable(form, capabilities = {}) {
-    return !form?.optionalModule || capabilities?.[form.optionalModule] !== false;
-}
+export const KETERANGAN_DIISI_MANUAL = 'Diisi manual dari template';

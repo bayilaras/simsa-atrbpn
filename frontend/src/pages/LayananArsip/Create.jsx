@@ -82,7 +82,7 @@ export default function LayananArsipCreate() {
 
         if (!formData.arsipId) {
             toast({
-                title: "Error",
+                title: "Gagal",
                 description: "Silakan pilih arsip terlebih dahulu",
                 variant: "destructive"
             });
@@ -100,7 +100,7 @@ export default function LayananArsipCreate() {
         } catch (error) {
             console.error(error);
             toast({
-                title: "Error",
+                title: "Gagal",
                 description: "Gagal mengajukan permohonan",
                 variant: "destructive"
             });

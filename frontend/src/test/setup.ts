@@ -21,6 +21,12 @@ globalThis.fetch = async (input, init) => {
 };
 
 afterEach(() => {
+    // Draf isian formulir disimpan di sessionStorage; jangan bocor ke tes berikutnya.
+    try {
+        globalThis.sessionStorage?.clear();
+    } catch {
+        // Penyimpanan tidak tersedia pada lingkungan tes ini.
+    }
     const requests = unmockedRequests.splice(0);
     expect(requests, 'Unmocked network request: mock the service that sends it').toEqual([]);
 });

@@ -3,7 +3,7 @@ import { uploadFileToBlob } from './blob-upload.service';
 
 export const suratKeluarService = {
     // List surat keluar with pagination and filters
-    async getAll({ unitKerjaId, tahun, naskahDinas, search, persetujuan, tanggalDari, tanggalSampai, page = 1, limit = 20 } = {}) {
+    async getAll({ unitKerjaId, tahun, naskahDinas, search, persetujuan, tanggalDari, tanggalSampai, urutan, page = 1, limit = 20 } = {}) {
         const response = await api.get('/api/surat-keluar', {
             unitKerjaId,
             tahun,
@@ -12,6 +12,7 @@ export const suratKeluarService = {
             persetujuan,
             tanggalDari,
             tanggalSampai,
+            urutan,
             page,
             limit,
         });
@@ -24,13 +25,14 @@ export const suratKeluarService = {
         return response.data;
     },
 
-    // Get next number for new surat
-    async getNextNumber({ unitKerjaId, tahun, tanggalSurat, naskahDinas } = {}) {
+    // Get next number for new surat; noUrut is a No. Urut typed on the form, used by the preview
+    async getNextNumber({ unitKerjaId, tahun, tanggalSurat, naskahDinas, noUrut } = {}) {
         const response = await api.get('/api/surat-keluar/next-number', {
             unitKerjaId,
             tahun,
             tanggalSurat,
             naskahDinas,
+            noUrut,
         });
         return response.data;
     },
@@ -42,14 +44,14 @@ export const suratKeluarService = {
     },
 
     // Create new surat keluar (supports file upload via Vercel Blob)
-    async create(data, file = null) {
+    async create(data, file = null, { onProgress } = {}) {
         // Upload file to Vercel Blob first if present
         let fileUrl = null;
         let fileOriginalName = null;
 
         if (file) {
             try {
-                const blob = await uploadFileToBlob(file, { folder: 'surat-keluar' });
+                const blob = await uploadFileToBlob(file, { folder: 'surat-keluar', onProgress });
                 fileUrl = blob.url;
                 fileOriginalName = file.name;
             } catch (uploadError) {
@@ -71,13 +73,13 @@ export const suratKeluarService = {
     },
 
     // Update surat keluar (supports file upload via Vercel Blob)
-    async update(id, data, file = null) {
+    async update(id, data, file = null, { onProgress } = {}) {
         let fileUrl = null;
         let fileOriginalName = null;
 
         if (file) {
             try {
-                const blob = await uploadFileToBlob(file, { folder: 'surat-keluar' });
+                const blob = await uploadFileToBlob(file, { folder: 'surat-keluar', onProgress });
                 fileUrl = blob.url;
                 fileOriginalName = file.name;
             } catch (uploadError) {
@@ -96,9 +98,9 @@ export const suratKeluarService = {
         return response.data;
     },
 
-    // Delete surat keluar
-    async delete(id) {
-        await api.delete(`/api/surat-keluar/${id}`);
+    // Delete surat keluar; alasan dicatat di audit dan tampil di daftar Surat Terhapus
+    async delete(id, { alasan } = {}) {
+        await api.delete(`/api/surat-keluar/${id}`, alasan ? { alasan } : undefined);
     },
 
     // Archive surat keluar (creates arsip record with full metadata)

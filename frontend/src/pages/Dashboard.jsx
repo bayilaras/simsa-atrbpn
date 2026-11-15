@@ -45,6 +45,7 @@ import DashboardPengawasan from '@/components/dashboard/DashboardPengawasan'
 import { PageHeader } from '@/components/PageHeader';
 import appConfig from '@/lib/app-config';
 import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope';
+import { useNamaUnitKerja } from '@/hooks/use-nama-unit-kerja';
 
 ChartJS.register(
     CategoryScale,
@@ -140,6 +141,7 @@ export default function Dashboard() {
 
     const isSuperAdmin = user?.role === 'super_admin';
     const effectiveUserUnitKerjaId = resolveEffectiveUnitKerjaId(user);
+    const namaUnitSaya = useNamaUnitKerja(isSuperAdmin ? '' : effectiveUserUnitKerjaId);
     const requestedUnit = isSuperAdmin ? selectedUnitKerja : (effectiveUserUnitKerjaId || 'none');
     const actionUnit = isSuperAdmin ? (selectedUnitKerja === 'all' ? '' : selectedUnitKerja) : effectiveUserUnitKerjaId;
     const overdueParams = new URLSearchParams({ status: 'overdue' });
@@ -407,10 +409,10 @@ export default function Dashboard() {
                                 </SelectContent>
                             </Select>
                         )}
-                        {!isSuperAdmin && selectedUnitKerja !== 'all' && effectiveUserUnitKerjaId && (
+                        {!isSuperAdmin && selectedUnitKerja !== 'all' && namaUnitSaya && (
                             <Badge variant="muted" className="w-fit gap-1.5 self-start sm:self-end">
-                                <Building2 className="h-3 w-3" />
-                                <span className="uppercase">{effectiveUserUnitKerjaId}</span>
+                                <Building2 className="h-3 w-3" aria-hidden="true" />
+                                <span>{namaUnitSaya}</span>
                             </Badge>
                         )}
                     </div>

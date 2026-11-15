@@ -14,6 +14,12 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ExportButton } from '@/components/ExportButton';
 import { canExportReports } from '@/lib/provisioning-access';
 import { kunciSifatSuratMasuk, labelSifatSuratMasuk } from '@/lib/sifat-surat-masuk';
+import { pesanGalat } from '@/lib/pesan-galat';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DaftarSuratTerhapus } from '@/components/surat/DaftarSuratTerhapus';
+import { KABAG_LABELS } from '@/lib/disposisi-labels';
+import { JENIS_NASKAH_DINAS } from '@/lib/jenis-naskah';
+import { PILIHAN_URUTAN_SURAT, URUTAN_BAWAAN, parameterUrutan } from '@/lib/urutan-daftar-surat';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
 import ImportFileDialog from '@/components/ImportFileDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
@@ -74,6 +80,14 @@ import { PageHeader } from '@/components/PageHeader'
 const currentYear = new Date().getFullYear();
 const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - i);
 
+// Pilihan "Disposisi Ke": unit tujuan disaring server lewat tabel disposisi,
+// label tanpa unit (Kabag) lewat teks disposisi yang tersimpan.
+function parameterDisposisi(nilai) {
+    if (nilai?.startsWith('unit:')) return { disposisiUnitId: nilai.slice('unit:'.length) };
+    if (nilai?.startsWith('label:')) return { disposisi: nilai.slice('label:'.length) };
+    return {};
+}
+
 // Warna lencana sifat di daftar; Rahasia dan Sangat Rahasia sama-sama merah.
 function warnaLencanaSifat(sifatSurat) {
     const kunci = kunciSifatSuratMasuk(sifatSurat);
@@ -113,6 +127,7 @@ export default function SuratMasuk() {
     const [disposisiKe, setDisposisiKe] = useState('all');
     const [tanggalDari, setTanggalDari] = useState(null);
     const [tanggalSampai, setTanggalSampai] = useState(null);
+    const [urutan, setUrutan] = useState(URUTAN_BAWAAN);
 
     // Dialog states
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
@@ -120,20 +135,27 @@ export default function SuratMasuk() {
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [selectedSurat, setSelectedSurat] = useState(null);
     const [alasanHapus, setAlasanHapus] = useState('');
+    // Super Admin: 'daftar' atau 'terhapus' (surat yang dihapus dan dapat dipulihkan).
+    const [tampilan, setTampilan] = useState('daftar');
 
-    // Load unit kerja list for super admin
+    // Daftar unit: pemilih unit Super Admin, dan pilihan "Disposisi Ke" yang
+    // bagi peran lain baru dimuat saat panel filter pertama kali dibuka.
+    const [daftarUnitDiminta, setDaftarUnitDiminta] = useState(false);
+    const perluDaftarUnit = isSuperAdmin || daftarUnitDiminta;
     useEffect(() => {
-        if (isSuperAdmin) {
+        if (perluDaftarUnit) {
             settingsService.getAllUnitKerja().then(result => {
                 setUnitKerjaList(result.data || result || []);
             }).catch(err => console.error('Failed to load unit kerja list:', err));
         }
-    }, [isSuperAdmin]);
+    }, [perluDaftarUnit]);
 
     // Resolve effective unitKerjaId
     const resolvedUnitKerjaId = isSuperAdmin
         ? (selectedUnitKerja === 'all' ? undefined : selectedUnitKerja)
         : (resolveEffectiveUnitKerjaId(user) || undefined);
+    // Pada tampilan semua unit, Super Admin perlu tahu unit pemilik tiap baris.
+    const tampilkanKolomUnit = isSuperAdmin && !resolvedUnitKerjaId;
     const statsScope = JSON.stringify([user?.id, user?.role, resolvedUnitKerjaId]);
     const statsLoading = statsSnapshot.scope !== statsScope || statsSnapshot.status === 'loading';
     const stats = !statsLoading && statsSnapshot.status === 'success' ? statsSnapshot.data : null;
@@ -157,9 +179,10 @@ export default function SuratMasuk() {
                 jenisSurat: jenisSurat !== 'all' ? jenisSurat : undefined,
                 status: status !== 'all' ? status : undefined,
                 sifatSurat: sifatSurat !== 'all' ? sifatSurat : undefined,
-                disposisi: disposisiKe !== 'all' ? disposisiKe : undefined,
+                ...parameterDisposisi(disposisiKe),
                 tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
                 tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
+                urutan: parameterUrutan(urutan),
             };
 
             const response = await suratMasukService.getAll(params);
@@ -184,14 +207,14 @@ export default function SuratMasuk() {
             setLoadError(true);
             console.error('Error fetching surat masuk:', error);
             toast({
-                title: 'Error',
+                title: 'Gagal',
                 description: 'Gagal memuat data surat masuk',
                 variant: 'destructive',
             });
         } finally {
             if (seq === fetchSeqRef.current && !changingPage) setLoading(false);
         }
-    }, [pagination.page, pagination.limit, debouncedSearchTerm, resolvedUnitKerjaId, tahun, jenisSurat, status, sifatSurat, disposisiKe, tanggalDari, tanggalSampai, toast]);
+    }, [pagination.page, pagination.limit, debouncedSearchTerm, resolvedUnitKerjaId, tahun, jenisSurat, status, sifatSurat, disposisiKe, tanggalDari, tanggalSampai, urutan, toast]);
 
     // Fetch stats from API
     const fetchStats = useCallback(async () => {
@@ -231,6 +254,15 @@ export default function SuratMasuk() {
         }, 500);
         return () => clearTimeout(timer);
     }, [searchTerm]);
+
+    // Unit bagian tidak pernah menjadi tujuan disposisi (hanya label), begitu pula unit pencatat sendiri.
+    const opsiDisposisi = [
+        { value: 'all', label: 'Semua Disposisi' },
+        ...unitKerjaList
+            .filter(uk => uk.unitType !== 'bagian' && uk.id !== resolvedUnitKerjaId)
+            .map(uk => ({ value: `unit:${uk.id}`, label: uk.name })),
+        ...KABAG_LABELS.map(label => ({ value: `label:${label}`, label })),
+    ];
 
     const hasActiveFilters = tahun !== 'all' || jenisSurat !== 'all' || status !== 'all' ||
         sifatSurat !== 'all' || disposisiKe !== 'all' || tanggalDari || tanggalSampai || searchTerm;
@@ -288,7 +320,7 @@ export default function SuratMasuk() {
             refreshAll();
         } catch (error) {
             toast({
-                title: 'Error',
+                title: 'Gagal',
                 description: error.message || 'Gagal mengarsipkan surat',
                 variant: 'destructive',
             });
@@ -307,8 +339,8 @@ export default function SuratMasuk() {
             refreshAll();
         } catch (error) {
             toast({
-                title: 'Error',
-                description: error.response?.data?.error || error.message || 'Gagal menghapus surat',
+                title: 'Gagal',
+                description: pesanGalat(error, 'Gagal menghapus surat'),
                 variant: 'destructive',
             });
         }
@@ -375,9 +407,10 @@ export default function SuratMasuk() {
                                 jenisSurat: jenisSurat !== 'all' ? jenisSurat : undefined,
                                 status: status !== 'all' ? status : undefined,
                                 sifatSurat: sifatSurat !== 'all' ? sifatSurat : undefined,
-                                disposisi: disposisiKe !== 'all' ? disposisiKe : undefined,
+                                ...parameterDisposisi(disposisiKe),
                                 tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
                                 tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
+                                urutan: parameterUrutan(urutan),
                             }}
                         />
                     )}
@@ -449,8 +482,20 @@ export default function SuratMasuk() {
                 </div>
             )}
 
+            {isSuperAdmin && (
+                <Tabs value={tampilan} onValueChange={setTampilan}>
+                    <TabsList>
+                        <TabsTrigger value="daftar">Daftar Surat</TabsTrigger>
+                        <TabsTrigger value="terhapus">Surat Terhapus</TabsTrigger>
+                    </TabsList>
+                </Tabs>
+            )}
+            {isSuperAdmin && tampilan === 'terhapus' && (
+                <DaftarSuratTerhapus jenis="masuk" unitKerjaId={resolvedUnitKerjaId} onDipulihkan={refreshAll} />
+            )}
+
             {/* Main Content Area */}
-            <Card className="shadow-sm border-border/60">
+            <Card className={`shadow-sm border-border/60 ${tampilan === 'terhapus' ? 'hidden' : ''}`}>
                 <CardHeader className="pb-4">
                     <div className="flex flex-col space-y-4">
                         {/* Search & Filter Controls */}
@@ -468,7 +513,20 @@ export default function SuratMasuk() {
                                     />
                                 </div>
                             </div>
-                            <Collapsible open={isAdvancedOpen} onOpenChange={setIsAdvancedOpen} className="flex-none">
+                            <div className="w-full space-y-1.5 md:w-[220px]">
+                                <label htmlFor="surat-masuk-urutan" className="text-sm font-medium">Urutkan</label>
+                                <Select value={urutan} onValueChange={applyFilter(setUrutan)}>
+                                    <SelectTrigger id="surat-masuk-urutan" className="h-9 bg-background">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {PILIHAN_URUTAN_SURAT.map(pilihan => (
+                                            <SelectItem key={pilihan.value} value={pilihan.value}>{pilihan.label}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <Collapsible open={isAdvancedOpen} onOpenChange={(buka) => { setIsAdvancedOpen(buka); if (buka) setDaftarUnitDiminta(true); }} className="flex-none">
                                 <CollapsibleTrigger asChild>
                                     <Button variant="outline" className={`gap-2 w-full md:w-auto ${isAdvancedOpen ? 'bg-muted' : ''}`}>
                                         <Filter className="h-4 w-4" />
@@ -515,16 +573,7 @@ export default function SuratMasuk() {
                                         <SearchableSelect
                                             id="surat-masuk-jenis"
                                             ariaLabel="Jenis Surat"
-                                            options={[
-                                                { value: 'all', label: 'Semua Jenis' },
-                                                'Keputusan', 'Surat Tugas', 'Surat Perintah', 'Nota Dinas', 'Memorandum',
-                                                'Surat Dinas', 'Surat Undangan', 'Surat Perjanjian/MoU', 'Surat Kuasa',
-                                                'Berita Acara', 'Surat Keterangan', 'Surat Pengantar', 'Pemberitahuan',
-                                                'Pengumuman', 'Laporan', 'Telaahan Staf', 'Piagam', 'Umum',
-                                                'Naskah Dinas Arahan', 'Naskah Dinas Korespondensi', 'Naskah Dinas Khusus',
-                                                'Peraturan', 'Pedoman', 'Petunjuk Pelaksanaan', 'Instruksi',
-                                                'Surat Edaran', 'Pengaduan'
-                                            ]}
+                                            options={[{ value: 'all', label: 'Semua Jenis' }, ...JENIS_NASKAH_DINAS]}
                                             value={jenisSurat}
                                             onValueChange={applyFilter(setJenisSurat)}
                                             placeholder="Pilih Jenis"
@@ -600,12 +649,7 @@ export default function SuratMasuk() {
                                         <SearchableSelect
                                             id="surat-masuk-disposisi"
                                             ariaLabel="Disposisi Ke"
-                                            options={[
-                                                { value: 'all', label: 'Semua Disposisi' },
-                                                'Ditjen', 'SekDitjen', 'Dit. BPPT', 'Dit. PTEP',
-                                                'Dit. KTPP', 'Kabag Program dan Hukum',
-                                                'Kabag Kepegawaian Keuangan dan Umum'
-                                            ]}
+                                            options={opsiDisposisi}
                                             value={disposisiKe}
                                             onValueChange={applyFilter(setDisposisiKe)}
                                             placeholder="Pilih Disposisi"
@@ -641,6 +685,7 @@ export default function SuratMasuk() {
                                         <TableHead className="w-[50px] text-center">No.</TableHead>
                                         <TableHead className="w-[120px]">Tanggal</TableHead>
                                         <TableHead className="w-[160px]">Nomor Surat</TableHead>
+                                        {tampilkanKolomUnit && <TableHead className="w-[180px]">Unit Kerja</TableHead>}
                                         <TableHead>Perihal & Pengirim</TableHead>
                                         <TableHead className="w-[180px]">Status</TableHead>
                                         <TableHead className="w-[100px] text-right">Aksi</TableHead>
@@ -649,7 +694,7 @@ export default function SuratMasuk() {
                                 <TableBody>
                                     {data.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={6} className="text-center py-16 text-muted-foreground">
+                                            <TableCell colSpan={tampilkanKolomUnit ? 7 : 6} className="text-center py-16 text-muted-foreground">
                                                 <div className="flex flex-col items-center justify-center gap-2">
                                                     <div className="p-3 bg-muted rounded-full">
                                                         <Inbox className="h-8 w-8 opacity-50" />
@@ -670,7 +715,6 @@ export default function SuratMasuk() {
                                                 <TableCell data-label="Tanggal" className="text-sm">
                                                     <div className="flex flex-col sm:items-start items-end">
                                                         <span className="font-medium">{formatDate(row.tanggalSurat)}</span>
-                                                        <span className="text-xs text-muted-foreground">{formatDate(row.tanggalDiterima)} (Trm)</span>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell data-label="Nomor Surat">
@@ -678,6 +722,9 @@ export default function SuratMasuk() {
                                                         {row.nomorSurat}
                                                     </span>
                                                 </TableCell>
+                                                {tampilkanKolomUnit && (
+                                                    <TableCell data-label="Unit Kerja" className="text-sm">{row.unitKerjaNama || '-'}</TableCell>
+                                                )}
                                                 <TableCell data-label="Perihal">
                                                     <div className="flex flex-col gap-1 sm:max-w-[400px] items-end sm:items-start">
                                                         <span className="font-semibold sm:line-clamp-1 group-hover:text-primary transition-colors">{row.perihal}</span>
@@ -820,7 +867,7 @@ export default function SuratMasuk() {
                         <AlertDialogTitle>Hapus Surat Masuk?</AlertDialogTitle>
                         <AlertDialogDescription>
                             Apakah Anda yakin ingin menghapus surat <strong>{selectedSurat?.nomorSurat}</strong>?
-                            Tindakan ini tidak dapat dibatalkan.
+                            Surat akan hilang dari semua daftar. Hanya Super Admin yang dapat memulihkannya.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <div className="space-y-1">

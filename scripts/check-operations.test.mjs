@@ -13,6 +13,22 @@ test('only a complete fresh healthy response passes CI', () => {
     assert.equal(validateOperationsProbe(200, failed, now), false);
 });
 
+test('the upload cleanup check is optional, but when reported it must be healthy and unknown checks are refused', () => {
+    const withCleanup = status => ({ ...payload(), checks: [...payload().checks, { id: 'upload_cleanup', status }] });
+    assert.equal(validateOperationsProbe(200, withCleanup('healthy'), now), true);
+    assert.equal(validateOperationsProbe(200, withCleanup('disabled'), now), true);
+    assert.equal(validateOperationsProbe(200, withCleanup('attention'), now), false);
+    assert.equal(validateOperationsProbe(200, { ...payload(), checks: [...withCleanup('healthy').checks, { id: 'upload_cleanup', status: 'healthy' }] }, now), false);
+    assert.equal(validateOperationsProbe(200, { ...payload(), checks: [...payload().checks, { id: 'lainnya', status: 'healthy' }] }, now), false);
+});
+
+test('an unhealthy upload cleanup check is named like the others', async () => {
+    const lines = [], body = { ...payload(), status: 'attention', checks: [...payload().checks, { id: 'upload_cleanup', status: 'attention' }] };
+    assert.equal(await runOperationsProbe({ OPERATIONS_MONITOR_TOKEN: 'x'.repeat(64) },
+        async () => ({ status: 503, text: async () => JSON.stringify(body) }), line => lines.push(line)), false);
+    assert.deepEqual(lines, ['Monitoring operasional: perlu tindakan (upload_cleanup: attention). Periksa panel Super Admin.']);
+});
+
 test('a healthy response tolerates the observed 325 millisecond server clock skew', () => {
     const response = { ...payload(), timestamp: new Date(now + 325).toISOString() };
     assert.equal(validateOperationsProbe(200, response, now), true);

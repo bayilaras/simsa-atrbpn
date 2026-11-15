@@ -137,7 +137,7 @@ describe('per-row import report', () => {
         expect(mocks.incoming).toHaveBeenCalledWith(expect.objectContaining({ nomorSurat: 'SM-2', tanggalSurat: '2026-11-25', tahun: 2026 }), audit, {});
     });
 
-    it('flags in the preview the rows the import will reject for their date, with the same reasons', () => {
+    it('flags in the preview the rows the import will reject for their date, with the same reasons', async () => {
         const rows = [header,
             letter(1, '1/UND/2026', '03/11/26', 'Dibaca'),
             letter(2, '2/UND/2026', '11/25/2026', 'Bulan lebih dulu'),
@@ -145,7 +145,7 @@ describe('per-row import report', () => {
             ['4', '', 'besok', '', 'Biasa', link(4)],
             letter(5, '5/UND/2026', '31/02/2026', 'Bukan tanggal kalender'),
         ];
-        const preview = service.previewRows(rows, 2, 'surat-keluar');
+        const preview = await service.previewRows(rows, 2, 'surat-keluar');
         expect(preview.rows).toHaveLength(2);
         // Counted over the whole source, not only the rows shown; the import skips row 4 as empty, so it is not flagged.
         expect(preview.dateIssues).toEqual({ total: 3, rows: [
@@ -153,14 +153,41 @@ describe('per-row import report', () => {
             { row: 3, value: '', reason: 'Tanggal surat kosong.' },
             { row: 5, value: '31/02/2026', reason: 'Tanggal "31/02/2026" tidak ada di kalender. Periksa hari, bulan, dan tahunnya.' },
         ] });
-        expect(service.previewRows([header, letter(1, '1/UND/2026', '3 November 2026', 'Dibaca')], 10, 'surat-keluar').dateIssues).toEqual({ total: 0, rows: [] });
+        expect((await service.previewRows([header, letter(1, '1/UND/2026', '3 November 2026', 'Dibaca')], 10, 'surat-keluar')).dateIssues).toEqual({ total: 0, rows: [] });
     });
 
-    it('lists at most ten flagged rows in the preview and counts them all', () => {
+    it('lists at most ten flagged rows in the preview and counts them all', async () => {
         const rows = Array.from({ length: 25 }, (_, i) => letter(i + 1, `${i + 1}/UND/2026`, '11/25/2026', `Surat ${i + 1}`));
-        const { dateIssues } = service.previewRows([header, ...rows], 5, 'surat-keluar');
+        const { dateIssues } = await service.previewRows([header, ...rows], 5, 'surat-keluar');
         expect(dateIssues.total).toBe(25);
         expect(dateIssues.rows.map(issue => issue.row)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    });
+
+    it('passes the source No as the requested number and reports one that was replaced', async () => {
+        // createImported answers with the number it stored: kept, already used (57), or replaced because unusable (58).
+        mocks.outgoing.mockResolvedValueOnce({ id: 'a', noUrut: 1 }).mockResolvedValueOnce({ id: 'b', noUrut: 57 })
+            .mockResolvedValueOnce({ id: 'c', noUrut: 58 }).mockResolvedValueOnce({ id: 'd', noUrut: 59 });
+        const result = await service.importRows('surat-keluar', [header,
+            letter(1, '1/UND/2026', '05/01/2026', 'Nomor bebas'),
+            letter(2, '2/UND/2026', '05/01/2026', 'Nomor sudah dipakai'),
+            ['2a', '3/UND/2026', '05/01/2026', 'Bukan angka', 'Biasa', link(3)],
+            ['', '4/UND/2026', '05/01/2026', 'Tanpa nomor sumber', 'Biasa', link(4)],
+        ], 'unit-a', audit);
+        expect(mocks.outgoing.mock.calls.map(([record]) => record.noUrut)).toEqual([1, 2, undefined, undefined]);
+        expect(result.rows?.map(row => [row.status, row.reason])).toEqual([
+            ['imported', undefined],
+            ['imported', 'Nomor urut sumber 2 sudah dipakai; diberi nomor 57.'],
+            ['imported', 'Nomor urut sumber "2a" bukan angka 1 sampai 999999; diberi nomor 58.'],
+            ['imported', undefined],
+        ]);
+    });
+
+    it('names the No. Agenda of surat masuk in the report', async () => {
+        mocks.incoming.mockResolvedValueOnce({ id: 'a', noUrut: 31 });
+        const result = await service.importRows('surat-masuk', [['No. Agenda', 'Nomor Surat', 'Tanggal Surat', 'Perihal', 'Dari'],
+            ['12', 'SM-1', '12/09/2026', 'Permohonan data', 'Kantah A']], 'unit-a', audit);
+        expect(mocks.incoming).toHaveBeenCalledWith(expect.objectContaining({ noUrut: 12 }), audit, {});
+        expect(result.rows?.[0]).toMatchObject({ no: '12', status: 'imported', reason: 'Nomor agenda sumber 12 sudah dipakai; diberi nomor 31.' });
     });
 
     it('shortens a long perihal in the report only', async () => {

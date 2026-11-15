@@ -145,7 +145,7 @@ describe('GET detail rekaman berkelas terkendali', () => {
         const terbatas = await detail(PENGGUNA.tu, 'surat_keluar', TAMBAHAN.skTerbatasSes).expect(403);
         expect(terbatas.body.rekaman).toMatchObject({ nomor: 'ND-11/SES/2026', perihal: 'Nota dinas terbatas TU', klasifikasi: 'terbatas' });
         const rahasia = await detail(PENGGUNA.tu, 'surat_keluar', TAMBAHAN.skRahasiaSes).expect(404);
-        expect(rahasia.body).toEqual({ error: 'Surat keluar not found' });
+        expect(rahasia.body).toEqual({ error: 'Surat keluar not found', message: 'Surat keluar tidak ditemukan.' });
         await detail(PENGGUNA.tu, 'surat_masuk', TAMBAHAN.smRahasia).expect(404);
     });
 
@@ -155,7 +155,7 @@ describe('GET detail rekaman berkelas terkendali', () => {
         const response = await detail(PENGGUNA.tu, 'arsip', ARSIP_TERBATAS).expect(403);
         expect(response.body).toMatchObject({ code: KODE, rekaman: { jenis: 'arsip', id: ARSIP_TERBATAS, klasifikasi: 'terbatas' } });
         const rahasia = await detail(PENGGUNA.tu, 'arsip', TAMBAHAN.arsipRahasia).expect(404);
-        expect(rahasia.body).toEqual({ error: 'Arsip not found' });
+        expect(rahasia.body).toEqual({ error: 'Arsip not found', message: 'Arsip tidak ditemukan.' });
     });
 
     it('unit lain tetap 404 dengan badan yang sama seperti rekaman yang tidak ada', async () => {

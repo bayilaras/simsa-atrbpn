@@ -28,7 +28,7 @@ export function useDisposisiOpsi(sourceUnitId) {
             setOpsi(pilihan || OPSI_KOSONG)
         } catch (error) {
             console.error('Error loading units:', error)
-            toast({ title: 'Error', description: 'Gagal memuat daftar unit kerja', variant: 'destructive' })
+            toast({ title: 'Gagal', description: 'Gagal memuat daftar unit kerja', variant: 'destructive' })
         } finally {
             setLoading(false)
         }

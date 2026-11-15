@@ -6,6 +6,8 @@ Baca panduan ini dengan seksama agar kamu bisa menggunakan SIMSA dengan lancar t
 
 **Pengguna baru:** ikuti [Mulai Inventaris Internal](../docs-site/docs/mulai-inventaris-internal.md) untuk membuka SIMSA di https://simsa-frontend.vercel.app, memakai akun per unit, mencatat surat, mengimpor CSV, dan menemukan arsip fisik.
 
+**Perubahan November 2026:** ringkasan perubahan pada sesi, kata sandi, nomor agenda, impor, dan beberapa layar ada di [Perubahan November 2026](../docs-site/docs/perubahan-november-2026.md).
+
 > **Profil aplikasi:** SIMSA mengelola surat dan arsip secara mandiri; integrasi SRIKANDI tidak menjadi prasyarat fitur inti dan tetap nonaktif pada penerapan saat ini. Mulai dengan metadata dan arsip fisik; fitur digital digunakan setelah penyimpanan serta pemeriksaan berkas siap. Gunakan instrumen instansi yang berlaku. Baca [Profil Aplikasi Internal SIMSA](PROFIL_APLIKASI_INTERNAL.md) untuk konfigurasi, kontrol, dan batas klaim produk.
 
 ---

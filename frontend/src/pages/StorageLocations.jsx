@@ -158,7 +158,7 @@ function QRCodeDialog({ open, onOpenChange, location, qrData, loading, error, on
                                 }}
                             >
                                 <Download className="h-4 w-4" />
-                                Download QR Code
+                                Unduh Kode QR
                             </Button>
                         </>
                     ) : loading ? (

@@ -41,7 +41,7 @@ export function PenyelesaianDialog({ open, onOpenChange, distribusi, unitKerjaId
             onOpenChange(false)
             onSelesai?.()
         } catch (error) {
-            toast({ title: 'Error', description: pesanGalat(error, 'Gagal menyelesaikan disposisi'), variant: 'destructive' })
+            toast({ title: 'Gagal', description: pesanGalat(error, 'Gagal menyelesaikan disposisi'), variant: 'destructive' })
         } finally {
             setLoading(false)
         }

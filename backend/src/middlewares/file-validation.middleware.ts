@@ -119,7 +119,7 @@ export function validateFileContent(
     if (!detectedType) {
         return {
             isValid: false,
-            error: 'Unable to detect file type. File may be corrupted or unsupported.',
+            error: 'Jenis berkas tidak dapat dikenali. Berkas mungkin rusak atau jenisnya tidak didukung.',
             detectedType: 'unknown'
         };
     }
@@ -131,7 +131,7 @@ export function validateFileContent(
             !detectedType.mimeType.includes('openxmlformats')) {
             return {
                 isValid: false,
-                error: `File type mismatch. Expected Office document, but detected ${detectedType.mimeType}`,
+                error: 'Isi berkas bukan dokumen Office seperti yang tertera pada jenis berkasnya. Pastikan berkas tidak rusak, lalu coba lagi.',
                 detectedType: detectedType.mimeType
             };
         }
@@ -142,7 +142,7 @@ export function validateFileContent(
     if (detectedType.mimeType !== declaredMimeType) {
         return {
             isValid: false,
-            error: `File type mismatch. Declared as ${declaredMimeType}, but detected as ${detectedType.mimeType}`,
+            error: 'Isi berkas tidak sesuai dengan jenis berkasnya. Pastikan berkas tidak rusak, lalu coba lagi.',
             detectedType: detectedType.mimeType
         };
     }
@@ -193,7 +193,7 @@ export function fileValidationMiddleware(
         log.error({ err: error }, 'File validation error:');
         return res.status(500).json({
             error: 'File validation failed',
-            message: 'An error occurred while validating the file'
+            message: 'Berkas gagal diperiksa. Silakan coba lagi.'
         });
     }
 }

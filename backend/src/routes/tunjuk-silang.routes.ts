@@ -161,7 +161,7 @@ router.get('/', roleMiddleware(['super_admin']), async (req: AuthRequest, res: R
         if (!Number.isInteger(filters.page) || filters.page < 1 ||
             !Number.isInteger(filters.limit) || filters.limit < 1 || filters.limit > 100 ||
             (filters.jenisRelasi && !RELATION_TYPES.has(filters.jenisRelasi))) {
-            return res.status(400).json({ error: 'Invalid cross-reference filters' });
+            return res.status(400).json({ error: 'Invalid cross-reference filters', message: 'Filter tunjuk silang tidak valid.' });
         }
         const result = await tunjukSilangService.findAll(filters);
         const endpoints = result.data.flatMap((reference) => [
@@ -201,13 +201,13 @@ router.get('/:type/:id', async (req: AuthRequest, res: Response, next: NextFunct
         const entityType = String(req.params.type) as CrossReferenceEntityType;
         const entityId = String(req.params.id);
         if (!ENTITY_TYPES.has(entityType)) {
-            return res.status(400).json({ error: 'Invalid entity type' });
+            return res.status(400).json({ error: 'Invalid entity type', message: 'Jenis data tidak dikenali.' });
         }
         const page = req.query.page ? Number(req.query.page) : 1;
         const limit = req.query.limit ? Number(req.query.limit) : 100;
         if (!Number.isInteger(page) || page < 1 ||
             !Number.isInteger(limit) || limit < 1 || limit > 100) {
-            return res.status(400).json({ error: 'Invalid cross-reference pagination' });
+            return res.status(400).json({ error: 'Invalid cross-reference pagination', message: 'Halaman daftar tunjuk silang tidak valid.' });
         }
         const sourceAccess = await checkEntityAccess(req, entityType, entityId);
         if (!sourceAccess.exists || !sourceAccess.allowed) {

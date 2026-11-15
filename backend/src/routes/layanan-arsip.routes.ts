@@ -113,7 +113,7 @@ router.post(
         const { status, notes } = req.body;
 
         if (!['diproses', 'selesai', 'ditolak'].includes(status)) {
-            return res.status(400).json({ error: 'Invalid status' });
+            return res.status(400).json({ error: 'Invalid status', message: 'Status tidak dikenali.' });
         }
 
         const unitScope = resolveRecordUnitScope(req);

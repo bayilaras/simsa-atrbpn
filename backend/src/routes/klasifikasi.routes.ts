@@ -69,7 +69,7 @@ router.get('/:kode', async (req: AuthRequest, res: Response, next) => {
         const item = await klasifikasiService.getByKode(kode, ruleSetId, scope);
 
         if (!item) {
-            return res.status(404).json({ error: 'Klasifikasi not found' });
+            return res.status(404).json({ error: 'Klasifikasi not found', message: 'Klasifikasi tidak ditemukan.' });
         }
 
         // Also get children
@@ -90,7 +90,7 @@ router.post('/', permissionMiddleware('klasifikasi', 'create'), async (req: Auth
         } = req.body;
 
         if (!ruleSetId || !kode || !jenis || !tipe) {
-            return res.status(400).json({ error: 'ruleSetId, kode, jenis, and tipe are required' });
+            return res.status(400).json({ error: 'ruleSetId, kode, jenis, and tipe are required', message: 'Versi aturan, kode, jenis, dan tipe wajib diisi.' });
         }
 
         const created = await klasifikasiService.create({

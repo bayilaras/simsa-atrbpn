@@ -2,8 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { resolve, isAbsolute } from 'node:path';
 import { validateNeonTarget } from './neon-target.mjs';
 import { sha256, requireCondition as check } from './local-backup-drill-core.mjs';
-export { NEON_BACKUP_FORMAT, sealNeonBundle, openNeonBundle } from './neon-bundle-seal.mjs';
-import { loadMigrations } from '../backend/scripts/migrate-database.mjs';
+export { NEON_BACKUP_FORMAT, sealNeonBundle, openNeonBundle, appliedMigrations } from './neon-bundle-seal.mjs';
+import { loadMigrations, validateAppliedMigrations } from '../backend/scripts/migrate-database.mjs';
 
 export const COLLECTOR_SHA256 = '5fd838532b4804007215e2aba65f63f659b6de4c3dfcc8c2354c29776899786b';
 const path = value => { check(typeof value === 'string' && isAbsolute(value) && !/[\x00-\x1f\x7f]/.test(value), 'Use an absolute physical path'); return resolve(value); };
@@ -42,6 +42,15 @@ export function parseNeonBackupOperation(args, environment) {
 export function migrationManifest() {
   const migrations = loadMigrations();
   return migrations.map(m => ({ tag: m.tag, created_at: m.timestamp, accepted_sha256: m.acceptedHashes }));
+}
+// Production runs behind main between a merge and its release, so the source
+// history may be the first part of this checkout's journal. A changed hash or
+// timestamp, a gap, an empty history or a history ahead of the journal fails.
+export function appliedMigrationCount(applied, migrations = loadMigrations()) {
+  let pending = null;
+  try { pending = validateAppliedMigrations(migrations, applied); } catch { /* reported below */ }
+  check(Array.isArray(applied) && applied.length > 0 && Array.isArray(pending), 'Source migration history differs from this release');
+  return applied.length;
 }
 export async function loadNeonEvidenceSql() {
   const source = (await readFile(resolve(import.meta.dirname,'../.github/scripts/collect-backup-evidence.sql'),'utf8')).replaceAll('\r\n','\n');

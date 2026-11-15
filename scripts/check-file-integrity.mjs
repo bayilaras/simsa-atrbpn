@@ -13,14 +13,18 @@ const {tsImport}=await import(pathToFileURL(requireBackend.resolve('tsx/esm/api'
 const {FileFixityService,loadFixityConfig,fixityEnrollmentLimit}=await tsImport(new URL('../backend/src/services/file-fixity.service.ts',import.meta.url).href,{parentURL:import.meta.url,tsconfig:false});
 const {normalizeStoredObjectLocator}=await tsImport(new URL('../backend/src/storage/locator.ts',import.meta.url).href,{parentURL:import.meta.url,tsconfig:false});
 const check=(value,code)=>{if(!value)throw Object.assign(new Error(code),{safeCode:code});};
+// Reviewed budget: the service maximum of 100 reads per run, and reads that all
+// hit their deadline still end within 100 minutes, inside the workflow job limit.
+export const REVIEWED_INTEGRITY_BUDGET=Object.freeze({reads:100,readMinutes:100});
 
 export function parseIntegrityEnvironment(environment){
  const url=validateNeonTarget(environment.NEON_WORKER_DATABASE_URL,{role:'simsa_worker'});
  check(url.hostname===environment.NEON_WORKER_EXPECTED_HOST&&url.pathname==='/'+environment.NEON_WORKER_EXPECTED_DATABASE,'INTEGRITY_DATABASE_PIN_MISMATCH');
  check(!['postgres','template0','template1'].includes(environment.NEON_WORKER_EXPECTED_DATABASE),'INTEGRITY_SYSTEM_DATABASE_REFUSED');
  privateBlobConfiguration(environment);
- const fixity=loadFixityConfig({FIXITY_BATCH_SIZE:'20',...environment});
- check(fixity.batchSize<=20&&fixity.maximumBytes<=64*1024*1024&&fixity.timeoutMs<=120000,'INTEGRITY_RUN_EXCEEDS_REVIEWED_BUDGET');
+ const fixity=loadFixityConfig({FIXITY_BATCH_SIZE:String(REVIEWED_INTEGRITY_BUDGET.reads),...environment});
+ check(fixity.batchSize<=REVIEWED_INTEGRITY_BUDGET.reads&&fixity.batchSize*fixity.timeoutMs<=REVIEWED_INTEGRITY_BUDGET.readMinutes*60000
+  &&fixity.maximumBytes<=64*1024*1024&&fixity.timeoutMs<=120000,'INTEGRITY_RUN_EXCEEDS_REVIEWED_BUDGET');
  return {fixity,database:environment.NEON_WORKER_EXPECTED_DATABASE,clientConfig:{host:url.hostname,port:5432,database:environment.NEON_WORKER_EXPECTED_DATABASE,
   user:'simsa_worker',password:decodeURIComponent(url.password),ssl:{rejectUnauthorized:true,servername:url.hostname},enableChannelBinding:true,
   max:2,connectionTimeoutMillis:15000,idleTimeoutMillis:3000,statement_timeout:120000,query_timeout:125000,

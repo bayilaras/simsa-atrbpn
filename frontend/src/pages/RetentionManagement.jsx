@@ -18,6 +18,7 @@ import { id as idLocale } from 'date-fns/locale'
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
+import { escapeHtml } from '@/lib/escape-html'
 
 const STATUS_LABELS = {
     kadaluarsa: { label: 'Kadaluarsa', variant: 'destructive', icon: XCircle, className: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200' },
@@ -36,6 +37,12 @@ const HASIL_AKHIR_OPTIONS = {
 // Berita acara dari halaman ini hanya draf yang tidak disimpan SIMSA, jadi
 // nomornya dikosongkan untuk diisi manual dari register unit.
 const NOMOR_BERITA_ACARA_MANUAL = '……………………'
+
+// Server hanya memuat arsip yang memenuhi syarat berikut; tanpa arsip, tidak ada draf.
+const PESAN_TANPA_ARSIP_LAYAK = {
+    title: 'Belum ada arsip yang memenuhi syarat',
+    description: 'Berita acara pemusnahan hanya memuat arsip Musnah yang retensinya telah berakhir, memiliki pemicu, tidak di-hold, dan belum masuk proses penyusutan. Draf tidak dibuat.',
+}
 
 // Returns a check that stays true only while this is the newest request of
 // its kind, so a slower response for an older unit, page or filter is dropped.
@@ -162,6 +169,11 @@ export default function RetentionManagement() {
                 unitKerjaId,
                 selectedArchives.length > 0 ? selectedArchives : undefined
             )
+            if (!res.data?.daftarArsip?.length) {
+                setReportData(null)
+                toast(PESAN_TANPA_ARSIP_LAYAK)
+                return
+            }
             setReportData(res.data)
             setReportDialogOpen(true)
         } catch (error) {
@@ -212,9 +224,13 @@ export default function RetentionManagement() {
     }
 
     const handleDownloadPDF = () => {
-        if (!reportData) return
+        if (!reportData?.daftarArsip?.length) {
+            toast(PESAN_TANPA_ARSIP_LAYAK)
+            return
+        }
 
-        // Create printable HTML content
+        // Jendela cetak tidak dirender React: setiap nilai dari server diloloskan,
+        // karena teks arsip boleh memuat '<', '>' dan '&'.
         const printContent = `
             <!DOCTYPE html>
             <html>
@@ -243,8 +259,8 @@ export default function RetentionManagement() {
                     <h2>Nomor: ${NOMOR_BERITA_ACARA_MANUAL}</h2>
                 </div>
                 <div class="content">
-                    <p>Pada hari ini, ${reportData.tanggal}, kami yang bertanda tangan di bawah ini:</p>
-                    <p>Unit Kerja: ${reportData.unitKerja}</p>
+                    <p>Pada hari ini, ${escapeHtml(reportData.tanggal)}, kami yang bertanda tangan di bawah ini:</p>
+                    <p>Unit Kerja: ${escapeHtml(reportData.unitKerja)}</p>
                     <p>Telah melakukan penilaian dan pengusulan pemusnahan terhadap arsip yang telah melampaui masa retensinya sebagai berikut:</p>
                 </div>
                 <table>
@@ -268,24 +284,24 @@ export default function RetentionManagement() {
                     <tbody>
                         ${reportData.daftarArsip.map(a => `
                             <tr>
-                                <td>${a.no}</td>
-                                <td>${a.nomorBerkas}</td>
-                                <td>${a.kodeKlasifikasi}</td>
-                                <td>${a.uraian}</td>
-                                <td>${a.kurunWaktu}</td>
-                                <td>${a.jumlah}</td>
-                                <td>${a.retensiAktif}</td>
-                                <td>${a.retensiInaktif}</td>
-                                <td>${a.retentionTriggerLabel} (${a.retentionTriggerDate})</td>
-                                <td>${a.retentionTriggerEvidence}</td>
-                                <td>${a.jraVersion} / ${a.jraReference}</td>
-                                <td>${a.hasilAkhir}</td>
-                                <td>${a.keterangan}</td>
+                                <td>${escapeHtml(a.no)}</td>
+                                <td>${escapeHtml(a.nomorBerkas)}</td>
+                                <td>${escapeHtml(a.kodeKlasifikasi)}</td>
+                                <td>${escapeHtml(a.uraian)}</td>
+                                <td>${escapeHtml(a.kurunWaktu)}</td>
+                                <td>${escapeHtml(a.jumlah)}</td>
+                                <td>${escapeHtml(a.retensiAktif)}</td>
+                                <td>${escapeHtml(a.retensiInaktif)}</td>
+                                <td>${escapeHtml(a.retentionTriggerLabel)} (${escapeHtml(a.retentionTriggerDate)})</td>
+                                <td>${escapeHtml(a.retentionTriggerEvidence)}</td>
+                                <td>${escapeHtml(a.jraVersion)} / ${escapeHtml(a.jraReference)}</td>
+                                <td>${escapeHtml(a.hasilAkhir)}</td>
+                                <td>${escapeHtml(a.keterangan)}</td>
                             </tr>
                         `).join('')}
                     </tbody>
                 </table>
-                <p style="margin-top: 20px;"><strong>Total Berkas: ${reportData.totalBerkas}</strong></p>
+                <p style="margin-top: 20px;"><strong>Total Berkas: ${escapeHtml(reportData.totalBerkas)}</strong></p>
                 <div class="footer">
                     <p>Demikian berita acara ini dibuat untuk dapat digunakan sebagaimana mestinya.</p>
                     <div class="signature">
@@ -297,7 +313,7 @@ export default function RetentionManagement() {
                             <p>NIP.</p>
                         </div>
                         <div class="sign-box">
-                            <p>${reportData.tanggal}</p>
+                            <p>${escapeHtml(reportData.tanggal)}</p>
                             <p>Arsiparis</p>
                             <br/><br/><br/>
                             <p>____________________</p>
@@ -855,7 +871,7 @@ export default function RetentionManagement() {
                         <Button variant="outline" onClick={() => setReportDialogOpen(false)}>
                             Batal
                         </Button>
-                        <Button onClick={handleDownloadPDF} className="bg-indigo-600 hover:bg-indigo-700">
+                        <Button onClick={handleDownloadPDF} disabled={!reportData?.daftarArsip?.length} className="bg-indigo-600 hover:bg-indigo-700">
                             <Download className="h-4 w-4 mr-2" />
                             Cetak PDF
                         </Button>

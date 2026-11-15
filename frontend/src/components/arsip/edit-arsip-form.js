@@ -20,7 +20,7 @@ export const KLASIFIKASI_KEAMANAN_OPTIONS = Object.freeze([
 
 export const UNIT_PENGOLAH_OPTIONS = Object.freeze([
     { value: 'Ditjen', label: 'Ditjen' },
-    { value: 'SekDitjen', label: 'SekDitjen' },
+    { value: 'SekDitjen', label: 'Sesditjen' },
     { value: 'Dit. BPPT', label: 'Dit. BPPT' },
     { value: 'Dit. PTEP', label: 'Dit. PTEP' },
     { value: 'Dit. KTPP', label: 'Dit. KTPP' },
@@ -159,7 +159,7 @@ export const LABEL_FIELD = Object.freeze({
     lokasiFolder: 'No. Folder',
     storageLocationId: 'Lokasi Simpan',
     klasifikasiKeamanan: 'Klasifikasi Keamanan',
-    personInCharge: 'Person In Charge (PIC)',
+    personInCharge: 'Penanggung Jawab',
     keterangan: 'Keterangan',
 })
 

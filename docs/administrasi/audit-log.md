@@ -58,6 +58,11 @@ Gunakan penyaring di atas daftar:
 | **Ekspor Data** | Pengunduhan berkas ekspor |
 | **Menggabungkan** / **Menautkan** / **Membatalkan** | Perubahan pada rangkaian surat dan tautannya |
 | **Mendisposisikan** / **Menerima Disposisi** / **Menyelesaikan Disposisi** / **Menolak Disposisi** | Proses disposisi surat |
+| **Masuk** / **Gagal masuk** / **Keluar** | Masuk dan keluar aplikasi, termasuk percobaan masuk yang gagal. Percobaan gagal dengan email yang tidak terdaftar tampil dengan pelaku *Pengguna tidak dikenal* |
+| **Mengganti kata sandi** | Pengguna mengganti kata sandinya sendiri di **Pengaturan › Profil**. Rinciannya hanya menulis *kata sandi: diganti*, tanpa isi kata sandi. Pengaturan ulang oleh Super Admin tercatat sebagai **Mengubah** pada data pengguna itu |
+| **Menjalankan Pemindai** | Super Admin menekan **Jalankan pemindai** di Monitoring Operasional |
+
+Aksi **Masuk**, **Gagal masuk**, **Keluar**, dan **Mengganti kata sandi** dapat dipilih pada penyaring **Aksi**. Ringkasan **Pengguna Paling Aktif** di tab **Pengawasan** Dashboard tidak menghitung peristiwa masuk dan keluar.
 
 Audit Log hanya untuk dibaca; catatan di dalamnya tidak dapat diubah atau dihapus dari halaman ini.
 
