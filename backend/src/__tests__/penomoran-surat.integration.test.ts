@@ -55,19 +55,32 @@ describe('No. Agenda dan No. Urut yang diketik pada formulir', () => {
         expect((await nomor('surat_masuk', otomatis.id)).no_urut).toBe(346);
     });
 
-    it('menolak No. Agenda yang sudah dipakai, juga oleh surat yang sudah dihapus, dengan 409 yang menyebut nomornya', async () => {
+    it('menolak No. Agenda yang dipakai surat lain dengan 409 yang menyebut nomornya; nomor surat terhapus boleh dipakai lagi', async () => {
         const lama = await catatMasuk({ noUrut: 7, nomorSurat: 'EXT-7/2026' });
-        await suratMasukService.delete(lama.id, admin.id, 'dir_bppt', audit);
         const sebelum = await jumlah('surat_masuk');
         await expect(catatMasuk({ noUrut: 7 })).rejects.toMatchObject({
             statusCode: 409,
-            message: 'No. Agenda 7 tahun 2026 sudah dipakai surat lain di unit ini. No. Agenda milik surat yang sudah dihapus juga tidak dapat dipakai ulang. '
-                + 'Kosongkan No. Agenda untuk nomor otomatis atau isi nomor lain.',
+            message: 'No. Agenda 7 tahun 2026 sudah dipakai surat lain di unit ini. Kosongkan No. Agenda untuk nomor otomatis atau isi nomor lain.',
         });
         expect(await jumlah('surat_masuk')).toBe(sebelum);
+        await suratMasukService.delete(lama.id, admin.id, 'dir_bppt', audit);
+        const pengganti = await catatMasuk({ noUrut: 7, nomorSurat: 'EXT-7b/2026' });
+        expect((await nomor('surat_masuk', pengganti.id)).no_urut).toBe(7);
         // Unit dan tahun lain punya urutannya sendiri.
         expect((await nomor('surat_masuk', (await catatMasuk({ noUrut: 7, tanggalSurat: '2025-12-30' })).id)).no_urut).toBe(7);
         expect((await nomor('surat_masuk', (await catatMasuk({ noUrut: 7, unitKerjaId: 'dir_ptep' })).id)).no_urut).toBe(7);
+    });
+
+    it('nomor otomatis tetap melanjutkan dari nomor tertinggi, termasuk surat terhapus', async () => {
+        await catatMasuk({ nomorSurat: 'EXT-A/2026' });
+        const kedua = await catatMasuk({ nomorSurat: 'EXT-B/2026' });
+        await suratMasukService.delete(kedua.id, admin.id, 'dir_bppt', audit);
+        expect((await nomor('surat_masuk', (await catatMasuk({ nomorSurat: 'EXT-C/2026' })).id)).no_urut).toBe(3);
+        const keluar = await catatKeluar();
+        await suratKeluarService.delete(keluar.id, admin.id, 'dir_bppt', audit, { alasan: 'Draf salah catat, dibuat ulang' });
+        expect((await nomor('surat_keluar', (await catatKeluar()).id)).no_urut).toBe(2);
+        // No. Urut surat keluar terhapus boleh diketik lagi.
+        expect((await nomor('surat_keluar', (await catatKeluar({ noUrut: 1 })).id)).no_urut).toBe(1);
     });
 
     it('surat keluar: No. Urut yang diketik dipakai juga pada nomor surat otomatis', async () => {
@@ -224,5 +237,31 @@ describe('nomor surat buatan template saat pindah tahun', () => {
         await expect(suratKeluarService.update((await catatKeluar()).id, { tanggalSurat: tanggal }, 'dir_bppt', undefined, audit))
             .rejects.toMatchObject({ statusCode: 400, message: 'Tahun harus antara 2000 dan 2100' });
         expect(await nomor('surat_masuk', surat.id)).toMatchObject({ tahun: 2026 });
+    });
+});
+
+describe('tanggal diterima surat masuk', () => {
+    const diterima = async (id: string) => (await database.query<{ t: string | null }>(
+        'SELECT tanggal_diterima::text AS t FROM surat_masuk WHERE id = $1', [id])).rows[0].t;
+
+    it('tersimpan saat dicatat; suntingan satu tanggal diperiksa terhadap tanggal yang tersimpan', async () => {
+        const surat = await catatMasuk({ tanggalDiterima: '2026-03-04' });
+        expect(await diterima(surat.id)).toBe('2026-03-04');
+        await expect(suratMasukService.update(surat.id, { tanggalSurat: '2026-03-05' }, 'dir_bppt', undefined, audit))
+            .rejects.toMatchObject({ statusCode: 400, message: 'Tanggal diterima tidak boleh sebelum tanggal surat' });
+        await suratMasukService.update(surat.id, { tanggalDiterima: '2026-03-03' }, 'dir_bppt', undefined, audit);
+        expect(await diterima(surat.id)).toBe('2026-03-03');
+        expect((await auditUbah(surat.id)).after.tanggalDiterima).toBe('2026-03-03');
+        await suratMasukService.update(surat.id, { tanggalDiterima: null }, 'dir_bppt', undefined, audit);
+        expect(await diterima(surat.id)).toBeNull();
+    });
+
+    it('impor menolak tanggal diterima sebelum tanggal surat tanpa menulis', async () => {
+        const sebelum = await jumlah('surat_masuk');
+        await expect(suratMasukService.createImported({
+            unitKerjaId: 'dir_bppt', tahun: 2026, nomorSurat: 'IMP-D/2026', tanggalSurat: '2026-04-02', tanggalDiterima: '2026-04-01',
+            perihal: 'Register lama', dari: 'Kanwil B', createdBy: admin.id,
+        }, audit)).rejects.toMatchObject({ statusCode: 400 });
+        expect(await jumlah('surat_masuk')).toBe(sebelum);
     });
 });

@@ -68,6 +68,17 @@ it('daftar surat masuk tidak lagi menampilkan label tanggal terima yang selalu k
     expect(screen.queryByText(/\(Trm\)/)).not.toBeInTheDocument()
 })
 
+it('daftar surat masuk menampilkan tanggal diterima dan dapat menyaring menurut tanggal itu', async () => {
+    mocks.masuk.getAll.mockResolvedValue({ success: true, data: [{ ...baris, tanggalDiterima: '2026-09-25' }], pagination: halaman.pagination })
+    const view = tampil(SuratMasuk)
+    await screen.findByText('Perihal uji daftar')
+    expect(screen.getByText(/^Diterima /)).toBeInTheDocument()
+    expect(mocks.masuk.getAll.mock.lastCall[0].acuanTanggal).toBeUndefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Filter' }))
+    fireEvent.change(view.container.querySelector('#surat-masuk-acuan-tanggal'), { target: { value: 'diterima' } })
+    await waitFor(() => expect(mocks.masuk.getAll).toHaveBeenLastCalledWith(expect.objectContaining({ acuanTanggal: 'diterima', page: 1 })))
+})
+
 describe.each(daftar)('filter jenis pada daftar surat $jenis', ({ Component, jenis, filter, param }) => {
     it('menawarkan setiap jenis yang dapat disimpan formulir', async () => {
         tampil(Component)
@@ -91,6 +102,8 @@ describe.each(daftar)('urutan daftar surat $jenis', ({ Component, jenis }) => {
         const urutan = screen.getByLabelText('Urutkan')
         expect([...urutan.options].map(option => option.textContent)).toEqual([
             'Terakhir dicatat', 'Tanggal surat (terbaru)', 'Tanggal surat (terlama)',
+            // Hanya surat masuk yang mencatat tanggal diterima.
+            ...(jenis === 'masuk' ? ['Tanggal diterima (terbaru)', 'Tanggal diterima (terlama)'] : []),
         ])
         fireEvent.change(urutan, { target: { value: 'tanggal_terlama' } })
         await waitFor(() => expect(mocks[jenis].getAll).toHaveBeenLastCalledWith(expect.objectContaining({ urutan: 'tanggal_terlama', page: 1 })))

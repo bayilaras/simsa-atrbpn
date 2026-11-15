@@ -10,7 +10,7 @@ import { createLogger } from '../utils/logger';
 import { allowedSecurityClassifications } from '../services/record-access.service.js';
 import { auditExport } from '../services/export-audit';
 import { jakartaDate } from '../utils/jakarta-date.js';
-import { urutanDaftarSuratDari } from '../services/urutan-daftar-surat';
+import { acuanTanggalDari, urutanDaftarSuratDari } from '../services/urutan-daftar-surat';
 
 const log = createLogger('ExportRoutes');
 
@@ -50,6 +50,7 @@ router.get('/surat-masuk/excel', async (req: AuthRequest, res: Response) => {
             disposisi: disposisi as string,
             disposisiUnitId: teksSingkat(disposisiUnitId),
             urutan: urutanDaftarSuratDari(req.query.urutan),
+            acuanTanggal: acuanTanggalDari(req.query.acuanTanggal),
             securityClassifications: allowedSecurityClassifications(req.user),
         };
 
@@ -88,6 +89,7 @@ router.get('/surat-masuk/pdf', async (req: AuthRequest, res: Response) => {
             disposisi: disposisi as string,
             disposisiUnitId: teksSingkat(disposisiUnitId),
             urutan: urutanDaftarSuratDari(req.query.urutan),
+            acuanTanggal: acuanTanggalDari(req.query.acuanTanggal),
             securityClassifications: allowedSecurityClassifications(req.user),
         };
 

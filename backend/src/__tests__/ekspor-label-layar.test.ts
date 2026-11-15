@@ -122,10 +122,11 @@ describe('label isi berkas ekspor sama dengan layar', () => {
         ]));
         const sheet = await lembar(await exportService.generateExcelSuratMasuk({ unitKerjaId: 'unit-a' }));
         expect(kolom(sheet, 4, 4, 9)).toEqual(['Sifat Surat', 'Sangat Segera', 'Sangat Rahasia', 'Rahasia', 'Biasa', 'Kilat']);
-        expect(kolom(sheet, 10, 4, 9)).toEqual(['Status', 'Belum Diproses', 'Sudah Dibalas', 'Belum Diproses', 'Belum Diproses', 'Belum Diproses']);
+        expect(sheet.getCell(4, 7).value).toBe('Tanggal Diterima');
+        expect(kolom(sheet, 11, 4, 9)).toEqual(['Status', 'Belum Diproses', 'Sudah Dibalas', 'Belum Diproses', 'Belum Diproses', 'Belum Diproses']);
         expect(JSON.stringify(sheet.getSheetValues())).not.toMatch(/sangat_|Belum Dibalas/);
         // Ekspor satu unit tidak diberi kolom Unit Kerja.
-        expect(sheet.getCell(4, 14).value).toBeNull();
+        expect(sheet.getCell(4, 15).value).toBeNull();
     });
 
     it('Excel surat keluar: klasifikasi substantif ikut tampil dengan jenis berlabel', async () => {

@@ -109,7 +109,7 @@ describe('No. Agenda pada Tambah Surat Masuk', () => {
     })
 
     it('menampilkan pesan server bila No. Agenda sudah dipakai, tanpa tombol Muat ulang', async () => {
-        const pesan = 'No. Agenda 345 tahun 2026 sudah dipakai surat lain di unit ini. No. Agenda milik surat yang sudah dihapus juga tidak dapat dipakai ulang. Kosongkan No. Agenda untuk nomor otomatis atau isi nomor lain.'
+        const pesan = 'No. Agenda 345 tahun 2026 sudah dipakai surat lain di unit ini. Kosongkan No. Agenda untuk nomor otomatis atau isi nomor lain.'
         mocks.masuk.create.mockRejectedValue(Object.assign(new Error(pesan), { status: 409, data: { error: 'ConflictError', message: pesan, code: 'CONFLICT' } }))
         const view = tampil('/surat/masuk/tambah')
         isiWajib()

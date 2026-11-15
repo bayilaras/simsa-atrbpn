@@ -24,7 +24,7 @@ Kamu akan melihat tabel daftar surat masuk:
 > - **Tabel data** dengan kolom: No., Tanggal, Nomor Surat, Perihal & Pengirim, Status, dan Aksi
 > - **Pagination** di bagian bawah tabel
 
-Kolom **Status** berisi **Belum Diproses** atau **Sudah Dibalas**. Surat yang sudah diarsipkan mendapat tanda tambahan **Arsip**.
+Kolom **Status** berisi **Belum Diproses** atau **Sudah Dibalas**. Surat yang sudah diarsipkan mendapat tanda tambahan **Arsip**. Di bawah tanggal surat tampil **Diterima …** bila tanggal diterima surat itu dicatat.
 
 Super Admin yang memilih **Semua Unit Kerja** melihat kolom tambahan **Unit Kerja** berisi nama unit. Super Admin juga melihat tab **Daftar Surat** dan **Surat Terhapus** di atas tabel; lihat [Memulihkan Surat yang Terhapus](#memulihkan-surat-yang-terhapus).
 
@@ -33,8 +33,8 @@ Super Admin yang memilih **Semua Unit Kerja** melihat kolom tambahan **Unit Kerj
 | Fitur | Keterangan |
 |-------|------------|
 | **Pencarian** 🔍 | Ketik kata kunci untuk mencari berdasarkan nomor surat, perihal, atau pengirim. Frasa tetap ditemukan walaupun teks aslinya terpotong baris baru |
-| **Urutkan** | **Terakhir dicatat** (bawaan), **Tanggal surat (terbaru)**, atau **Tanggal surat (terlama)**. Urutan ini juga dipakai saat **Export** |
-| **Filter** | Klik **Filter** untuk menyaring menurut Tahun, Jenis Surat (daftar lengkap jenis naskah dinas), Status (Belum Diproses / Sudah Dibalas), Sifat Surat, Rentang Tanggal, dan Disposisi Ke. **Disposisi Ke** memuat nama unit kerja tujuan disposisi serta **Kabag Program dan Hukum** dan **Kabag Kepegawaian Keuangan dan Umum**; disposisi yang ditolak unit tujuan tidak ikut tersaring |
+| **Urutkan** | **Terakhir dicatat** (bawaan), **Tanggal surat (terbaru)**, **Tanggal surat (terlama)**, **Tanggal diterima (terbaru)**, atau **Tanggal diterima (terlama)**. Urutan ini juga dipakai saat **Export** |
+| **Filter** | Klik **Filter** untuk menyaring menurut Tahun, Jenis Surat (daftar lengkap jenis naskah dinas), Status (Belum Diproses / Sudah Dibalas), Sifat Surat, Rentang Tanggal, dan Disposisi Ke. Rentang Tanggal dapat dihitung **Menurut** tanggal surat (bawaan) atau tanggal diterima. **Disposisi Ke** memuat nama unit kerja tujuan disposisi serta **Kabag Program dan Hukum** dan **Kabag Kepegawaian Keuangan dan Umum**; disposisi yang ditolak unit tujuan tidak ikut tersaring |
 | **Menu tiga titik** (⋯) | Tindakan untuk satu surat: **Detail & File**, **Edit Surat**, **Distribusi**, **Arsipkan**, dan **Hapus Surat**. Selain **Detail & File**, pilihan hanya tampil bagi admin |
 | **Pagination** | Navigasi halaman jika data lebih dari 10 |
 
@@ -56,7 +56,8 @@ Form terbagi menjadi beberapa bagian:
 | **Sifat Surat** | Biasa / Segera / Sangat Segera / Terbatas / Rahasia / Sangat Rahasia / Undangan / Penting. Terbatas, Rahasia, dan Sangat Rahasia adalah kelas keamanan surat. Admin Unit Kerja dapat memilih Terbatas; Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin, dan Admin Unit Kerja tidak melihat kedua pilihan itu kecuali sifat itu sudah tersimpan pada surat. Surat Terbatas, Rahasia, atau Sangat Rahasia hanya dapat dibuka atau diubah dengan persetujuan akses berjangka, juga oleh pencatatnya; ajukan persetujuan akses setelah menyimpan. | ✅ |
 | **Nomor Surat** | Nomor sesuai tertera di surat. Bila dikosongkan, nomor dibuat otomatis dari template unit. Bila nomor yang diketik sudah tercatat, tampil peringatan **Nomor sudah terdaftar** (tidak menghalangi penyimpanan) | ❌ |
 | **Tanggal Surat** | Tanggal yang tertulis di surat. Tahun harus antara 2000 dan 2100 | ✅ |
-| **No. Agenda** | Hanya saat menambah surat. Kosongkan (tertulis *Otomatis*) untuk nomor agenda otomatis; di bawahnya tampil *Nomor otomatis berikutnya: N*. Isi bila ingin melanjutkan nomor dari buku agenda kantor | ❌ |
+| **Tanggal Diterima** | Tanggal surat sampai di kantor. Saat menambah surat terisi tanggal hari ini; ubah bila surat diterima di hari lain. Tidak boleh setelah hari ini atau sebelum Tanggal Surat. Boleh dikosongkan; surat yang dicatat sebelum isian ini ada belum punya tanggal diterima | ❌ |
+| **No. Agenda** | Hanya saat menambah surat. Kosongkan (tertulis *Otomatis*) untuk nomor agenda otomatis; di bawahnya tampil *Nomor otomatis berikutnya: N*. Isi bila ingin melanjutkan nomor dari buku agenda kantor. Nomor milik surat yang sudah dihapus boleh dipakai lagi | ❌ |
 | **Perihal** | Subjek / topik surat | ✅ |
 | **Nomor Referensi (surat kita)** | Diisi bila surat ini membalas surat keluar unit kamu. Hanya ada saat menambah surat | ❌ |
 | **Dari (Pengirim)** | Nama instansi / perorangan pengirim | ✅ |
@@ -110,7 +111,8 @@ Isian yang ditolak ditandai langsung di bawah isiannya, dan di bagian atas form 
 | Instruksi disposisi maksimal 2000 karakter | Persingkat instruksi |
 | Tahun harus antara 2000 dan 2100 | Periksa tahun pada Tanggal Surat |
 | No. Agenda harus berupa angka 1 sampai 999999 | Isi angka saja, atau kosongkan untuk nomor otomatis |
-| No. Agenda … tahun … sudah dipakai surat lain di unit ini. No. Agenda milik surat yang sudah dihapus juga tidak dapat dipakai ulang. … | Kosongkan No. Agenda untuk nomor otomatis atau isi nomor lain |
+| No. Agenda … tahun … sudah dipakai surat lain di unit ini. … | Kosongkan No. Agenda untuk nomor otomatis atau isi nomor lain |
+| Tanggal diterima tidak boleh sebelum tanggal surat / Tanggal diterima tidak boleh setelah hari ini | Periksa Tanggal Diterima dan Tanggal Surat |
 | Disposisi tidak valid. Periksa unit tujuan dan batas waktunya. | Pilih paling banyak 10 unit tujuan dan periksa batas waktunya |
 
 ---
@@ -217,6 +219,8 @@ Hanya **Super Admin** yang dapat melihat dan memulihkan surat yang dihapus. Admi
 3. Klik **Pulihkan**, isi **Alasan pemulihan** (minimal 10 karakter) pada dialog **Pulihkan surat?**, lalu klik **Pulihkan**.
 
 Surat kembali ke daftar dengan nomor agenda dan nomor surat semula, dan pemulihannya dicatat di log audit. Bila nomor surat yang sama juga dipakai surat aktif lain di unit itu, pemberitahuan setelah pemulihan menyebut *Nomor surat ini juga dipakai oleh N surat lain yang masih aktif di unit ini. Periksa apakah surat itu sama.* Surat yang rangkaiannya sudah diberkaskan tidak dapat dipulihkan.
+
+No. Agenda surat yang dihapus boleh dipakai surat lain. Bila nomor itu sudah dipakai lagi, surat terhapus tidak dapat dipulihkan dan tampil pesan *No. Agenda … sudah dipakai surat lain di unit ini, sehingga surat ini tidak dapat dipulihkan dengan nomor semula.* Bila surat yang memakai nomor itu ternyata salah catat, hapus surat itu lebih dulu, lalu pulihkan.
 
 ---
 

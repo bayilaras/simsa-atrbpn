@@ -1,4 +1,4 @@
-import { and, desc, eq, type SQL } from 'drizzle-orm';
+import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import { suratKeluar, suratMasuk } from '../db/schema';
 import { ConflictError, ValidationError } from '../utils/errors.js';
 import { resolveSuratCalendar } from '../utils/surat-numbering.js';
@@ -8,8 +8,9 @@ import { settingsService, type SuratTemplate } from './settings.service.js';
  * Nomor urut (No. Agenda surat masuk, No. Urut surat keluar) per unit dan
  * tahun. Semua penentuan nomor berjalan di bawah kunci baris templat unit
  * (settingsService.lockSuratTemplates), mutex yang sama dengan max+1. Indeks
- * unik (unit, tahun, no_urut) mencakup surat yang sudah dihapus, jadi nomor
- * surat terhapus juga dihitung terpakai.
+ * unik (unit, tahun, no_urut) hanya mencakup surat yang tidak terhapus (0054):
+ * nomor surat terhapus boleh diisi lagi secara manual. Nomor otomatis tetap
+ * melanjutkan dari nomor tertinggi termasuk surat terhapus, jadi tidak mundur.
  */
 export type JenisNomorUrut = 'masuk' | 'keluar';
 
@@ -33,7 +34,7 @@ export function nomorUrutSumber(nilai: string | null | undefined): number | null
     return nomorUrutSah(angka) ? angka : null;
 }
 
-/** Nomor tertinggi + 1 di unit dan tahun itu. Panggil di bawah kunci templat unit. */
+/** Nomor tertinggi + 1 di unit dan tahun itu, surat terhapus ikut dihitung. Panggil di bawah kunci templat unit. */
 export async function nomorUrutBerikutnya(
     executor: any,
     jenis: JenisNomorUrut,
@@ -52,6 +53,7 @@ export async function nomorUrutBerikutnya(
     return (terakhir?.noUrut || 0) + 1;
 }
 
+/** Nomor dipakai surat yang tidak terhapus di unit dan tahun itu. */
 export async function nomorUrutTerpakai(
     executor: any,
     jenis: JenisNomorUrut,
@@ -63,7 +65,12 @@ export async function nomorUrutTerpakai(
     const [ada] = await executor
         .select({ id: tabel.id })
         .from(tabel)
-        .where(and(eq(tabel.unitKerjaId, unitKerjaId), eq(tabel.tahun, tahun), eq(tabel.noUrut, noUrut)))
+        .where(and(
+            eq(tabel.unitKerjaId, unitKerjaId),
+            eq(tabel.tahun, tahun),
+            eq(tabel.noUrut, noUrut),
+            sql`${tabel.isDeleted} IS NOT TRUE`,
+        ))
         .limit(1);
     return Boolean(ada);
 }
@@ -71,7 +78,14 @@ export async function nomorUrutTerpakai(
 export function pesanNomorUrutTerpakai(jenis: JenisNomorUrut, noUrut: number, tahun: number): string {
     const label = LABEL_NOMOR_URUT[jenis];
     return `${label} ${noUrut} tahun ${tahun} sudah dipakai surat lain di unit ini. `
-        + `${label} milik surat yang sudah dihapus juga tidak dapat dipakai ulang. Kosongkan ${label} untuk nomor otomatis atau isi nomor lain.`;
+        + `Kosongkan ${label} untuk nomor otomatis atau isi nomor lain.`;
+}
+
+/** Pemulihan surat terhapus yang nomornya sudah dipakai surat lain yang tidak terhapus. */
+export function pesanNomorUrutPulihkan(jenis: JenisNomorUrut, noUrut: number, tahun: number): string {
+    const label = LABEL_NOMOR_URUT[jenis];
+    return `${label} ${noUrut} tahun ${tahun} sudah dipakai surat lain di unit ini, sehingga surat ini tidak dapat dipulihkan dengan nomor semula. `
+        + `Bila surat yang memakai nomor itu salah catat, hapus surat itu lebih dulu.`;
 }
 
 /**

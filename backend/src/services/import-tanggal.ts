@@ -163,3 +163,14 @@ export function importDateProblem(value: ImportDateValue): string | null {
     const result = read(value);
     return 'problem' in result ? problemMessage(result.problem, result.shown) : null;
 }
+
+/** parseImportDate untuk kolom tanggal diterima; pesannya menyebut kolom itu. */
+export function parseImportDateDiterima(value: ImportDateValue): string | null {
+    const result = read(value);
+    if ('problem' in result) {
+        throw new ValidationError(problemMessage(result.problem, result.shown)
+            .replace(/^Tanggal "/, 'Tanggal diterima "')
+            .replace(/^Tahun pada tanggal "/, 'Tahun pada tanggal diterima "'));
+    }
+    return result.date;
+}

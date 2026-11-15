@@ -13,6 +13,8 @@ export const suratMasuk = pgTable('surat_masuk', {
     sifatSurat: varchar('sifat_surat', { length: 50 }), // Biasa, Segera, Sangat Segera
     nomorSurat: varchar('nomor_surat', { length: 255 }),
     tanggalSurat: date('tanggal_surat'),
+    // 0054: tanggal surat sampai di kantor; NULL untuk surat lama.
+    tanggalDiterima: date('tanggal_diterima'),
     perihal: text('perihal'),
     dari: text('dari'),
     kepada: text('kepada'),
@@ -39,8 +41,12 @@ export const suratMasuk = pgTable('surat_masuk', {
     klasifikasiItemIndex: index('surat_masuk_klasifikasi_item_idx').on(table.klasifikasiItemId),
     jraItemIndex: index('surat_masuk_jra_item_idx').on(table.jraItemId),
     jraRequiresClassification: check('surat_masuk_jra_requires_classification', sql`${table.jraItemId} IS NULL OR ${table.klasifikasiItemId} IS NOT NULL`),
-    unitYearSequenceUnique: uniqueIndex('surat_masuk_unit_year_sequence_uidx')
-        .on(table.unitKerjaId, table.tahun, table.noUrut),
+    // 0054: nomor unik hanya di antara surat yang tidak terhapus; nomor surat
+    // terhapus boleh dipakai lagi. Indeks biasa melayani nomor tertinggi + 1.
+    unitYearSequenceLiveUnique: uniqueIndex('surat_masuk_unit_year_sequence_live_uidx')
+        .on(table.unitKerjaId, table.tahun, table.noUrut)
+        .where(sql`${table.isDeleted} IS NOT TRUE`),
+    unitYearSequenceIndex: index('surat_masuk_unit_year_sequence_idx').on(table.unitKerjaId, table.tahun, table.noUrut),
     // 0053: daftar per unit, terbaru dahulu.
     unitCreatedAtIndex: index('surat_masuk_unit_created_at_idx').on(table.unitKerjaId, table.createdAt.desc()),
 }));

@@ -43,7 +43,7 @@ Kolom ekspor **Asal Naskah** mencatat pilihan ini.
 | **Naskah Dinas** | Jenis naskah yang akan dikirim | ✅ |
 | **Nomor Surat** | Nomor manual; kosongkan untuk nomor otomatis dari template unit. Bila nomor yang diketik sudah tercatat, tampil peringatan **Nomor sudah terdaftar** (tidak menghalangi penyimpanan) | ❌ |
 | **Tanggal Surat** | Tanggal surat dibuat. Tahun harus antara 2000 dan 2100 | ✅ |
-| **No. Urut** | Hanya saat menambah surat. Kosongkan (tertulis *Otomatis*) untuk nomor urut otomatis; di bawahnya tampil *Nomor otomatis berikutnya: N*. Isi bila ingin melanjutkan nomor urut dari buku agenda kantor. Nomor yang sudah dipakai, termasuk milik surat yang sudah dihapus, ditolak | ❌ |
+| **No. Urut** | Hanya saat menambah surat. Kosongkan (tertulis *Otomatis*) untuk nomor urut otomatis; di bawahnya tampil *Nomor otomatis berikutnya: N*. Isi bila ingin melanjutkan nomor urut dari buku agenda kantor. Nomor yang dipakai surat lain ditolak; nomor milik surat yang sudah dihapus boleh dipakai lagi | ❌ |
 | **Perihal** | Subjek / topik surat | ✅ |
 | **Sifat Surat** | Biasa / Penting / Segera / Sangat Segera (tingkat urgensi, bukan kerahasiaan) | ❌ |
 | **Kepada** | Tujuan pengiriman surat | ✅ |

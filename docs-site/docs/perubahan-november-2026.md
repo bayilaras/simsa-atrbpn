@@ -24,7 +24,8 @@ Sebagian besar pengguna diminta masuk sekali lagi. Hal ini wajar: masuk kembali 
 
 ## Surat masuk dan surat keluar
 
-- **No. Agenda** (surat masuk) dan **No. Urut** (surat keluar) dapat diisi saat menambah surat untuk melanjutkan nomor dari buku agenda kantor. Kosongkan untuk nomor otomatis; formulir menampilkan *Nomor otomatis berikutnya: N*. Nomor yang sudah dipakai, termasuk nomor surat yang sudah dihapus, ditolak.
+- **No. Agenda** (surat masuk) dan **No. Urut** (surat keluar) dapat diisi saat menambah surat untuk melanjutkan nomor dari buku agenda kantor. Kosongkan untuk nomor otomatis; formulir menampilkan *Nomor otomatis berikutnya: N*. Nomor yang dipakai surat lain ditolak. Nomor milik surat yang sudah dihapus boleh dipakai lagi; surat terhapus itu tidak dapat dipulihkan selama nomornya dipakai surat lain.
+- **Tanggal Diterima** (surat masuk): tanggal surat sampai di kantor. Saat menambah surat terisi tanggal hari ini; ubah bila surat diterima di hari lain. Tanggalnya tampil di daftar dan detail, dapat dipakai untuk **Urutkan** dan untuk **Rentang Tanggal** pada **Filter**, ikut di ekspor Excel, dan dapat diimpor dari kolom **Tanggal Diterima** atau **Tgl Terima**. Surat yang dicatat sebelumnya belum punya tanggal diterima; isi lewat **Edit Surat** atau impor dengan **Sinkronkan surat yang sudah tercatat**.
 - Bila tanggal surat diubah ke tahun lain, surat mendapat nomor agenda atau nomor urut baru di tahun itu. Tahun surat harus antara 2000 dan 2100.
 - Formulir memperingatkan **Nomor sudah terdaftar** bila nomor surat yang diketik sudah tercatat. Peringatan ini tidak menghalangi penyimpanan.
 - Bila dua orang mengubah surat yang sama, penyimpanan kedua ditolak dengan pesan *Data ini sudah diubah pengguna lain sejak Anda membukanya…* Muat ulang halaman, lalu ulangi perubahan Anda.

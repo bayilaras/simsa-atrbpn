@@ -84,7 +84,8 @@ export class ExportService {
     /**
      * Export Surat Masuk to Excel — format matches Google Spreadsheet structure
      * Columns: ID, No, Jenis Surat, Sifat Surat, Nomor Surat, Tanggal Surat,
-     *          Perihal, Dari, Kepada, Status, Disposisi, Timestamp, Status Arsip
+     *          Tanggal Diterima, Perihal, Dari, Kepada, Status, Disposisi,
+     *          Timestamp, Status Arsip (+ Unit Kerja for all units)
      */
     async generateExcelSuratMasuk(filters: SuratMasukFilters, opsi: OpsiEksporSurat = {}): Promise<Buffer> {
         const result = await suratMasukService.findAll({
@@ -96,7 +97,7 @@ export class ExportService {
         const unitPengolah = await namaUnitPengolah(filters.unitKerjaId);
         // Ekspor Semua Unit Kerja diberi kolom Unit Kerja berisi nama unit.
         const namaUnit = await namaUnitPerBaris(filters.unitKerjaId, data);
-        const kolomTerakhir = namaUnit ? 14 : 13;
+        const kolomTerakhir = namaUnit ? 15 : 14;
 
         const { Workbook } = await loadExcelJS();
         const workbook = new Workbook();
@@ -122,11 +123,11 @@ export class ExportService {
         const headerRow = 4;
         const headers = [
             'ID', 'No', 'Jenis Surat', 'Sifat Surat', 'Nomor Surat',
-            'Tanggal Surat', 'Perihal', 'Dari', 'Kepada', 'Status',
+            'Tanggal Surat', 'Tanggal Diterima', 'Perihal', 'Dari', 'Kepada', 'Status',
             'Disposisi', 'Timestamp', 'Status Arsip',
             ...(namaUnit ? ['Unit Kerja'] : []),
         ];
-        const colWidths = [20, 8, 18, 14, 28, 15, 40, 25, 25, 18, 25, 18, 14, ...(namaUnit ? [30] : [])];
+        const colWidths = [20, 8, 18, 14, 28, 15, 15, 40, 25, 25, 18, 25, 18, 14, ...(namaUnit ? [30] : [])];
 
         headers.forEach((header, i) => {
             const cell = worksheet.getCell(headerRow, i + 1);
@@ -154,6 +155,7 @@ export class ExportService {
                 labelSifatSuratMasuk(item.sifatSurat),
                 item.nomorSurat || '',
                 item.tanggalSurat || '',
+                item.tanggalDiterima || '',
                 item.perihal || '',
                 item.dari || '',
                 item.kepada || '',
@@ -169,7 +171,7 @@ export class ExportService {
                 cell.value = val;
                 cell.font = DATA_FONT;
                 cell.border = THIN_BORDER;
-                cell.alignment = i === 6 || i === 7 || i === 8 || i === 10 || i === 13 ? LEFT_ALIGN : CENTER_ALIGN;
+                cell.alignment = i === 7 || i === 8 || i === 9 || i === 11 || i === 14 ? LEFT_ALIGN : CENTER_ALIGN;
             });
         });
 

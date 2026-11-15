@@ -100,6 +100,7 @@ export const KOLOM_SURAT_MASUK = {
     sifatSurat: 'kendali',
     nomorSurat: 'metadata',
     tanggalSurat: 'metadata',
+    tanggalDiterima: 'metadata',
     perihal: 'metadata',
     dari: 'metadata',
     kepada: 'metadata',

@@ -77,6 +77,13 @@ export function InfoSection({ surat }) {
                         </p>
                     </div>
                     <div className="space-y-1 p-3 bg-muted/30 rounded-lg">
+                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tanggal Diterima</label>
+                        <p className="flex items-center gap-2 text-sm">
+                            <Calendar className="h-4 w-4 text-emerald-600" />
+                            {surat.tanggalDiterima ? formatDate(surat.tanggalDiterima) : <span className="text-muted-foreground">Tidak dicatat</span>}
+                        </p>
+                    </div>
+                    <div className="space-y-1 p-3 bg-muted/30 rounded-lg">
                         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">No. Agenda</label>
                         <p className="flex items-center gap-2 text-sm">
                             <Hash className="h-4 w-4 text-blue-600" />

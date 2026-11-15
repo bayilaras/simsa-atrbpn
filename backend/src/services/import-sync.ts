@@ -48,7 +48,7 @@ export interface ImportSyncTarget {
 }
 
 const FIELD_LABELS: Record<string, string> = {
-    perihal: 'Perihal', tanggalSurat: 'Tanggal surat', sifatSurat: 'Sifat surat',
+    perihal: 'Perihal', tanggalSurat: 'Tanggal surat', tanggalDiterima: 'Tanggal diterima', sifatSurat: 'Sifat surat',
     linkDokumen: 'Tautan dokumen', naskahDinas: 'Jenis naskah', jenisSurat: 'Jenis surat',
 };
 

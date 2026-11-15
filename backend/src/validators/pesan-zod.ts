@@ -260,6 +260,8 @@ export const LABEL_ISIAN: Readonly<Record<string, string>> = {
     tanggalSampai: 'Tanggal akhir',
     tanggalSelesai: 'Tanggal selesai',
     tanggalSurat: 'Tanggal surat',
+    tanggalDiterima: 'Tanggal diterima',
+    acuanTanggal: 'Rentang tanggal menurut',
     targetUnitId: 'Unit tujuan',
     targets: 'Unit tujuan disposisi',
     tempatDilakukan: 'Tempat pelaksanaan',

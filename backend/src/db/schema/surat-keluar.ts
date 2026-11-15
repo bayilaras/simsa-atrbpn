@@ -57,8 +57,11 @@ export const suratKeluar = pgTable('surat_keluar', {
     klasifikasiItemIndex: index('surat_keluar_klasifikasi_item_idx').on(table.klasifikasiItemId),
     jraItemIndex: index('surat_keluar_jra_item_idx').on(table.jraItemId),
     jraRequiresClassification: check('surat_keluar_jra_requires_classification', sql`${table.jraItemId} IS NULL OR ${table.klasifikasiItemId} IS NOT NULL`),
-    unitYearSequenceUnique: uniqueIndex('surat_keluar_unit_year_sequence_uidx')
-        .on(table.unitKerjaId, table.tahun, table.noUrut),
+    // 0054: nomor unik hanya di antara surat yang tidak terhapus (lihat surat-masuk.ts).
+    unitYearSequenceLiveUnique: uniqueIndex('surat_keluar_unit_year_sequence_live_uidx')
+        .on(table.unitKerjaId, table.tahun, table.noUrut)
+        .where(sql`${table.isDeleted} IS NOT TRUE`),
+    unitYearSequenceIndex: index('surat_keluar_unit_year_sequence_idx').on(table.unitKerjaId, table.tahun, table.noUrut),
     // 0053: daftar per unit, terbaru dahulu.
     unitCreatedAtIndex: index('surat_keluar_unit_created_at_idx').on(table.unitKerjaId, table.createdAt.desc()),
 }));

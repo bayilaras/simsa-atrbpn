@@ -44,7 +44,8 @@ import { useLacakSearch } from '@/hooks/use-lacak-search';
 import { useDisposisiOpsi } from '@/hooks/use-disposisi-opsi';
 import { ReferensiSection } from '@/components/surat-keluar/ReferensiSection';
 import { DisposisiRegistrasiSection } from '@/components/surat-masuk/DisposisiRegistrasiSection';
-import { PESAN_TERKENDALI, isSifatTerkendali } from '@/lib/tindak-lanjut';
+import { PESAN_TERKENDALI, hariIniJakarta, isSifatTerkendali } from '@/lib/tindak-lanjut';
+import { PETUNJUK_TANGGAL_DITERIMA, galatTanggalDiterima } from '@/lib/tanggal-diterima';
 import { PESAN_KELAS_TERBATAS_PERAN, PESAN_SURAT_MASUK_PERLU_PERSETUJUAN, adaKelasTersembunyi, bolehMemilihKelas, normalisasiKelas, saringOpsiKelas } from '@/lib/kelas-keamanan';
 import {
     PESAN_TAHUN_DI_LUAR_RENTANG, PETUNJUK_NO_AGENDA, TANGGAL_SURAT_MAKS, TANGGAL_SURAT_MIN, catatanPindahTahun, galatNomorUrut,
@@ -202,6 +203,8 @@ export default function TambahSuratMasuk() {
         sifatSurat: 'biasa',
         nomorSurat: '',
         tanggalSurat: '',
+        // Surat baru biasanya diterima hari ini; petugas mengubahnya bila tidak.
+        tanggalDiterima: isEditMode ? '' : hariIniJakarta(),
         // No. Agenda; kosong berarti nomor otomatis (hanya saat tambah).
         noUrut: '',
         perihal: '',
@@ -286,6 +289,7 @@ export default function TambahSuratMasuk() {
                 sifatSurat: sifatAwal,
                 nomorSurat: data.nomorSurat || '',
                 tanggalSurat: data.tanggalSurat ? data.tanggalSurat.split('T')[0] : '',
+                tanggalDiterima: data.tanggalDiterima ? data.tanggalDiterima.split('T')[0] : '',
                 perihal: data.perihal || '',
                 dari: data.dari || '',
                 kepada: data.kepada || '',
@@ -464,6 +468,8 @@ export default function TambahSuratMasuk() {
         if ((!isEditMode || tahunBaru !== null) && tahunDiLuarRentang(formData.tanggalSurat)) {
             return { field: 'tanggalSurat', message: PESAN_TAHUN_DI_LUAR_RENTANG };
         }
+        const galatDiterima = galatTanggalDiterima(formData.tanggalSurat, formData.tanggalDiterima);
+        if (galatDiterima) return { field: 'tanggalDiterima', message: galatDiterima };
         const galatNoAgenda = isEditMode ? null : galatNomorUrut(formData.noUrut, 'No. Agenda');
         if (galatNoAgenda) return { field: 'noUrut', message: galatNoAgenda };
         if (!formData.perihal) return { field: 'perihal', message: 'Perihal wajib diisi' };
@@ -896,34 +902,58 @@ export default function TambahSuratMasuk() {
                             </div>
                         </div>
 
-                        {!isEditMode && (
-                            <div className="space-y-2 md:max-w-xs">
-                                <Label htmlFor="no-agenda" className="text-sm font-medium flex items-center gap-2">
-                                    <Hash className="h-4 w-4 text-muted-foreground" />
-                                    No. Agenda
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div className="space-y-2">
+                                <Label htmlFor="tanggal-diterima" className="text-sm font-medium flex items-center gap-2">
+                                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                                    Tanggal Diterima
                                 </Label>
                                 <Input
-                                    id="no-agenda"
-                                    inputMode="numeric"
-                                    autoComplete="off"
-                                    maxLength={6}
-                                    aria-invalid={Boolean(fieldErrors.noUrut)}
-                                    aria-describedby={[fieldErrors.noUrut && 'no-agenda-error', 'no-agenda-bantuan', noAgendaOtomatis && 'no-agenda-otomatis'].filter(Boolean).join(' ')}
-                                    value={formData.noUrut ?? ''}
-                                    onChange={(e) => handleChange('noUrut', e.target.value)}
-                                    placeholder="Otomatis"
+                                    id="tanggal-diterima"
+                                    type="date"
+                                    min={formData.tanggalSurat || undefined}
+                                    max={hariIniJakarta()}
+                                    aria-invalid={Boolean(fieldErrors.tanggalDiterima)}
+                                    aria-describedby={[fieldErrors.tanggalDiterima && 'tanggal-diterima-error', 'tanggal-diterima-bantuan'].filter(Boolean).join(' ')}
+                                    value={formData.tanggalDiterima ?? ''}
+                                    onChange={(e) => handleChange('tanggalDiterima', e.target.value)}
                                     className="h-11 focus-visible:ring-primary"
                                 />
-                                <PesanIsian id="no-agenda-error" pesan={fieldErrors.noUrut} />
-                                <p id="no-agenda-bantuan" className="text-xs text-muted-foreground flex items-start gap-1">
+                                <PesanIsian id="tanggal-diterima-error" pesan={fieldErrors.tanggalDiterima} />
+                                <p id="tanggal-diterima-bantuan" className="text-xs text-muted-foreground flex items-start gap-1">
                                     <Info className="h-3 w-3 mt-0.5 shrink-0" aria-hidden="true" />
-                                    {PETUNJUK_NO_AGENDA}
+                                    {PETUNJUK_TANGGAL_DITERIMA}
                                 </p>
-                                {noAgendaOtomatis && (
-                                    <p id="no-agenda-otomatis" className="text-xs text-primary">{`Nomor otomatis berikutnya: ${noAgendaOtomatis}`}</p>
-                                )}
                             </div>
-                        )}
+                            {!isEditMode && (
+                                <div className="space-y-2">
+                                    <Label htmlFor="no-agenda" className="text-sm font-medium flex items-center gap-2">
+                                        <Hash className="h-4 w-4 text-muted-foreground" />
+                                        No. Agenda
+                                    </Label>
+                                    <Input
+                                        id="no-agenda"
+                                        inputMode="numeric"
+                                        autoComplete="off"
+                                        maxLength={6}
+                                        aria-invalid={Boolean(fieldErrors.noUrut)}
+                                        aria-describedby={[fieldErrors.noUrut && 'no-agenda-error', 'no-agenda-bantuan', noAgendaOtomatis && 'no-agenda-otomatis'].filter(Boolean).join(' ')}
+                                        value={formData.noUrut ?? ''}
+                                        onChange={(e) => handleChange('noUrut', e.target.value)}
+                                        placeholder="Otomatis"
+                                        className="h-11 focus-visible:ring-primary"
+                                    />
+                                    <PesanIsian id="no-agenda-error" pesan={fieldErrors.noUrut} />
+                                    <p id="no-agenda-bantuan" className="text-xs text-muted-foreground flex items-start gap-1">
+                                        <Info className="h-3 w-3 mt-0.5 shrink-0" aria-hidden="true" />
+                                        {PETUNJUK_NO_AGENDA}
+                                    </p>
+                                    {noAgendaOtomatis && (
+                                        <p id="no-agenda-otomatis" className="text-xs text-primary">{`Nomor otomatis berikutnya: ${noAgendaOtomatis}`}</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
 
                         <div className="space-y-2">
                             <Label htmlFor="perihal-surat" className="text-sm font-medium">

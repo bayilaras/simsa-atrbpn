@@ -1596,6 +1596,46 @@ describe('PostgreSQL migration chain', () => {
         await database.exec(`RESET enable_seqscan`);
     }, PGLITE_MIGRATION_TIMEOUT_MS);
 
+    it('0054 menambah tanggal diterima dan membatasi keunikan nomor urut pada surat yang tidak terhapus', async () => {
+        const database = await createDatabase();
+        const index0054 = journal.entries.findIndex(({ tag }) => tag === '0054_tanggal_diterima_nomor_urut_hidup');
+        expect(index0054).toBeGreaterThan(0);
+        for (const entry of journal.entries.slice(0, index0054)) {
+            await applyMigration(database, entry);
+        }
+        await database.exec(`
+            INSERT INTO unit_kerja (id, name) VALUES ('unit-a', 'Unit A') ON CONFLICT DO NOTHING;
+            INSERT INTO surat_masuk (unit_kerja_id, no_urut, tahun, perihal, is_deleted) VALUES ('unit-a', 1, 2026, 'Terhapus', true);
+            INSERT INTO surat_keluar (unit_kerja_id, no_urut, tahun, perihal, is_deleted) VALUES ('unit-a', 1, 2026, 'Terhapus', true);
+        `);
+        await applyMigration(database, journal.entries[index0054]);
+        // IF NOT EXISTS: menjalankan ulang tidak gagal.
+        await applyMigration(database, journal.entries[index0054]);
+
+        const { rows: kolom } = await database.query<{ data_type: string; is_nullable: string }>(`
+            SELECT data_type, is_nullable FROM information_schema.columns
+             WHERE table_name = 'surat_masuk' AND column_name = 'tanggal_diterima'`);
+        expect(kolom).toEqual([{ data_type: 'date', is_nullable: 'YES' }]);
+
+        const { rows } = await database.query<{ indexname: string; indexdef: string }>(`
+            SELECT indexname, indexdef FROM pg_indexes
+             WHERE schemaname = 'public' AND tablename IN ('surat_masuk', 'surat_keluar') AND indexname LIKE '%unit_year_sequence%'`);
+        const definisi = Object.fromEntries(rows.map(row => [row.indexname, row.indexdef]));
+        expect(definisi).toEqual({
+            surat_masuk_unit_year_sequence_live_uidx: 'CREATE UNIQUE INDEX surat_masuk_unit_year_sequence_live_uidx ON public.surat_masuk USING btree (unit_kerja_id, tahun, no_urut) WHERE (is_deleted IS NOT TRUE)',
+            surat_masuk_unit_year_sequence_idx: 'CREATE INDEX surat_masuk_unit_year_sequence_idx ON public.surat_masuk USING btree (unit_kerja_id, tahun, no_urut)',
+            surat_keluar_unit_year_sequence_live_uidx: 'CREATE UNIQUE INDEX surat_keluar_unit_year_sequence_live_uidx ON public.surat_keluar USING btree (unit_kerja_id, tahun, no_urut) WHERE (is_deleted IS NOT TRUE)',
+            surat_keluar_unit_year_sequence_idx: 'CREATE INDEX surat_keluar_unit_year_sequence_idx ON public.surat_keluar USING btree (unit_kerja_id, tahun, no_urut)',
+        });
+
+        // Nomor surat terhapus boleh dipakai lagi; dua surat tidak terhapus bernomor sama tetap ditolak.
+        for (const tabel of ['surat_masuk', 'surat_keluar']) {
+            await database.exec(`INSERT INTO ${tabel} (unit_kerja_id, no_urut, tahun, perihal) VALUES ('unit-a', 1, 2026, 'Pengganti')`);
+            await expect(database.exec(`INSERT INTO ${tabel} (unit_kerja_id, no_urut, tahun, perihal) VALUES ('unit-a', 1, 2026, 'Ganda')`))
+                .rejects.toThrow(new RegExp(`${tabel}_unit_year_sequence_live_uidx`));
+        }
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
+
     it('memodelkan setiap kolom integrasi rangkaian di skema Drizzle', async () => {
         const database = await createDatabase();
         for (const entry of journal.entries) {
