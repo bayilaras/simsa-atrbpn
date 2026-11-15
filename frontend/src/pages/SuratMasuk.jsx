@@ -19,7 +19,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DaftarSuratTerhapus } from '@/components/surat/DaftarSuratTerhapus';
 import { KABAG_LABELS } from '@/lib/disposisi-labels';
 import { JENIS_NASKAH_DINAS } from '@/lib/jenis-naskah';
-import { PILIHAN_URUTAN_SURAT, URUTAN_BAWAAN, parameterUrutan } from '@/lib/urutan-daftar-surat';
+import { ACUAN_TANGGAL_BAWAAN, PILIHAN_URUTAN_SURAT_MASUK, URUTAN_BAWAAN, parameterAcuanTanggal, parameterUrutan } from '@/lib/urutan-daftar-surat';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
 import ImportFileDialog from '@/components/ImportFileDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
@@ -127,6 +127,8 @@ export default function SuratMasuk() {
     const [disposisiKe, setDisposisiKe] = useState('all');
     const [tanggalDari, setTanggalDari] = useState(null);
     const [tanggalSampai, setTanggalSampai] = useState(null);
+    // Rentang tanggal menurut tanggal surat atau tanggal diterima.
+    const [acuanTanggal, setAcuanTanggal] = useState(ACUAN_TANGGAL_BAWAAN);
     const [urutan, setUrutan] = useState(URUTAN_BAWAAN);
 
     // Dialog states
@@ -182,6 +184,7 @@ export default function SuratMasuk() {
                 ...parameterDisposisi(disposisiKe),
                 tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
                 tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
+                acuanTanggal: parameterAcuanTanggal(acuanTanggal),
                 urutan: parameterUrutan(urutan),
             };
 
@@ -214,7 +217,7 @@ export default function SuratMasuk() {
         } finally {
             if (seq === fetchSeqRef.current && !changingPage) setLoading(false);
         }
-    }, [pagination.page, pagination.limit, debouncedSearchTerm, resolvedUnitKerjaId, tahun, jenisSurat, status, sifatSurat, disposisiKe, tanggalDari, tanggalSampai, urutan, toast]);
+    }, [pagination.page, pagination.limit, debouncedSearchTerm, resolvedUnitKerjaId, tahun, jenisSurat, status, sifatSurat, disposisiKe, tanggalDari, tanggalSampai, acuanTanggal, urutan, toast]);
 
     // Fetch stats from API
     const fetchStats = useCallback(async () => {
@@ -282,6 +285,7 @@ export default function SuratMasuk() {
         setDisposisiKe('all');
         setTanggalDari(null);
         setTanggalSampai(null);
+        setAcuanTanggal(ACUAN_TANGGAL_BAWAAN);
         setPagination(prev => ({ ...prev, page: 1 }));
     };
 
@@ -410,6 +414,7 @@ export default function SuratMasuk() {
                                 ...parameterDisposisi(disposisiKe),
                                 tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
                                 tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
+                                acuanTanggal: parameterAcuanTanggal(acuanTanggal),
                                 urutan: parameterUrutan(urutan),
                             }}
                         />
@@ -520,7 +525,7 @@ export default function SuratMasuk() {
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {PILIHAN_URUTAN_SURAT.map(pilihan => (
+                                        {PILIHAN_URUTAN_SURAT_MASUK.map(pilihan => (
                                             <SelectItem key={pilihan.value} value={pilihan.value}>{pilihan.label}</SelectItem>
                                         ))}
                                     </SelectContent>
@@ -621,6 +626,18 @@ export default function SuratMasuk() {
                                     {/* Filter Tanggal */}
                                     <fieldset className="min-w-0 space-y-1.5 sm:col-span-2">
                                         <legend className="text-xs font-semibold text-muted-foreground uppercase">Rentang Tanggal</legend>
+                                        <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                            <span>Menurut</span>
+                                            <Select value={acuanTanggal} onValueChange={applyFilter(setAcuanTanggal)}>
+                                                <SelectTrigger id="surat-masuk-acuan-tanggal" aria-label="Rentang tanggal menurut" className="h-8 w-auto min-w-[160px] bg-background">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="surat">Tanggal surat</SelectItem>
+                                                    <SelectItem value="diterima">Tanggal diterima</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </label>
                                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                                             <label className="min-w-0 space-y-1.5">
                                                 <span className="text-xs text-muted-foreground">Tanggal dari</span>
@@ -715,6 +732,9 @@ export default function SuratMasuk() {
                                                 <TableCell data-label="Tanggal" className="text-sm">
                                                     <div className="flex flex-col sm:items-start items-end">
                                                         <span className="font-medium">{formatDate(row.tanggalSurat)}</span>
+                                                        {row.tanggalDiterima && (
+                                                            <span className="text-xs text-muted-foreground">Diterima {formatDate(row.tanggalDiterima)}</span>
+                                                        )}
                                                     </div>
                                                 </TableCell>
                                                 <TableCell data-label="Nomor Surat">

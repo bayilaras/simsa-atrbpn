@@ -516,7 +516,7 @@ Kartu **Antrean pemindaian** menunjukkan jumlah berkas **Menunggu**, **Terlambat
 | Muncul *Versi baru SIMSA tersedia. …* | Simpan pekerjaan yang sedang diisi, lalu klik **Muat ulang**. |
 | Unggah berkas PDF lama atau melewati batas waktu | Periksa koneksi internet. Kecilkan ukuran PDF (misalnya dengan fitur kompres PDF), pilih berkas yang sudah dikecilkan, lalu simpan kembali; isian formulir tetap ada. |
 | *Data ini sudah diubah pengguna lain sejak Anda membukanya. …* | Klik **Muat ulang**, periksa perubahan terbaru, lalu ulangi perubahan Anda. |
-| *No. Agenda … sudah dipakai surat lain di unit ini. …* | Kosongkan **No. Agenda** (atau **No. Urut**) agar nomor dibuat otomatis, atau isi nomor lain. Nomor milik surat yang sudah dihapus juga tidak dapat dipakai ulang. |
+| *No. Agenda … sudah dipakai surat lain di unit ini. …* | Kosongkan **No. Agenda** (atau **No. Urut**) agar nomor dibuat otomatis, atau isi nomor lain. Nomor milik surat yang sudah dihapus boleh dipakai lagi. |
 | Pencarian tidak menemukan data | Ketik minimal dua karakter, periksa ejaan/filter/unit, lalu cari melalui daftar khusus. Data terkendali tetap tersembunyi tanpa akses. |
 | Unggah ditolak | Periksa ukuran maksimum, ekstensi, jenis MIME, isi file, dan apakah file rusak. Simpan ulang dari aplikasi sumber bila perlu. |
 | File ada tetapi tidak dapat dibuka | File mungkin masih menunggu pemindaian keamanan, gagal dipindai, terdeteksi bermasalah, atau memerlukan persetujuan akses. Hubungi Super Admin dengan nomor rekod dan waktu unggah agar berkas diantre ulang dari Monitoring Operasional, tanpa mengirim file lewat kanal pribadi. |

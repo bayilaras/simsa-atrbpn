@@ -7,9 +7,10 @@ import {
     NOTIFICATION_ID_PATTERN,
 } from '../utils/notification-id.js';
 import { jakartaDate } from '../utils/jakarta-date.js';
+import { PESAN_DITERIMA_SEBELUM_TANGGAL_SURAT, PESAN_DITERIMA_SETELAH_HARI_INI } from '../services/tanggal-diterima.js';
 import { parseJsonObjectString } from '../utils/json-objek-teks.js';
 import { KATEGORI_PERLU_DILENGKAPI } from '../services/perlu-dilengkapi.constants.js';
-import { URUTAN_DAFTAR_SURAT } from '../services/urutan-daftar-surat.constants.js';
+import { ACUAN_TANGGAL_SURAT_MASUK, URUTAN_DAFTAR_SURAT, URUTAN_DAFTAR_SURAT_MASUK } from '../services/urutan-daftar-surat.constants.js';
 
 // Common schemas
 export const uuidSchema = z.string().uuid();
@@ -170,9 +171,23 @@ export const tindakLanjutInputSchema = z.object({
 }).strict();
 export type TindakLanjutInput = z.infer<typeof tindakLanjutInputSchema>;
 
+
+/** Tanggal surat sampai di kantor: opsional, paling lambat hari ini (WIB); string kosong mengosongkan. */
+const tanggalDiterimaSchema = z.preprocess(
+    (nilai) => (nilai === '' ? null : nilai),
+    dateSchema.refine((nilai) => nilai <= jakartaDate(), PESAN_DITERIMA_SETELAH_HARI_INI).nullable(),
+).optional();
+
+/** Surat tidak diterima sebelum bertanggal; diperiksa bila kedua tanggal dikirim. */
+function cekTanggalDiterima(data: { tanggalSurat?: string; tanggalDiterima?: string | null }, ctx: z.RefinementCtx) {
+    if (data.tanggalSurat && data.tanggalDiterima && data.tanggalDiterima < data.tanggalSurat) {
+        ctx.addIssue({ code: 'custom', path: ['tanggalDiterima'], message: PESAN_DITERIMA_SEBELUM_TANGGAL_SURAT });
+    }
+}
+
 // Surat Masuk schemas
 // Fields must match database schema in db/schema/surat-masuk.ts
-export const createSuratMasukSchema = z.object({
+const suratMasukFieldsSchema = z.object({
     unitKerjaId: z.string('Unit kerja wajib diisi').min(1, 'Unit kerja wajib diisi').max(50, 'Unit kerja tidak valid'),
     noUrut: nomorUrutManualSchema('No. Agenda'), // Auto-generated if not provided
     tahun: z.coerce.number('Tahun harus berupa angka').int('Tahun harus berupa bilangan bulat')
@@ -181,6 +196,7 @@ export const createSuratMasukSchema = z.object({
     sifatSurat: teksMaks('Sifat surat', 50).optional(), // Biasa, Segera, Sangat Segera
     nomorSurat: optionalNomorSuratSchema,
     tanggalSurat: z.string('Tanggal surat wajib diisi').pipe(dateSchema),
+    tanggalDiterima: tanggalDiterimaSchema,
     perihal: z.string('Perihal wajib diisi').min(1, 'Perihal wajib diisi').max(2000, 'Perihal maksimal 2000 karakter'),
     dari: z.string('Pengirim wajib diisi').min(1, 'Pengirim wajib diisi').max(255, 'Pengirim maksimal 255 karakter'), // Field name is 'dari' in DB
     kepada: teksMaks('Penerima', 255).optional(),
@@ -207,17 +223,21 @@ export const createSuratMasukSchema = z.object({
         .positive('Pilihan JRA tidak valid').nullable().optional(),
 });
 
+export const createSuratMasukSchema = suratMasukFieldsSchema.superRefine(cekTanggalDiterima);
+
 // Zod 4 applies inner defaults even through partial(). Status surat masuk kini
 // diturunkan server (§8), sehingga tidak lagi dapat diubah lewat PUT. Tahun dan
 // No. Agenda mengikuti tanggal surat di server (pindah tahun), bukan isian klien.
-export const updateSuratMasukSchema = createSuratMasukSchema.partial()
+// Bila hanya salah satu tanggal dikirim, urutannya diperiksa layanan terhadap baris tersimpan.
+export const updateSuratMasukSchema = suratMasukFieldsSchema.partial()
     .omit({ unitKerjaId: true, status: true, disposisi: true, referensi: true, noUrut: true, tahun: true })
     .extend({
         disposisi: z.union([z.string(), z.array(z.string())], 'Disposisi tidak valid')
             .pipe(legacyDisposisiLabels).optional(),
         alasan: alasanText.optional(),
         expectedUpdatedAt: updatedAtDimuatSchema,
-    });
+    })
+    .superRefine(cekTanggalDiterima);
 
 export const querySuratMasukSchema = paginationSchema.extend({
     unitKerjaId: z.string().optional(),
@@ -234,7 +254,9 @@ export const querySuratMasukSchema = paginationSchema.extend({
     disposisi: z.string().max(100).optional(),
     disposisiUnitId: z.string().trim().min(1).max(50).optional(),
     search: z.string().max(255).optional(),
-    urutan: z.enum(URUTAN_DAFTAR_SURAT).optional(),
+    urutan: z.enum(URUTAN_DAFTAR_SURAT_MASUK).optional(),
+    /** tanggalDari/tanggalSampai menurut tanggal surat (bawaan) atau tanggal diterima. */
+    acuanTanggal: z.enum(ACUAN_TANGGAL_SURAT_MASUK).optional(),
 });
 
 /** Daftar Surat Terhapus (Super Admin). */

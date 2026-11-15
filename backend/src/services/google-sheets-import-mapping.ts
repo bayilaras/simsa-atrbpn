@@ -27,6 +27,10 @@ const columns: Record<GoogleSheetsImportType, Record<string, Column>> = {
         jenisSurat: { label: 'Jenis surat', aliases: ['jenis surat', 'jenis naskah', 'naskah dinas', 'jenis'] },
         sifatSurat: { label: 'Sifat surat', aliases: ['sifat surat', 'sifat', 'urgency'] },
         dari: { label: 'Pengirim', aliases: ['dari', 'asal', 'pengirim', 'from'] },
+        tanggalDiterima: {
+            label: 'Tanggal diterima',
+            aliases: ['tanggal diterima', 'tgl diterima', 'tanggal terima', 'tgl terima', 'diterima', 'tanggal masuk', 'tgl masuk'],
+        },
         // An imported letter always starts as not yet answered.
         status: { label: 'Status sumber', aliases: ['status', 'disposisi status'], stored: false },
         disposisi: { label: 'Disposisi', aliases: ['disposisi'] },

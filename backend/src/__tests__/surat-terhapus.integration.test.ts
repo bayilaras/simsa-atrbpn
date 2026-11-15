@@ -202,6 +202,46 @@ describe('peringatan nomor surat yang juga dipakai surat aktif', () => {
     });
 });
 
+describe('No. Agenda / No. Urut surat terhapus yang dipakai lagi', () => {
+    const SM_BARU = '30000000-0000-4000-8000-0000000000c1';
+    const SK_BARU = '40000000-0000-4000-8000-0000000000c1';
+
+    it('surat masuk tidak dipulihkan selama surat lain yang tidak terhapus memakai nomornya; pulih setelah surat itu dihapus', async () => {
+        await suratMasukService.delete(SURAT.smTunggal, USER_ID.tu, 'sesditjen', auditTu, { alasan: ALASAN_HAPUS });
+        // Nomor 3 surat terhapus boleh dipakai surat baru (0054).
+        await database.exec(`INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, sifat_surat, nomor_surat, perihal, dari, tanggal_surat)
+            VALUES ('${SM_BARU}', 'sesditjen', 3, 2026, 'biasa', 'SM-3b/2026', 'Memakai nomor 3', 'Kanwil C', '2026-09-03')`);
+
+        await expect(pulihkan('surat_masuk', SURAT.smTunggal)).rejects.toMatchObject({
+            statusCode: 409,
+            message: 'No. Agenda 3 tahun 2026 sudah dipakai surat lain di unit ini, sehingga surat ini tidak dapat dipulihkan dengan nomor semula. '
+                + 'Bila surat yang memakai nomor itu salah catat, hapus surat itu lebih dulu.',
+        });
+        expect((await one('SELECT is_deleted FROM surat_masuk WHERE id = $1', [SURAT.smTunggal])).is_deleted).toBe(true);
+        expect(await one(`SELECT count(*)::int AS n FROM audit_log WHERE action = 'restore' AND entity_id = $1`, [SURAT.smTunggal])).toEqual({ n: 0 });
+
+        await database.exec(`UPDATE surat_masuk SET is_deleted = true WHERE id = '${SM_BARU}'`);
+        await pulihkan('surat_masuk', SURAT.smTunggal);
+        expect(await one('SELECT is_deleted, no_urut FROM surat_masuk WHERE id = $1', [SURAT.smTunggal])).toEqual({ is_deleted: false, no_urut: 3 });
+    });
+
+    it('surat keluar: penolakan yang sama dengan label No. Urut', async () => {
+        await suratKeluarService.delete(SURAT.skBpptTunggal, USER_ID.bppt, 'dir_bppt', auditBppt, { alasan: 'Draf ganda, sudah dibuat ulang' });
+        await database.exec(`INSERT INTO surat_keluar (id, unit_kerja_id, no_urut, tahun, klasifikasi_keamanan, nomor_surat, perihal, kepada, tanggal_surat)
+            VALUES ('${SK_BARU}', 'dir_bppt', 3, 2026, 'biasa', 'ND-3b/BPPT/2026', 'Memakai nomor 3', 'Kanwil', '2026-09-08')`);
+        await expect(pulihkan('surat_keluar', SURAT.skBpptTunggal)).rejects.toMatchObject({
+            statusCode: 409, message: expect.stringMatching(/^No\. Urut 3 tahun 2026 sudah dipakai surat lain di unit ini, sehingga surat ini tidak dapat dipulihkan/),
+        });
+        expect((await one('SELECT is_deleted FROM surat_keluar WHERE id = $1', [SURAT.skBpptTunggal])).is_deleted).toBe(true);
+    });
+
+    it('indeks unik tetap menolak dua surat tidak terhapus bernomor sama', async () => {
+        await expect(database.exec(`INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, sifat_surat, nomor_surat, perihal, dari, tanggal_surat)
+            VALUES ('${SM_BARU}', 'sesditjen', 3, 2026, 'biasa', 'SM-3b/2026', 'Bentrok', 'Kanwil C', '2026-09-03')`))
+            .rejects.toThrow(/surat_masuk_unit_year_sequence_live_uidx/);
+    });
+});
+
 describe('pulihkan surat keluar', () => {
     it('draf tunggal kembali ke daftar dengan nomor semula', async () => {
         await suratKeluarService.delete(SURAT.skBpptTunggal, USER_ID.bppt, 'dir_bppt', auditBppt, { alasan: 'Draf ganda, sudah dibuat ulang' });

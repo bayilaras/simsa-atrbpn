@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '../config/database.js';
 import { arsip as arsipTable } from '../db/schema/arsip.js';
 import { suratMasukService } from './surat-masuk.service.js';
+import { pastikanTanggalDiterima } from './tanggal-diterima.js';
 import { suratKeluarService } from './surat-keluar.service.js';
 import { arsipService } from './arsip.service.js';
 import type { CriticalAuditContext } from './audit-log.service.js';
@@ -14,7 +15,7 @@ import { DuplicateSuratImportError, sameImportIdentity, type SuratImportIdentity
 import { assertImportResumable, importPrefixHash, type ImportResume } from './import-resume.js';
 import { normalizeSifatSurat, sifatSuratMasukSumber } from './sifat-surat.js';
 import { assertImportedKelasSuratMasuk, assertSifatSuratMasukDapatDisimpan, type ImportAuditContext } from './import-plafon-kelas.js';
-import { parseImportDate } from './import-tanggal.js';
+import { parseImportDate, parseImportDateDiterima } from './import-tanggal.js';
 import { catatanNomorUrutImpor, nomorUrutSumber } from './surat-nomor-urut.js';
 
 const log = createLogger('MigrationService');
@@ -248,11 +249,14 @@ export const migrationService = {
             if (!perihal) throw new ValidationError('Perihal wajib diisi.');
             const numbered = Boolean(nomorSurat && nomorSurat !== '-');
             if (!numbered && !dari) throw new ValidationError('Nomor surat kosong memerlukan tanggal, perihal, dan pengirim untuk identitas impor yang stabil.');
+            // Kolom opsional; nilai yang tidak terbaca atau tidak masuk akal menolak baris.
+            const tanggalDiterima = parseImportDateDiterima(row['Tanggal Diterima']);
+            pastikanTanggalDiterima(date, tanggalDiterima);
             const record = {
                 // No. Agenda dari kolom No dipakai bila belum terpakai; tanpa nomor, penomoran otomatis.
                 unitKerjaId, noUrut: nomorUrutSumber(row['No']) ?? undefined, tahun: year,
                 jenisSurat: row['Jenis Surat'] || 'Surat Dinas', sifatSurat,
-                nomorSurat, tanggalSurat: date, perihal, dari, kepada: row['Kepada'] || '',
+                nomorSurat, tanggalSurat: date, tanggalDiterima, perihal, dari, kepada: row['Kepada'] || '',
                 status: row['Status'] || 'belum_dibalas', disposisi: row['Disposisi'] ? [row['Disposisi']] : [],
                 createdBy: auditContext.userId,
             };

@@ -212,6 +212,22 @@ describe('importing already-parsed rows from any source', () => {
             expect(fetch).not.toHaveBeenCalled();
         });
 
+    it('reads Tanggal Diterima for surat masuk and rejects a row with an unreadable or early one', async () => {
+        const service = new GoogleDriveImportService();
+        const kepala = [...headers, 'Tgl Terima'];
+        const rows = [kepala, [...data, '14/09/2026'], ['8', 'SM-8', '12/09/2026', 'Kedua', 'Kantah B', 'Ditjen', 'kemarin'],
+            ['9', 'SM-9', '12/09/2026', 'Ketiga', 'Kantah C', 'Ditjen', '11/09/2026'], ['10', 'SM-10', '12/09/2026', 'Keempat', 'Kantah D', 'Ditjen', '']];
+        const result = await service.importRows('surat-masuk', rows, 'unit-a', audit);
+        expect(result).toMatchObject({ importedRows: 2 });
+        expect(result.errors).toHaveLength(2);
+        expect(result.errors.join(' ')).toMatch(/Tanggal diterima "kemarin" tidak dapat dibaca/);
+        expect(result.errors.join(' ')).toMatch(/Tanggal diterima tidak boleh sebelum tanggal surat/);
+        expect(mocks.incoming.mock.calls.map(([record]) => [record.nomorSurat, record.tanggalDiterima]))
+            .toEqual([['SM-2026-actual', '2026-09-14'], ['SM-10', null]]);
+        const { mapping } = resolveSheetMapping([kepala], 'surat-masuk');
+        expect(mapping.find(kolom => kolom.field === 'tanggalDiterima')).toMatchObject({ label: 'Tanggal diterima', header: 'Tgl Terima' });
+    });
+
     it('imports parsed rows in resumable parts', async () => {
         const service = new GoogleDriveImportService();
         const second = ['8', 'SK-2026-next', '13/09/2026', 'Undangan rapat', 'Kantah B', 'Ditjen'];

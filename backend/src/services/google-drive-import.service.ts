@@ -1,6 +1,7 @@
 import { type NewSuratKeluar } from '../db/schema/surat-keluar';
 import { createLogger } from '../utils/logger';
 import { suratMasukService, type ImportedSuratMasuk } from './surat-masuk.service.js';
+import { pastikanTanggalDiterima } from './tanggal-diterima.js';
 import { suratKeluarService } from './surat-keluar.service.js';
 import { catatanNomorUrutImpor, nomorUrutSumber, type JenisNomorUrut } from './surat-nomor-urut.js';
 import type { CriticalAuditContext } from './audit-log.service.js';
@@ -14,7 +15,7 @@ import { isWebAddress, resolveSheetMapping, type GoogleSheetsImportType, type Sh
 import { DuplicateSuratImportError, sameImportIdentity, type SuratImportIdentityKey, type SuratImportMatch } from './surat-import-identity.js';
 import { assertImportResumable, importPrefixHash, type ImportResume } from './import-resume.js';
 import { normalizeSifatSurat, sifatSuratMasukSumber } from './sifat-surat.js';
-import { importDateProblem, parseImportDate } from './import-tanggal.js';
+import { importDateProblem, parseImportDate, parseImportDateDiterima } from './import-tanggal.js';
 import {
     SYNC_REASONS, syncImportedLetter, syncSourceText, type ImportCounterpart, type ImportDuplicateKind, type ImportFieldChange,
     type ImportSync, type ImportSyncTarget,
@@ -410,6 +411,7 @@ export class GoogleDriveImportService {
             const values: Record<string, string> = {
                 perihal: field(row, 'perihal'),
                 tanggalSurat: parseImportDate(field(row, 'tanggalSurat')) ?? '',
+                tanggalDiterima: parseImportDateDiterima(field(row, 'tanggalDiterima')) ?? '',
                 sifatSurat: normalizeSifatSurat(field(row, 'sifatSurat')) ?? '',
                 linkDokumen: isWebAddress(field(row, 'linkDokumen')) ? field(row, 'linkDokumen') : '',
                 naskahDinas: field(row, 'naskahDinas'),
@@ -422,7 +424,7 @@ export class GoogleDriveImportService {
         };
         const write = { unitKerjaId, auditContext, options, resume, sync };
         const rowSync = type === 'surat-masuk'
-            ? (row: string[]) => syncSource(row, ['perihal', 'tanggalSurat', 'jenisSurat'], { field: 'dari', label: 'Pengirim' })
+            ? (row: string[]) => syncSource(row, ['perihal', 'tanggalSurat', 'tanggalDiterima', 'jenisSurat'], { field: 'dari', label: 'Pengirim' })
             : (row: string[]) => syncSource(row, ['perihal', 'tanggalSurat', 'sifatSurat', 'linkDokumen', 'naskahDinas'], { field: 'kepada', label: 'Tujuan' });
 
         return this.admission(type, colMap, unitKerjaId, auditContext,
@@ -454,6 +456,9 @@ export class GoogleDriveImportService {
         const tanggalStr = this.getField(row, colMap, 'tanggalSurat');
         // An unreadable date rejects the row here; it is never guessed or left out.
         const parsedDate = parseImportDate(tanggalStr);
+        // Optional; an unreadable value rejects the row like an unreadable letter date.
+        const tanggalDiterima = parseImportDateDiterima(this.getField(row, colMap, 'tanggalDiterima'));
+        pastikanTanggalDiterima(parsedDate, tanggalDiterima);
         const dari = this.getField(row, colMap, 'dari');
         const effectiveTahun = parsedDate ? Number(parsedDate.slice(0, 4)) : new Date().getFullYear();
 
@@ -468,6 +473,7 @@ export class GoogleDriveImportService {
             sifatSurat: sifatSuratMasukSumber(this.getField(row, colMap, 'sifatSurat')),
             nomorSurat: nomorSurat || '-',
             tanggalSurat: parsedDate,
+            tanggalDiterima,
             perihal: this.getField(row, colMap, 'perihal') || '',
             dari,
             kepada: this.getField(row, colMap, 'kepada') || '',

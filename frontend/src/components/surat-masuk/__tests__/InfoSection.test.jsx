@@ -35,15 +35,23 @@ describe('InfoSection', () => {
     it('tidak merender field fantom yang tidak pernah dikirim API', () => {
         render(<InfoSection surat={{
             ...mockSurat,
-            tanggalDiterima: '2024-02-14T00:00:00.000Z',
             noAgenda: 'AGENDA-001',
             catatan: 'Catatan fantom',
         }} />);
 
-        expect(screen.queryByText('Tanggal Diterima')).not.toBeInTheDocument();
         expect(screen.queryByText('AGENDA-001')).not.toBeInTheDocument();
         expect(screen.queryByText('Catatan')).not.toBeInTheDocument();
         expect(screen.queryByText('Catatan fantom')).not.toBeInTheDocument();
+    });
+
+    it('menampilkan tanggal diterima, atau "Tidak dicatat" untuk surat lama', () => {
+        const { unmount } = render(<InfoSection surat={{ ...mockSurat, tanggalDiterima: '2024-02-14' }} />);
+        expect(screen.getByText('Tanggal Diterima')).toBeInTheDocument();
+        expect(screen.getByText(/14 Februari 2024/)).toBeInTheDocument();
+        unmount();
+
+        render(<InfoSection surat={{ ...mockSurat, tanggalDiterima: null }} />);
+        expect(screen.getByText('Tidak dicatat')).toBeInTheDocument();
     });
 
     it('menampilkan label disposisi sebagai daftar dan membuang label kosong data lama', () => {

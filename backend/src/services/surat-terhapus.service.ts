@@ -21,6 +21,8 @@ import {
     type Tx,
 } from './rangkaian/deps.js';
 import { rowsOf } from './rangkaian/sql-rows.js';
+import { hasPostgresErrorCode } from '../utils/postgres-errors.js';
+import { nomorUrutTerpakai, pesanNomorUrutPulihkan } from './surat-nomor-urut.js';
 
 /**
  * Surat terhapus (hapus lunak) dan pemulihannya oleh Super Admin.
@@ -94,6 +96,8 @@ function kondisiDaftar(jenis: JenisSuratTerhapus, filter: DaftarSuratTerhapusFil
 type SuratDipulihkan = {
     id: string;
     unitKerjaId: string;
+    tahun: number;
+    noUrut: number;
     nomorSurat: string | null;
     perihal: string | null;
     isDeleted: boolean | null;
@@ -144,9 +148,10 @@ async function suratMasukUntukDihitung(
 }
 
 /**
- * Nomor agenda tidak dapat bertabrakan (indeks unik unit, tahun, no_urut ikut
- * memuat surat terhapus), tetapi teks nomor surat dapat: selama surat terhapus,
- * surat lain bernomor sama bisa dicatat. Pemulihan tetap berjalan; surat aktif
+ * Nomor agenda surat terhapus boleh dipakai surat lain (0054); pemulihan surat
+ * yang nomornya sudah dipakai ditolak (pulihkanDenganNomorBebas). Teks nomor
+ * surat juga dapat sama: selama surat terhapus, surat lain bernomor sama bisa
+ * dicatat. Untuk nomor surat, pemulihan tetap berjalan; surat aktif
  * sejenis di unit yang sama dengan nomor yang sama (tanpa beda huruf besar/kecil
  * dan spasi) dikembalikan sebagai peringatan dan dicatat di audit pemulihan.
  */
@@ -160,6 +165,28 @@ async function suratAktifNomorSama(tx: Tx, jenis: JenisSuratTerhapus, surat: Sur
          WHERE s.unit_kerja_id = ${surat.unitKerjaId} AND s.id <> ${surat.id} AND s.is_deleted IS NOT TRUE
            AND ${normal(sql.raw('s.nomor_surat'))} = ${normal(sql`${nomor}::text`)}
          ORDER BY s.id`)).map((row) => row.id);
+}
+
+const JENIS_NOMOR = { surat_masuk: 'masuk', surat_keluar: 'keluar' } as const;
+const INDEKS_NOMOR_HIDUP = {
+    surat_masuk: 'surat_masuk_unit_year_sequence_live_uidx',
+    surat_keluar: 'surat_keluar_unit_year_sequence_live_uidx',
+} as const;
+
+/**
+ * Nomor agenda surat terhapus boleh dipakai surat baru (0054). Surat itu hanya
+ * dipulihkan bila nomornya masih bebas; tabrakan bersamaan tetap ditangkap
+ * indeks unik dan dijawab dengan pesan yang sama.
+ */
+async function pulihkanDenganNomorBebas(tx: Tx, jenis: JenisSuratTerhapus, surat: SuratDipulihkan, pulihkan: () => Promise<unknown>) {
+    const pesan = pesanNomorUrutPulihkan(JENIS_NOMOR[jenis], surat.noUrut, surat.tahun);
+    if (await nomorUrutTerpakai(tx, JENIS_NOMOR[jenis], surat.unitKerjaId, surat.tahun, surat.noUrut)) throw new ConflictError(pesan);
+    try {
+        await pulihkan();
+    } catch (error) {
+        if (hasPostgresErrorCode(error, '23505', INDEKS_NOMOR_HIDUP[jenis])) throw new ConflictError(pesan);
+        throw error;
+    }
 }
 
 async function catatAuditPulihkan(
@@ -186,6 +213,8 @@ async function catatAuditPulihkan(
 const kolomPulihkan = (tabel: typeof suratMasuk | typeof suratKeluar) => ({
     id: tabel.id,
     unitKerjaId: tabel.unitKerjaId,
+    tahun: tabel.tahun,
+    noUrut: tabel.noUrut,
     nomorSurat: tabel.nomorSurat,
     perihal: tabel.perihal,
     isDeleted: tabel.isDeleted,
@@ -206,9 +235,9 @@ async function pulihkanSuratMasuk(tx: Tx, id: string, user: RecordUser, alasan: 
     const rangkaianId = await rangkaianKeanggotaanSuratMasuk(tx, id);
     if (rangkaianId) await kunciRangkaianTerbuka(tx, rangkaianId, () => rangkaianKeanggotaanSuratMasuk(tx, id));
 
-    await tx.update(suratMasuk)
+    await pulihkanDenganNomorBebas(tx, 'surat_masuk', surat, () => tx.update(suratMasuk)
         .set({ isDeleted: false, deletedAt: null, deletedBy: null, updatedAt: new Date() })
-        .where(and(eq(suratMasuk.id, id), sql`${suratMasuk.isDeleted} IS TRUE`));
+        .where(and(eq(suratMasuk.id, id), sql`${suratMasuk.isDeleted} IS TRUE`)));
     const nomorSama = await suratAktifNomorSama(tx, 'surat_masuk', surat);
     await catatAuditPulihkan(tx, 'surat_masuk', surat, alasan, audit, nomorSama);
 
@@ -266,9 +295,9 @@ async function pulihkanSuratKeluar(tx: Tx, id: string, user: RecordUser, alasan:
         await kunciRangkaianTerbuka(tx, anggota.rangkaian_id, async () => (await keanggotaanSuratKeluar(tx, id))?.rangkaian_id ?? null);
     }
 
-    await tx.update(suratKeluar)
+    await pulihkanDenganNomorBebas(tx, 'surat_keluar', surat, () => tx.update(suratKeluar)
         .set({ isDeleted: false, deletedAt: null, deletedBy: null, updatedAt: new Date() })
-        .where(and(eq(suratKeluar.id, id), sql`${suratKeluar.isDeleted} IS TRUE`));
+        .where(and(eq(suratKeluar.id, id), sql`${suratKeluar.isDeleted} IS TRUE`)));
     const nomorSama = await suratAktifNomorSama(tx, 'surat_keluar', surat);
     await catatAuditPulihkan(tx, 'surat_keluar', surat, alasan, audit, nomorSama);
 
@@ -298,7 +327,8 @@ export const suratTerhapusService = {
 
     /**
      * Kembalikan surat ke daftar dengan nomor agenda dan nomor surat semula. Ditolak
-     * (409) bila surat sudah tidak terhapus atau rangkaiannya sudah diberkaskan.
+     * (409) bila surat sudah tidak terhapus, rangkaiannya sudah diberkaskan, atau
+     * nomor agendanya sudah dipakai surat lain yang tidak terhapus.
      */
     async pulihkan(jenis: JenisSuratTerhapus, id: string, user: RecordUser, alasan: string, audit: CriticalAuditContext) {
         return denganRetryDeadlock(() => db.transaction((tx) => (jenis === 'surat_masuk'

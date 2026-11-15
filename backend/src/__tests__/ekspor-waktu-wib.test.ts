@@ -70,8 +70,8 @@ afterEach(() => { vi.useRealTimers(); });
 describe('tanggal dan jam di berkas ekspor memakai WIB', () => {
     it('kolom Timestamp surat masuk dan Tanggal Input surat keluar', async () => {
         const masuk = await lembar(await exportService.generateExcelSuratMasuk({ unitKerjaId: 'unit-a' }));
-        expect(masuk.getCell(4, 12).value).toBe('Timestamp');
-        expect(masuk.getCell(5, 12).value).toBe('14/11/2026, 01.30.05 WIB');
+        expect(masuk.getCell(4, 13).value).toBe('Timestamp');
+        expect(masuk.getCell(5, 13).value).toBe('14/11/2026, 01.30.05 WIB');
         const keluar = await lembar(await exportService.generateExcelSuratKeluar({ unitKerjaId: 'unit-a' }));
         expect(keluar.getCell(4, 9).value).toBe('Tanggal Input');
         expect(keluar.getCell(5, 9).value).toBe('14/11/2026, 01.30.05 WIB');
