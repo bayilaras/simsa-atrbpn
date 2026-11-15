@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, Filter, Clock, User, FileText, Edit, Trash2, Archive, Plus, RefreshCw, Loader2, AlertTriangle, ChevronDown, ChevronRight, Laptop, CalendarRange, Shield, Eye, GitMerge, Link, X, Send, Inbox, CheckCircle2, XCircle, LogIn, LogOut, ShieldAlert, KeyRound } from 'lucide-react';
+import { Search, Filter, Clock, User, FileText, Edit, Trash2, Archive, Plus, RefreshCw, Loader2, AlertTriangle, ChevronDown, ChevronRight, Laptop, CalendarRange, Shield, Eye, GitMerge, Link, X, Send, Inbox, CheckCircle2, XCircle, LogIn, LogOut, ShieldAlert, KeyRound, Download, ShieldCheck, Lock, Unlock } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,6 +39,11 @@ const ACTION_CONFIG = {
     'sign_in': { label: 'Masuk', icon: LogIn, color: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300', borderColor: 'border-emerald-200', iconColor: 'text-emerald-600' },
     'sign_in_failed': { label: 'Gagal masuk', icon: ShieldAlert, color: 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300', borderColor: 'border-red-200', iconColor: 'text-red-600' },
     'sign_out': { label: 'Keluar', icon: LogOut, color: 'bg-slate-100 dark:bg-slate-500/15 text-slate-800 dark:text-slate-300', borderColor: 'border-slate-200', iconColor: 'text-slate-600' },
+    'view': { label: 'Melihat', icon: Eye, color: 'bg-slate-100 dark:bg-slate-500/15 text-slate-800 dark:text-slate-300', borderColor: 'border-slate-200', iconColor: 'text-slate-600' },
+    'download': { label: 'Mengunduh', icon: Download, color: 'bg-slate-100 dark:bg-slate-500/15 text-slate-800 dark:text-slate-300', borderColor: 'border-slate-200', iconColor: 'text-slate-600' },
+    'verify_integrity': { label: 'Memeriksa Integritas', icon: ShieldCheck, color: 'bg-teal-100 dark:bg-teal-500/15 text-teal-800 dark:text-teal-300', borderColor: 'border-teal-200', iconColor: 'text-teal-600' },
+    'hold': { label: 'Menerapkan Legal Hold', icon: Lock, color: 'bg-amber-100 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300', borderColor: 'border-amber-200', iconColor: 'text-amber-600' },
+    'release_hold': { label: 'Melepas Legal Hold', icon: Unlock, color: 'bg-slate-100 dark:bg-slate-500/15 text-slate-800 dark:text-slate-300', borderColor: 'border-slate-200', iconColor: 'text-slate-600' },
     'change_password': { label: 'Mengganti kata sandi', icon: KeyRound, color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300', borderColor: 'border-blue-200', iconColor: 'text-blue-600' },
 };
 
@@ -304,6 +309,8 @@ export default function AuditLog() {
                                     <SelectItem value="receive_distribution">Menerima Disposisi</SelectItem>
                                     <SelectItem value="process_distribution">Menyelesaikan Disposisi</SelectItem>
                                     <SelectItem value="reject_distribution">Menolak Disposisi</SelectItem>
+                                    <SelectItem value="run_scanner">Menjalankan Pemindai</SelectItem>
+                                    <SelectItem value="verify_integrity">Memeriksa Integritas</SelectItem>
                                     <SelectItem value="sign_in">Masuk</SelectItem>
                                     <SelectItem value="sign_in_failed">Gagal masuk</SelectItem>
                                     <SelectItem value="sign_out">Keluar</SelectItem>

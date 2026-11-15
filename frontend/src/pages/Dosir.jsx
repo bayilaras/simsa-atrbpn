@@ -262,7 +262,7 @@ export default function Dosir() {
                                     <SelectValue placeholder="Pilih Unit Kerja" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="all">📊 Semua Unit Kerja (hanya lihat)</SelectItem>
+                                    <SelectItem value="all">📊 Semua Unit Kerja</SelectItem>
                                     {unitKerjaList.map(uk => (
                                         <SelectItem key={uk.id} value={uk.id}>{uk.name}</SelectItem>
                                     ))}
