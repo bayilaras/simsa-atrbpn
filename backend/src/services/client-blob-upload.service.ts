@@ -264,7 +264,9 @@ export class ClientBlobUploadService {
     }> {
         const safeLimit = Math.max(1, Math.min(Math.floor(limit), 200));
         const staleBefore = new Date(now.getTime() - STALE_CLEANUP_CLAIM_MS);
-        const retryEligibleAt = sql<Date>`${now} - (
+        // Explicit cast: an untyped parameter next to an interval is inferred as
+        // interval by Postgres, which rejected the whole query.
+        const retryEligibleAt = sql<Date>`${now}::timestamptz - (
             least(
                 ${CLEANUP_RETRY_MAX_MS},
                 ${CLEANUP_RETRY_BASE_MS} * power(2, greatest(${clientBlobUploads.cleanupAttempts} - 1, 0))
