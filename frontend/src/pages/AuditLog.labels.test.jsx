@@ -51,3 +51,23 @@ it('menampilkan label Indonesia saat Super Admin menjalankan pemindai berkas', a
     expect(screen.getByText('Berkas')).toBeInTheDocument()
     for (const kode of ['run_scanner', 'file_attachment', 'manual_scanner_run']) expect(screen.queryByText(kode)).toBeNull()
 })
+
+it('menampilkan label Indonesia untuk aksi pemeriksaan integritas, unduhan, dan legal hold', async () => {
+    const aksi = [
+        ['verify_integrity', 'file_attachment', 'Memeriksa Integritas'],
+        ['view', 'arsip', 'Melihat'],
+        ['download', 'arsip', 'Mengunduh'],
+        ['hold', 'arsip', 'Menerapkan Legal Hold'],
+        ['release_hold', 'arsip', 'Melepas Legal Hold'],
+    ]
+    mocks.listLogs.mockResolvedValue({
+        data: aksi.map(([action, entityType], index) => ({ id: `log-x${index}`, action, entityType, entityId: `x-${index}`, userName: 'System',
+            createdAt: '2026-11-15T01:00:00.000Z', changes: null })),
+        pagination: { total: aksi.length, totalPages: 1 },
+    })
+    render(<AuditLog />)
+    for (const [action, , label] of aksi) {
+        expect(await screen.findByText(label), action).toBeInTheDocument()
+        expect(screen.queryByText(action)).toBeNull()
+    }
+})
