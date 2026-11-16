@@ -53,6 +53,21 @@ test('the daily recovery backup is scheduled at 22:30 WIB, after office hours', 
   assert.ok('workflow_dispatch' in recovery.workflow.on);
 });
 
+test('the Google Drive copy runs only when enabled, after a verified run, with only its own secrets', () => {
+  const steps = recovery.workflow.jobs.recovery.steps;
+  const run = steps.findIndex(step => step.run === 'node scripts/operations-recovery.mjs run');
+  const copy = steps.findIndex(step => step.name === 'Copy the encrypted delivery to Google Drive');
+  const artifact = steps.findIndex(step => String(step.uses).startsWith('actions/upload-artifact@'));
+  assert.ok(run >= 0 && copy === run + 1 && artifact > copy);
+  const step = steps[copy];
+  // No always()/failure(): a red backup is never copied, and the artifact step still runs.
+  assert.equal(step.if, "vars.OPERATIONS_OFFSITE_DRIVE_ENABLED == 'true'");
+  assert.deepEqual(Object.keys(step.env).filter(key => /secrets\./.test(step.env[key])).sort(),
+    ['GDRIVE_BACKUP_CLIENT_ID', 'GDRIVE_BACKUP_CLIENT_SECRET', 'GDRIVE_BACKUP_REFRESH_TOKEN']);
+  assert.match(step.run, /node scripts\/operations-offsite-drive\.mjs upload/);
+  assert.equal(steps[artifact].if, 'always()');
+});
+
 test('the recovery workflow passes the optional document budget settings and allows time for the default budget', () => {
   const job = recovery.workflow.jobs.recovery, run = job.steps.find(step => step.run === 'node scripts/operations-recovery.mjs run');
   for (const name of ['OPERATIONS_RECOVERY_MAX_DOCUMENT_BYTES', 'OPERATIONS_RECOVERY_MAX_DOCUMENT_OBJECTS', 'OPERATIONS_RECOVERY_MAX_DOCUMENT_REFERENCES'])

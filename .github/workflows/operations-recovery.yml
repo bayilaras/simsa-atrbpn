@@ -46,7 +46,7 @@ jobs:
       - name: Check recovery boundaries and encryption contracts
         env:
           OPERATIONS_RECOVERY_TEST_PG_BIN: /usr/lib/postgresql/18/bin
-        run: node --test scripts/operations-recovery-documents.test.mjs scripts/operations-recovery.test.mjs scripts/operations-recovery-target.test.mjs
+        run: node --test scripts/operations-recovery-documents.test.mjs scripts/operations-recovery.test.mjs scripts/operations-recovery-target.test.mjs scripts/operations-offsite-drive.test.mjs
       - name: Capture, encrypt, restore and publish sanitized latest result
         env:
           NEON_BACKUP_DATABASE_URL: ${{ secrets.NEON_BACKUP_DATABASE_URL }}
@@ -66,6 +66,21 @@ jobs:
           OPERATIONS_RECOVERY_MAX_DOCUMENT_REFERENCES: ${{ vars.OPERATIONS_RECOVERY_MAX_DOCUMENT_REFERENCES }}
           OPERATIONS_RECOVERY_PUBLISH_STATUS: 'true'
         run: node scripts/operations-recovery.mjs run
+      # Offsite copy: the same encrypted delivery, one tar file, in a Google Drive
+      # folder (docs/BACKUP_GOOGLE_DRIVE.md). Runs only after a verified backup and
+      # restore; a failed copy fails the job, so the failure issue below reports it.
+      - name: Copy the encrypted delivery to Google Drive
+        if: vars.OPERATIONS_OFFSITE_DRIVE_ENABLED == 'true'
+        env:
+          GDRIVE_BACKUP_CLIENT_ID: ${{ secrets.GDRIVE_BACKUP_CLIENT_ID }}
+          GDRIVE_BACKUP_CLIENT_SECRET: ${{ secrets.GDRIVE_BACKUP_CLIENT_SECRET }}
+          GDRIVE_BACKUP_REFRESH_TOKEN: ${{ secrets.GDRIVE_BACKUP_REFRESH_TOKEN }}
+          OPERATIONS_RECOVERY_DELIVERY: ${{ runner.temp }}/simsa-recovery-delivery
+          OPERATIONS_OFFSITE_ARCHIVE: ${{ runner.temp }}/simsa-offsite.tar
+        run: |
+          set -euo pipefail
+          tar -C "$RUNNER_TEMP" -cf "$OPERATIONS_OFFSITE_ARCHIVE" simsa-recovery-delivery
+          node scripts/operations-offsite-drive.mjs upload
       - name: Preserve encrypted archives and sanitized attempt evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
