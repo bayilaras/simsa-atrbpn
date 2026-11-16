@@ -95,6 +95,8 @@ Remove-Item Env:BACKUP_ENCRYPTION_PASSPHRASE
 
 Setiap run terjadwal juga mencatat `documentBudget` di laporan run: jumlah referensi, objek unik, dan ukuran objek unik terhadap batas yang berlaku (bawaan 10.000 / 5.000 / 4 GiB), beserta sisa ruang masing-masing. GitHub Actions menampilkan peringatan "SIMSA backup mendekati batas" bila pemakaian mencapai 80% dari salah satu batas (`ratioWarning`) **atau** sisa ruang lebih kecil dari satu batch unggah massal, yaitu 50 berkas / 100 MiB (`headroomWarning`). Peringatan tidak menggagalkan run; backup run itu tetap lengkap. Peringatan ini bukan jaminan bahwa backup tidak akan langsung gagal: beberapa batch dalam satu hari tetap bisa melewati batas sebelum run berikutnya. Run yang gagal karena batas tetap mencatat `documentBudget` dan menampilkan anotasi error "SIMSA backup melewati batas dokumen" berisi angka pemakaiannya. Tinjau kuota Blob (lihat [Batas dokumen dan kuota Blob](#batas-dokumen-dan-kuota-blob)) sebelum menaikkan batas.
 
+Salinan offsite harian ke Google Drive bersifat opsional dan diatur dengan variabel `OPERATIONS_OFFSITE_DRIVE_ENABLED`; isinya sama dengan artefak di atas dalam satu file `.tar`. Penyiapan, masa simpan, dan pemulihannya ada di [Salinan backup offsite ke Google Drive](BACKUP_GOOGLE_DRIVE.md).
+
 ## Memulihkan artefak delivery yang sudah diunduh
 
 Gunakan checkout yang hash helper dan jurnal migrasinya cocok dengan manifest autentik, runtime Linux PostgreSQL 18 yang kompatibel, dan direktori artefak privat milik operator (0700, tanpa symlink). Isi `OPERATIONS_RECOVERY_BUNDLE` dengan direktori delivery, serta `BACKUP_ENCRYPTION_PASSPHRASE`, `OPERATIONS_RECOVERY_PG_BIN`, dan `OPERATIONS_RECOVERY_PRIVATE_ROOT`. Jalankan `node scripts/operations-recovery.mjs restore-delivery`.
@@ -145,5 +147,6 @@ Saat insiden, pulihkan ke environment terpisah, bandingkan snapshot dengan produ
 | Frekuensi | Bukti minimum |
 |---|---|
 | Harian | Workflow `operations-recovery.yml` hijau dan status backup/restore terbaru pada panel Super Admin |
-| Bulanan | Unduh artefak terbaru ke penyimpanan kantor, uji buka dengan `operations-recovery-extract.mjs`, serta ukur RPO/RTO |
+| Harian, bila diaktifkan | Langkah *Copy the encrypted delivery to Google Drive* hijau; salinan offsite ada di folder **SIMSA Backup** ([Salinan backup offsite ke Google Drive](BACKUP_GOOGLE_DRIVE.md)) |
+| Bulanan | Unduh artefak atau salinan Drive terbaru ke penyimpanan kantor, uji buka dengan `operations-recovery-extract.mjs`, serta ukur RPO/RTO |
 | Sebelum deploy/migrasi | Backup database dan dokumen terbaru, branch/PITR, pemulihan terisolasi, approval |
