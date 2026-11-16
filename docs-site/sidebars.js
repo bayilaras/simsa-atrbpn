@@ -79,6 +79,7 @@ const sidebars = {
         'administrasi/master-data',
         'administrasi/versi-aturan',
         'administrasi/settings',
+        'administrasi/privasi-backup-google-drive',
       ],
     },
   ],
