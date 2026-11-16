@@ -1,3 +1,4 @@
 backend/src/db/migrations/*.sql text eol=lf
 backend/src/db/grants/*.sql text eol=lf
 backend/scripts/*.mjs text eol=lf
+.github/keys/*.asc text eol=lf
