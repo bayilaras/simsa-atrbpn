@@ -517,14 +517,14 @@ export default function StorageLocations() {
                     </DialogHeader>
 
                     <div className="grid gap-4 py-4">
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="level" className="text-right">Level</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="level" className="sm:text-right">Level</Label>
                             <Select
                                 value={formData.level}
                                 onValueChange={(v) => setFormData({ ...formData, level: v })}
                                 disabled={editMode || parentItem}
                             >
-                                <SelectTrigger className="col-span-3">
+                                <SelectTrigger className="sm:col-span-3">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -539,56 +539,56 @@ export default function StorageLocations() {
                             </Select>
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="code" className="text-right">Kode</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="code" className="sm:text-right">Kode</Label>
                             <Input
                                 id="code"
                                 value={formData.code}
                                 onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                                className="col-span-3 font-mono"
+                                className="sm:col-span-3 font-mono"
                                 placeholder="Contoh: G1-R2-RAK3-B15"
                             />
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="name" className="text-right">Nama</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="name" className="sm:text-right">Nama</Label>
                             <Input
                                 id="name"
                                 value={formData.name}
                                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                className="col-span-3"
+                                className="sm:col-span-3"
                                 placeholder="Nama lokasi"
                             />
                         </div>
 
                         {formData.level === 'box' && (
-                            <div className="grid grid-cols-4 items-center gap-4">
-                                <Label htmlFor="capacity" className="text-right">Kapasitas</Label>
+                            <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                                <Label htmlFor="capacity" className="sm:text-right">Kapasitas</Label>
                                 <Input
                                     id="capacity"
                                     type="number"
                                     value={formData.capacity}
                                     onChange={(e) => setFormData({ ...formData, capacity: e.target.value })}
-                                    className="col-span-3"
+                                    className="sm:col-span-3"
                                     placeholder="Jumlah maksimum arsip"
                                 />
                             </div>
                         )}
 
-                        <div className="grid grid-cols-4 items-start gap-4">
-                            <Label htmlFor="description" className="text-right pt-2">Keterangan</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-start sm:gap-4">
+                            <Label htmlFor="description" className="sm:pt-2 sm:text-right">Keterangan</Label>
                             <Textarea
                                 id="description"
                                 value={formData.description}
                                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                className="col-span-3"
+                                className="sm:col-span-3"
                                 placeholder="Deskripsi lokasi (opsional)"
                                 rows={3}
                             />
                         </div>
                     </div>
 
-                    <DialogFooter className="gap-2 sm:gap-0">
+                    <DialogFooter>
                         <Button variant="outline" onClick={() => setDialogOpen(false)}>
                             Batal
                         </Button>

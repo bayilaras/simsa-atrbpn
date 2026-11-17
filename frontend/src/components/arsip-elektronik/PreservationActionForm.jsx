@@ -150,7 +150,7 @@ export default function PreservationActionForm({ arsipId, onSuccess }) {
                         />
                     </div>
 
-                    <DialogFooter>
+                    <DialogFooter sticky>
                         <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                             Batal
                         </Button>

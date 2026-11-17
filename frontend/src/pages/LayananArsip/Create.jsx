@@ -162,7 +162,7 @@ export default function LayananArsipCreate() {
                                     <DialogTrigger asChild>
                                         <Button type="button" variant="outline">Cari Arsip</Button>
                                     </DialogTrigger>
-                                    <DialogContent className="max-w-2xl">
+                                    <DialogContent className="sm:max-w-2xl">
                                         <DialogHeader>
                                             <DialogTitle>Pilih Arsip</DialogTitle>
                                         </DialogHeader>
@@ -204,7 +204,7 @@ export default function LayananArsipCreate() {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-4 sm:grid-cols-2">
                             <div className="space-y-2">
                                 <Label>Jumlah Rangkap</Label>
                                 <Input

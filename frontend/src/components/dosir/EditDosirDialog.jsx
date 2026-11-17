@@ -89,7 +89,7 @@ function EditDosirIsi({ dosir, kategoriOptions, menyimpan, setMenyimpan, onOpenC
                         onChange={(e) => ubah('judul', e.target.value)}
                     />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                         <Label htmlFor="edit-dosir-kategori">Kategori</Label>
                         <Select value={form.kategori} onValueChange={(value) => ubah('kategori', value)}>

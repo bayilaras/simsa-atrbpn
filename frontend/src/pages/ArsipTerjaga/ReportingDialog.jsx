@@ -70,7 +70,7 @@ export default function ReportingDialog({ open, onOpenChange, item, onSaved }) {
     }
 
     return <Dialog open={open} onOpenChange={value => { if (!busy) onOpenChange(value) }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
             <DialogHeader>
                 <DialogTitle>Catatan pelaporan arsip terjaga</DialogTitle>
                 <DialogDescription>Pencatatan dan pemeriksaan bukti internal. Pengiriman melalui kanal resmi dilakukan oleh petugas; catatan ini tidak menyatakan kepatuhan atau verifikasi oleh ANRI.</DialogDescription>

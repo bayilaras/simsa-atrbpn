@@ -139,7 +139,7 @@ function TambahIsi({ menyimpan, setMenyimpan, onOpenChange, onBerhasil }) {
                 </div>
             </div>
             {galat && <p role="alert" className="text-sm text-destructive">{galat}</p>}
-            <DialogFooter className="gap-2 sm:gap-0">
+            <DialogFooter sticky>
                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={menyimpan}>Batal</Button>
                 <Button type="button" onClick={simpan} disabled={!sumber || !tujuan || menyimpan} className="bg-indigo-600 hover:bg-indigo-700">
                     {menyimpan && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
