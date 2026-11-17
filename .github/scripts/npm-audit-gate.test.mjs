@@ -108,10 +108,22 @@ test('audit diulang hanya untuk gangguan sementara, paling banyak tiga kali', ()
 
 test('allowlist repositori valid dan setiap entri kedaluwarsa paling lama 90 hari', () => {
     const allowlist = JSON.parse(readFileSync(resolve(import.meta.dirname, '../npm-audit-allowlist.json'), 'utf8'));
+    const backendLock = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../backend/package-lock.json'), 'utf8'));
     assert.deepEqual(validateAllowlist(allowlist), []);
     for (const item of allowlist.entries) {
         const days = (Date.parse(`${item.expires}T00:00:00Z`) - Date.parse('2026-10-03T00:00:00Z')) / 86_400_000;
         assert.ok(days <= 90, `${item.ghsa} kedaluwarsa terlalu jauh (${item.expires})`);
-        assert.ok(!item.projects.includes('backend'), 'backend tidak boleh mendapat pengecualian audit');
+        if (!item.projects.includes('backend')) continue;
+        // Backend hanya boleh dikecualikan untuk paket alat build/uji: setiap
+        // salinan paket di lockfile wajib bertanda dev/devOptional sehingga
+        // tidak pernah terpasang di runtime produksi.
+        for (const pkg of item.packages) {
+            const copies = Object.entries(backendLock.packages)
+                .filter(([path]) => path === `node_modules/${pkg}` || path.endsWith(`/node_modules/${pkg}`));
+            assert.ok(copies.length > 0, `${pkg} tidak ada di lockfile backend`);
+            for (const [path, meta] of copies) {
+                assert.ok(meta.dev || meta.devOptional, `backend tidak boleh mengecualikan dependensi produksi (${path})`);
+            }
+        }
     }
 });
