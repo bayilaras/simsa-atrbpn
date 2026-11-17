@@ -18,7 +18,7 @@ export default function ArsipTerjagaDetail({
 }) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
                 <DialogHeader>
                     <DialogTitle>{isEditing ? 'Edit Arsip Terjaga' : 'Detail Arsip Terjaga'}</DialogTitle>
                 </DialogHeader>
@@ -61,7 +61,7 @@ export default function ArsipTerjagaDetail({
                                     <Label>Uraian Isi</Label>
                                     <Textarea value={form.uraianIsi} onChange={e => setForm(f => ({ ...f, uraianIsi: e.target.value }))} rows={3} />
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid gap-4 sm:grid-cols-2">
                                     <div className="space-y-2">
                                         <Label>Tgl. Review Berikutnya</Label>
                                         <Input type="date" value={form.tanggalReviewSelanjutnya} onChange={e => setForm(f => ({ ...f, tanggalReviewSelanjutnya: e.target.value }))} />
@@ -124,7 +124,7 @@ export default function ArsipTerjagaDetail({
                         )}
                     </div>
                 )}
-                <DialogFooter className="gap-2 sm:gap-0">
+                <DialogFooter sticky>
                     {isEditing ? (
                         <>
                             <Button variant="outline" onClick={() => setIsEditing(false)}>Batal</Button>

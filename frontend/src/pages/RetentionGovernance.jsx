@@ -621,7 +621,7 @@ export default function RetentionGovernance() {
                 <Label>Usulan hasil<Select value={appraisalForm.proposedOutcome} onValueChange={(value) => setAppraisalForm({ ...appraisalForm, proposedOutcome: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="musnah">Musnah</SelectItem><SelectItem value="permanen">Permanen</SelectItem><SelectItem value="dinilai_kembali">Dinilai Kembali</SelectItem></SelectContent></Select></Label>
                 <Label>Pertimbangan<Textarea value={appraisalForm.proposedRationale} onChange={(e) => setAppraisalForm({ ...appraisalForm, proposedRationale: e.target.value })} /></Label>
                 <div className="space-y-2"><div className="flex items-center justify-between"><div><Label>Keputusan komponen (opsional)</Label><p className="text-xs text-muted-foreground">Gunakan hanya jika hasil komponen berbeda dari keputusan berkas.</p></div><Button type="button" size="sm" variant="outline" disabled={!appraisalForm.arsipId} onClick={() => setAppraisalForm({ ...appraisalForm, itemDecisions: [...appraisalForm.itemDecisions, { arsipItemId: '', outcome: 'permanen', basis: '' }] })}>Tambah komponen</Button></div>{appraisalForm.itemDecisions.map((item, index) => <div key={index} className="grid gap-2 rounded border p-3 sm:grid-cols-[1fr_150px_auto]">{appraisalArchive?.items?.length ? <Select value={item.arsipItemId} onValueChange={(value) => { const next = [...appraisalForm.itemDecisions]; next[index] = { ...item, arsipItemId: value }; setAppraisalForm({ ...appraisalForm, itemDecisions: next }); }}><SelectTrigger><SelectValue placeholder="Pilih komponen" /></SelectTrigger><SelectContent>{appraisalArchive.items.map((archiveItem) => <SelectItem key={archiveItem.id} value={archiveItem.id}>{archiveItem.nomorItem || 'Tanpa nomor'} — {archiveItem.uraianItem || 'Tanpa uraian'}</SelectItem>)}</SelectContent></Select> : <Input placeholder="UUID komponen" value={item.arsipItemId} onChange={(e) => { const next = [...appraisalForm.itemDecisions]; next[index] = { ...item, arsipItemId: e.target.value }; setAppraisalForm({ ...appraisalForm, itemDecisions: next }); }} />}<Select value={item.outcome} onValueChange={(value) => { const next = [...appraisalForm.itemDecisions]; next[index] = { ...item, outcome: value }; setAppraisalForm({ ...appraisalForm, itemDecisions: next }); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="musnah">Musnah</SelectItem><SelectItem value="permanen">Permanen</SelectItem><SelectItem value="dinilai_kembali">Dinilai Kembali</SelectItem></SelectContent></Select><Button type="button" size="icon" variant="ghost" onClick={() => setAppraisalForm({ ...appraisalForm, itemDecisions: appraisalForm.itemDecisions.filter((_, i) => i !== index) })}><Trash2 className="h-4 w-4" /></Button><Textarea className="sm:col-span-3" placeholder="Dasar keputusan komponen (minimal 10 karakter)" value={item.basis} onChange={(e) => { const next = [...appraisalForm.itemDecisions]; next[index] = { ...item, basis: e.target.value }; setAppraisalForm({ ...appraisalForm, itemDecisions: next }); }} /></div>)}</div>
-            </div><DialogFooter><Button variant="outline" onClick={() => setAppraisalOpen(false)}>Batal</Button><Button disabled={saving} onClick={createAppraisal}>Simpan kasus</Button></DialogFooter></DialogContent></Dialog>
+            </div><DialogFooter sticky><Button variant="outline" onClick={() => setAppraisalOpen(false)}>Batal</Button><Button disabled={saving} onClick={createAppraisal}>Simpan kasus</Button></DialogFooter></DialogContent></Dialog>
 
             <Dialog open={Boolean(selectedAppraisal)} onOpenChange={(open) => !open && setSelectedAppraisal(null)}>
                 <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
@@ -720,7 +720,7 @@ export default function RetentionGovernance() {
                             )}
                         </div>
                     )}
-                    <DialogFooter>
+                    <DialogFooter sticky>
                         {selectedAppraisal?.status === 'open' && selectedAppraisal.assessorId === user?.id && <Button onClick={submitAppraisal} disabled={saving || !selectedAppraisal.evidence?.length}><ClipboardCheck className="mr-2 h-4 w-4" />Ajukan untuk telaah</Button>}
                     </DialogFooter>
                 </DialogContent>
@@ -810,7 +810,7 @@ export default function RetentionGovernance() {
                             })}
                         </div>
                     )}
-                    <DialogFooter><Button variant="outline" onClick={() => setEventHistoryArchive(null)}>Tutup</Button></DialogFooter>
+                    <DialogFooter sticky><Button variant="outline" onClick={() => setEventHistoryArchive(null)}>Tutup</Button></DialogFooter>
                 </DialogContent>
             </Dialog>
 
@@ -869,7 +869,7 @@ export default function RetentionGovernance() {
                         ))}
                         <Button type="button" variant="outline" onClick={() => setTransferForm({ ...transferForm, items: [...transferForm.items, { arsipId: '', appraisalDecisionId: '', objectUri: '', objectSha256: '' }] })}><Plus className="mr-2 h-4 w-4" />Tambah arsip</Button>
                     </div>
-                    <DialogFooter>
+                    <DialogFooter sticky>
                         <Button variant="outline" onClick={() => setTransferOpen(false)}>Batal</Button>
                         <Button
                             disabled={saving || transferForm.items.some((item) => !item.arsipId || !item.appraisalDecisionId || !item.objectUri || !item.objectSha256)}
@@ -956,7 +956,7 @@ export default function RetentionGovernance() {
                             {selectedTransfer.status === 'cancelled' && <Alert><Trash2 className="h-4 w-4" /><AlertTitle>Manifest dibatalkan</AlertTitle><AlertDescription>Reservasi arsip telah dilepas. Manifest dan bukti pembatalan tetap tersimpan untuk audit.</AlertDescription></Alert>}
                         </div>
                     )}
-                    <DialogFooter>
+                    <DialogFooter sticky>
                         <Button variant="outline" onClick={() => setSelectedTransfer(null)}>Tutup</Button>
                         {selectedTransfer?.status === 'cancelled' && canOperate && <Button variant="outline" onClick={openReplacementTransfer}><History className="mr-2 h-4 w-4" />Buat manifest pengganti</Button>}
                         {transferCanAdvance && canOperate && <Button disabled={saving || !transferEvent.eventAt || !transferEvent.referenceNumber.trim() || !transferEvent.counterparty.trim() || !transferEvent.documentAttachmentId || !/^[0-9a-fA-F]{64}$/.test(transferEvent.documentSha256)} onClick={recordTransferEvent}><ArchiveRestore className="mr-2 h-4 w-4" />Simpan peristiwa</Button>}

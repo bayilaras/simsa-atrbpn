@@ -18,7 +18,7 @@ export default function ArsipVitalDetail({
 }) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
                 <DialogHeader>
                     <DialogTitle>{isEditing ? 'Edit Arsip Vital' : 'Detail Arsip Vital'}</DialogTitle>
                 </DialogHeader>
@@ -47,7 +47,7 @@ export default function ArsipVitalDetail({
 
                         {isEditing ? (
                             <div className="space-y-4">
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid gap-4 sm:grid-cols-2">
                                     <div className="space-y-2">
                                         <Label>Kategori</Label>
                                         <Select value={form.kategoriVital} onValueChange={v => setForm(f => ({ ...f, kategoriVital: v }))}>
@@ -71,7 +71,7 @@ export default function ArsipVitalDetail({
                                         </Select>
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid gap-4 sm:grid-cols-2">
                                     <div className="space-y-2">
                                         <Label>Status Proteksi</Label>
                                         <Select value={form.statusProteksi} onValueChange={v => setForm(f => ({ ...f, statusProteksi: v }))}>
@@ -99,7 +99,7 @@ export default function ArsipVitalDetail({
                                     <Label>Alasan Penetapan</Label>
                                     <Textarea value={form.alasanPenetapan} onChange={e => setForm(f => ({ ...f, alasanPenetapan: e.target.value }))} rows={2} />
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid gap-4 sm:grid-cols-2">
                                     <div className="space-y-2">
                                         <Label>Lokasi Backup</Label>
                                         <Input value={form.lokasiBackup} onChange={e => setForm(f => ({ ...f, lokasiBackup: e.target.value }))} />
@@ -154,7 +154,7 @@ export default function ArsipVitalDetail({
                         )}
                     </div>
                 )}
-                <DialogFooter>
+                <DialogFooter sticky>
                     {isEditing ? (
                         <>
                             <Button variant="outline" onClick={() => setIsEditing(false)}>Batal</Button>

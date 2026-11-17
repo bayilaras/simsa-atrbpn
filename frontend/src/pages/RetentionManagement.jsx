@@ -788,7 +788,7 @@ export default function RetentionManagement() {
 
             {/* Report Preview Dialog */}
             <Dialog open={reportDialogOpen} onOpenChange={setReportDialogOpen}>
-                <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+                <DialogContent className="max-h-[90vh] flex flex-col p-0 overflow-hidden sm:max-w-4xl">
                     <DialogHeader className="p-6 pb-2 border-b bg-muted/20">
                         <DialogTitle className="flex items-center gap-2">
                             <FileText className="h-5 w-5 text-primary" />

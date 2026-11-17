@@ -595,7 +595,7 @@ export default function ArchiveLending() {
                             />
                         </div>
                     </div>
-                    <DialogFooter className="gap-2 sm:gap-0">
+                    <DialogFooter>
                         <Button type="button" variant="outline" disabled={pendingAction === 'return'} onClick={() => setReturnDialogOpen(false)}>Batal</Button>
                         <Button type="button" disabled={pendingAction === 'return'} onClick={handleReturn} className="bg-emerald-600 hover:bg-emerald-700">
                             {pendingAction === 'return' && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />}
@@ -634,7 +634,7 @@ export default function ArchiveLending() {
                             />
                         </div>
                     </div>
-                    <DialogFooter className="gap-2 sm:gap-0">
+                    <DialogFooter>
                         <Button type="button" variant="outline" disabled={pendingAction === 'extend'} onClick={() => setExtendDialogOpen(false)}>Batal</Button>
                         <Button type="button" disabled={pendingAction === 'extend'} onClick={handleExtend} className="bg-primary hover:bg-primary">
                             {pendingAction === 'extend' && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />}
@@ -795,7 +795,7 @@ export default function ArchiveLending() {
                             />
                         </div>
                     </div>
-                    <DialogFooter className="gap-2 sm:gap-0">
+                    <DialogFooter>
                         <Button type="button" variant="outline" disabled={pendingAction === 'borrow'} onClick={() => setBorrowDialogOpen(false)}>Batal</Button>
                         <Button type="button" disabled={pendingAction === 'borrow'} onClick={handleBorrow} className="bg-indigo-600 hover:bg-indigo-700">
                             {pendingAction === 'borrow' && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />}

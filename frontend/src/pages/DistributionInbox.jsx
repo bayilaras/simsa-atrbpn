@@ -582,7 +582,7 @@ export default function DistributionInbox() {
                             className="bg-background focus:bg-background"
                         />
                     </div>
-                    <DialogFooter className="gap-2 sm:gap-0">
+                    <DialogFooter>
                         <Button variant="outline" onClick={() => setRejectDialogOpen(false)}>
                             Batal
                         </Button>

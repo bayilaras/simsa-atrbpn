@@ -19,7 +19,7 @@ export default function ArsipElektronikDetail({
     const advancedWorkflowsEnabled = capabilities.advancedArchiveWorkflows !== false
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="sm:max-w-2xl">
                 <DialogHeader>
                     <DialogTitle>Detail & Verifikasi Dokumen</DialogTitle>
                 </DialogHeader>
@@ -32,8 +32,8 @@ export default function ArsipElektronikDetail({
 
                         <TabsContent value="detail" className="space-y-4 pt-4">
                             <div className="space-y-3">
-                                <div className="grid grid-cols-2 gap-2 text-sm">
-                                    <div className="col-span-2"><span className="text-muted-foreground">Kode registrasi:</span> <strong className="font-mono">{selectedItem.registrationCode || 'Rekod legacy'}</strong></div>
+                                <div className="grid gap-2 text-sm sm:grid-cols-2">
+                                    <div className="min-w-0 break-words sm:col-span-2"><span className="text-muted-foreground">Kode registrasi:</span> <strong className="font-mono">{selectedItem.registrationCode || 'Rekod legacy'}</strong></div>
                                     <div><span className="text-muted-foreground">Format:</span> <strong>{selectedItem.formatFile}</strong></div>
                                     <div><span className="text-muted-foreground">Ukuran:</span> <strong>{formatFileSize(selectedItem.ukuranFile)}</strong></div>
                                     <div><span className="text-muted-foreground">Resolusi:</span> <strong>{selectedItem.resolusiDPI ? `${selectedItem.resolusiDPI} DPI` : '-'}</strong></div>

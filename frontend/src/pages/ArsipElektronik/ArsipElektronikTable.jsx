@@ -25,14 +25,14 @@ export default function ArsipElektronikTable({
                 <CardContent className="pt-6">
                     <div className="flex flex-wrap gap-4">
                         <Select value={filterFormat} onValueChange={(v) => { onFilterFormatChange(v); }}>
-                            <SelectTrigger className="w-full sm:w-[140px]"><SelectValue placeholder="Format" /></SelectTrigger>
+                            <SelectTrigger className="w-full sm:w-[170px]"><SelectValue placeholder="Format" /></SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">Semua Format</SelectItem>
                                 {FORMAT_OPTIONS.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}
                             </SelectContent>
                         </Select>
                         <Select value={filterStatus} onValueChange={(v) => { onFilterStatusChange(v); }}>
-                            <SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>
+                            <SelectTrigger className="w-full sm:w-[170px]"><SelectValue placeholder="Status" /></SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">Semua Status</SelectItem>
                                 <SelectItem value="pending">Menunggu</SelectItem>
@@ -41,7 +41,7 @@ export default function ArsipElektronikTable({
                             </SelectContent>
                         </Select>
                         <Select value={filterMedia} onValueChange={(v) => { onFilterMediaChange(v); }}>
-                            <SelectTrigger className="w-full sm:w-[140px]"><SelectValue placeholder="Media" /></SelectTrigger>
+                            <SelectTrigger className="w-full sm:w-[170px]"><SelectValue placeholder="Media" /></SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">Semua Media</SelectItem>
                                 {MEDIA_OPTIONS.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}

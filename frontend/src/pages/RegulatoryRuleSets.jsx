@@ -1001,7 +1001,7 @@ export default function RegulatoryRuleSets() {
                                 <Textarea id="change-summary" value={cloneForm.changeSummary} onChange={(event) => setCloneForm((form) => ({ ...form, changeSummary: event.target.value }))} rows={3} placeholder="Uraikan alasan dan ruang lingkup perubahan." />
                             </div>
                         </div>
-                        <DialogFooter>
+                        <DialogFooter sticky>
                             <Button type="button" variant="outline" onClick={() => setCloneOpen(false)} disabled={actionLoading}>Batal</Button>
                             <Button type="submit" disabled={actionLoading || !cloneForm.version.trim() || !cloneForm.effectiveFrom}>
                                 {actionLoading ? 'Menyalin…' : 'Buat draft'}
@@ -1024,7 +1024,7 @@ export default function RegulatoryRuleSets() {
                     ) : (
                         <ValidationReport report={validationReport} />
                     )}
-                    <DialogFooter>
+                    <DialogFooter sticky>
                         <Button variant="outline" onClick={() => setValidationOpen(false)}>Tutup</Button>
                     </DialogFooter>
                 </DialogContent>
@@ -1085,7 +1085,7 @@ export default function RegulatoryRuleSets() {
                         )}
                     </div>
 
-                    <DialogFooter>
+                    <DialogFooter sticky>
                         <Button variant="outline" onClick={closeImport} disabled={actionLoading}>Tutup</Button>
                         {!importResult?.imported && (
                             <Button
@@ -1165,7 +1165,7 @@ export default function RegulatoryRuleSets() {
                                 <Textarea id="verification-statement" minLength={20} maxLength={4000} rows={4} value={manifestForm.verificationStatement} onChange={(event) => setManifestForm((form) => ({ ...form, verificationStatement: event.target.value }))} placeholder="Jelaskan cara jumlah butir dan cakupan halaman diperiksa terhadap PDF resmi." required />
                             </div>
                         </div>
-                        <DialogFooter>
+                        <DialogFooter sticky>
                             <Button type="button" variant="outline" disabled={actionLoading} onClick={() => setManifestRuleSet(null)}>Batal</Button>
                             <Button type="submit" disabled={actionLoading || manifestForm.verificationStatement.trim().length < 20}>{actionLoading ? 'Memeriksa…' : 'Verifikasi manifest'}</Button>
                         </DialogFooter>
@@ -1236,7 +1236,7 @@ export default function RegulatoryRuleSets() {
                             onPageChange={(page) => loadEventsPage(eventsRuleSet, page)}
                         />
                     )}
-                    <DialogFooter><Button variant="outline" onClick={() => setEventsRuleSet(null)}>Tutup</Button></DialogFooter>
+                    <DialogFooter sticky><Button variant="outline" onClick={() => setEventsRuleSet(null)}>Tutup</Button></DialogFooter>
                 </DialogContent>
             </Dialog>
 

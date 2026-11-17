@@ -489,61 +489,61 @@ export default function KlasifikasiArsip() {
                     </DialogHeader>
 
                     <div className="grid gap-4 py-4">
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="kode" className="text-right font-medium">Kode</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="kode" className="sm:text-right font-medium">Kode</Label>
                             <Input
                                 id="kode"
                                 value={formData.kode}
                                 onChange={(e) => setFormData({ ...formData, kode: e.target.value })}
-                                className="col-span-3 font-mono"
+                                className="sm:col-span-3 font-mono"
                                 disabled={editMode}
                                 placeholder="Contoh: PR.01"
                             />
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="jenis" className="text-right font-medium">Jenis</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="jenis" className="sm:text-right font-medium">Jenis</Label>
                             <Input
                                 id="jenis"
                                 value={formData.jenis}
                                 onChange={(e) => setFormData({ ...formData, jenis: e.target.value })}
-                                className="col-span-3"
+                                className="sm:col-span-3"
                                 placeholder="Nama jenis klasifikasi"
                             />
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="sourceCode" className="text-right font-medium">Kode sumber</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="sourceCode" className="sm:text-right font-medium">Kode sumber</Label>
                             <Input
                                 id="sourceCode"
                                 value={formData.sourceCode}
                                 onChange={(e) => setFormData({ ...formData, sourceCode: e.target.value })}
-                                className="col-span-3 font-mono"
+                                className="sm:col-span-3 font-mono"
                                 placeholder="Kode sebagaimana tercetak pada sumber"
                             />
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="sourceRecordKey" className="text-right font-medium">Identitas baris</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="sourceRecordKey" className="sm:text-right font-medium">Identitas baris</Label>
                             <Input
                                 id="sourceRecordKey"
                                 value={formData.sourceRecordKey}
                                 onChange={(e) => setFormData({ ...formData, sourceRecordKey: e.target.value })}
-                                className="col-span-3 font-mono text-xs"
+                                className="sm:col-span-3 font-mono text-xs"
                                 placeholder="Unik dalam versi; kosongkan untuk dibuat server"
                             />
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="parentKode" className="text-right font-medium">Parent</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="parentKode" className="sm:text-right font-medium">Parent</Label>
                             {editMode ? (
-                                <Input value={formData.parentKode || 'Root'} className="col-span-3 font-mono" disabled />
+                                <Input value={formData.parentKode || 'Root'} className="sm:col-span-3 font-mono" disabled />
                             ) : (
                                 <Select
                                     value={formData.parentItemId}
                                     onValueChange={(value) => setFormData({ ...formData, parentItemId: value })}
                                 >
-                                    <SelectTrigger id="parentKode" className="col-span-3">
+                                    <SelectTrigger id="parentKode" className="sm:col-span-3">
                                         <SelectValue placeholder="Pilih parent" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -558,24 +558,24 @@ export default function KlasifikasiArsip() {
                             )}
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="kategori" className="text-right font-medium">Kategori</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="kategori" className="sm:text-right font-medium">Kategori</Label>
                             <Input
                                 id="kategori"
                                 value={formData.kategori}
                                 onChange={(e) => setFormData({ ...formData, kategori: e.target.value })}
-                                className="col-span-3"
+                                className="sm:col-span-3"
                                 placeholder="Kategori utama (opsional)"
                             />
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="organizationalScope" className="text-right font-medium">Lingkup</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="organizationalScope" className="sm:text-right font-medium">Lingkup</Label>
                             <Select
                                 value={formData.organizationalScope}
                                 onValueChange={(value) => setFormData({ ...formData, organizationalScope: value })}
                             >
-                                <SelectTrigger id="organizationalScope" className="col-span-3"><SelectValue /></SelectTrigger>
+                                <SelectTrigger id="organizationalScope" className="sm:col-span-3"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="kementerian">Kementerian</SelectItem>
                                     <SelectItem value="kanwil">Kantor Wilayah</SelectItem>
@@ -584,26 +584,26 @@ export default function KlasifikasiArsip() {
                             </Select>
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="sourcePage" className="text-right font-medium">Halaman sumber</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="sourcePage" className="sm:text-right font-medium">Halaman sumber</Label>
                             <Input
                                 id="sourcePage"
                                 type="number"
                                 min="1"
                                 value={formData.sourcePage}
                                 onChange={(e) => setFormData({ ...formData, sourcePage: e.target.value })}
-                                className="col-span-3"
+                                className="sm:col-span-3"
                                 placeholder="Nomor halaman PDF resmi"
                             />
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="isSelectable" className="text-right font-medium">Dapat dipilih</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="isSelectable" className="sm:text-right font-medium">Dapat dipilih</Label>
                             <Select
                                 value={formData.isSelectable ? 'yes' : 'no'}
                                 onValueChange={(value) => setFormData({ ...formData, isSelectable: value === 'yes' })}
                             >
-                                <SelectTrigger id="isSelectable" className="col-span-3"><SelectValue /></SelectTrigger>
+                                <SelectTrigger id="isSelectable" className="sm:col-span-3"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="yes">Ya, butir arsip</SelectItem>
                                     <SelectItem value="no">Tidak, hanya simpul hierarki</SelectItem>
@@ -611,20 +611,20 @@ export default function KlasifikasiArsip() {
                             </Select>
                         </div>
 
-                        <div className="grid grid-cols-4 items-start gap-4">
-                            <Label htmlFor="keterangan" className="text-right pt-2 font-medium">Keterangan</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-start sm:gap-4">
+                            <Label htmlFor="keterangan" className="sm:pt-2 sm:text-right font-medium">Keterangan</Label>
                             <Textarea
                                 id="keterangan"
                                 value={formData.keterangan}
                                 onChange={(e) => setFormData({ ...formData, keterangan: e.target.value })}
-                                className="col-span-3"
+                                className="sm:col-span-3"
                                 placeholder="Deskripsi klasifikasi"
                                 rows={3}
                             />
                         </div>
                     </div>
 
-                    <DialogFooter className="gap-2 sm:gap-0">
+                    <DialogFooter sticky>
                         <Button variant="outline" onClick={() => setDialogOpen(false)}>
                             Batal
                         </Button>

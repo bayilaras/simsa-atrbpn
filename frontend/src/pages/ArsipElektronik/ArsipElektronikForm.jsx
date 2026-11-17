@@ -130,14 +130,14 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
     return (
         <>
             <Dialog open={open} onOpenChange={value => { if (!uploading) onOpenChange(value) }}>
-                <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto">
+                <DialogContent className="sm:max-w-2xl">
                     <DialogHeader>
                         <DialogTitle>Registrasi Arsip Elektronik Terkendali</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4">
                         <div className="space-y-2">
                             <Label>Arsip induk *</Label>
-                            <div className="flex gap-2">
+                            <div className="flex items-stretch gap-2">
                                 <div className="min-w-0 flex-1 rounded-md border bg-muted/20 p-3 text-sm">
                                     {selectedArchive ? (
                                         <>
@@ -148,7 +148,7 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
                                         <p className="text-muted-foreground">Belum ada arsip dipilih</p>
                                     )}
                                 </div>
-                                <Button type="button" variant="outline" disabled={uploading} onClick={() => setPickerOpen(true)}>
+                                <Button type="button" variant="outline" className="h-auto shrink-0" disabled={uploading} onClick={() => setPickerOpen(true)}>
                                     <Search className="mr-2 h-4 w-4" /> Cari
                                 </Button>
                             </div>
@@ -180,7 +180,7 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
                                     status={selectedAttachment.malwareScanStatus}
                                     onRefresh={() => loadAttachments(form.arsipId)}
                                 />}
-                                <div className="flex items-center gap-2">
+                                <div className="flex min-w-0 items-center gap-2">
                                     <Input
                                         type="file"
                                         aria-label="Unggah lampiran arsip PDF"
@@ -197,7 +197,7 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
                         )}
 
                         <div className="grid gap-3 sm:grid-cols-2">
-                            <div className="space-y-1.5">
+                            <div className="min-w-0 space-y-1.5">
                                 <Label>Sumber rekod *</Label>
                                 <Select value={form.sourceType} onValueChange={(value) => setForm(current => ({ ...current, sourceType: value }))}>
                                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -208,7 +208,7 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <div className="space-y-1.5">
+                            <div className="min-w-0 space-y-1.5">
                                 <Label>Jumlah halaman</Label>
                                 <Input type="number" min="1" value={form.jumlahHalaman}
                                     onChange={(event) => setForm(current => ({ ...current, jumlahHalaman: event.target.value }))} />
@@ -216,15 +216,15 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
                         </div>
 
                         {form.sourceType === 'digitized' && (
-                            <div className="grid gap-3 rounded-lg border p-3 sm:grid-cols-3">
-                                <div className="space-y-1.5">
-                                    <Label>Kategori pindai</Label>
+                            <div className="grid items-start gap-3 rounded-lg border p-3 sm:grid-cols-3">
+                                <div className="min-w-0 space-y-1.5">
+                                    <Label htmlFor="arsip-elektronik-kategori-pindai">Kategori pindai</Label>
                                     <Select value={form.scanCategory} onValueChange={(value) => setForm(current => ({
                                         ...current,
                                         scanCategory: value,
                                         resolusiDPI: String(MINIMUM_DPI[value] || 300),
                                     }))}>
-                                        <SelectTrigger><SelectValue /></SelectTrigger>
+                                        <SelectTrigger id="arsip-elektronik-kategori-pindai"><SelectValue /></SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="paper">Kertas (≥300 DPI)</SelectItem>
                                             <SelectItem value="cartographic">Kartografi (≥400 DPI)</SelectItem>
@@ -232,21 +232,25 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
                                         </SelectContent>
                                     </Select>
                                 </div>
-                                <div className="space-y-1.5">
-                                    <Label>Resolusi (min. {minimumDpi} DPI)</Label>
-                                    <Input type="number" min={minimumDpi} max="2400" value={form.resolusiDPI}
+                                <div className="min-w-0 space-y-1.5">
+                                    <Label htmlFor="arsip-elektronik-resolusi">Resolusi (DPI)</Label>
+                                    <Input id="arsip-elektronik-resolusi" type="number" min={minimumDpi} max="2400" value={form.resolusiDPI}
+                                        aria-describedby="arsip-elektronik-resolusi-bantuan"
                                         onChange={(event) => setForm(current => ({ ...current, resolusiDPI: event.target.value }))} />
+                                    <p id="arsip-elektronik-resolusi-bantuan" className="text-xs text-muted-foreground">Minimal {minimumDpi} DPI</p>
                                 </div>
-                                <div className="space-y-1.5">
-                                    <Label>Kedalaman warna (min. 24-bit)</Label>
-                                    <Input type="number" min="24" max="64" value={form.colorDepth}
+                                <div className="min-w-0 space-y-1.5">
+                                    <Label htmlFor="arsip-elektronik-kedalaman-warna">Kedalaman warna (bit)</Label>
+                                    <Input id="arsip-elektronik-kedalaman-warna" type="number" min="24" max="64" value={form.colorDepth}
+                                        aria-describedby="arsip-elektronik-kedalaman-warna-bantuan"
                                         onChange={(event) => setForm(current => ({ ...current, colorDepth: event.target.value }))} />
+                                    <p id="arsip-elektronik-kedalaman-warna-bantuan" className="text-xs text-muted-foreground">Minimal 24-bit</p>
                                 </div>
                             </div>
                         )}
 
                         <div className="grid gap-3 sm:grid-cols-2">
-                            <div className="space-y-1.5">
+                            <div className="min-w-0 space-y-1.5">
                                 <Label>Media asal</Label>
                                 <Select value={form.mediaAsal} onValueChange={(value) => setForm(current => ({ ...current, mediaAsal: value }))}>
                                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -255,7 +259,7 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <div className="space-y-1.5">
+                            <div className="min-w-0 space-y-1.5">
                                 <Label>Tanggal digitalisasi</Label>
                                 <Input type="date" value={form.tanggalDigitalisasi}
                                     onChange={(event) => setForm(current => ({ ...current, tanggalDigitalisasi: event.target.value }))} />
@@ -263,12 +267,12 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
                         </div>
 
                         <div className="grid gap-3 sm:grid-cols-2">
-                            <div className="space-y-1.5">
+                            <div className="min-w-0 space-y-1.5">
                                 <Label>Alat digitalisasi</Label>
                                 <Input value={form.alatDigitalisasi} placeholder="Merek/tipe scanner"
                                     onChange={(event) => setForm(current => ({ ...current, alatDigitalisasi: event.target.value }))} />
                             </div>
-                            <div className="space-y-1.5">
+                            <div className="min-w-0 space-y-1.5">
                                 <Label>Perangkat lunak</Label>
                                 <Input value={form.softwareDigitalisasi} placeholder="Nama dan versi"
                                     onChange={(event) => setForm(current => ({ ...current, softwareDigitalisasi: event.target.value }))} />
@@ -283,7 +287,7 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
 
                         {error && <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
                     </div>
-                    <DialogFooter>
+                    <DialogFooter sticky>
                         <Button variant="outline" disabled={uploading} onClick={() => onOpenChange(false)}>Batal</Button>
                         <Button onClick={onSubmit} disabled={!form.fileAttachmentId || uploading}>
                             <Upload className="mr-2 h-4 w-4" /> Registrasikan
@@ -293,11 +297,11 @@ export default function ArsipElektronikForm({ open, onOpenChange, form, setForm,
             </Dialog>
 
             <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
-                <DialogContent className="max-w-2xl">
+                <DialogContent className="sm:max-w-2xl">
                     <DialogHeader><DialogTitle>Pilih Arsip Induk</DialogTitle></DialogHeader>
                     <Input value={search} onChange={(event) => setSearch(event.target.value)}
                         placeholder="Cari nomor berkas atau uraian..." />
-                    <div className="max-h-[360px] overflow-y-auto rounded-md border">
+                    <div className="max-h-[min(360px,50dvh)] overflow-y-auto rounded-md border">
                         {loadingArchives ? (
                             <div className="flex items-center justify-center gap-2 p-8 text-muted-foreground">
                                 <Loader2 className="h-4 w-4 animate-spin" /> Memuat arsip

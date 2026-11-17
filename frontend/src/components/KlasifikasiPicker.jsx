@@ -573,7 +573,7 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
 
             {/* Dialog - Two Panel Layout */}
             <Dialog open={open} onOpenChange={handleOpenChange}>
-                <DialogContent className="max-w-[95vw] md:max-w-5xl h-[92vh] flex flex-col p-0 gap-0 overflow-hidden sm:rounded-xl">
+                <DialogContent className="max-w-[95vw] sm:max-w-[95vw] md:max-w-5xl h-[92vh] flex flex-col p-0 gap-0 overflow-hidden sm:rounded-xl">
                     {/* Header - Compact */}
                     <div className="p-3 md:p-4 border-b bg-muted/30 flex-shrink-0">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">

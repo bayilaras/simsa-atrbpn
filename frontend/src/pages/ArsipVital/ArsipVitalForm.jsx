@@ -41,7 +41,7 @@ export default function ArsipVitalForm({ open, onOpenChange, form, setForm, onSu
 
     return (
         <Dialog open={open} onOpenChange={handleOpenChange}>
-            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <ShieldAlert className="h-5 w-5 text-red-600" />
@@ -166,7 +166,7 @@ export default function ArsipVitalForm({ open, onOpenChange, form, setForm, onSu
                     </div>
 
                     {/* Tanggal */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
                             <Label>Tgl. Penetapan</Label>
                             <Input type="date" value={form.tanggalPenetapan} onChange={e => setForm(f => ({ ...f, tanggalPenetapan: e.target.value }))} />
@@ -181,7 +181,7 @@ export default function ArsipVitalForm({ open, onOpenChange, form, setForm, onSu
                         <Input value={form.penanggungJawab} onChange={e => setForm(f => ({ ...f, penanggungJawab: e.target.value }))} placeholder="Nama penanggung jawab..." />
                     </div>
                 </div>
-                <DialogFooter>
+                <DialogFooter sticky>
                     <Button variant="outline" onClick={() => handleOpenChange(false)}>Batal</Button>
                     <Button onClick={onSubmit} disabled={!form.arsipId} className="bg-red-600 hover:bg-red-700">Tetapkan</Button>
                 </DialogFooter>

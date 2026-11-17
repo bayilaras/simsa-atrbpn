@@ -38,7 +38,7 @@ export default function ArsipTerjagaForm({ open, onOpenChange, form, setForm, on
 
     return (
         <Dialog open={open} onOpenChange={handleOpenChange}>
-            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <ShieldAlert className="h-5 w-5 text-purple-600" />
@@ -145,7 +145,7 @@ export default function ArsipTerjagaForm({ open, onOpenChange, form, setForm, on
                         <Textarea value={form.catatan} onChange={e => setForm(f => ({ ...f, catatan: e.target.value }))} rows={2} />
                     </div>
                 </div>
-                <DialogFooter>
+                <DialogFooter sticky>
                     <Button variant="outline" onClick={() => handleOpenChange(false)}>Batal</Button>
                     <Button onClick={onSubmit} disabled={!form.arsipId} className="bg-purple-600 hover:bg-purple-700">Tetapkan</Button>
                 </DialogFooter>

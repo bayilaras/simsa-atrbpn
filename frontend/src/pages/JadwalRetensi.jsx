@@ -500,58 +500,58 @@ export default function JadwalRetensi() {
                     </DialogHeader>
 
                     <div className="grid gap-4 py-4">
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="kode" className="text-right font-medium">Kode</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="kode" className="sm:text-right font-medium">Kode</Label>
                             <Input
                                 id="kode"
                                 value={formData.kode}
                                 onChange={(e) => setFormData({ ...formData, kode: e.target.value })}
-                                className="col-span-3 font-mono"
+                                className="sm:col-span-3 font-mono"
                                 disabled={editMode}
                                 placeholder="Contoh: I.A.1"
                             />
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="uraian" className="text-right font-medium">Uraian</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="uraian" className="sm:text-right font-medium">Uraian</Label>
                             <Input
                                 id="uraian"
                                 value={formData.uraian}
                                 onChange={(e) => setFormData({ ...formData, uraian: e.target.value })}
-                                className="col-span-3"
+                                className="sm:col-span-3"
                                 placeholder="Deskripsi/Uraian jenis arsip"
                             />
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="retensiAktif" className="text-right font-medium">Rumusan aktif</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="retensiAktif" className="sm:text-right font-medium">Rumusan aktif</Label>
                             <Input
                                 id="retensiAktif"
                                 value={formData.retensiAktif}
                                 onChange={(e) => setFormData({ ...formData, retensiAktif: e.target.value })}
-                                className="col-span-3"
+                                className="sm:col-span-3"
                                 placeholder="Teks resmi, mis. 2 tahun setelah serah terima"
                             />
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="retensiInaktif" className="text-right font-medium">Rumusan inaktif</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="retensiInaktif" className="sm:text-right font-medium">Rumusan inaktif</Label>
                             <Input
                                 id="retensiInaktif"
                                 value={formData.retensiInaktif}
                                 onChange={(e) => setFormData({ ...formData, retensiInaktif: e.target.value })}
-                                className="col-span-3"
+                                className="sm:col-span-3"
                                 placeholder="Teks resmi, mis. 3 tahun"
                             />
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="calculationMode" className="text-right font-medium">Mode hitung</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="calculationMode" className="sm:text-right font-medium">Mode hitung</Label>
                             <Select
                                 value={formData.calculationMode}
                                 onValueChange={(value) => setFormData({ ...formData, calculationMode: value })}
                             >
-                                <SelectTrigger id="calculationMode" className="col-span-3"><SelectValue /></SelectTrigger>
+                                <SelectTrigger id="calculationMode" className="sm:col-span-3"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="duration">Durasi terstruktur</SelectItem>
                                     <SelectItem value="manual">Manual / berbasis peristiwa atau kondisi</SelectItem>
@@ -559,51 +559,51 @@ export default function JadwalRetensi() {
                             </Select>
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="activeMonths" className="text-right font-medium">Bulan aktif</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="activeMonths" className="sm:text-right font-medium">Bulan aktif</Label>
                             <Input
                                 id="activeMonths"
                                 type="number"
                                 min="0"
                                 value={formData.activeMonths}
                                 onChange={(e) => setFormData({ ...formData, activeMonths: e.target.value })}
-                                className="col-span-3"
+                                className="sm:col-span-3"
                                 placeholder="Kosong jika tidak dapat dihitung otomatis"
                             />
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="inactiveMonths" className="text-right font-medium">Bulan inaktif</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="inactiveMonths" className="sm:text-right font-medium">Bulan inaktif</Label>
                             <Input
                                 id="inactiveMonths"
                                 type="number"
                                 min="0"
                                 value={formData.inactiveMonths}
                                 onChange={(e) => setFormData({ ...formData, inactiveMonths: e.target.value })}
-                                className="col-span-3"
+                                className="sm:col-span-3"
                                 placeholder="Kosong jika memerlukan penilaian"
                             />
                         </div>
 
-                        <div className="grid grid-cols-4 items-start gap-4">
-                            <Label htmlFor="triggerGuidance" className="text-right pt-2 font-medium">Pemicu retensi</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-start sm:gap-4">
+                            <Label htmlFor="triggerGuidance" className="sm:pt-2 sm:text-right font-medium">Pemicu retensi</Label>
                             <Textarea
                                 id="triggerGuidance"
                                 value={formData.triggerGuidance}
                                 onChange={(e) => setFormData({ ...formData, triggerGuidance: e.target.value })}
-                                className="col-span-3"
+                                className="sm:col-span-3"
                                 placeholder="Peristiwa yang menandai proses selesai dan bukti yang wajib tersedia"
                                 rows={2}
                             />
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="dispositionCode" className="text-right font-medium">Keputusan terstruktur</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="dispositionCode" className="sm:text-right font-medium">Keputusan terstruktur</Label>
                             <Select
                                 value={formData.dispositionCode}
                                 onValueChange={(value) => setFormData({ ...formData, dispositionCode: value })}
                             >
-                                <SelectTrigger id="dispositionCode" className="col-span-3"><SelectValue /></SelectTrigger>
+                                <SelectTrigger id="dispositionCode" className="sm:col-span-3"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="musnah">Musnah</SelectItem>
                                     <SelectItem value="permanen">Permanen</SelectItem>
@@ -613,25 +613,25 @@ export default function JadwalRetensi() {
                             </Select>
                         </div>
 
-                        <div className="grid grid-cols-4 items-start gap-4">
-                            <Label htmlFor="keterangan" className="text-right pt-2 font-medium">Rumusan keputusan</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-start sm:gap-4">
+                            <Label htmlFor="keterangan" className="sm:pt-2 sm:text-right font-medium">Rumusan keputusan</Label>
                             <Textarea
                                 id="keterangan"
                                 value={formData.keterangan}
                                 onChange={(e) => setFormData({ ...formData, keterangan: e.target.value })}
-                                className="col-span-3"
+                                className="sm:col-span-3"
                                 placeholder="Salin rumusan resmi lengkap, termasuk pengecualian"
                                 rows={3}
                             />
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="parentKode" className="text-right font-medium">Parent</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="parentKode" className="sm:text-right font-medium">Parent</Label>
                             {editMode ? (
-                                <Input value={formData.parentKode || 'Root'} className="col-span-3 font-mono" disabled />
+                                <Input value={formData.parentKode || 'Root'} className="sm:col-span-3 font-mono" disabled />
                             ) : (
                                 <Select value={formData.parentItemId} onValueChange={(value) => setFormData({ ...formData, parentItemId: value })}>
-                                    <SelectTrigger id="parentKode" className="col-span-3"><SelectValue /></SelectTrigger>
+                                    <SelectTrigger id="parentKode" className="sm:col-span-3"><SelectValue /></SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="__root__">Root / tanpa parent</SelectItem>
                                         {parentOptions.map((parent) => (
@@ -642,20 +642,20 @@ export default function JadwalRetensi() {
                             )}
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="kategori" className="text-right font-medium">Kategori</Label>
-                            <Input id="kategori" value={formData.kategori} onChange={(e) => setFormData({ ...formData, kategori: e.target.value })} className="col-span-3" />
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="kategori" className="sm:text-right font-medium">Kategori</Label>
+                            <Input id="kategori" value={formData.kategori} onChange={(e) => setFormData({ ...formData, kategori: e.target.value })} className="sm:col-span-3" />
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="sourcePage" className="text-right font-medium">Halaman sumber</Label>
-                            <Input id="sourcePage" type="number" min="1" value={formData.sourcePage} onChange={(e) => setFormData({ ...formData, sourcePage: e.target.value })} className="col-span-3" />
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="sourcePage" className="sm:text-right font-medium">Halaman sumber</Label>
+                            <Input id="sourcePage" type="number" min="1" value={formData.sourcePage} onChange={(e) => setFormData({ ...formData, sourcePage: e.target.value })} className="sm:col-span-3" />
                         </div>
 
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="isSelectable" className="text-right font-medium">Dapat dipilih</Label>
+                        <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                            <Label htmlFor="isSelectable" className="sm:text-right font-medium">Dapat dipilih</Label>
                             <Select value={formData.isSelectable ? 'yes' : 'no'} onValueChange={(value) => setFormData({ ...formData, isSelectable: value === 'yes' })}>
-                                <SelectTrigger id="isSelectable" className="col-span-3"><SelectValue /></SelectTrigger>
+                                <SelectTrigger id="isSelectable" className="sm:col-span-3"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="yes">Ya, jenis arsip</SelectItem>
                                     <SelectItem value="no">Tidak, hanya simpul hierarki</SelectItem>
@@ -664,7 +664,7 @@ export default function JadwalRetensi() {
                         </div>
                     </div>
 
-                    <DialogFooter className="gap-2 sm:gap-0">
+                    <DialogFooter sticky>
                         <Button variant="outline" onClick={() => setDialogOpen(false)}>
                             Batal
                         </Button>

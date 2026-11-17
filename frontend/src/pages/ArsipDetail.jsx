@@ -1209,7 +1209,7 @@ export default function ArsipDetail() {
             )}
 
             <Dialog open={reconcileOpen} onOpenChange={open => !reconcileSaving && setReconcileOpen(open)}>
-                <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <RefreshCw className="h-5 w-5 text-emerald-600" />
@@ -1301,7 +1301,7 @@ export default function ArsipDetail() {
                         )}
                     </div>
 
-                    <DialogFooter className="gap-2 sm:gap-0">
+                    <DialogFooter sticky>
                         <Button variant="outline" onClick={() => setReconcileOpen(false)} disabled={reconcileSaving}>
                             Batal
                         </Button>
