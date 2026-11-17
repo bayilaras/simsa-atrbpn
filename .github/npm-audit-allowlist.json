@@ -1,4 +1,18 @@
 {
   "description": "Pengecualian sementara gerbang npm audit (high/critical). Setiap entri wajib punya alasan dan tanggal kedaluwarsa; entri kedaluwarsa membuat CI gagal. Dibaca oleh .github/scripts/npm-audit-gate.mjs.",
-  "entries": []
+  "entries": [
+    {
+      "ghsa": "GHSA-fc5q-39xc-vjpf",
+      "projects": [
+        "backend",
+        "frontend",
+        "docs-site"
+      ],
+      "packages": [
+        "picomatch"
+      ],
+      "reason": "ReDoS picomatch tanpa versi perbaikan (4.0.7 adalah rilis terbaru). Hanya dipakai alat build/uji (vite, vitest, tsup, tailwind, docusaurus) dengan pola glob dari kode sendiri; tidak menerima masukan pengguna dan tidak ikut runtime produksi. Cabut saat upstream merilis perbaikan.",
+      "expires": "2026-12-02"
+    }
+  ]
 }
