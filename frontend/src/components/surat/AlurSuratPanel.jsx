@@ -187,7 +187,7 @@ export function AlurSuratPanel({ jenis, suratId, rangkaianId = null, aksesMelalu
                         <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Peserta</h4>
                         <ul aria-label="Peserta rangkaian" className="flex flex-wrap gap-2">
                             {d.peserta.map((peserta) => (
-                                <li key={peserta.unitKerjaId}><Badge variant="secondary">{peserta.nama}</Badge></li>
+                                <li key={peserta.unitKerjaId} className="max-w-full"><Badge variant="secondary" className="h-auto max-w-full whitespace-normal break-words rounded-md text-left">{peserta.nama}</Badge></li>
                             ))}
                         </ul>
                     </div>

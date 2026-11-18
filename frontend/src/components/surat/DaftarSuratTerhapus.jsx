@@ -94,7 +94,7 @@ export function DaftarSuratTerhapus({ jenis, unitKerjaId, onDipulihkan }) {
                         {daftar.rows.map((row) => (
                             <TableRow key={row.id}>
                                 <TableCell data-label="Nomor Surat">
-                                    <span className="rounded-md border bg-background px-2 py-0.5 font-mono text-xs" style={{ overflowWrap: 'anywhere' }}>
+                                    <span className="inline-block max-w-full rounded-md border bg-background px-2 py-0.5 font-mono text-xs" style={{ overflowWrap: 'anywhere' }}>
                                         {row.nomorSurat || '-'}
                                     </span>
                                 </TableCell>

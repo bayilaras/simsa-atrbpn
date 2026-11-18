@@ -681,9 +681,9 @@ export default function SuratKeluarDetail() {
                             {namaUnit && (
                                 <>
                                     <Separator />
-                                    <div className="flex justify-between gap-2">
-                                        <span className="text-muted-foreground">Unit Kerja</span>
-                                        <Badge variant="outline" className="text-right">{namaUnit}</Badge>
+                                    <div className="flex justify-between gap-3">
+                                        <span className="shrink-0 text-muted-foreground">Unit Kerja</span>
+                                        <span className="min-w-0 text-right font-medium break-words">{namaUnit}</span>
                                     </div>
                                 </>
                             )}

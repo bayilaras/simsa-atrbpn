@@ -252,10 +252,10 @@ export default function Dosir() {
                         Kelola folder digital untuk mengelompokkan surat berdasarkan kasus
                     </p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                     {/* Unit Kerja Selector for Super Admin */}
                     {isSuperAdmin && unitKerjaList.length > 0 && (
-                        <div className="flex items-center gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
                             <Building2 className="h-4 w-4 text-muted-foreground" />
                             <Select value={selectedUnitKerja} onValueChange={setSelectedUnitKerja}>
                                 <SelectTrigger className="w-full sm:w-[220px] h-9">
