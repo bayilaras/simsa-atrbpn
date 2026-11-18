@@ -618,15 +618,15 @@ export function KlasifikasiPicker({ value, onChange, label = "Pilih Klasifikasi 
                         {/* Tabs */}
                         <Tabs value={activeTab} onValueChange={handleActiveTabChange} className="w-full">
                             <TabsList className="grid w-full grid-cols-3 h-9 p-1 bg-muted/50 border">
-                                <TabsTrigger value="all" className="text-xs py-1 px-1 h-7">
+                                <TabsTrigger value="all" className="text-xs py-1 px-1 h-7 min-h-7">
                                     <span className="truncate">Semua</span>
                                     <Badge variant="secondary" className="ml-1.5 hidden h-5 px-1 text-[10px] sm:inline-flex">{counts.all}</Badge>
                                 </TabsTrigger>
-                                <TabsTrigger value="fasilitatif" className="text-xs py-1 px-1 h-7">
+                                <TabsTrigger value="fasilitatif" className="text-xs py-1 px-1 h-7 min-h-7">
                                     <span className="truncate">Fasilitatif</span>
                                     <Badge variant="secondary" className="ml-1.5 hidden h-5 bg-blue-100 px-1 text-[10px] text-blue-700 dark:bg-blue-500/15 dark:text-blue-300 sm:inline-flex">{counts.fasilitatif}</Badge>
                                 </TabsTrigger>
-                                <TabsTrigger value="substantif" className="text-xs py-1 px-1 h-7">
+                                <TabsTrigger value="substantif" className="text-xs py-1 px-1 h-7 min-h-7">
                                     <span className="truncate">Substantif</span>
                                     <Badge variant="secondary" className="ml-1.5 hidden h-5 bg-emerald-100 px-1 text-[10px] text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 sm:inline-flex">{counts.substantif}</Badge>
                                 </TabsTrigger>
