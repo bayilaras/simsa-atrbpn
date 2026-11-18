@@ -119,8 +119,8 @@ export function InfoSection({ surat }) {
                         <p className="text-sm font-medium">{surat.jenisSurat || '-'}</p>
                     </div>
                     <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sifat Surat</label>
-                        <Badge variant={sifat.variant} className="mt-1">
+                        <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide">Sifat Surat</label>
+                        <Badge variant={sifat.variant}>
                             {sifat.label}
                         </Badge>
                     </div>
@@ -140,8 +140,8 @@ export function InfoSection({ surat }) {
                     {disposisi.length > 0 ? (
                         <ul aria-label="Disposisi" className="flex flex-wrap gap-2">
                             {disposisi.map((label, index) => (
-                                <li key={`${index}-${label}`}>
-                                    <Badge variant="outline">{label}</Badge>
+                                <li key={`${index}-${label}`} className="max-w-full">
+                                    <Badge variant="outline" className="h-auto max-w-full whitespace-normal break-words rounded-md text-left">{label}</Badge>
                                 </li>
                             ))}
                         </ul>

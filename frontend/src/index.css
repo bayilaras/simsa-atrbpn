@@ -291,12 +291,14 @@ html[data-text-size="large"] {
     max-width: 100%;
   }
 
-  /* TableCell ships with whitespace-nowrap, which is right for a scrolling grid
-     but would keep every stacked card as wide as its longest line. */
+  /* Cell content may carry nowrap/truncate utilities meant for the desktop
+     grid; in a stacked card they would keep it as wide as its longest line. */
   table[data-responsive="true"] tbody td,
   table[data-responsive="true"] tbody td * {
     white-space: normal;
-    overflow-wrap: break-word;
+    /* anywhere, not break-word: an unbroken e-mail or file name must also be
+       allowed to shrink the card, otherwise it pushes the row past the screen. */
+    overflow-wrap: anywhere;
   }
 
   /* Pills stay on one line — a status broken across two lines is unreadable */

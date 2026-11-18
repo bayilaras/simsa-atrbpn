@@ -508,10 +508,10 @@ export default function UserManagement() {
                                                         {getInitials(user.name)}
                                                     </AvatarFallback>
                                                 </Avatar>
-                                                <div>
+                                                <div className="min-w-0">
                                                     <p className="font-medium text-sm text-foreground">{user.name || '-'}</p>
                                                     <p className="text-xs text-muted-foreground flex items-center gap-1">
-                                                        <Mail className="h-3 w-3" /> {user.email}
+                                                        <Mail className="h-3 w-3 shrink-0" /> <span className="min-w-0 wrap-anywhere">{user.email}</span>
                                                     </p>
                                                 </div>
                                             </div>

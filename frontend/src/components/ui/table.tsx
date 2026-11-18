@@ -3,7 +3,9 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 /**
- * `responsive` restacks each row into a labelled card below the `sm` breakpoint
+ * Cells wrap long text (unit names, perihal) instead of widening the table, so
+ * a list fits a laptop screen without sideways scrolling; pills keep their own
+ * nowrap. `responsive` restacks each row into a labelled card below the `sm` breakpoint
  * instead of forcing a long sideways scroll. Cells opt in by carrying a
  * `data-label`, which becomes the row label on narrow screens; cells without one
  * (actions, checkboxes) simply span the card. The transformation lives in
@@ -94,7 +96,7 @@ function TableCell({ className, ...props }: React.ComponentProps<"td">) {
     <td
       data-slot="table-cell"
       className={cn(
-        "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+        "p-2 align-middle whitespace-normal break-words [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
         className
       )}
       {...props}

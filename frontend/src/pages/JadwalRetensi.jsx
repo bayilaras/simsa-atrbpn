@@ -49,7 +49,7 @@ function TreeNode({ node, level = 0, onEdit, onDelete, editable }) {
                     {node.kode}
                 </Badge>
 
-                <span className="flex-1 text-sm truncate font-medium text-foreground/90" title={node.uraian}>
+                <span className="min-w-0 flex-1 text-sm truncate font-medium text-foreground/90" title={node.uraian}>
                     {node.uraian}
                 </span>
 
@@ -71,9 +71,10 @@ function TreeNode({ node, level = 0, onEdit, onDelete, editable }) {
                     {node.keterangan && node.keterangan !== '' && (
                         <Badge
                             variant={node.keterangan.toLowerCase().includes('permanen') ? 'default' : 'secondary'}
-                            className={`text-[10px] ${node.keterangan.toLowerCase().includes('permanen') ? 'bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200' : 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300 hover:bg-red-200'}`}
+                            title={node.keterangan}
+                            className={`max-w-20 text-[10px] sm:max-w-56 ${node.keterangan.toLowerCase().includes('permanen') ? 'bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200' : 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300 hover:bg-red-200'}`}
                         >
-                            {node.keterangan}
+                            <span className="truncate">{node.keterangan}</span>
                         </Badge>
                     )}
                 </div>

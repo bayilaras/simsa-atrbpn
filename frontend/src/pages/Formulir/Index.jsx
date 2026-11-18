@@ -11,7 +11,7 @@ const FormulirIndex = () => {
             <p className="mb-6 mt-2 max-w-3xl text-sm text-muted-foreground">
                 Formulir di halaman ini adalah contoh tata letak kosong dan tidak mengambil data transaksi. Formulir yang dapat dibuat dari data aplikasi diberi tombol menuju halaman pembuatnya; formulir lainnya diisi manual dari template.
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {formulirMetadata.map((form) => (
                     <Card key={form.id} className="hover:shadow-lg transition-shadow">
                         <CardHeader>

@@ -738,16 +738,16 @@ export default function SuratMasuk() {
                                                     </div>
                                                 </TableCell>
                                                 <TableCell data-label="Nomor Surat">
-                                                    <span className="rounded-md border bg-background px-2 py-0.5 font-mono text-xs" style={{ overflowWrap: 'anywhere' }}>
+                                                    <span className="inline-block max-w-full rounded-md border bg-background px-2 py-0.5 font-mono text-xs" style={{ overflowWrap: 'anywhere' }}>
                                                         {row.nomorSurat}
                                                     </span>
                                                 </TableCell>
                                                 {tampilkanKolomUnit && (
-                                                    <TableCell data-label="Unit Kerja" className="text-sm">{row.unitKerjaNama || '-'}</TableCell>
+                                                    <TableCell data-label="Unit Kerja" className="text-sm sm:min-w-[160px]">{row.unitKerjaNama || '-'}</TableCell>
                                                 )}
                                                 <TableCell data-label="Perihal">
-                                                    <div className="flex flex-col gap-1 sm:max-w-[400px] items-end sm:items-start">
-                                                        <span className="font-semibold sm:line-clamp-1 group-hover:text-primary transition-colors">{row.perihal}</span>
+                                                    <div className="flex flex-col gap-1 sm:min-w-[220px] sm:max-w-[400px] items-end sm:items-start">
+                                                        <span className="font-semibold sm:line-clamp-2 group-hover:text-primary transition-colors" title={row.perihal}>{row.perihal}</span>
                                                         <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground sm:justify-start">
                                                             <span className="sm:max-w-[150px] sm:truncate" title={row.dari}>Oleh: {row.dari}</span>
                                                             {row.jenisSurat && <span className="px-1.5 py-0.5 rounded-full bg-muted/50 border border-border/50 text-[10px]">{row.jenisSurat}</span>}
