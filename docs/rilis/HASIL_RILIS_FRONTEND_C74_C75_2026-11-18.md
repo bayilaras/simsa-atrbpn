@@ -72,9 +72,12 @@ Pemeriksaan visual memakai server lokal dengan API tiruan berisi data yang senga
 
 **C75**
 - Bundel produksi memuat kelas yang baru: `overflow-x-auto overflow-y-hidden` di modul tab, `h-7 min-h-7` di modul KlasifikasiPicker, dan aturan `overflow-y-hidden` di CSS.
+- Pukul ±12:31, bilah tab "Daftar Surat / Surat Terhapus" diperiksa langsung dengan akun yang masuk, di Surat Masuk dan Surat Keluar pada lebar 1.366 px, dengan bundel `index-DoFVYtDU.js`.
+- Sumbu vertikal kini `hidden`, lebar scrollbar 0 px, dan tidak ada pemicu tab yang terpotong.
+- Halaman Surat Keluar tidak bergeser ke samping.
 
 **Belum diperiksa**
-- Bilah tab C75 belum dilihat langsung dengan akun yang masuk, karena sesi di browser pemeriksa sudah berakhir.
+- Bilah tab di halaman lain dan dialog Pilih Klasifikasi baru diperiksa di server lokal, belum di produksi.
 - Pengguna yang masih memuat bundel lama dari cache perlu memuat ulang halaman sekali.
 
 **Sisa yang diketahui**
