@@ -473,6 +473,7 @@ export default function RetentionManagement() {
                         if (key === 'musnah') conf = { label: 'Musnah', icon: Trash2, color: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300' };
                         if (key === 'permanen') conf = { label: 'Permanen', icon: Archive, color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300' };
                         if (key === 'dinilaiKembali') conf = { label: 'Dinilai Kembali', icon: History, color: 'bg-yellow-100 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' };
+                        if (key === 'belumDitentukan') conf = { ...conf, label: 'Belum Ditentukan' };
 
                         const Icon = conf.icon;
 
