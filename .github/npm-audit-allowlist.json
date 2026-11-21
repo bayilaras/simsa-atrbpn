@@ -12,7 +12,7 @@
         "picomatch"
       ],
       "reason": "ReDoS picomatch tanpa versi perbaikan (4.0.7 adalah rilis terbaru). Hanya dipakai alat build/uji (vite, vitest, tsup, tailwind, docusaurus) dengan pola glob dari kode sendiri; tidak menerima masukan pengguna dan tidak ikut runtime produksi. Cabut saat upstream merilis perbaikan.",
-      "expires": "2026-12-02"
+      "expires": "2026-12-31"
     }
   ]
 }
