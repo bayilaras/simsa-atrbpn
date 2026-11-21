@@ -129,7 +129,8 @@ function CsvImportForm({ type, unitKerjaId, onImportComplete, onBusyChange }) {
             Maksimal 1.000 rekod dan 4 MiB per berkas. Beri setiap kolom judul yang berbeda; pecah berkas besar sebelum diimpor.
         </p>
         <p className="break-words rounded-md bg-muted p-3 text-sm">
-            Kolom utama: {type === 'arsip' ? 'Nomor Berkas, Tanggal, Uraian, Jenis Arsip (masuk/keluar)' : 'Nomor Surat, Tanggal Surat, Perihal, Dari, Kepada'}.
+            Kolom utama: {type === 'arsip' ? 'Nomor Berkas, Tanggal, Uraian, Jenis Arsip (masuk/keluar/lainnya)' : 'Nomor Surat, Tanggal Surat, Perihal, Dari, Kepada'}.
+            {type === 'arsip' && ' Kolom lokasi (boleh dikosongkan): No. Filing Cabinet, No. Laci, No. Folder, dan Kode Lokasi Simpan (kode dari menu Lokasi Simpan unit ini).'}
         </p>
         <div className="space-y-2">
             <label htmlFor={inputId} className="text-sm font-medium">Berkas CSV</label>

@@ -17,6 +17,9 @@ export function notificationRoute(notification, capabilities) {
     if (notification?.category === 'surat-masuk') {
         return notification.referenceId ? `/surat/masuk/${notification.referenceId}` : '/surat/masuk';
     }
+    if (notification?.category === 'peminjaman') {
+        return notification.state === 'overdue' ? '/archive-lending?status=overdue' : '/archive-lending?status=borrowed'
+    }
     if (notification?.category === 'arsip-retensi') {
         return notification.referenceId ? `/arsip/detail/${notification.referenceId}` : '/retention';
     }
@@ -31,6 +34,7 @@ export const WORKFLOW_NOTIFICATION_CATEGORIES = [
     'appraisal',
     'penyusutan',
     'penyerahan-permanen',
+    'peminjaman',
 ];
 
 export function notificationMatchesFilter(notification, categoryFilter) {

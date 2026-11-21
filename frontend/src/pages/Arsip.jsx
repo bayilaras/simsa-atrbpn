@@ -3,7 +3,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useAppConfig } from '@/context/app-config-context'
 import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope'
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Archive, RefreshCw, Search, Eye, Clock, Upload, ChevronUp, ExternalLink, Inbox, Filter, ChevronDown, CheckCircle2, AlertCircle, FileText, MoreHorizontal, FolderArchive, Building2, X } from 'lucide-react'
+import { Archive, RefreshCw, Search, Eye, Clock, Upload, ChevronUp, ExternalLink, Inbox, Filter, ChevronDown, CheckCircle2, AlertCircle, FileText, MoreHorizontal, FolderArchive, Building2, X, Files } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { ExportButton } from '@/components/ExportButton'
 import { canExportReports } from '@/lib/provisioning-access'
 import ImportCsvDialog from '@/components/ImportCsvDialog'
+import { TambahArsipDialog } from '@/components/arsip/TambahArsipDialog'
 import { ArchiveLifecycleWidget } from '@/components/ArchiveLifecycleWidget'
 import {
     Select,
@@ -63,7 +64,15 @@ import { tautanArsipLokasi } from '@/components/arsip/lokasi-simpan'
 import { keteranganRetensiKosong, keteranganRetensiSingkat } from '@/components/arsip/retensi-arsip'
 import { TableSkeleton } from '@/components/skeletons'
 
-const VALID_TABS = ['keluar', 'masuk', 'retensi']
+const VALID_TABS = ['keluar', 'masuk', 'lainnya', 'retensi']
+const TAB_DAFTAR = ['keluar', 'masuk', 'lainnya']
+
+// Tab daftar arsip: jumlah per lokasi simpan dan label untuk tautan antartab.
+const JENIS_TAB = Object.freeze({
+    masuk: { hitungan: 'arsipMasukCount', label: 'arsip surat masuk' },
+    keluar: { hitungan: 'arsipKeluarCount', label: 'arsip surat keluar' },
+    lainnya: { hitungan: 'arsipLainnyaCount', label: 'arsip lainnya' },
+})
 
 // Server baru mengisi nasib akhir setelah pemicu retensi terverifikasi; sampai
 // itu kolom memakai keterangan yang sama dengan halaman detail, dipendekkan.
@@ -176,10 +185,11 @@ export default function Arsip() {
         ? `${lokasiTerpilih.name} (${lokasiTerpilih.code})`
         : 'lokasi terpilih'
     // Daftar hanya menampilkan satu jenis arsip per tab; sebutkan sisanya.
-    const tabLain = activeTab === 'masuk' ? 'keluar' : activeTab === 'keluar' ? 'masuk' : null
-    const jumlahTabLain = lokasiTerpilih?.id === lokasiFilter && tabLain
-        ? (tabLain === 'masuk' ? lokasiTerpilih.arsipMasukCount : lokasiTerpilih.arsipKeluarCount) || 0
-        : 0
+    const tabLainBerisi = lokasiTerpilih?.id === lokasiFilter && JENIS_TAB[activeTab]
+        ? TAB_DAFTAR.filter(jenis => jenis !== activeTab)
+            .map(jenis => ({ tab: jenis, label: JENIS_TAB[jenis].label, jumlah: lokasiTerpilih[JENIS_TAB[jenis].hitungan] || 0 }))
+            .filter(lain => lain.jumlah > 0)
+        : []
 
     // Redirect if tab is invalid
     useEffect(() => {
@@ -257,13 +267,21 @@ export default function Arsip() {
                         Perbarui
                     </Button>
 
+                    {isAdmin && resolvedUnitKerjaId && (
+                        <TambahArsipDialog
+                            unitKerjaId={resolvedUnitKerjaId}
+                            jenisAwal={TAB_DAFTAR.includes(activeTab) ? activeTab : 'lainnya'}
+                            onSaved={arsip => navigate(`/arsip/detail/${arsip.id}`)}
+                        />
+                    )}
+
                     {isAdmin && resolvedUnitKerjaId && <ImportCsvDialog type="arsip" unitKerjaId={resolvedUnitKerjaId} onImportComplete={() => setRefreshVersion(version => version + 1)} />}
 
                     {canExportReports(user?.role) && (
                         <ExportButton
                             type="arsip"
                             filters={{
-                                jenisArsip: activeTab === 'masuk' ? 'masuk' : activeTab === 'keluar' ? 'keluar' : undefined,
+                                jenisArsip: TAB_DAFTAR.includes(activeTab) ? activeTab : undefined,
                                 unitKerjaId: resolvedUnitKerjaId,
                                 search: searchTerm || undefined,
                                 tahun: tahunFilter !== 'all' ? tahunFilter : undefined,
@@ -283,7 +301,7 @@ export default function Arsip() {
             </div>
 
             {/* Quick Stats */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <Card className="shadow-sm border-l-4 border-l-blue-500 card-hover">
                     <CardContent className="p-4 flex items-center justify-between">
                         <div className="space-y-0.5">
@@ -317,6 +335,17 @@ export default function Arsip() {
                         </div>
                     </CardContent>
                 </Card>
+                <Card className="shadow-sm border-l-4 border-l-violet-500 card-hover">
+                    <CardContent className="p-4 flex items-center justify-between">
+                        <div className="space-y-0.5">
+                            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Arsip Lainnya</p>
+                            <p className="text-2xl font-bold text-violet-600 dark:text-violet-400">{arsipStats ? (arsipStats.arsipLainnya ?? 0) : '—'}</p>
+                        </div>
+                        <div className="p-2.5 bg-violet-100 dark:bg-violet-500/15 rounded-full text-violet-600 dark:text-violet-400">
+                            <Files className="h-5 w-5" />
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
 
             {statsLoading ? <p role="status" className="text-sm text-muted-foreground">Memuat statistik…</p> : !arsipStats && (
@@ -329,12 +358,15 @@ export default function Arsip() {
             {/* Main Content with Tabs */}
             <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                    <TabsList className="grid w-full grid-cols-3 bg-muted/50 p-1 sm:flex sm:w-fit">
+                    <TabsList className="grid w-full grid-cols-4 bg-muted/50 p-1 sm:flex sm:w-fit">
                         <TabsTrigger value="keluar" className="gap-2">
                             <Upload className="h-4 w-4" /><span className="sm:hidden">Keluar</span><span className="hidden sm:inline">Arsip Surat Keluar</span>
                         </TabsTrigger>
                         <TabsTrigger value="masuk" className="gap-2">
                             <Inbox className="h-4 w-4" /><span className="sm:hidden">Masuk</span><span className="hidden sm:inline">Arsip Surat Masuk</span>
+                        </TabsTrigger>
+                        <TabsTrigger value="lainnya" className="gap-2">
+                            <Files className="h-4 w-4" /><span className="sm:hidden">Lainnya</span><span className="hidden sm:inline">Arsip Lainnya</span>
                         </TabsTrigger>
                         <TabsTrigger value="retensi" className="gap-2">
                             <Clock className="h-4 w-4" /><span className="sm:hidden">Retensi</span><span className="hidden sm:inline">Status Retensi</span>
@@ -395,7 +427,7 @@ export default function Arsip() {
                 </TabsContent>
 
                 {/* Shared Content for Masuk/Keluar Tabs */}
-                {(activeTab === 'masuk' || activeTab === 'keluar') && (
+                {TAB_DAFTAR.includes(activeTab) && (
                     <TabsContent value={activeTab} className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                         <div className={selectedArchiveId ? 'grid min-w-0 items-start gap-4 xl:grid-cols-2' : 'min-w-0'}>
                         <Card className={`min-w-0 shadow-sm border-border/60 ${selectedArchiveId ? 'order-2 xl:order-1' : ''}`}>
@@ -448,12 +480,12 @@ export default function Arsip() {
                                         {lokasiFilter && <Button variant="secondary" size="sm" className="h-auto min-h-9 max-w-full whitespace-normal text-left" onClick={() => updateQuery({ lokasi: '', page: 1 })} aria-label="Hapus filter lokasi simpan">Lokasi simpan: {labelLokasi}<X className="ml-2 h-3.5 w-3.5 shrink-0" aria-hidden="true" /></Button>}
                                         {isSuperAdmin && selectedUnitKerja !== 'all' && <Button variant="secondary" size="sm" className="h-auto min-h-9 max-w-full whitespace-normal text-left" onClick={() => updateQuery({ unitKerjaId: 'all', page: 1 })} aria-label="Hapus filter unit">Unit: {unitKerjaList.find(unit => unit.id === selectedUnitKerja)?.name || selectedUnitKerja}<X className="ml-2 h-3.5 w-3.5 shrink-0" aria-hidden="true" /></Button>}
                                     </div>}
-                                    {jumlahTabLain > 0 && <p className="text-sm text-muted-foreground">
-                                        Lokasi ini juga menyimpan {jumlahTabLain} arsip surat {tabLain}.{' '}
-                                        <Link className="font-medium text-foreground underline underline-offset-4" to={tautanArsipLokasi(lokasiTerpilih, isSuperAdmin && selectedUnitKerja !== 'all' ? selectedUnitKerja : undefined, tabLain)}>
-                                            Lihat arsip surat {tabLain}
+                                    {tabLainBerisi.map(lain => <p key={lain.tab} className="text-sm text-muted-foreground">
+                                        Lokasi ini juga menyimpan {lain.jumlah} {lain.label}.{' '}
+                                        <Link className="font-medium text-foreground underline underline-offset-4" to={tautanArsipLokasi(lokasiTerpilih, isSuperAdmin && selectedUnitKerja !== 'all' ? selectedUnitKerja : undefined, lain.tab)}>
+                                            Lihat {lain.label}
                                         </Link>
-                                    </p>}
+                                    </p>)}
 
                                     <Collapsible open={isAdvancedOpen}>
                                         <CollapsibleContent className="pt-2">
@@ -512,7 +544,9 @@ export default function Arsip() {
                                                                 <p className="text-sm text-muted-foreground">
                                                                     {searchTerm || hasActiveFilters
                                                                         ? 'Coba sesuaikan filter pencarian Anda'
-                                                                        : 'Gunakan menu Arsip di Surat Masuk/Keluar untuk menambahkan data'
+                                                                        : activeTab === 'lainnya'
+                                                                            ? 'Gunakan Tambah Arsip atau Impor CSV untuk mencatat dokumen yang bukan surat'
+                                                                            : 'Gunakan menu Arsip di Surat Masuk/Keluar, Tambah Arsip, atau Impor CSV untuk menambahkan data'
                                                                     }
                                                                 </p>
                                                             </div>

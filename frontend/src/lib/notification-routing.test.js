@@ -25,12 +25,20 @@ describe('notification routing', () => {
             .toBe('/retention-governance');
     });
 
+    it('routes lending reminders to the matching Peminjaman tab', () => {
+        expect(notificationRoute({ category: 'peminjaman', referenceId: 'p-1', state: 'overdue' }))
+            .toBe('/archive-lending?status=overdue');
+        expect(notificationRoute({ category: 'peminjaman', referenceId: 'p-1', state: 'due_soon' }))
+            .toBe('/archive-lending?status=borrowed');
+        expect(notificationMatchesFilter({ category: 'peminjaman' }, 'workflow')).toBe(true);
+    });
+
     it('routes record-backed notifications to their details', () => {
         expect(notificationRoute({ category: 'surat-masuk', referenceId: 'surat-1' }))
             .toBe('/surat/masuk/surat-1');
         expect(notificationRoute({ category: 'arsip-retensi', referenceId: 'arsip-1' }))
             .toBe('/arsip/detail/arsip-1');
-        expect(WORKFLOW_NOTIFICATION_CATEGORIES).toHaveLength(5);
+        expect(WORKFLOW_NOTIFICATION_CATEGORIES).toHaveLength(6);
     });
 
     it('groups every workflow category without swallowing primary categories', () => {

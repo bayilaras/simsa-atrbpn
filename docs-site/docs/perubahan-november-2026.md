@@ -52,6 +52,13 @@ Sebagian besar pengguna diminta masuk sekali lagi. Hal ini wajar: masuk kembali 
 - Kode QR lokasi simpan diunduh lewat **Unduh Kode QR**.
 - **Generate Berita Acara** di Manajemen Retensi memberi tahu *Belum ada arsip yang memenuhi syarat* bila tidak ada arsip yang dapat dimuat.
 
+## Tambahan akhir November 2026
+
+- **Tambah Arsip** di daftar arsip mencatat arsip fisik yang belum ada di daftar surat, termasuk dokumen yang bukan surat. Dokumen seperti SK, laporan, atau berkas kegiatan tampil di tab baru **Arsip Lainnya**. Lihat [Menambah Arsip Tanpa Surat](./siklus-arsip/arsip-aktif.md#menambah-arsip-tanpa-surat).
+- **Impor CSV** arsip kini mengisi **No. Filing Cabinet**, **No. Laci**, **No. Folder**, dan **Kode Lokasi Simpan**, serta menerima Jenis Arsip `lainnya`.
+- **Cetak Disposisi** pada detail surat masuk membuka Lembar Disposisi siap cetak. Lihat [Lembar Disposisi](./manajemen-surat/surat-masuk.md#lembar-disposisi).
+- **Pengingat peminjaman:** lonceng notifikasi admin menampilkan peminjaman yang terlambat atau jatuh tempo dalam dua hari. Lihat [Pengingat jatuh tempo](./layanan-fisik/peminjaman.md#pengingat-jatuh-tempo).
+
 ## Laporan, ekspor, dan pencarian
 
 - Waktu pada berkas ekspor ditulis dalam WIB. Ekspor Super Admin dari daftar surat atau arsip dengan pilihan **Semua Unit Kerja** memuat kolom **Unit Kerja**. Teks yang terlalu panjang untuk satu halaman PDF dipotong dengan catatan; versi Excel memuat isi lengkap.

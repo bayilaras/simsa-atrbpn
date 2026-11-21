@@ -725,7 +725,7 @@ Admin Unit Kerja hanya dapat memilih klasifikasi keamanan Biasa/Terbuka atau Ter
 > [!CAUTION]
 > **Pengarsipan bersifat permanen.** Setelah disimpan, surat terkunci: tidak dapat diubah atau dihapus, dan berkas PDF tidak dapat lagi ditambahkan dari halaman surat. Pengarsipan tidak dapat dibatalkan, dan arsip tidak dapat dihapus dari aplikasi. Hal yang sama berlaku untuk **Impor CSV** arsip: tombol **Impor data valid** baru aktif setelah pernyataan *Saya sudah memeriksa pratinjau dan memahami bahwa impor ini permanen.* dicentang.
 
-**Impor CSV** arsip memakai kolom Nomor Berkas, Tanggal, Uraian, dan Jenis Arsip (`masuk` atau `keluar`). Pemisah kolom boleh koma, titik koma, atau tab (CSV biasa dari Excel juga dapat dibaca), maksimal 1.000 rekod dan 4 MiB per berkas, dan tanggal ditulis dengan urutan hari, bulan, tahun (tahun 1920 sampai 2199).
+**Impor CSV** arsip memakai kolom Nomor Berkas, Tanggal, Uraian, dan Jenis Arsip (`masuk`, `keluar`, atau `lainnya`), serta kolom lokasi No. Filing Cabinet, No. Laci, No. Folder, dan Kode Lokasi Simpan bila ada. Pemisah kolom boleh koma, titik koma, atau tab (CSV biasa dari Excel juga dapat dibaca), maksimal 1.000 rekod dan 4 MiB per berkas, dan tanggal ditulis dengan urutan hari, bulan, tahun (tahun 1920 sampai 2199).
 
 ---
 

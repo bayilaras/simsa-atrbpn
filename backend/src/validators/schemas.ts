@@ -519,10 +519,39 @@ export const updateArsipSchema = z.object({
         message: 'Sedikitnya satu metadata arsip harus diberikan',
     });
 
+/** masuk/keluar = arsip surat; lainnya = dokumen yang bukan surat (SK, laporan, berkas kegiatan). */
+export const JENIS_ARSIP = ['masuk', 'keluar', 'lainnya'] as const;
+
+/**
+ * Tambah Arsip dari daftar arsip, tanpa surat sumber. Seperti impor CSV arsip:
+ * klasifikasi/JRA dan pemicu retensi tidak diterima di sini dan dicocokkan
+ * lewat rekonsiliasi aturan pada detail arsip.
+ */
+export const createArsipManualSchema = z.object({
+    unitKerjaId: z.string().trim().min(1).max(50).optional(),
+    jenisArsip: z.enum(JENIS_ARSIP),
+    nomorBerkas: z.string().trim().min(1).max(100),
+    uraianBerkas: z.string().trim().min(1).max(2000),
+    tanggalArsip: dateSchema,
+    kurunWaktu: z.string().trim().max(100).optional(),
+    tingkatPerkembangan: z.enum(['Asli', 'Salinan', 'Tembusan']).optional(),
+    jumlah: z.coerce.number().int().min(1).max(10000).optional(),
+    mediaType: z.enum(['kertas', 'foto', 'video', 'audio', 'elektronik', 'lainnya']).optional(),
+    unitPengolah: z.string().trim().max(255).optional(),
+    lokasiFc: z.string().trim().min(1).max(50),
+    lokasiLaci: z.string().trim().min(1).max(50),
+    lokasiFolder: z.string().trim().min(1).max(50),
+    storageLocationId: uuidSchema.nullable().optional(),
+    klasifikasiKeamanan: z.enum(['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']).optional(),
+    personInCharge: z.string().trim().max(255).optional(),
+    keterangan: z.string().trim().max(4000).optional(),
+}).strict();
+export type CreateArsipManual = z.infer<typeof createArsipManualSchema>;
+
 export const queryArsipSchema = paginationSchema.extend({
     unitKerjaId: z.string().optional(),
     tahun: z.coerce.number().int().min(2000).max(2100).optional(),
-    jenisSurat: z.enum(['masuk', 'keluar']).optional(),
+    jenisSurat: z.enum(JENIS_ARSIP).optional(),
     klasifikasiId: uuidSchema.optional(),
     storageLocationId: uuidSchema.optional(),
     expiring: z.coerce.boolean().optional(),

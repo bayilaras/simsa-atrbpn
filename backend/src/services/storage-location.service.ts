@@ -22,6 +22,7 @@ interface JumlahArsipLokasi {
     total: number;
     masuk: number;
     keluar: number;
+    lainnya: number;
 }
 
 export const PESAN_LOKASI_MASIH_MENYIMPAN_ARSIP =
@@ -33,7 +34,7 @@ export const PESAN_LOKASI_ARSIP_DI_LUAR_KEWENANGAN =
 export const PESAN_LOKASI_ARSIP_SUDAH_DISUSUTKAN =
     'Lokasi tidak dapat dihapus karena masih ditautkan ke arsip yang penyusutannya sudah dilaksanakan. Catatan arsip tersebut tidak dapat diubah lagi.';
 
-const TANPA_ARSIP: JumlahArsipLokasi = Object.freeze({ total: 0, masuk: 0, keluar: 0 });
+const TANPA_ARSIP: JumlahArsipLokasi = Object.freeze({ total: 0, masuk: 0, keluar: 0, lainnya: 0 });
 
 export class StorageLocationService {
     private normalizeCode(code: string): string {
@@ -101,10 +102,11 @@ export class StorageLocationService {
             .groupBy(arsip.storageLocationId, arsip.jenisArsip);
         for (const row of rows) {
             if (!row.id) continue;
-            const jumlah = hasil.get(row.id) ?? { total: 0, masuk: 0, keluar: 0 };
+            const jumlah = hasil.get(row.id) ?? { total: 0, masuk: 0, keluar: 0, lainnya: 0 };
             jumlah.total += row.jumlah;
             if (row.jenis === 'masuk') jumlah.masuk += row.jumlah;
             if (row.jenis === 'keluar') jumlah.keluar += row.jumlah;
+            if (row.jenis === 'lainnya') jumlah.lainnya += row.jumlah;
             hasil.set(row.id, jumlah);
         }
         return hasil;
@@ -125,12 +127,14 @@ export class StorageLocationService {
             jumlah.total += anak.total;
             jumlah.masuk += anak.masuk;
             jumlah.keluar += anak.keluar;
+            jumlah.lainnya += anak.lainnya;
         }
         Object.assign(node, {
             currentCount: sendiri.total,
             arsipCount: jumlah.total,
             arsipMasukCount: jumlah.masuk,
             arsipKeluarCount: jumlah.keluar,
+            arsipLainnyaCount: jumlah.lainnya,
         });
         return jumlah;
     }

@@ -54,6 +54,15 @@ Klik **"Simpan Peminjaman"**. Peminjaman langsung tercatat dengan status **Dipin
 3. Klik **"Perpanjang"** untuk mengubah tanggal jatuh tempo, atau **"Kembalikan"** untuk mencatat pengembalian.
 4. Saat pengembalian, isi catatan kondisi bila perlu, lalu klik **"Konfirmasi Pengembalian"**.
 
+### Pengingat jatuh tempo
+
+Admin unit pemilik arsip menerima pengingat di lonceng notifikasi (tab **Alur kerja**, label **Peminjaman**) untuk peminjaman yang belum dikembalikan:
+
+- **Peminjaman terlambat … hari** (mendesak) bila jatuh tempo sudah lewat;
+- **Peminjaman jatuh tempo hari ini** atau **… dalam 1/2 hari** (perhatian) menjelang jatuh tempo.
+
+Klik pengingat untuk membuka tab **Terlambat** atau **Dipinjam**. Pengingat yang sudah ditandai dibaca muncul lagi bila jatuh temponya diperpanjang lalu terlewat lagi. Pengingat hanya tampil di aplikasi; SIMSA tidak mengirim email.
+
 Peminjaman yang sudah dikembalikan tampil di tab **Riwayat**. Rekap peminjaman, termasuk yang **Terlambat**, juga tersedia di **Laporan**, tab **Peminjaman**.
 
 Selama arsip atau boksnya masih dipinjam, lokasi simpan arsip tidak dapat diubah, dan arsip lain tidak dapat ditautkan ke boks yang sedang dipinjam. Catat pengembaliannya terlebih dahulu.

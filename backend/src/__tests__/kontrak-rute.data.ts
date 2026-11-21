@@ -112,6 +112,7 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'GET /:id/related': checkRead('recordAccessService.check'),
         'GET /:id': checkRead('recordAccessService.check'),
         'POST /': 'bukan-rekaman',
+        'POST /manual': buat('arsipService.create'),
         'PUT /:id': check('recordAccessService.check'),
         'DELETE /:id': 'bukan-rekaman',
         'GET /:id/rule-history': checkRead('recordAccessService.check'),

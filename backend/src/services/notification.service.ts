@@ -13,7 +13,10 @@ import {
     retentionTriggerVerifications,
     suratDistributions,
     userPreferences,
+    archiveLending,
+    storageLocations,
 } from '../db/schema';
+import { archiveLendingService } from './archive-lending.service.js';
 import { eq, and, desc, inArray, or, sql, type SQL, isNull, ne } from 'drizzle-orm';
 import { arsipService } from './arsip.service';
 import { ValidationError } from '../utils/errors.js';
@@ -171,7 +174,8 @@ export interface Notification {
         | 'verifikasi-retensi'
         | 'appraisal'
         | 'penyusutan'
-        | 'penyerahan-permanen';
+        | 'penyerahan-permanen'
+        | 'peminjaman';
     title: string;
     message: string;
     daysLeft?: number;
@@ -193,6 +197,7 @@ export interface NotificationCounts {
     appraisal: number;
     penyusutan: number;
     penyerahanPermanen: number;
+    peminjaman: number;
 }
 
 export interface NotificationReadContext {
@@ -202,6 +207,20 @@ export interface NotificationReadContext {
     userRole?: string;
     /** Pengguna pemanggil; bila ada, notifikasi disposisi disamarkan per checkMany (§4.8). */
     user?: RecordUser;
+}
+
+/** Pinjaman yang jatuh tempo dalam sekian hari kalender ke depan ikut diingatkan. */
+export const LENDING_DUE_SOON_DAYS = 2;
+const SEMUA_KELAS = ['biasa', 'terbatas', 'rahasia', 'sangat_rahasia'];
+
+function tambahHariKalender(tanggal: string, hari: number): string {
+    const waktu = new Date(`${tanggal}T00:00:00.000Z`);
+    waktu.setUTCDate(waktu.getUTCDate() + hari);
+    return waktu.toISOString().slice(0, 10);
+}
+
+function selisihHariKalender(dari: string, sampai: string): number {
+    return Math.round((Date.parse(`${sampai}T00:00:00.000Z`) - Date.parse(`${dari}T00:00:00.000Z`)) / 86_400_000);
 }
 
 export class NotificationService {
@@ -681,6 +700,71 @@ export class NotificationService {
     }
 
     /**
+     * Peminjaman arsip/boks yang belum kembali dan sudah lewat jatuh tempo
+     * (mendesak) atau jatuh tempo dalam LENDING_DUE_SOON_DAYS hari (perhatian),
+     * dengan kebijakan baca yang sama dengan daftar Peminjaman. ID memuat
+     * tanggal jatuh tempo, sehingga perpanjangan memunculkan pengingat baru.
+     */
+    async getLendingNotifications(
+        unitKerjaId: string,
+        userId: string,
+        userRole = 'user',
+        securityClassifications?: string[] | null,
+        knownReadIds?: Set<string>,
+    ): Promise<Notification[]> {
+        if (!ADMIN_NOTIFICATION_ROLES.has(userRole)) return [];
+        const hariIni = jakartaDate();
+        const batas = tambahHariKalender(hariIni, LENDING_DUE_SOON_DAYS);
+        const rows = await db
+            .select({
+                id: archiveLending.id,
+                lendingType: archiveLending.lendingType,
+                borrowerName: archiveLending.borrowerName,
+                dueDate: archiveLending.dueDate,
+                createdAt: archiveLending.createdAt,
+                nomorBerkas: arsip.nomorBerkas,
+                uraianBerkas: arsip.uraianBerkas,
+                kodeLokasi: storageLocations.code,
+                namaLokasi: storageLocations.name,
+            })
+            .from(archiveLending)
+            .leftJoin(arsip, and(eq(archiveLending.lendingType, 'arsip'), eq(archiveLending.arsipId, arsip.id)))
+            .leftJoin(storageLocations, and(eq(archiveLending.lendingType, 'box'), eq(archiveLending.storageLocationId, storageLocations.id)))
+            .where(archiveLendingService.readableWhere(
+                unitKerjaId,
+                securityClassifications ?? SEMUA_KELAS,
+                inArray(archiveLending.status, ['borrowed', 'overdue']),
+                sql`${archiveLending.dueDate} <= ${batas}`,
+            ))
+            .orderBy(archiveLending.dueDate)
+            .limit(50);
+
+        return this.withoutRead(userId, rows.map(row => {
+            const sisaHari = selisihHariKalender(hariIni, row.dueDate);
+            const terlambat = sisaHari < 0;
+            const type: Notification['type'] = terlambat ? 'urgent' : 'warning';
+            const objek = row.lendingType === 'box'
+                ? `Boks ${row.kodeLokasi || row.namaLokasi || '-'}`
+                : `${row.nomorBerkas || 'Arsip'} - ${excerpt(row.uraianBerkas, 50)}`;
+            const notification: Notification = {
+                id: statefulId('peminjaman', row.id, `jatuh_tempo_${row.dueDate}`, type),
+                type,
+                category: 'peminjaman',
+                title: terlambat
+                    ? `Peminjaman terlambat ${-sisaHari} hari`
+                    : sisaHari === 0 ? 'Peminjaman jatuh tempo hari ini' : `Peminjaman jatuh tempo dalam ${sisaHari} hari`,
+                message: `${objek} - dipinjam ${row.borrowerName || 'peminjam tidak diketahui'}`,
+                daysLeft: sisaHari,
+                referenceId: row.id,
+                createdAt: row.createdAt,
+                isRead: false,
+                state: terlambat ? 'overdue' : 'due_soon',
+            };
+            return notification;
+        }), knownReadIds);
+    }
+
+    /**
      * Get all notifications combined and sorted by priority
      * Returns separate category counts for tab-based UI
      */
@@ -703,7 +787,7 @@ export class NotificationService {
             total: 0, urgent: 0, warning: 0, info: 0,
             suratMasuk: 0, arsipRetensi: 0, distribusi: 0,
             verifikasiRetensi: 0, appraisal: 0, penyusutan: 0,
-            penyerahanPermanen: 0,
+            penyerahanPermanen: 0, peminjaman: 0,
         };
         if (preference?.notificationsEnabled === false) {
             return { notifications: [], counts: emptyCounts };
@@ -730,6 +814,9 @@ export class NotificationService {
             this.getPermanentTransferNotifications(
                 unitKerjaId, userId, userRole, securityClassifications, unfiltered,
             ),
+            this.getLendingNotifications(
+                unitKerjaId, userId, userRole, securityClassifications, unfiltered,
+            ),
         ]);
         const readIds = await this.getReadIds(userId, candidates.flat().map(item => item.id));
         const [
@@ -740,6 +827,7 @@ export class NotificationService {
             appraisals,
             dispositions,
             permanentTransfers,
+            lendings,
         ] = candidates.map(items => items.filter(item => !readIds.has(item.id)));
 
         // Combine all notifications
@@ -751,6 +839,7 @@ export class NotificationService {
             ...appraisals,
             ...dispositions,
             ...permanentTransfers,
+            ...lendings,
         ];
 
         // Sort by priority (urgent > warning > info) and then by createdAt
@@ -774,6 +863,7 @@ export class NotificationService {
             appraisal: appraisals.length,
             penyusutan: dispositions.length,
             penyerahanPermanen: permanentTransfers.length,
+            peminjaman: lendings.length,
         };
 
         return {
@@ -802,6 +892,7 @@ export class NotificationService {
         appraisal: number;
         penyusutan: number;
         penyerahanPermanen: number;
+        peminjaman: number;
     }> {
         const { counts } = await this.getAllNotifications(
             unitKerjaId,
@@ -822,6 +913,7 @@ export class NotificationService {
             appraisal: counts.appraisal,
             penyusutan: counts.penyusutan,
             penyerahanPermanen: counts.penyerahanPermanen,
+            peminjaman: counts.peminjaman,
         };
     }
 

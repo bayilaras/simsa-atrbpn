@@ -115,6 +115,23 @@ tanggal/uraian/pihak untuk sumber tanpa nomor.
 Kode klasifikasi arsip lama tetap menjadi catatan sumber yang belum diverifikasi;
 impor tidak menetapkan JRA atau mengesahkan aturan retensi.
 
+Kolom arsip: `Nomor Berkas` (atau `No`), `Tanggal` (atau `Tanggal Arsip`),
+`Uraian` (atau `Uraian Berkas`, `Deskripsi`, `Perihal`), `Jenis Arsip` (atau
+`Jenis`: `masuk`, `keluar`, atau `lainnya` untuk dokumen bukan surat; huruf
+besar/kecil tidak dibedakan, kosong dibaca `masuk`), serta opsional `Kode
+Klasifikasi`, `Tingkat Perkembangan`, `Kurun Waktu`, `Jumlah`, `Keterangan`.
+Lokasi fisik dibaca dari `No. Filing Cabinet` (`Filing Cabinet`, `No. FC`, `FC`),
+`No. Laci` (`Laci`), `No. Folder` (`Folder`), masing-masing maksimal 50 karakter,
+dan `Kode Lokasi Simpan` (`Lokasi Simpan`, `Kode Lokasi`). Kode lokasi dicocokkan
+dengan `storage_locations.code` milik unit tujuan tanpa membedakan huruf
+besar/kecil; kode yang tidak ditemukan menolak barisnya, dan boks yang sedang
+dipinjam menolak penautan seperti pada Ubah Metadata.
+
+Satu arsip tanpa CSV dicatat lewat **Tambah Arsip** (`POST /api/arsip/manual`):
+aturan klasifikasi/JRA dan pemicu retensi tidak diterima, arsip mulai berstatus
+`legacy_unverified`, dan nomor berkas yang sudah dipakai di unit dan tahun yang
+sama ditolak dengan 409.
+
 Untuk CSV surat keluar, kolom opsional `Sifat Surat` (Biasa, Penting, Segera,
 Sangat Segera) disimpan sebagai sifat surat; teks lain disimpan apa adanya.
 Untuk CSV surat masuk, `Sifat Surat` adalah klasifikasi keamanan: baris Rahasia

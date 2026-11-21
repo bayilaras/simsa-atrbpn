@@ -78,7 +78,7 @@ const GUIDE_SECTIONS = [
         steps: [
             'Masuk dengan email dan kata sandi dari administrator. Gunakan akun pribadi dengan peran dan unit kerja yang benar: Super Admin mengelola seluruh unit, sedangkan Admin Unit Kerja mencatat dan mengubah data unitnya sendiri. Akun lama Staf atau Auditor hanya dapat membaca data.',
             'Admin membuka Surat Masuk atau Surat Keluar, mencari nomor yang sama lebih dahulu, lalu mencatat metadata. Untuk daftar yang sudah tersedia (CSV atau Excel .xlsx), pilih satu unit kerja dan gunakan Impor CSV/XLSX → Pratinjau → Impor; judul kolom dikenali seperti impor Google Sheets. Pada surat masuk, kolom Sifat Surat sekaligus menjadi klasifikasi keamanan: baris Rahasia atau Sangat Rahasia hanya dapat diimpor oleh Super Admin. Bila Admin Unit Kerja, Admin Dirjen, atau Admin Sesditjen mengimpornya, baris itu ditolak dan baris lain tetap tersimpan.',
-            'Untuk inventaris arsip yang sudah ada, admin membuka Arsip Aktif → Arsip Surat Masuk atau Arsip Surat Keluar lalu Impor CSV. Isi tanggal sumber yang benar; impor tidak otomatis memverifikasi klasifikasi atau JRA.',
+            'Untuk inventaris arsip yang sudah ada, admin membuka Arsip Aktif lalu Impor CSV; kolom No. Filing Cabinet, No. Laci, No. Folder, dan Kode Lokasi Simpan ikut disimpan, dan Jenis Arsip lainnya dipakai untuk dokumen yang bukan surat. Untuk satu-dua arsip, gunakan Tambah Arsip. Isi tanggal sumber yang benar; klasifikasi dan JRA tidak otomatis terverifikasi.',
             'Saat mengarsipkan surat yang selesai diproses, isi klasifikasi/JRA yang sesuai serta No. Filing Cabinet, No. Laci, dan No. Folder pada dialog Arsipkan. Pada CSV arsip, catatan lokasi dapat dimasukkan ke Keterangan; kolom lokasi terstruktur belum dipetakan oleh impor.',
             'Temukan kembali arsip melalui nomor atau uraian, filter unit/tahun, dan halaman detail. Cocokkan catatan lokasi dengan berkas fisik sebelum menyerahkannya kepada peminjam.',
             'SIMSA mengelola surat dan arsip secara mandiri; koneksi atau akun SRIKANDI tidak diperlukan. Inventaris dapat dicatat tanpa lampiran digital. Gunakan instrumen ATR/BPN yang berlaku; tambahkan lampiran setelah penyimpanan privat dan pemeriksaan file siap.',
@@ -169,7 +169,7 @@ const GUIDE_SECTIONS = [
         steps: [
             'Buka detail surat masuk atau surat keluar, lalu tekan tombol Tindak Lanjut. Pilihan yang tampil mengikuti kewenangan Anda atas surat itu.',
             'Saya Balas dan Buat Nota Dinas membuka formulir Tambah Surat Keluar dengan Nomor Referensi surat asal yang sudah terisi. Buat ND Penjelas tersedia untuk surat keluar berjenis Keputusan.',
-            'Pada surat masuk, Disposisi ke Direktorat mengirim surat ke unit tujuan. Unit penerima memilih Terima Disposisi, lalu Penyelesaian setelah disposisinya ditindaklanjuti.',
+            'Pada surat masuk, Disposisi ke Direktorat mengirim surat ke unit tujuan. Unit penerima memilih Terima Disposisi, lalu Penyelesaian setelah disposisinya ditindaklanjuti. Cetak Disposisi membuka Lembar Disposisi siap cetak untuk dilampirkan pada surat fisik.',
             'Tautkan ke Rangkaian menghubungkan surat dengan surat lain dalam satu rangkaian agar alurnya dapat dilacak.',
             'Dari daftar Surat Keluar, pilihan Tindak Lanjut Surat Masuk… membuka formulir baru dan langsung meminta Anda memilih surat yang ditindaklanjuti.',
         ],

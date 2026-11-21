@@ -7,7 +7,7 @@ const EMPTY_COUNTS = {
     total: 0, urgent: 0, warning: 0, info: 0,
     suratMasuk: 0, arsipRetensi: 0, distribusi: 0,
     verifikasiRetensi: 0, appraisal: 0, penyusutan: 0,
-    penyerahanPermanen: 0,
+    penyerahanPermanen: 0, peminjaman: 0,
 }
 const CATEGORY_COUNT_KEYS = {
     'surat-masuk': 'suratMasuk',
@@ -17,6 +17,7 @@ const CATEGORY_COUNT_KEYS = {
     appraisal: 'appraisal',
     penyusutan: 'penyusutan',
     'penyerahan-permanen': 'penyerahanPermanen',
+    peminjaman: 'peminjaman',
 }
 
 /**
@@ -270,6 +271,7 @@ export function useNotifications({ unitKerjaId = '', limit = 20, refreshInterval
             + (visibleCounts.verifikasiRetensi || 0)
             + (visibleCounts.appraisal || 0)
             + (visibleCounts.penyusutan || 0)
-            + (visibleCounts.penyerahanPermanen || 0),
+            + (visibleCounts.penyerahanPermanen || 0)
+            + (visibleCounts.peminjaman || 0),
     }
 }

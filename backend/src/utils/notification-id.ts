@@ -1,7 +1,7 @@
 export const MAX_NOTIFICATION_READ_IDS = 100;
 export const MAX_NOTIFICATION_ID_LENGTH = 255;
 
-const CATEGORY = '(?:surat-masuk|arsip-retensi|distribusi|verifikasi-retensi|appraisal|penyusutan|penyerahan-permanen)';
+const CATEGORY = '(?:surat-masuk|arsip-retensi|distribusi|verifikasi-retensi|appraisal|penyusutan|penyerahan-permanen|peminjaman)';
 const UUID = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
 const STATE = '[A-Za-z0-9][A-Za-z0-9 _.:/-]{0,127}';
 const TYPE = '(?:urgent|warning|info)';
