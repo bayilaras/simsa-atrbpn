@@ -2,6 +2,7 @@ import { parse } from 'csv-parse/sync';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../config/database.js';
 import { arsip as arsipTable } from '../db/schema/arsip.js';
+import { storageLocations } from '../db/schema/storage-locations.js';
 import { suratMasukService } from './surat-masuk.service.js';
 import { tanggalDiterimaImpor } from './tanggal-diterima.js';
 import { suratKeluarService } from './surat-keluar.service.js';
@@ -234,6 +235,64 @@ const SURAT_COLUMNS: CsvColumns = { date: ['Tanggal Surat'], required: [['Periha
 const URAIAN_TITLES = ['Uraian', 'Uraian Berkas', 'Deskripsi', 'Perihal'];
 const ARSIP_COLUMNS: CsvColumns = { date: ['Tanggal', 'Tanggal Arsip'], required: [URAIAN_TITLES] };
 
+const FC_TITLES = ['No. Filing Cabinet', 'Filing Cabinet', 'No. FC', 'FC'];
+const LACI_TITLES = ['No. Laci', 'Laci'];
+const FOLDER_TITLES = ['No. Folder', 'Folder'];
+const LOKASI_SIMPAN_TITLES = ['Kode Lokasi Simpan', 'Lokasi Simpan', 'Kode Lokasi'];
+const BATAS_LOKASI_FISIK = 50;
+
+/** Nilai kolom pertama yang terisi di antara judul-judul yang diterima. */
+function isiKolom(row: CsvRow, titles: string[]): string {
+    return titles.map(title => row[title]?.trim() || '').find(Boolean) || '';
+}
+
+/** masuk, keluar, atau lainnya (dokumen bukan surat); kosong dibaca masuk seperti sebelumnya. */
+function jenisArsipImpor(nilai: string): 'masuk' | 'keluar' | 'lainnya' {
+    const jenis = nilai.trim().toLowerCase();
+    if (!jenis) return 'masuk';
+    if (jenis === 'masuk' || jenis === 'keluar' || jenis === 'lainnya') return jenis;
+    throw new ValidationError('Jenis Arsip harus masuk, keluar, atau lainnya.');
+}
+
+/** No. Filing Cabinet, Laci, dan Folder dari CSV; kolom kosong tidak disimpan. */
+function lokasiFisikImpor(row: CsvRow): { lokasiFc?: string; lokasiLaci?: string; lokasiFolder?: string } {
+    const hasil: { lokasiFc?: string; lokasiLaci?: string; lokasiFolder?: string } = {};
+    for (const [field, titles, label] of [
+        ['lokasiFc', FC_TITLES, 'No. Filing Cabinet'],
+        ['lokasiLaci', LACI_TITLES, 'No. Laci'],
+        ['lokasiFolder', FOLDER_TITLES, 'No. Folder'],
+    ] as const) {
+        const nilai = isiKolom(row, [...titles]);
+        if (!nilai) continue;
+        if (nilai.length > BATAS_LOKASI_FISIK) throw new ValidationError(`${label} maksimal ${BATAS_LOKASI_FISIK} karakter.`);
+        hasil[field] = nilai;
+    }
+    return hasil;
+}
+
+function normalKodeLokasi(kode: string): string {
+    return kode.trim().toLowerCase();
+}
+
+/** true bila baris judul CSV memuat salah satu judul (dibaca dengan pemisah yang sama dengan impor). */
+function csvMemuatKolom(csvContent: string, titles: string[]): boolean {
+    try {
+        const [judul = []] = parse(csvContent, {
+            delimiter: headerDelimiter(csvContent), bom: true, trim: true, to: 1, relax_column_count: true, max_record_size: MAX_RECORD_SIZE,
+        }) as string[][];
+        return judul.some(title => titles.includes(title));
+    } catch {
+        // runImport melaporkan CSV yang tidak terbaca.
+        return false;
+    }
+}
+
+async function lokasiSimpanPerKode(unitKerjaId: string): Promise<Map<string, string>> {
+    const rows = await db.select({ id: storageLocations.id, code: storageLocations.code })
+        .from(storageLocations).where(eq(storageLocations.unitKerjaId, unitKerjaId));
+    return new Map(rows.map(row => [normalKodeLokasi(row.code), row.id]));
+}
+
 export const migrationService = {
     async importSuratMasuk(csvContent: string, unitKerjaId: string, auditContext: ImportAuditContext, options: ImportOptions = {}): Promise<ImportResult> {
         return runImport(csvContent, SURAT_COLUMNS, (row, date, year) => {
@@ -297,15 +356,25 @@ export const migrationService = {
     },
 
     async importArsip(csvContent: string, unitKerjaId: string, auditContext: CriticalAuditContext, options: ImportOptions = {}): Promise<ImportResult> {
+        // Kode Lokasi Simpan dicocokkan dengan kode lokasi unit ini (huruf besar/kecil diabaikan);
+        // daftar lokasi dimuat sekali sebelum baris dibaca.
+        const kodeLokasi = csvMemuatKolom(csvContent, LOKASI_SIMPAN_TITLES)
+            ? await lokasiSimpanPerKode(unitKerjaId)
+            : new Map<string, string>();
         return runImport(csvContent, ARSIP_COLUMNS, (row, date, year) => {
             const uraian = URAIAN_TITLES.map(title => row[title]).find(Boolean) || '';
             if (!uraian) throw new ValidationError('Uraian berkas wajib diisi.');
-            const jenisArsip = row['Jenis Arsip'] || row['Jenis'] || 'masuk';
-            if (!['masuk', 'keluar'].includes(jenisArsip)) throw new ValidationError('Jenis Arsip harus masuk atau keluar.');
+            const jenisArsip = jenisArsipImpor(row['Jenis Arsip'] || row['Jenis'] || '');
             const nomorBerkas = row['Nomor Berkas'] || row['No'] || '';
             const numbered = Boolean(nomorBerkas && nomorBerkas !== '-');
             const legacyCode = row['Kode Klasifikasi'] || row['Kode'] || '';
             const legacyNotes = [row['Keterangan'] || '', legacyCode ? 'Kode klasifikasi sumber (belum diverifikasi): ' + legacyCode : ''].filter(Boolean).join('\n');
+            const lokasi = lokasiFisikImpor(row);
+            const kode = isiKolom(row, LOKASI_SIMPAN_TITLES);
+            const storageLocationId = kode ? kodeLokasi.get(normalKodeLokasi(kode)) : undefined;
+            if (kode && !storageLocationId) {
+                throw new ValidationError(`Kode Lokasi Simpan "${kode}" tidak ditemukan di unit ini. Buat lokasinya di menu Lokasi Simpan atau perbaiki kodenya.`);
+            }
             return {
                 identity: JSON.stringify(numbered ? [unitKerjaId, year, nomorBerkas] : [unitKerjaId, date, uraian, jenisArsip]),
                 exists: () => db.select({ id: arsipTable.id }).from(arsipTable).where(numbered
@@ -317,6 +386,8 @@ export const migrationService = {
                     tingkatPerkembangan: row['Tingkat Perkembangan'] || '', tanggalArsip: date,
                     kurunWaktu: row['Kurun'] || row['Kurun Waktu'] || '', jumlah: parseInt(row['Jumlah'] || '1') || 1,
                     keterangan: legacyNotes, createdBy: auditContext.userId,
+                    ...lokasi,
+                    ...(storageLocationId ? { storageLocationId } : {}),
                 }, auditContext),
             };
         }, options);
