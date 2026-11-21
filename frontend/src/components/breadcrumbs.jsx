@@ -26,6 +26,16 @@ const routeNameMap = {
     'bulk-upload': 'Unggah Massal',
     'panduan': 'Panduan Pengguna',
     'settings': 'Pengaturan',
+    // Without an entry the fallback below turns the path segment into the label,
+    // which gave "Not found", "Create" and "Monitoring operasional".
+    'not-found': 'Halaman tidak tersedia',
+    'create': 'Buat Baru',
+    'monitoring-operasional': 'Monitoring Operasional',
+    'layanan-arsip': 'Layanan Arsip',
+    'arsip-vital': 'Arsip Vital',
+    'arsip-terjaga': 'Arsip Terjaga',
+    'arsip-elektronik': 'Arsip Elektronik',
+    'tunjuk-silang': 'Tunjuk Silang',
 };
 
 // These prefixes organize routes; they do not have a page of their own.

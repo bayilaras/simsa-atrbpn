@@ -116,4 +116,15 @@ describe('berita acara pemusnahan di manajemen retensi', () => {
         expect(screen.queryByRole('dialog')).toBeNull()
         expect(window.open).not.toHaveBeenCalled()
     })
+
+    it('kartu ringkasan hasil akhir memakai label yang terbaca, termasuk yang belum ditentukan', async () => {
+        state.retention.getSummary.mockResolvedValue({ data: { alertLevel: 'none',
+            expiredByHasilAkhir: { musnah: 1, permanen: 2, dinilaiKembali: 3, belumDitentukan: 4 } } })
+        show()
+
+        for (const label of ['Musnah', 'Permanen', 'Dinilai Kembali', 'Belum Ditentukan']) {
+            expect(await screen.findByText(label, { selector: 'p' })).toBeVisible()
+        }
+        expect(screen.queryByText('belumDitentukan')).toBeNull()
+    })
 })

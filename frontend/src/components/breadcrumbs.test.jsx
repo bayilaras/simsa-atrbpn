@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { Breadcrumbs } from './breadcrumbs'
@@ -29,6 +29,21 @@ describe('breadcrumb destinations', () => {
         expect(screen.getAllByText(label).length).toBeGreaterThan(0)
         expect(screen.queryByRole('link', { name: label, exact: true })).not.toBeInTheDocument()
         expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '/')
+    })
+
+    it.each([
+        ['/not-found', 'Halaman tidak tersedia'],
+        ['/monitoring-operasional', 'Monitoring Operasional'],
+        ['/layanan-arsip/create', 'Buat Baru'],
+        ['/arsip-elektronik', 'Arsip Elektronik'],
+        ['/arsip-terjaga', 'Arsip Terjaga'],
+        ['/arsip-vital', 'Arsip Vital'],
+        ['/tunjuk-silang', 'Tunjuk Silang'],
+    ])('menamai %s dengan label Indonesia, bukan potongan alamatnya', (path, label) => {
+        mount(path)
+        const trail = within(screen.getByRole('navigation', { name: 'Breadcrumb' }))
+        expect(trail.getByText(label)).toHaveAttribute('aria-current', 'page')
+        expect(trail.queryByText(/Not found|Create|operasional$|elektronik$|terjaga$|vital$|silang$/)).not.toBeInTheDocument()
     })
 
     it('menamai halaman Lacak Surat tanpa tautan perantara yang rusak', () => {
