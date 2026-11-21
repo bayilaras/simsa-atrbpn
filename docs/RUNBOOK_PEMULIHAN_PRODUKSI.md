@@ -13,7 +13,7 @@ Runbook ini menghidupkan kembali SIMSA dari backup terenkripsi harian bila datab
 | Store Blob hilang atau objeknya terhapus; database utuh | Dokumen dari backup | 3, 5, 6, 7 | PDF yang diunggah sesudah waktu snapshot backup |
 | Database dan store Blob hilang | Database dan dokumen dari backup | 3, 4, 5, 6, 7 | Pencatatan dan PDF sesudah waktu snapshot backup |
 
-Jalur yang menghilangkan data diputuskan oleh Kasubbag TU sebagai pemilik data. Jendela PITR Neon dan titik pulih backup (sekitar 24 jam) tercatat di [kondisi produksi](KONDISI_PRODUKSI.md#titik-pulih-dan-jendela-pemulihan).
+Jalur yang menghilangkan data diputuskan oleh Kasubbag TU sebagai pemilik data. Jendela PITR Neon (6 jam pada paket saat ini) dan titik pulih backup (sekitar 24 jam) tercatat di [kondisi produksi](KONDISI_PRODUKSI.md#titik-pulih-dan-jendela-pemulihan).
 
 Nama proyek dan tim Vercel produksi tertanam di kode: alamat frontend dan backend, probe monitor, dan pin host fungsi pemindai. Runbook ini memakai proyek Vercel yang sama. Bila proyek atau tim Vercel juga hilang, kode harus disesuaikan dan dirilis lebih dulu; konfigurasi proyek baru mengikuti [panduan Vercel dan Neon](DEPLOY_VERCEL_NEON.md).
 
@@ -22,7 +22,7 @@ Nama proyek dan tim Vercel produksi tertanam di kode: alamat frontend dan backen
 1. Tetapkan pemimpin pemulihan dan pencatat waktu. Catat jam mulai setiap langkah di [catatan waktu](#catatan-waktu).
 2. Umumkan gangguan kepada staf dan minta pencatatan dihentikan sampai layanan dinyatakan pulih. Catatan yang dibuat di sistem lama selama pemulihan tidak ikut pindah.
 3. Siapkan:
-   - artefak `simsa-recovery-*` hijau terbaru dari GitHub Actions (disimpan 14 hari) atau salinan bulanan di penyimpanan kantor;
+   - artefak `simsa-recovery-*` hijau terbaru dari GitHub Actions (disimpan 14 hari), atau salinan `.tar` terbaru dari folder **SIMSA Backup** di Google Drive ([cara memulihkan dari Drive](BACKUP_GOOGLE_DRIVE.md#memulihkan-dari-google-drive)), atau salinan bulanan di media kantor bila ada;
    - passphrase backup dari pemegangnya;
    - workstation dengan Node.js 24 dan alat klien PostgreSQL 18 (`pg_restore`), misalnya `C:\Program Files\PostgreSQL\18\bin`;
    - dua checkout kode, masing-masing dengan `npm ci --prefix <folder>\backend --ignore-scripts`:
