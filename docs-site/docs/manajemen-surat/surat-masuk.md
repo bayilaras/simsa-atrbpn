@@ -134,8 +134,13 @@ Halaman **Detail Surat Masuk** menampilkan informasi surat, pratinjau berkas, pa
 | **Edit** | Ubah data surat | Super Admin, Admin Unit Kerja |
 | **Tindak Lanjut** | Menu berisi **Saya Balas**, **Buat Nota Dinas**, **Buat ND Penjelas**, **Disposisi ke Direktorat**, **Terima Disposisi**, **Penyelesaian**, dan **Tautkan ke Rangkaian**. Pilihan yang tampil mengikuti kewenangan kamu atas surat itu | Sesuai kewenangan |
 | **Arsipkan** | Pindahkan ke arsip | Super Admin, Admin Unit Kerja |
+| **Cetak Disposisi** | Buka Lembar Disposisi di tab baru untuk dicetak dan dilampirkan pada surat fisik | Semua yang dapat membuka surat |
 
 Tombol yang sama juga ada di kartu **Aksi Cepat** di sisi kanan. Menghapus surat dilakukan dari daftar, bukan dari halaman detail.
+
+### Lembar Disposisi
+
+**Cetak Disposisi** membuka Lembar Disposisi di tab baru: identitas surat (No. Agenda, tanggal diterima, nomor dan tanggal surat, asal, perihal, sifat), daftar unit tujuan disposisi yang sudah dikirim lewat SIMSA beserta instruksi, batas waktu, tembusan, dan statusnya, ditambah baris kosong, kotak **Catatan / instruksi pimpinan**, dan kotak paraf untuk diisi tangan. Klik **Cetak** lalu pilih printer atau *Simpan sebagai PDF*. Surat Terbatas ke atas hanya dapat dicetak setelah akses disetujui.
 
 ### Jika Tampil "Perlu persetujuan akses"
 
