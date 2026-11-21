@@ -52,6 +52,7 @@ const NOTIFICATION_CATEGORY_LABELS = {
     appraisal: 'Appraisal',
     penyusutan: 'Penyusutan',
     'penyerahan-permanen': 'Penyerahan',
+    peminjaman: 'Peminjaman',
 }
 
 export function AppHeader() {
@@ -395,7 +396,7 @@ export function AppHeader() {
                                 <p className="text-xs mt-1">
                                     {activeTab === 'surat-masuk' ? 'Tidak ada surat masuk yang perlu ditindaklanjuti.' :
                                         activeTab === 'arsip-retensi' ? 'Jadwal retensi arsip aman untuk saat ini.' :
-                                            activeTab === 'workflow' ? 'Distribusi, verifikasi, appraisal, penyusutan, dan penyerahan tidak memerlukan tindakan.' :
+                                            activeTab === 'workflow' ? 'Distribusi, verifikasi, appraisal, penyusutan, penyerahan, dan peminjaman tidak memerlukan tindakan.' :
                                             'Tidak ada notifikasi baru saat ini.'}
                                 </p>
                             </div>
