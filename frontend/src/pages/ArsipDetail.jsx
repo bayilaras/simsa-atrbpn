@@ -45,6 +45,9 @@ import { format, formatDistanceToNow, differenceInDays } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
 import { KartuTunjukSilang } from '@/components/tunjuk-silang/KartuTunjukSilang'
 
+// Label jenis arsip; 'lainnya' = dokumen yang bukan surat (dicatat lewat Tambah Arsip atau impor).
+const LABEL_JENIS_ARSIP = { masuk: 'Surat Masuk', keluar: 'Surat Keluar', lainnya: 'Arsip Lainnya' }
+
 // ─── Helpers ────────────────────────────────────────────────
 function formatDate(dateStr) {
     if (!dateStr) return '-'
@@ -505,7 +508,9 @@ export default function ArsipDetail() {
     const suratType = arsip.jenisArsip === 'masuk' ? 'masuk' : 'keluar'
     const suratUrl = arsip.sourceSuratId ? `/surat/${suratType}/${arsip.sourceSuratId}` : null
     const itemCount = arsip.items?.length || (arsip.nomorItem ? 1 : 0)
-    const jenisLabel = arsip.jenisArsip === 'masuk' ? 'Surat Masuk' : 'Surat Keluar'
+    const jenisLabel = LABEL_JENIS_ARSIP[arsip.jenisArsip] || 'Surat Keluar'
+    // Arsip lainnya tidak berasal dari surat, jadi tab Surat Asli tidak ditampilkan.
+    const bukanSurat = arsip.jenisArsip === 'lainnya'
     // Tombol tampil untuk penulis unit arsip; aktif/nonaktif mengikuti hak aksi
     // dari server (atau keadaan rekod bila respons belum membawanya).
     const isEditor = canWrite(arsip.unitKerjaId)
@@ -543,7 +548,7 @@ export default function ArsipDetail() {
         },
         { icon: Archive, label: 'Diarsipkan', date: arsip.createdAt, color: 'emerald' },
         arsip.tanggalSuratOriginal && {
-            icon: FileText, label: `Surat ${jenisLabel} Dibuat`, date: arsip.tanggalSuratOriginal, color: 'blue'
+            icon: FileText, label: `${jenisLabel} Dibuat`, date: arsip.tanggalSuratOriginal, color: 'blue'
         },
     ].filter(Boolean)
 
@@ -668,9 +673,11 @@ export default function ArsipDetail() {
                             <TabsTrigger value="keamanan" className="gap-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg px-3 py-2 text-xs sm:text-sm">
                                 <Shield className="h-4 w-4" /> Keamanan
                             </TabsTrigger>
+                            {!bukanSurat && (
                             <TabsTrigger value="surat" className="gap-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg px-3 py-2 text-xs sm:text-sm">
                                 <BookOpen className="h-4 w-4" /> Surat Asli
                             </TabsTrigger>
+                            )}
                         </TabsList>
 
                         {/* ── Tab: Identifikasi ────────── */}
