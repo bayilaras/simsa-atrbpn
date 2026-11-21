@@ -152,7 +152,7 @@ describe('ArchivePreviewPanel', () => {
         expect(mocks.fetchPrivateFile).not.toHaveBeenCalled()
     })
 
-    it.each([{ sourceSuratId: null }, { jenisArsip: 'lainnya' }])('does not guess a source for unsupported archive data %j', async fields => {
+    it.each([{ sourceSuratId: null }, { jenisArsip: 'lainnya' }, { jenisArsip: 'tidak_dikenal' }])('does not guess a source for unsupported archive data %j', async fields => {
         mocks.getArchive.mockResolvedValue({ ...archive, ...fields })
         renderPanel()
         expect(await screen.findByText(/Arsip ini belum terhubung dengan surat sumber/)).toBeInTheDocument()
