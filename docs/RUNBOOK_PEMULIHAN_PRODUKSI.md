@@ -22,7 +22,7 @@ Nama proyek dan tim Vercel produksi tertanam di kode: alamat frontend dan backen
 1. Tetapkan pemimpin pemulihan dan pencatat waktu. Catat jam mulai setiap langkah di [catatan waktu](#catatan-waktu).
 2. Umumkan gangguan kepada staf dan minta pencatatan dihentikan sampai layanan dinyatakan pulih. Catatan yang dibuat di sistem lama selama pemulihan tidak ikut pindah.
 3. Siapkan:
-   - artefak `simsa-recovery-*` hijau terbaru dari GitHub Actions (disimpan 14 hari) atau salinan bulanan di penyimpanan kantor;
+   - artefak `simsa-recovery-*` hijau terbaru dari GitHub Actions (disimpan 14 hari), atau salinan `.tar` terbaru dari folder **SIMSA Backup** di Google Drive ([cara memulihkan dari Drive](BACKUP_GOOGLE_DRIVE.md#memulihkan-dari-google-drive)), atau salinan bulanan di media kantor bila ada;
    - passphrase backup dari pemegangnya;
    - workstation dengan Node.js 24 dan alat klien PostgreSQL 18 (`pg_restore`), misalnya `C:\Program Files\PostgreSQL\18\bin`;
    - dua checkout kode, masing-masing dengan `npm ci --prefix <folder>\backend --ignore-scripts`:
