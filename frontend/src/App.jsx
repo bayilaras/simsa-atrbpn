@@ -56,6 +56,7 @@ const AutentikasiIndex = lazy(() => import('@/pages/Autentikasi/Index'))
 const AutentikasiCreate = lazy(() => import('@/pages/Autentikasi/Create'))
 const FormulirIndex = lazy(() => import('@/pages/Formulir/Index'))
 const FormulirViewer = lazy(() => import('@/pages/Formulir/FormulirViewer'))
+const LembarDisposisi = lazy(() => import('@/pages/LembarDisposisi'))
 const LayananArsipIndex = lazy(() => import('@/pages/LayananArsip/Index'))
 const LayananArsipCreate = lazy(() => import('@/pages/LayananArsip/Create'))
 const LayananArsipDetail = lazy(() => import('@/pages/LayananArsip/Detail'))
@@ -310,6 +311,16 @@ const router = createBrowserRouter([
           <Suspense fallback={<PageLoader />}>
             <FormulirViewer />
           </Suspense>
+        ),
+      },
+      {
+        path: "/surat/masuk/:id/lembar-disposisi",
+        element: (
+          <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}>
+            <Suspense fallback={<PageLoader />}>
+              <LembarDisposisi />
+            </Suspense>
+          </RoleGuard>
         ),
       },
     ],

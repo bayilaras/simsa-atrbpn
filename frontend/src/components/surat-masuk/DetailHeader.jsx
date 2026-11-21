@@ -1,4 +1,4 @@
-import { ArrowLeft, MailOpen, Edit, Archive, MoreHorizontal } from 'lucide-react';
+import { ArrowLeft, MailOpen, Edit, Archive, MoreHorizontal, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -32,6 +32,16 @@ export function DetailHeader({ surat, onBack, onEdit, onDistribute, onArchive, o
             variant={variant}
             className={className}
         />
+    );
+    // Lembar Disposisi dibuka di tab baru agar halaman detail tetap terbuka.
+    const tautanCetak = `/surat/masuk/${surat.id}/lembar-disposisi`;
+    const tombolCetak = (ukuran, className) => (
+        <Button asChild variant="secondary" size={ukuran} className={className}>
+            <a href={tautanCetak} target="_blank" rel="noopener noreferrer" aria-label="Cetak Lembar Disposisi (tab baru)" title="Cetak Lembar Disposisi">
+                <Printer className="h-4 w-4 sm:mr-2" aria-hidden="true" />
+                <span className="hidden sm:inline">Cetak Disposisi</span>
+            </a>
+        </Button>
     );
     return (
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-600 p-6 md:p-8 text-white shadow-xl">
@@ -87,6 +97,7 @@ export function DetailHeader({ surat, onBack, onEdit, onDistribute, onArchive, o
                         </Button>
                     )}
                     {menu('secondary', 'bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-sm')}
+                    {tombolCetak('default', 'bg-card/20 hover:bg-card/30 text-white border-0 backdrop-blur-sm')}
                     {bolehArsip && !surat.isArchived && (
                         <Button
                             className="bg-card text-emerald-700 dark:text-emerald-300 hover:bg-card/90"
@@ -112,6 +123,7 @@ export function DetailHeader({ surat, onBack, onEdit, onDistribute, onArchive, o
                         </Button>
                     )}
                     {menu('secondary', 'bg-card/20 hover:bg-card/30 text-white border-0')}
+                    {tombolCetak('sm', 'bg-card/20 hover:bg-card/30 text-white border-0')}
                     {bolehArsip && !surat.isArchived && (
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
