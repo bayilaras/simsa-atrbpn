@@ -6,7 +6,6 @@ import {
 } from '@/components/ui/dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -213,10 +212,12 @@ function FormTambahArsip({ unitKerjaId, jenisAwal, saving, setSaving, onClose, o
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
                 <p><strong>Arsip bersifat permanen.</strong> {PESAN_TAMBAH_PERMANEN}</p>
                 <div className="mt-2 flex items-start gap-2">
-                    <Checkbox
+                    <input
                         id={ID('pernyataan')}
+                        type="checkbox"
+                        className="mt-0.5 h-4 w-4 shrink-0"
                         checked={form.pernyataan}
-                        onCheckedChange={nilai => ubah('pernyataan')(nilai === true)}
+                        onChange={event => ubah('pernyataan')(event.target.checked)}
                         disabled={saving}
                         aria-invalid={galatTampil.pernyataan ? true : undefined}
                         aria-describedby={galatTampil.pernyataan ? `${ID('pernyataan')}-galat` : undefined}
