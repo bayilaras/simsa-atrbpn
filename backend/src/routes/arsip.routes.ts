@@ -7,7 +7,10 @@ import {
     updateArsipSchema,
     queryArsipSchema,
     reconcileArchiveRulesSchema,
+    createArsipManualSchema,
 } from '../validators/schemas';
+import { canAccessUnit, type Role } from '../config/permissions';
+import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja';
 import {
     archiveFulltextQuerySchema,
     archiveSuggestionsQuerySchema,
@@ -257,6 +260,48 @@ router.post('/',
             error: 'Direct archive registration is disabled',
             message: 'Gunakan archive-full pada surat masuk/keluar, lalu pilih klasifikasi dan JRA aktif. Arsip hasil impor harus direkonsiliasi sebelum penyusutan.',
         });
+    }
+);
+
+// POST /api/arsip/manual - Tambah Arsip tanpa surat sumber (termasuk dokumen bukan surat)
+router.post('/manual',
+    canWriteMiddleware(),
+    validateBody(createArsipManualSchema),
+    async (req: AuthRequest, res, next) => {
+        try {
+            const { unitKerjaId: unitDiminta, storageLocationId, klasifikasiKeamanan, jumlah, ...metadata } = req.body;
+            const role = (req.user?.role || 'user') as Role;
+            const unitKerjaId = resolveEffectiveUnitKerjaId(role, req.user?.unitKerjaId, unitDiminta ?? null);
+            if (!unitKerjaId) {
+                return res.status(400).json({ error: 'unitKerjaId is required', message: 'Pilih unit kerja terlebih dahulu.' });
+            }
+            if (!canAccessUnit(role, req.user?.unitKerjaId || null, unitKerjaId)) {
+                return res.status(403).json({ error: 'Anda tidak berwenang menambah arsip untuk unit kerja tersebut.' });
+            }
+            const kelas = klasifikasiKeamanan ?? 'biasa';
+            if (!isAllowedForClassification(req.user, kelas)) {
+                return res.status(403).json({ error: PESAN_KELAS_MELEBIHI_KEWENANGAN });
+            }
+            if (storageLocationId && !bolehMemakaiLokasiUnit(req, unitKerjaId)) {
+                return res.status(400).json({ error: PESAN_LOKASI_SIMPAN_TIDAK_SESUAI });
+            }
+            const result = await arsipService.create({
+                ...metadata,
+                unitKerjaId,
+                tahun: Number(String(metadata.tanggalArsip).slice(0, 4)),
+                jumlah: jumlah ?? 1,
+                klasifikasiKeamanan: kelas,
+                storageLocationId: storageLocationId ?? null,
+                createdBy: req.user?.id,
+            }, {
+                userId: req.user?.id,
+                userEmail: req.user?.email,
+                ipAddress: req.ip,
+            }, { tolakNomorBerkasGanda: true, sumber: 'manual' });
+            res.status(201).json({ success: true, data: result });
+        } catch (error) {
+            next(error);
+        }
     }
 );
 

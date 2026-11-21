@@ -5,12 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 const MAX_FILTERS = 20;
+const LABEL_TAB = { masuk: 'Surat masuk', keluar: 'Surat keluar', lainnya: 'Arsip lainnya' };
 const MAX_NAME_LENGTH = 60;
 
 function validatedFilters(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const { tab, search, tahun, unitKerjaId, pageSize } = value;
-    if (!['masuk', 'keluar'].includes(tab)
+    if (!['masuk', 'keluar', 'lainnya'].includes(tab)
         || typeof search !== 'string' || search.length > 255
         || typeof tahun !== 'string'
         || (tahun !== 'all' && (!/^\d{4}$/.test(tahun) || Number(tahun) < 2000 || Number(tahun) > 2100))
@@ -185,7 +186,7 @@ function SavedArchiveFiltersForUser({ userId, filters, onApply }) {
                                     <div className="min-w-0 flex-1">
                                         <p className="break-words text-sm font-medium">{entry.name}</p>
                                         <p className="text-xs text-muted-foreground">
-                                            {entry.filters.tab === 'masuk' ? 'Surat masuk' : 'Surat keluar'} · {entry.filters.tahun === 'all' ? 'Semua tahun' : entry.filters.tahun}
+                                            {LABEL_TAB[entry.filters.tab] ?? 'Surat keluar'} · {entry.filters.tahun === 'all' ? 'Semua tahun' : entry.filters.tahun}
                                         </p>
                                     </div>
                                     <Button type="button" variant="ghost" size="sm" aria-label={`Terapkan filter ${entry.name}`} onClick={() => {

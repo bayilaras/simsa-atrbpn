@@ -38,7 +38,8 @@ export function bolehMemilihLokasiUnit(user, unitKerjaId) {
  */
 export function rincianArsipLokasi(lokasi) {
     if (!Number.isFinite(lokasi?.arsipMasukCount) || !Number.isFinite(lokasi?.arsipKeluarCount)) return ''
-    return `${lokasi.arsipMasukCount} arsip surat masuk, ${lokasi.arsipKeluarCount} arsip surat keluar`
+    const rincian = `${lokasi.arsipMasukCount} arsip surat masuk, ${lokasi.arsipKeluarCount} arsip surat keluar`
+    return lokasi.arsipLainnyaCount > 0 ? `${rincian}, ${lokasi.arsipLainnyaCount} arsip lainnya` : rincian
 }
 
 /**
@@ -47,8 +48,11 @@ export function rincianArsipLokasi(lokasi) {
  * dipakai Super Admin.
  */
 export function tautanArsipLokasi(lokasi, unitKerjaId, tabDiminta) {
+    const masuk = lokasi?.arsipMasukCount ?? 0
+    const keluar = lokasi?.arsipKeluarCount ?? 0
+    const lainnya = lokasi?.arsipLainnyaCount ?? 0
     const tab = tabDiminta
-        || ((lokasi?.arsipKeluarCount ?? 0) === 0 && (lokasi?.arsipMasukCount ?? 0) > 0 ? 'masuk' : 'keluar')
+        || (keluar > 0 ? 'keluar' : masuk > 0 ? 'masuk' : lainnya > 0 ? 'lainnya' : 'keluar')
     const params = new URLSearchParams({ lokasi: lokasi.id })
     if (unitKerjaId) params.set('unit', unitKerjaId)
     return `/arsip/${tab}?${params}`

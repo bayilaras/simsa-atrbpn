@@ -555,10 +555,20 @@ export class ArsipService {
         };
     }
 
-    async create(data: NewArsip, auditContext: CriticalAuditContext) {
-        // Direct registration is disabled at the route. Keep this lower-level
-        // method fail-closed as well: legacy display text can never create an
-        // actionable expiry without a verified canonical snapshot.
+    /**
+     * Arsip tanpa surat sumber (impor CSV dan Tambah Arsip). Klasifikasi/JRA
+     * dan pemicu retensi tidak pernah diterima: arsip mulai berstatus
+     * legacy_unverified dan dicocokkan lewat rekonsiliasi aturan.
+     *
+     * `tolakNomorBerkasGanda`: Tambah Arsip menolak nomor berkas yang sudah
+     * dipakai di unit dan tahun yang sama (identitas yang sama dengan impor),
+     * di bawah kunci advisory agar dua simpan bersamaan tidak lolos keduanya.
+     */
+    async create(
+        data: NewArsip,
+        auditContext: CriticalAuditContext,
+        { tolakNomorBerkasGanda = false, sumber }: { tolakNomorBerkasGanda?: boolean; sumber?: 'manual' | 'impor' } = {},
+    ) {
         this.assertNoDirectRetentionTrigger(data);
         if (Object.keys(data).some((field) => RULE_ASSIGNMENT_FIELDS.has(field))) {
             throw new ValidationError(
@@ -566,6 +576,19 @@ export class ArsipService {
             );
         }
         return db.transaction(async (tx) => {
+            if (data.storageLocationId) await this.kunciLokasiSimpan(tx, data.storageLocationId, data.unitKerjaId);
+            const nomorBerkas = data.nomorBerkas?.trim();
+            if (tolakNomorBerkasGanda && nomorBerkas) {
+                await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${JSON.stringify(['arsip-nomor-berkas', data.unitKerjaId, data.tahun, nomorBerkas])}))`);
+                const [ganda] = await tx.select({ id: arsip.id }).from(arsip).where(and(
+                    eq(arsip.unitKerjaId, data.unitKerjaId),
+                    eq(arsip.tahun, data.tahun),
+                    eq(arsip.nomorBerkas, nomorBerkas),
+                )).limit(1);
+                if (ganda) {
+                    throw new ConflictError(`Nomor berkas ${nomorBerkas} sudah dipakai arsip lain di unit ini untuk tahun ${data.tahun}. Periksa daftar arsip atau gunakan nomor berkas lain.`);
+                }
+            }
             const [result] = await tx
                 .insert(arsip)
                 .values({
@@ -591,6 +614,12 @@ export class ArsipService {
                         uraianBerkas: result.uraianBerkas,
                         tahun: result.tahun,
                         ruleProvenanceStatus: result.ruleProvenanceStatus,
+                        ...(sumber ? { sumber } : {}),
+                        ...(result.storageLocationId ? { storageLocationId: result.storageLocationId } : {}),
+                        ...(result.lokasiFc || result.lokasiLaci || result.lokasiFolder
+                            ? { lokasiFc: result.lokasiFc, lokasiLaci: result.lokasiLaci, lokasiFolder: result.lokasiFolder }
+                            : {}),
+                        ...(result.klasifikasiKeamanan ? { klasifikasiKeamanan: result.klasifikasiKeamanan } : {}),
                     },
                 },
             }, tx);
@@ -1666,6 +1695,7 @@ export class ArsipService {
                 total: sql<number>`count(*)::int`,
                 arsipMasuk: sql<number>`count(*) filter (where ${arsip.jenisArsip} = 'masuk')::int`,
                 arsipKeluar: sql<number>`count(*) filter (where ${arsip.jenisArsip} = 'keluar')::int`,
+                arsipLainnya: sql<number>`count(*) filter (where ${arsip.jenisArsip} = 'lainnya')::int`,
             })
             .from(arsip)
             .where(and(...conditions));

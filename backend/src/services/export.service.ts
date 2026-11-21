@@ -47,7 +47,8 @@ const jangkaSimpanFormulir6 = (item: any) => [
     item.hasilAkhir ? `Nasib: ${item.hasilAkhir}` : '',
 ].filter(Boolean).join('\n');
 
-const kategoriFormulir6 = (item: any) => (item.jenisArsip === 'masuk' ? 'Surat Masuk' : 'Surat Keluar');
+const KATEGORI_FORMULIR6: Record<string, string> = { masuk: 'Surat Masuk', keluar: 'Surat Keluar', lainnya: 'Arsip Lainnya' };
+const kategoriFormulir6 = (item: any) => KATEGORI_FORMULIR6[item.jenisArsip] ?? 'Surat Keluar';
 
 export interface ExportOptions {
     format: 'excel' | 'pdf';

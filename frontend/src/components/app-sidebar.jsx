@@ -110,6 +110,7 @@ const menuGroups = [
                 subItems: [
                     { title: 'Arsip Surat Masuk', url: '/arsip/masuk' },
                     { title: 'Arsip Surat Keluar', url: '/arsip/keluar' },
+                    { title: 'Arsip Lainnya', url: '/arsip/lainnya' },
                 ],
             },
             {

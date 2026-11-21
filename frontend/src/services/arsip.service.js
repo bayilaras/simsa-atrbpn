@@ -64,9 +64,9 @@ export const arsipService = {
         return response.data;
     },
 
-    // Create new arsip
-    async create(data) {
-        const response = await api.post('/api/arsip', data);
+    // Tambah Arsip tanpa surat sumber (POST /api/arsip/manual)
+    async createManual(data) {
+        const response = await api.post('/api/arsip/manual', data);
         return response.data;
     },
 
