@@ -99,6 +99,31 @@ describe('Tanggal Diterima pada Tambah dan Edit Surat Masuk', () => {
         expect(mocks.masuk.create).not.toHaveBeenCalled()
     })
 
+    // Peramban menahan formulir lewat atribut min/max sebelum submit; pesan aplikasi yang harus tampil, bukan balon peramban.
+    it('mengganti balon peramban dengan pesan aplikasi saat batas min/max dilanggar', async () => {
+        tampil('/surat/masuk/tambah')
+        isiWajib()
+        const isian = screen.getByLabelText('Tanggal Diterima')
+        fireEvent.change(isian, { target: { value: '2026-09-20' } })
+        expect(isian).toHaveAttribute('min', '2026-09-23')
+        expect(fireEvent.invalid(isian)).toBe(false)
+        expect(await screen.findByRole('alert')).toHaveTextContent('Tanggal diterima tidak boleh sebelum tanggal surat')
+        expect(document.getElementById('tanggal-diterima-error')).toHaveTextContent('Tanggal diterima tidak boleh sebelum tanggal surat')
+        expect(isian).toHaveAttribute('aria-invalid', 'true')
+
+        fireEvent.change(isian, { target: { value: '2999-01-01' } })
+        expect(document.getElementById('tanggal-diterima-error')).toBeNull()
+        expect(fireEvent.invalid(isian)).toBe(false)
+        expect(document.getElementById('tanggal-diterima-error')).toHaveTextContent('Tanggal diterima tidak boleh setelah hari ini')
+        expect(mocks.masuk.create).not.toHaveBeenCalled()
+    })
+
+    it('membiarkan peramban menandai Tanggal Surat wajib yang kosong', () => {
+        tampil('/surat/masuk/tambah')
+        expect(fireEvent.invalid(screen.getByLabelText(/Tanggal Surat/))).toBe(true)
+        expect(document.getElementById('tanggal-surat-error')).toBeNull()
+    })
+
     it('boleh dikosongkan', async () => {
         const view = tampil('/surat/masuk/tambah')
         isiWajib()

@@ -46,6 +46,18 @@ describe('breadcrumb destinations', () => {
         expect(trail.queryByText(/Not found|Create|operasional$|elektronik$|terjaga$|vital$|silang$/)).not.toBeInTheDocument()
     })
 
+    it.each([
+        ['/arsip/detail/11111111-1111-4111-8111-111111111111', 'Detail', ['Arsip', 'Detail']],
+        ['/surat/masuk/edit/11111111-1111-4111-8111-111111111111', 'Edit', ['Surat', 'Masuk', 'Edit']],
+        ['/surat/keluar/11111111-1111-4111-8111-111111111111', 'Detail', ['Surat', 'Keluar', 'Detail']],
+    ])('tidak mengulang nama halaman untuk id pada %s', (path, label, urutan) => {
+        mount(path)
+        const trail = within(screen.getByRole('navigation', { name: 'Breadcrumb' }))
+        expect(trail.getAllByText(label)).toHaveLength(1)
+        expect(trail.getByText(label)).toHaveAttribute('aria-current', 'page')
+        expect(trail.getAllByText(/^(Surat|Masuk|Keluar|Arsip|Detail|Edit)$/).map(el => el.textContent)).toEqual(urutan)
+    })
+
     it('menamai halaman Lacak Surat tanpa tautan perantara yang rusak', () => {
         mount('/surat/lacak')
         expect(screen.getByText('Lacak Surat')).toBeVisible()

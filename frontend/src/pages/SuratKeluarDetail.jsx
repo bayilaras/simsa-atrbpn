@@ -310,15 +310,6 @@ export default function SuratKeluarDetail() {
 
     return (
         <div className="space-y-6">
-            {/* Breadcrumb */}
-            <nav className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Link to="/surat/keluar" className="hover:text-foreground transition-colors">Surat</Link>
-                <span>/</span>
-                <Link to="/surat/keluar" className="hover:text-foreground transition-colors">Keluar</Link>
-                <span>/</span>
-                <span className="text-foreground font-medium truncate max-w-[200px]">{surat.nomorSurat}</span>
-            </nav>
-
             {/* Hero Header with Gradient */}
             <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-violet-600 p-6 md:p-8 text-white shadow-xl">
                 {/* Background Pattern */}

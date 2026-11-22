@@ -4,6 +4,8 @@ import { GitBranch, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { format } from 'date-fns'
+import { id as localeId } from 'date-fns/locale'
 import rangkaianService from '@/services/rangkaian.service'
 import { TimelineItem } from '@/components/surat/TimelineItem'
 import { JENIS_RELASI_LABEL } from '@/lib/tindak-lanjut'
@@ -54,7 +56,14 @@ function keItemLinimasa(node, relasiDari) {
     }
 }
 
-export function AlurSuratPanel({ jenis, suratId, rangkaianId = null, aksesMelalui = 'owner', fallback = null, onChanged, muatUlangKe = 0 }) {
+// Batas waktu disimpan sebagai YYYY-MM-DD; tampilkan seperti di Kotak Masuk (24 Nov 2026).
+function tanggalBatas(nilai) {
+    if (!nilai) return '-'
+    const tanggal = new Date(`${String(nilai).slice(0, 10)}T00:00:00`)
+    return Number.isNaN(tanggal.getTime()) ? nilai : format(tanggal, 'dd MMM yyyy', { locale: localeId })
+}
+
+export function AlurSuratPanel({ jenis, suratId, rangkaianId = null, aksesMelalui = 'owner', unitSendiriId = null, fallback = null, onChanged, muatUlangKe = 0 }) {
     const [state, setState] = useState({ loading: true, data: null, error: false, notFound: false })
     // Kunci reload internal panel: dinaikkan hanya oleh muatUlang (mis. tombol
     // "Coba lagi", atau aksi panel di Task 25), TIDAK oleh render ulang biasa.
@@ -132,7 +141,10 @@ export function AlurSuratPanel({ jenis, suratId, rangkaianId = null, aksesMelalu
     // Lacak (rangkaianId) tidak mengirim aksesMelalui lewat prop -- pakai nilai
     // dari payload getById (P4-T9-3). Jalur P2/P3 (getBySurat) tetap memakai
     // prop dari parent, tidak berubah.
-    const aksesEfektif = rangkaianId ? (d.aksesMelalui ?? 'owner') : aksesMelalui
+    // Rangkaian yang dicatat unit sendiri bukan bacaan lintas unit: server tetap melaporkan tier
+    // 'pengawas'/'peserta' untuk unit pencatat, tetapi pita "dilihat sebagai ..." tidak berlaku di sini.
+    const milikUnitSendiri = Boolean(rangkaianId && unitSendiriId && r.unitPencatat?.id === unitSendiriId)
+    const aksesEfektif = rangkaianId ? (milikUnitSendiri ? 'owner' : (d.aksesMelalui ?? 'owner')) : aksesMelalui
     const relasiDari = relasiPerNodeAsal(d.relasi)
     const aksiDiizinkan = d.aksiDiizinkan ?? []
     const bolehTutup = aksiDiizinkan.includes('tutup_disposisi')
@@ -216,7 +228,7 @@ export function AlurSuratPanel({ jenis, suratId, rangkaianId = null, aksesMelalu
                                                 {row.penanggungJawab && <Badge variant="outline" className="ml-2">Penanggung jawab</Badge>}
                                             </td>
                                             <td className="py-2 pr-3 whitespace-pre-line">{row.masked ? DIKECUALIKAN : (row.instruction || '-')}</td>
-                                            <td className="py-2 pr-3">{row.batasWaktu ?? '-'}</td>
+                                            <td className="py-2 pr-3 whitespace-nowrap">{tanggalBatas(row.batasWaktu)}</td>
                                             <td className="py-2 pr-3">
                                                 {STATUS_DISPOSISI_LABEL[row.status] ?? row.status}
                                                 {row.ditutupPengawas ? ' (ditutup pengawas)' : ''}

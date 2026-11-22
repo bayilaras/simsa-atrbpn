@@ -46,6 +46,7 @@ import { ReferensiSection } from '@/components/surat-keluar/ReferensiSection';
 import { DisposisiRegistrasiSection } from '@/components/surat-masuk/DisposisiRegistrasiSection';
 import { PESAN_TERKENDALI, hariIniJakarta, isSifatTerkendali } from '@/lib/tindak-lanjut';
 import { PETUNJUK_TANGGAL_DITERIMA, galatTanggalDiterima } from '@/lib/tanggal-diterima';
+import { gantiPesanPeramban } from '@/lib/pesan-peramban';
 import { PESAN_KELAS_TERBATAS_PERAN, PESAN_SURAT_MASUK_PERLU_PERSETUJUAN, adaKelasTersembunyi, bolehMemilihKelas, normalisasiKelas, saringOpsiKelas } from '@/lib/kelas-keamanan';
 import {
     PESAN_TAHUN_DI_LUAR_RENTANG, PETUNJUK_NO_AGENDA, TANGGAL_SURAT_MAKS, TANGGAL_SURAT_MIN, catatanPindahTahun, galatNomorUrut,
@@ -490,6 +491,12 @@ export default function TambahSuratMasuk() {
         return null;
     };
 
+    // Pesan aplikasi menggantikan balon peramban untuk isian tanggal yang dibatasi min/max.
+    const pesanAplikasi = (field, galatUntuk) => gantiPesanPeramban(galatUntuk, (galat) => {
+        setError(galat);
+        setFieldErrors(prev => ({ ...prev, [field]: galat }));
+    });
+
     // Handle form submission
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -886,6 +893,7 @@ export default function TambahSuratMasuk() {
                                     required
                                     min={batasTanggal ? TANGGAL_SURAT_MIN : undefined}
                                     max={batasTanggal ? TANGGAL_SURAT_MAKS : undefined}
+                                    onInvalid={pesanAplikasi('tanggalSurat', v => (v && tahunDiLuarRentang(v) ? PESAN_TAHUN_DI_LUAR_RENTANG : null))}
                                     aria-invalid={Boolean(fieldErrors.tanggalSurat)}
                                     aria-describedby={[fieldErrors.tanggalSurat && 'tanggal-surat-error', tahunBaru && 'tanggal-surat-tahun'].filter(Boolean).join(' ') || undefined}
                                     value={formData.tanggalSurat}
@@ -913,6 +921,7 @@ export default function TambahSuratMasuk() {
                                     type="date"
                                     min={formData.tanggalSurat || undefined}
                                     max={hariIniJakarta()}
+                                    onInvalid={pesanAplikasi('tanggalDiterima', v => galatTanggalDiterima(formData.tanggalSurat, v))}
                                     aria-invalid={Boolean(fieldErrors.tanggalDiterima)}
                                     aria-describedby={[fieldErrors.tanggalDiterima && 'tanggal-diterima-error', 'tanggal-diterima-bantuan'].filter(Boolean).join(' ')}
                                     value={formData.tanggalDiterima ?? ''}

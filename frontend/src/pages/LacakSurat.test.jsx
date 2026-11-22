@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 
 const mocks = vi.hoisted(() => ({ lacak: vi.fn(), panelDipasang: vi.fn() }))
+vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { id: 'u-1', role: 'admin_unit', unitKerjaId: 'ditjen' } }) }))
 vi.mock('@/services/rangkaian.service', () => ({ default: { lacak: mocks.lacak }, rangkaianService: { lacak: mocks.lacak } }))
 vi.mock('@/components/surat/AlurSuratPanel', async () => {
     const { useEffect } = await import('react')
