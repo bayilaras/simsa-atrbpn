@@ -26,7 +26,7 @@ Catatan:
 
 ## Salinan tersegel passphrase backup
 
-Tanpa `BACKUP_ENCRYPTION_PASSPHRASE`, tidak satu pun artefak backup dapat dibuka, termasuk salinan bulanan di kantor. GitHub tidak dapat menampilkan kembali nilai secret yang sudah disimpan.
+Tanpa `BACKUP_ENCRYPTION_PASSPHRASE`, tidak satu pun artefak backup dapat dibuka, termasuk salinan di Google Drive dan salinan bulanan di kantor bila ada. GitHub tidak dapat menampilkan kembali nilai secret yang sudah disimpan.
 
 1. Pemegang passphrase menuliskannya beserta tanggal berlakunya pada media yang disepakati kantor: kertas di amplop bersegel, atau entri bersama di password manager kantor yang dapat dibuka pejabat kedua.
 2. Amplop disegel dan diparaf oleh pemegang dan penerima, lalu disimpan di lemari besi kantor. Register internal mencatat tanggal, peran kedua pihak, dan nomor segel; passphrase tidak ditulis di register.
