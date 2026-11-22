@@ -81,7 +81,7 @@ describe('dashboard statistics SQL', () => {
     it('baseline contract retains all-year totals, archive subtypes and yearly breakdowns', async () => {
         const result = await service.getStats('unit-a', year);
         expect(result).toMatchObject({ totalMasuk: 2, totalKeluar: 9,
-            totalArsip: 4, arsipMasuk: 2, arsipKeluar: 1 });
+            totalArsip: 4, arsipMasuk: 2, arsipKeluar: 1, arsipLainnya: 1 });
         expect(result).not.toHaveProperty('segmenKadaluarsa');
         expect(result.monthlyTrend[month - 1]).toMatchObject({ masuk: 2, keluar: 7 });
         expect(result.statusBreakdown.keluar).toEqual([{ status: 'Surat Dinas', count: 8 }]);

@@ -18,6 +18,7 @@ import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
 import { canExportReports } from '@/lib/provisioning-access';
 import { FileSpreadsheet, FileText, Download, BarChart3, Mail, Send, Archive, BookOpen, TrendingUp, FileImage, Film, FileAudio, Loader2 } from 'lucide-react';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
+import { LABEL_JENIS_ARSIP } from '@/components/arsip/tambah-arsip-form';
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -798,7 +799,7 @@ export default function Laporan() {
                                             <TableCell data-label="Kode Klasifikasi" className="font-medium bg-muted/50 px-2 py-1 rounded inline-block text-xs mt-2">{item.kodeKlasifikasi || '-'}</TableCell>
                                             <TableCell data-label="Jenis">
                                                 <Badge variant={item.jenisArsip === 'masuk' ? 'default' : 'secondary'} className="font-normal">
-                                                    {item.jenisArsip}
+                                                    {LABEL_JENIS_ARSIP[item.jenisArsip] || item.jenisArsip || '-'}
                                                 </Badge>
                                             </TableCell>
                                             <TableCell data-label="Media">

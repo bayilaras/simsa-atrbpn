@@ -49,6 +49,14 @@ function passFocusRefreshInterval() {
 async function show() { render(<MemoryRouter><Dashboard /></MemoryRouter>); await screen.findByRole('heading', { name: 'Halo, Siti' }) }
 
 describe('dashboard daily workflow', () => {
+    it('menampilkan kartu Arsip Lainnya sehingga Total Arsip dapat dijumlahkan dari tiga jenis', async () => {
+        mocks.user.role = 'admin_unit'
+        dashboardService.getStats.mockResolvedValue({ totalMasuk: 0, totalKeluar: 0, totalArsip: 6, arsipMasuk: 1, arsipKeluar: 2, arsipLainnya: 3, monthlyTrend: [] })
+        await show()
+        const kartu = (await screen.findByText('Arsip Lainnya')).closest('div')
+        expect(kartu).toHaveTextContent('3')
+    })
+
     it('shows the assigned unit by name, never by its code', async () => {
         mocks.user.role = 'admin_unit'
         await show()

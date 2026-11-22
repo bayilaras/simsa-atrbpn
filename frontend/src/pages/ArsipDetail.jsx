@@ -44,9 +44,9 @@ import { useToast } from '@/hooks/use-toast'
 import { format, formatDistanceToNow, differenceInDays } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
 import { KartuTunjukSilang } from '@/components/tunjuk-silang/KartuTunjukSilang'
+import { LABEL_JENIS_ARSIP } from '@/components/arsip/tambah-arsip-form'
 
 // Label jenis arsip; 'lainnya' = dokumen yang bukan surat (dicatat lewat Tambah Arsip atau impor).
-const LABEL_JENIS_ARSIP = { masuk: 'Surat Masuk', keluar: 'Surat Keluar', lainnya: 'Arsip Lainnya' }
 
 // ─── Helpers ────────────────────────────────────────────────
 function formatDate(dateStr) {
