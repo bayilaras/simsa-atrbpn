@@ -83,7 +83,7 @@
     "@vercel/blob": "^2.9.0",
     "@vercel/functions": "3.11.1",
     "bcryptjs": "^3.0.3",
-    "better-auth": "^1.7.20",
+    "better-auth": "^1.7.25",
     "compression": "^1.8.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
