@@ -11,7 +11,7 @@ Setelah berhasil login, halaman pertama yang kamu lihat adalah **Dashboard**. In
 > Dashboard SIMSA terdiri dari beberapa bagian utama (dari atas ke bawah):
 >
 > 1. **👋 Bagian Salam** — Bagian paling atas, menampilkan salam, tanggal, dan unit kerja. Super Admin bisa memilih unit kerja melalui dropdown.
-> 2. **📊 Kartu Statistik** — 6 kartu berisi angka ringkasan: Surat Masuk, Surat Keluar, Total Arsip, Arsip Masuk, Arsip Keluar, dan Perlu Telaah Retensi.
+> 2. **📊 Kartu Statistik** — 7 kartu berisi angka ringkasan: Surat Masuk, Surat Keluar, Total Arsip, Arsip Masuk, Arsip Keluar, Arsip Lainnya, dan Perlu Telaah Retensi.
 > 3. **📈 Grafik Trend** — Grafik garis membandingkan volume surat masuk & keluar selama 12 bulan terakhir.
 > 4. **📊 Perbandingan Unit Kerja** — Grafik batang horizontal menampilkan volume surat per unit kerja.
 > 5. **⚡ Tindakan Utama** — Deretan tombol di bawah salam: Catat Surat Masuk, Catat Surat Keluar, Buat Surat Inisiatif, Cari Arsip, Laporan, dan Unggah Massal.
@@ -36,7 +36,7 @@ Bagian paling atas halaman:
 - Menampilkan **nama unit kerja** kamu (bukan kodenya)
 - Untuk **Super Admin**: ada dropdown untuk memilih unit kerja yang datanya ingin dilihat
 
-### 2. Kartu Statistik (6 Kartu)
+### 2. Kartu Statistik (7 Kartu)
 
 Baris kartu yang menampilkan angka-angka ringkasan:
 
@@ -44,9 +44,10 @@ Baris kartu yang menampilkan angka-angka ringkasan:
 |-------|-----|
 | **Surat Masuk** | Total surat masuk + jumlah bulan ini (bulan berjalan menurut WIB) |
 | **Surat Keluar** | Total surat keluar + jumlah bulan ini (bulan berjalan menurut WIB) |
-| **Total Arsip** | Jumlah total arsip |
+| **Total Arsip** | Jumlah total arsip: Arsip Masuk + Arsip Keluar + Arsip Lainnya |
 | **Arsip Masuk** | Jumlah arsip dari surat masuk |
 | **Arsip Keluar** | Jumlah arsip dari surat keluar |
+| **Arsip Lainnya** | Jumlah arsip yang bukan surat (SK, laporan, berkas kegiatan, dan sejenisnya) |
 | **Perlu Telaah Retensi** | Arsip yang ≤ 15 hari menuju batas retensi dan perlu ditelaah. Angka ini bukan keputusan pemusnahan |
 
 ### 3. Analisis Trend Surat
