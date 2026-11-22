@@ -8,7 +8,9 @@ import { arsipService } from '@/services/arsip.service'
 import { suratMasukService } from '@/services/surat-masuk.service'
 import { suratKeluarService } from '@/services/surat-keluar.service'
 
-const ARCHIVE_TYPES = { masuk: 'Surat masuk', keluar: 'Surat keluar' }
+const ARCHIVE_TYPES = { masuk: 'Surat masuk', keluar: 'Surat keluar', lainnya: 'Arsip lainnya' }
+// Hanya arsip surat yang punya dokumen sumber untuk dipratinjau.
+const SOURCE_TYPES = new Set(['masuk', 'keluar'])
 const DISPOSAL_LABELS = {
     active: 'Tidak ada usulan berjalan', proposed_pindah: 'Usulan pemindahan', proposed_musnah: 'Usulan pemusnahan',
     proposed_serah: 'Usulan penyerahan', approved: 'Disetujui', executed: 'Dilaksanakan',
@@ -126,7 +128,7 @@ function ArchivePreviewContent({ archiveId, onRetry }) {
         <section className="min-w-0 space-y-3" aria-label="Berkas digital">
             <h3 className="text-sm font-semibold">Berkas digital</h3>
             {!capabilities.files ? <p className="text-sm text-muted-foreground">Penyimpanan berkas digital belum diaktifkan. Metadata arsip tetap tersedia.</p>
-                : !archive.sourceSuratId || !ARCHIVE_TYPES[archive.jenisArsip]
+                : !archive.sourceSuratId || !SOURCE_TYPES.has(archive.jenisArsip)
                     ? <p className="text-sm text-muted-foreground">Arsip ini belum terhubung dengan surat sumber untuk pratinjau berkas.</p>
                     : <SourceDocument key={`${archive.jenisArsip}:${archive.sourceSuratId}`} archive={archive} />}
         </section>
