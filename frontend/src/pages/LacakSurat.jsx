@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import AlurSuratPanel from '@/components/surat/AlurSuratPanel'
+import { useAuth } from '@/context/AuthContext'
 import { LacakKelompokCard } from '@/components/lacak/LacakKelompokCard'
 import { BerkasRangkaianTab } from '@/components/lacak/BerkasRangkaianTab'
 import { PerluDilengkapiTab } from '@/components/lacak/PerluDilengkapiTab'
@@ -17,6 +18,8 @@ const PILIHAN_TAHUN = Array.from({ length: 10 }, (_, index) => String(TAHUN_SEKA
 const TAB_LAIN = ['berkas', 'perlu-dilengkapi']
 
 export default function LacakSurat() {
+    const { user } = useAuth()
+    const unitSendiriId = user?.unitKerjaId ?? null
     const [searchParams, setSearchParams] = useSearchParams()
     const urlQ = searchParams.get('q') ?? ''
     const rangkaianParam = searchParams.get('rangkaian') ?? ''
@@ -91,7 +94,7 @@ export default function LacakSurat() {
                     </Button>
                 </div>
             )}
-            <AlurSuratPanel key={rangkaianParam} rangkaianId={rangkaianParam} />
+            <AlurSuratPanel key={rangkaianParam} rangkaianId={rangkaianParam} unitSendiriId={unitSendiriId} />
         </li>
     )
 
@@ -103,7 +106,7 @@ export default function LacakSurat() {
         return (
             <li key={item.kunci}>
                 <LacakKelompokCard kelompok={item} terbuka={terbuka} onToggle={() => toggle(item.rangkaian.id)}>
-                    {terbuka && <AlurSuratPanel key={item.rangkaian.id} rangkaianId={item.rangkaian.id} />}
+                    {terbuka && <AlurSuratPanel key={item.rangkaian.id} rangkaianId={item.rangkaian.id} unitSendiriId={unitSendiriId} />}
                 </LacakKelompokCard>
             </li>
         )

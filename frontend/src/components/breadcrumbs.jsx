@@ -56,6 +56,12 @@ export function Breadcrumbs() {
         return uuidRegex.test(str) || (numericRegex.test(str) && str.length > 5);
     };
 
+    // /arsip/detail/<id> dan /surat/masuk/edit/<id>: kata "Detail"/"Edit" sudah menamai halamannya,
+    // jadi id di belakangnya tidak ditampilkan lagi sebagai "Detail" kedua.
+    const crumbs = pathnames
+        .map((value, index) => ({ value, to: `/${pathnames.slice(0, index + 1).join('/')}`, sebelum: pathnames[index - 1] }))
+        .filter(({ value, sebelum }) => !(isId(value) && (sebelum === 'detail' || sebelum === 'edit')));
+
     if (pathnames.length === 0) {
         return null;
     }
@@ -67,9 +73,8 @@ export function Breadcrumbs() {
                 <span className="sr-only md:not-sr-only">Dashboard</span>
             </Link>
 
-            {pathnames.map((value, index) => {
-                const to = `/${pathnames.slice(0, index + 1).join('/')}`;
-                const isLast = index === pathnames.length - 1;
+            {crumbs.map(({ value, to }, index) => {
+                const isLast = index === crumbs.length - 1;
 
                 let name = routeNameMap[value];
 

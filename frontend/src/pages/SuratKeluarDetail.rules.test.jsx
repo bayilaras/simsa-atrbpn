@@ -91,10 +91,13 @@ it('shows multi-line approval notes in the history with their line breaks', asyn
     catatan.forEach((elemen) => expect(elemen).toHaveClass('whitespace-pre-line'))
 })
 
-it('breadcrumb Surat points to an existing list route', async () => {
+// Jejak navigasi global (components/breadcrumbs) sudah tampil di tata letak; halaman ini tidak mengulangnya.
+it('tidak menampilkan jejak navigasi kedua di halaman detail', async () => {
     mocks.getById.mockResolvedValue({ id: 'surat-id', nomorSurat: '006/2026', perihal: 'Remah roti', unitKerjaId: 'unit-a', aksesMelalui: 'owner' })
     render(<MemoryRouter initialEntries={['/surat/keluar/surat-id']}><Routes><Route path="/surat/keluar/:id" element={<SuratKeluarDetail />} /></Routes></MemoryRouter>)
-    expect(await screen.findByRole('link', { name: 'Surat' })).toHaveAttribute('href', '/surat/keluar')
+    expect(await screen.findByRole('heading', { name: 'Detail Surat Keluar' })).toBeInTheDocument()
+    expect(screen.queryByRole('navigation')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Surat' })).toBeNull()
 })
 
 // F2: T19-3/T19-4 -- bolehEdit/bolehArsip digerbang oleh aksiDiizinkan dari

@@ -94,7 +94,9 @@ it('menampilkan status tindak lanjut per penerima dengan instruksi tersamar', as
     expect(tabel.getByText('Dit. PTEP')).toBeInTheDocument()
     expect(tabel.getByText('Penanggung jawab')).toBeInTheDocument()
     expect(tabel.getByText('Terkirim')).toBeInTheDocument()
-    expect(tabel.getByText('2026-10-01')).toBeInTheDocument()
+    // Batas waktu tampil seperti di Kotak Masuk, bukan bentuk simpanannya (2026-10-01).
+    expect(tabel.getByText('01 Okt 2026')).toBeInTheDocument()
+    expect(tabel.queryByText('2026-10-01')).not.toBeInTheDocument()
     expect(tabel.getAllByText('Dikecualikan')).toHaveLength(2)
 })
 

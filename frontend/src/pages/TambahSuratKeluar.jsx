@@ -47,6 +47,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { gantiPesanPeramban } from '@/lib/pesan-peramban';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
@@ -416,6 +417,12 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
     };
 
     // Validate form
+    // Pesan aplikasi menggantikan balon peramban untuk isian tanggal yang dibatasi min/max.
+    const pesanAplikasi = (field, galatUntuk) => gantiPesanPeramban(galatUntuk, (galat) => {
+        setError(galat);
+        setFieldErrors(prev => ({ ...prev, [field]: galat }));
+    });
+
     const validateForm = () => {
         if (!resolvedUnitKerjaId) return { message: 'Pilih unit kerja terlebih dahulu' };
         const archiveSelectionError = validateSuratArchiveSelection(formData);
@@ -787,6 +794,7 @@ export default function TambahSuratKeluar({ mode: modeProp } = {}) {
                                     id="tanggal-surat-keluar"
                                     type="date"
                                     required
+                                    onInvalid={pesanAplikasi('tanggalSurat', v => (v && tahunDiLuarRentang(v) ? PESAN_TAHUN_DI_LUAR_RENTANG : null))}
                                     min={batasTanggal ? TANGGAL_SURAT_MIN : undefined}
                                     max={batasTanggal ? TANGGAL_SURAT_MAKS : undefined}
                                     aria-describedby={tahunBaru ? 'tanggal-surat-keluar-tahun' : undefined}
