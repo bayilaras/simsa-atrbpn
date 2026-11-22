@@ -107,12 +107,39 @@ test('Neon provider defaults are accepted only for the exact platform owner, gra
       ['incomplete table privileges',
         'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public REVOKE SELECT ON TABLES FROM neon_superuser',
         'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public GRANT SELECT ON TABLES TO neon_superuser WITH GRANT OPTION'],
+      ['seven table privileges',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public REVOKE REFERENCES ON TABLES FROM neon_superuser',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public GRANT REFERENCES ON TABLES TO neon_superuser WITH GRANT OPTION'],
       ['missing grant option',
         'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public REVOKE GRANT OPTION FOR USAGE ON SEQUENCES FROM neon_superuser',
         'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public GRANT USAGE ON SEQUENCES TO neon_superuser WITH GRANT OPTION'],
       ['direct table ACL', 'GRANT SELECT ON public.users TO neon_superuser', 'REVOKE SELECT ON public.users FROM neon_superuser'],
     ];
     for (const [name, inject, restore] of cases) {
+      await configure(inject);
+      await assert.rejects(migrateNeonDatabase(client, target),
+        error => error.code === 'P0001' && /unversioned direct ACL remains/.test(error.message), name);
+      await configure(restore);
+    }
+    assert.equal((await migrateNeonDatabase(client, target)).applied, 0);
+
+    // New Neon databases grant six table privileges (no REFERENCES, no
+    // TRIGGER), seen on PostgreSQL 18.7 on 22 November 2026.
+    const sixTablePrivileges = 'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public REVOKE REFERENCES, TRIGGER ON TABLES FROM neon_superuser';
+    await configure(sixTablePrivileges);
+    assert.equal((await migrateNeonDatabase(client, target)).applied, 0);
+    const reducedCases = [
+      ['six-privilege shape without SELECT',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public REVOKE SELECT ON TABLES FROM neon_superuser',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public GRANT SELECT ON TABLES TO neon_superuser WITH GRANT OPTION'],
+      ['six-privilege shape without grant option',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public REVOKE GRANT OPTION FOR MAINTAIN ON TABLES FROM neon_superuser',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public GRANT MAINTAIN ON TABLES TO neon_superuser WITH GRANT OPTION'],
+      ['six-privilege shape for a foreign grantee',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, MAINTAIN ON TABLES TO foreign_grantee WITH GRANT OPTION',
+        'ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public REVOKE ALL ON TABLES FROM foreign_grantee'],
+    ];
+    for (const [name, inject, restore] of reducedCases) {
       await configure(inject);
       await assert.rejects(migrateNeonDatabase(client, target),
         error => error.code === 'P0001' && /unversioned direct ACL remains/.test(error.message), name);

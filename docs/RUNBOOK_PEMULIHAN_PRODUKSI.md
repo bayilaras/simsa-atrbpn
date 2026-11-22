@@ -2,7 +2,7 @@
 
 Runbook ini menghidupkan kembali SIMSA dari backup terenkripsi harian bila database Neon, store Blob privat, atau keduanya hilang atau rusak dan penyedia tidak dapat memulihkannya. Kondisi produksi yang berlaku ada di [kondisi produksi](KONDISI_PRODUKSI.md); cara membuat dan menguji backup ada di [cadangan dan pemulihan](OPERATIONS_RECOVERY.md).
 
-**Apa yang sudah terbukti dan apa yang belum.** Workflow backup harian membuktikan bahwa artefak dapat dibuka dan dipulihkan ke cluster PostgreSQL terpisah, dengan semua hash dokumen cocok. Bagian 4.2–4.4 sudah dilatih pada cluster PostgreSQL 18 lokal yang baru, tanpa peran SIMSA dan dengan pemilik database yang bukan superuser seperti project Neon baru, memakai data sintetis (14 November 2026; rinciannya di [catatan waktu](#catatan-waktu)). Alat unggah ulang dokumen di bagian 5 diuji terhadap PostgreSQL lokal dan store tiruan. Pemulihan ke project Neon baru dan store Blob baru **belum pernah dilatih dengan layanan sungguhan**. Latih sekali ke lingkungan terpisah, lalu isi [catatan waktu](#catatan-waktu).
+**Apa yang sudah terbukti dan apa yang belum.** Workflow backup harian membuktikan bahwa artefak dapat dibuka dan dipulihkan ke cluster PostgreSQL terpisah, dengan semua hash dokumen cocok. Bagian 4.2–4.4 sudah dilatih pada cluster PostgreSQL 18 lokal yang baru, tanpa peran SIMSA dan dengan pemilik database yang bukan superuser seperti project Neon baru, memakai data sintetis (14 November 2026; rinciannya di [catatan waktu](#catatan-waktu)). Alat unggah ulang dokumen di bagian 5 diuji terhadap PostgreSQL lokal dan store tiruan. Bagian 3 dan 4 sudah dilatih pada project Neon terpisah dengan backup produksi (22 November 2026). Bagian 5 pada store Blob baru, serta bagian 6 dan 7, **belum pernah dilatih dengan layanan sungguhan**. Lanjutkan latihannya ke lingkungan terpisah, lalu lengkapi [catatan waktu](#catatan-waktu).
 
 ## 1. Pilih jalur
 
@@ -23,7 +23,7 @@ Nama proyek dan tim Vercel produksi tertanam di kode: alamat frontend dan backen
 2. Umumkan gangguan kepada staf dan minta pencatatan dihentikan sampai layanan dinyatakan pulih. Catatan yang dibuat di sistem lama selama pemulihan tidak ikut pindah.
 3. Siapkan:
    - artefak `simsa-recovery-*` hijau terbaru dari GitHub Actions (disimpan 14 hari), atau salinan `.tar` terbaru dari folder **SIMSA Backup** di Google Drive ([cara memulihkan dari Drive](BACKUP_GOOGLE_DRIVE.md#memulihkan-dari-google-drive)), atau salinan bulanan di media kantor bila ada;
-   - passphrase backup dari pemegangnya;
+   - passphrase backup dari pemegangnya. **Pastikan salinannya benar-benar ada sebelum langkah lain.** GitHub tidak dapat menampilkan ulang isi secret, dan backup yang dibuat sebelum passphrase diganti tidak dapat dibuka dengan passphrase baru. Bila salinannya hilang, ikuti [passphrase hilang](#passphrase-backup-hilang);
    - workstation dengan Node.js 24 dan alat klien PostgreSQL 18 (`pg_restore`), misalnya `C:\Program Files\PostgreSQL\18\bin`;
    - dua checkout kode, masing-masing dengan `npm ci --prefix <folder>\backend --ignore-scripts`:
      - sumber rilis yang journal migrasinya sama dengan backup (lihat [alat rilis](RUNBOOK_KREDENSIAL_DATABASE.md#alat-di-scriptsops)), untuk perintah `neon-database.mjs`, `neon-backup.mjs`, dan `neon-worker.mjs` di bagian 4;
@@ -63,7 +63,10 @@ Folder hasil berisi `database/simsa.dump`, `dokumen/...`, `DAFTAR-DOKUMEN.csv`, 
 ### 4.1 Project dan berkas environment
 
 1. Pemilik project Neon membuat project baru dengan PostgreSQL 18 di region Singapura, lalu database kosong. Namanya boleh sama dengan database lama (variabel GitHub `NEON_BACKUP_EXPECTED_DATABASE`).
+   - **Biarkan kolom nama database kosong di formulir pembuatan project.** Bila diisi, Neon menamai role pemiliknya `<nama database>_owner`, dan alat menolak administrator yang namanya berawalan `simsa_`. Dengan nama bawaan, pemiliknya `neondb_owner`. Database tambahan dibuat sesudahnya di menu **Databases** dengan pemilik `neondb_owner`.
+   - Bila project terlanjur dibuat dengan nama database sendiri: tambahkan role `neondb_owner` di menu **Roles**, lalu buat database baru dengan pemilik role itu.
 2. Salin `deploy/neon/neon-setup.env.example` ke folder privat di luar repositori. Isi untuk project baru: host direct, nama database, administrator `neondb_owner`, dan tiga password acak baru untuk login aplikasi. Tambahkan `NEON_BACKUP_DATABASE_URL` dan `NEON_WORKER_DATABASE_URL` untuk host dan database yang sama, masing-masing dengan password acak baru (minimal 32 karakter, `sslmode=verify-full`). Simpan semua password di password manager.
+   - Password `neondb_owner` dapat dipasang tanpa menyalinnya dari Console: jalankan `psql -h pg.neon.tech`, buka tautan pengesahan yang dicetak di browser yang sudah login ke Neon, pilih project baru, lalu jalankan `ALTER ROLE neondb_owner PASSWORD '<password acak baru>';`. Periksa dulu dengan `SELECT current_user, current_database();` bahwa sesi itu masuk sebagai `neondb_owner`, seperti pada latihan 22 November 2026.
 
 ### 4.2 Peran dan skema kosong
 
@@ -195,17 +198,27 @@ Lakukan berurutan. Layanan baru dinyatakan pulih setelah semua langkah lulus.
 - Rotasi kredensial yang mungkin terpapar selama insiden, mengikuti [runbook kredensial](RUNBOOK_KREDENSIAL_DATABASE.md#rotasi-per-role).
 - Simpan laporan insiden. Folder plaintext hasil langkah 3 dihapus sesuai aturan kantor setelah tidak diperlukan.
 
+## Passphrase backup hilang
+
+Selama secret `BACKUP_ENCRYPTION_PASSPHRASE` masih ada di GitHub, workflow backup tetap berjalan dan uji pulih hariannya tetap hijau. Tetapi tanpa salinan passphrase, artefak dan salinan Drive tidak dapat dibuka di luar GitHub. Keadaan ini tidak terlihat di panel monitoring; satu-satunya cara mengetahuinya adalah mencoba membuka backup (bagian 3).
+
+1. Buat passphrase acak baru, minimal 32 karakter.
+2. **Simpan dulu di dua tempat terpisah** yang bukan laptop operator dan bukan akun Google tempat folder SIMSA Backup berada, misalnya kertas di tempat terkunci dan password manager.
+3. Pasang sebagai secret lewat prompt tersembunyi: `gh secret set BACKUP_ENCRYPTION_PASSPHRASE --env production-recovery --repo <pemilik>/<repo>`.
+4. Jalankan workflow backup secara manual, unduh artefaknya, lalu buka dengan langkah bagian 3 sambil **mengetik passphrase dari salinan yang disimpan**. Bila terbuka, salinan itu terbukti benar.
+5. Catat waktu penggantian di [kondisi produksi](KONDISI_PRODUKSI.md#titik-pulih-dan-jendela-pemulihan). Semua backup sebelum run pada langkah 4 tidak dapat dibuka lagi, termasuk salinan di Drive.
+
 ## Catatan waktu
 
-Kolom "Tercatat" berasal dari catatan di repositori. Kolom "Latihan" diisi pada latihan atau insiden berikutnya.
+Kolom "Tercatat" berasal dari catatan di repositori. Kolom "Latihan" berisi hasil latihan 22 November 2026 pada project Neon terpisah, dengan backup produksi run `45035177225` (19 dokumen, 55 migrasi). Baris yang kosong belum dilatih.
 
 | Langkah | Tercatat | Latihan (isi) |
 |---|---|---|
 | Backup harian penuh: snapshot, enkripsi, pengambilan dokumen, uji pulih terisolasi, dan publikasi status | 2 menit 27 detik (29 Oktober 2026) dan 2 menit 38 detik (31 Oktober 2026), menurut [laporan C60/C58](rilis/HASIL_RILIS_C60_C58_2026-10-29.md) dan [laporan C65/C61](rilis/HASIL_RILIS_C65_C61_2026-10-31.md) | |
 | Uji pulih database lokal dari arsip 560 KB | 31,6 detik (11 September 2026, [catatan riwayat](riwayat/HASIL_PENGUATAN_BACKEND_2026-09-11.md)) | |
 | Bagian 4.2–4.4 pada cluster PostgreSQL 18 lokal yang baru (pemilik database `CREATEROLE`/`CREATEDB`, bukan superuser), data sintetis dari 54 migrasi | 14 November 2026: preflight dan bootstrap 0,2 detik; `pg_restore` dengan daftar tersaring 2,2 detik; `migrate --apply` 0,4 detik (`applied: 0`); `provision` backup dan worker masing-masing 0,1 detik; `verify-runtime` 0,1 detik; login worker dan backup lolos pemeriksaan identitas dan hak; 69 tabel dengan jumlah baris sama dengan sumber. Urutan lama (`provision` sebelum `migrate`) gagal pada pemeriksaan grant tanpa meninggalkan login. Latihan memanggil fungsi yang sama dengan perintah di atas secara langsung, karena perintahnya hanya menerima host Neon. | |
-| Membuka backup (bagian 3) | Belum tercatat | |
-| Project Neon baru sampai `verify-runtime` (bagian 4) | Belum pernah dilatih | |
+| Membuka backup (bagian 3) | Belum tercatat | Unduh artefak 75 MB: 300 detik. Membuka dengan passphrase: 1,5 detik |
+| Project Neon baru sampai `verify-runtime` (bagian 4) | Belum pernah dilatih | Project Neon dibuat dalam sekitar 1 detik. Preflight 2,8 detik; bootstrap 1,5 detik; `pg_restore` dengan daftar tersaring 20,9 detik; `migrate --apply` 1,3 detik (`applied: 0`, 55 migrasi); `provision` backup dan worker masing-masing 1,0 detik; `verify-runtime` 0,7 detik. Hasil: 68 tabel, 3.788 baris. Waktu menyiapkan berkas environment tidak terukur, karena habis untuk dua hambatan yang kini tercatat di bagian 4.1. `migrate --apply` semula gagal pada default ACL Neon yang baru dan lulus setelah pemeriksaannya diperbaiki |
 | Unggah ulang dokumen (bagian 5) | Belum pernah dilatih dengan layanan sungguhan | |
 | Kandidat backend sampai promosi (bagian 6) | Kandidat backend siap dalam sekitar 3 menit (rilis C74, 12 November 2026) | |
 | Verifikasi (bagian 7) | Belum tercatat | |

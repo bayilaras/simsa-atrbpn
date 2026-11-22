@@ -149,6 +149,10 @@ export async function loadNeonGrantPolicy() {
   // Neon PostgreSQL 18 creates these defaults for its own superuser only.
   // They do not apply to objects created by simsa_migrator. Keep every other
   // ACL check, including application-owner defaults, exactly as reviewed.
+  // Two table shapes are reviewed: all eight privileges (the shape reviewed
+  // when production was created in September 2026) and the six that Neon
+  // grants on new databases, observed on PostgreSQL 18.7 on 22 November 2026
+  // (no REFERENCES, no TRIGGER). Any other subset still fails closed.
   const providerDefaultException = `          AND NOT COALESCE((
             n.nspname = 'public'
             AND defaults.defaclobjtype IN ('r', 'S')
@@ -168,10 +172,13 @@ export async function loadNeonGrantPolicy() {
             AND (
                 SELECT pg_catalog.bool_and(provider_privilege.is_grantable)
                    AND pg_catalog.array_agg(provider_privilege.privilege_type ORDER BY provider_privilege.privilege_type)
-                       = CASE defaults.defaclobjtype
-                           WHEN 'r' THEN ARRAY['DELETE','INSERT','MAINTAIN','REFERENCES','SELECT','TRIGGER','TRUNCATE','UPDATE']::text[]
-                           WHEN 'S' THEN ARRAY['SELECT','UPDATE','USAGE']::text[]
-                         END
+                       IN (CASE defaults.defaclobjtype
+                             WHEN 'r' THEN ARRAY['DELETE','INSERT','MAINTAIN','REFERENCES','SELECT','TRIGGER','TRUNCATE','UPDATE']::text[]
+                             WHEN 'S' THEN ARRAY['SELECT','UPDATE','USAGE']::text[]
+                           END,
+                           CASE defaults.defaclobjtype
+                             WHEN 'r' THEN ARRAY['DELETE','INSERT','MAINTAIN','SELECT','TRUNCATE','UPDATE']::text[]
+                           END)
                 FROM pg_catalog.aclexplode(defaults.defaclacl) provider_privilege
                 WHERE provider_privilege.grantee = privilege.grantee
             )
