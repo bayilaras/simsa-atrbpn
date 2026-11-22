@@ -6,6 +6,9 @@ import { tanggalValid, TINGKAT_PERKEMBANGAN_OPTIONS } from './edit-arsip-form'
 
 export const JENIS_ARSIP = Object.freeze(['masuk', 'keluar', 'lainnya'])
 
+/** Label jenis arsip untuk tampilan (detail, laporan). */
+export const LABEL_JENIS_ARSIP = Object.freeze({ masuk: 'Surat Masuk', keluar: 'Surat Keluar', lainnya: 'Arsip Lainnya' })
+
 export const JENIS_ARSIP_OPTIONS = Object.freeze([
     { value: 'masuk', label: 'Arsip surat masuk' },
     { value: 'keluar', label: 'Arsip surat keluar' },

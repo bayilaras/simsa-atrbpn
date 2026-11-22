@@ -100,6 +100,7 @@ interface DashboardStats {
     totalArsip: number;
     arsipMasuk: number;
     arsipKeluar: number;
+    arsipLainnya: number;
     masukBulanIni: number;
     keluarBulanIni: number;
     monthlyTrend: MonthlyStats[];
@@ -154,6 +155,7 @@ export const dashboardService = {
                 total: count(),
                 masuk: sql<number>`count(*) filter (where ${arsip.jenisArsip} = 'masuk')::int`,
                 keluar: sql<number>`count(*) filter (where ${arsip.jenisArsip} = 'keluar')::int`,
+                lainnya: sql<number>`count(*) filter (where ${arsip.jenisArsip} = 'lainnya')::int`,
             }).from(arsip)
                 .where(and(
                     unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined,
@@ -226,6 +228,7 @@ export const dashboardService = {
             totalArsip: archiveCounts?.total || 0,
             arsipMasuk: archiveCounts?.masuk || 0,
             arsipKeluar: archiveCounts?.keluar || 0,
+            arsipLainnya: archiveCounts?.lainnya || 0,
             // Reuse the calendar-month buckets instead of rescanning each table.
             // A local Date converted to UTC used to omit the month's final day.
             masukBulanIni: (masukByMonth.get(currentMonth) || 0) as number,

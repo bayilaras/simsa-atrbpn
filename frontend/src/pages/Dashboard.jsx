@@ -356,6 +356,7 @@ export default function Dashboard() {
         { label: 'Total Arsip', value: stats.totalArsip, change: null, icon: Archive, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-100/50', trend: 'neutral' },
         { label: 'Arsip Masuk', value: stats.arsipMasuk || 0, change: null, icon: Inbox, color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-100/50', trend: 'neutral' },
         { label: 'Arsip Keluar', value: stats.arsipKeluar || 0, change: null, icon: ArrowUpRight, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-100/50', trend: 'neutral' },
+        { label: 'Arsip Lainnya', value: stats.arsipLainnya || 0, change: null, icon: FolderArchive, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-100/50', trend: 'neutral' },
         { label: 'Perlu Telaah Retensi', value: expiringByUrgency.critical.length, change: null, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-100/50', trend: 'neutral' },
     ] : [];
 
@@ -488,7 +489,7 @@ export default function Dashboard() {
                         )}
                     </section>}
                     {/* Stats Grid */}
-                    <div className="grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
+                    <div className="grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7">
                         {statCards.map((stat, i) => (
                             <Card key={stat.label} className="min-w-0 card-hover border-transparent shadow-sm hover:shadow-lg transition-all" style={{ animationDelay: `${i * 80}ms` }}>
                                 <CardContent className="p-4 sm:p-5 lg:p-6">
