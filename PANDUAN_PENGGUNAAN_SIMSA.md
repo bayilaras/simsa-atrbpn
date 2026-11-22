@@ -249,7 +249,7 @@ Setelah berhasil login, Anda akan diarahkan ke halaman **Dashboard** yang menamp
 | Komponen | Deskripsi |
 |----------|-----------|
 | **Bagian Salam** | Menampilkan salam, tanggal hari ini, nama unit kerja Anda (bukan kodenya), dan pemilih Unit Kerja (Super Admin). Angka "bulan ini" mengikuti WIB |
-| **Kartu Statistik** | 6 kartu ringkasan: Surat Masuk, Surat Keluar, Total Arsip, Arsip Masuk, Arsip Keluar, Perlu Telaah Retensi |
+| **Kartu Statistik** | 7 kartu ringkasan: Surat Masuk, Surat Keluar, Total Arsip, Arsip Masuk, Arsip Keluar, Arsip Lainnya, Perlu Telaah Retensi |
 | **Analisis Trend** | Grafik garis perbandingan volume surat masuk & keluar dalam 12 bulan terakhir |
 | **Perbandingan Unit Kerja** | Grafik batang horizontal volume surat per unit kerja bulan ini |
 | **Tindakan Utama** | Tombol di bawah salam: Catat Surat Masuk, Catat Surat Keluar, Buat Surat Inisiatif (ketiganya untuk admin), Cari Arsip, Laporan, dan Unggah Massal (hanya muncul bila modul Unggah Massal & OCR diaktifkan operator) |
