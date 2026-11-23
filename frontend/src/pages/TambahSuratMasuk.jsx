@@ -44,7 +44,7 @@ import { useLacakSearch } from '@/hooks/use-lacak-search';
 import { useDisposisiOpsi } from '@/hooks/use-disposisi-opsi';
 import { ReferensiSection } from '@/components/surat-keluar/ReferensiSection';
 import { DisposisiRegistrasiSection } from '@/components/surat-masuk/DisposisiRegistrasiSection';
-import { PESAN_TERKENDALI, hariIniJakarta, isSifatTerkendali } from '@/lib/tindak-lanjut';
+import { PESAN_TERKENDALI, galatBatasWaktu, hariIniJakarta, isSifatTerkendali } from '@/lib/tindak-lanjut';
 import { PETUNJUK_TANGGAL_DITERIMA, galatTanggalDiterima } from '@/lib/tanggal-diterima';
 import { gantiPesanPeramban } from '@/lib/pesan-peramban';
 import { PESAN_KELAS_TERBATAS_PERAN, PESAN_SURAT_MASUK_PERLU_PERSETUJUAN, adaKelasTersembunyi, bolehMemilihKelas, normalisasiKelas, saringOpsiKelas } from '@/lib/kelas-keamanan';
@@ -487,6 +487,8 @@ export default function TambahSuratMasuk() {
             if (targets.length > 0 && isSifatTerkendali(sifatSurat) && !jalurAksesTerkendali) {
                 return { field: 'disposisi', message: PESAN_TERKENDALI };
             }
+            const galatBatas = targets.length > 0 ? galatBatasWaktu(formData.disposisiBatasWaktu) : null;
+            if (galatBatas) return { field: 'disposisiBatasWaktu', message: galatBatas };
         }
         return null;
     };
@@ -1123,6 +1125,8 @@ export default function TambahSuratMasuk() {
                                     onPenanggungJawab={(unitId) => handleChange('disposisiPj', unitId)}
                                     batasWaktu={formData.disposisiBatasWaktu}
                                     onBatasWaktu={(value) => handleChange('disposisiBatasWaktu', value)}
+                                    errorBatasWaktu={fieldErrors.disposisiBatasWaktu}
+                                    onBatasWaktuInvalid={pesanAplikasi('disposisiBatasWaktu', v => galatBatasWaktu(v))}
                                     instruksi={formData.disposisiInstruksi}
                                     onInstruksi={(value) => handleChange('disposisiInstruksi', value)}
                                     opsiInstruksi={opsiInstruksi}
