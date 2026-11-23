@@ -140,7 +140,7 @@ Seperti arsip hasil impor, klasifikasi dan JRA arsip ini belum ditetapkan; cocok
 
 ## Mengubah Metadata Arsip
 
-Bila ada data berkas yang salah catat, admin yang berwenang atas unit arsip dapat memperbaikinya dari halaman detail:
+Bila ada data berkas yang salah catat, admin yang berwenang atas unit arsip dapat memperbaikinya dari halaman detail. Pengguna lain melaporkannya kepada admin unit; jangan membuat rekod pengganti tanpa pemeriksaan. Langkah bagi admin:
 
 1. Klik **Ubah Metadata** di bagian atas halaman atau di kartu **Aksi Cepat**.
 2. Perbaiki isian yang salah: Nomor Berkas, Unit Pengolah, Uraian Berkas, Kurun Waktu, Nomor Item, Tingkat Perkembangan, Uraian Item, Tanggal Arsip, Jumlah, Media, No. Filing Cabinet, No. Laci, No. Folder, Lokasi Simpan, Klasifikasi Keamanan, Penanggung Jawab, atau Keterangan.

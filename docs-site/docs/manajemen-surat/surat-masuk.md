@@ -154,13 +154,15 @@ Halaman **Detail Surat Masuk** menampilkan informasi surat, pratinjau berkas, pa
 
 Tombol yang sama juga ada di kartu **Aksi Cepat** di sisi kanan. Menghapus surat dilakukan dari daftar, bukan dari halaman detail.
 
+Pada menu **Tindak Lanjut**, **Buat Nota Dinas** bekerja seperti **Saya Balas**: form **Tambah Surat Keluar** terbuka dengan **Nomor Referensi** surat asal sudah terisi, tetapi naskahnya berjenis Nota Dinas. **Buat ND Penjelas** hanya tampil pada surat keluar berjenis Keputusan. **Tautkan ke Rangkaian** dijelaskan di [Rangkaian Surat](rangkaian-surat.md#menautkan-surat-ke-rangkaian).
+
 ### Lembar Disposisi
 
 **Cetak Disposisi** membuka Lembar Disposisi di tab baru: identitas surat (No. Agenda, tanggal diterima, nomor dan tanggal surat, asal, perihal, sifat), daftar unit tujuan disposisi yang sudah dikirim lewat SIMSA beserta instruksi, batas waktu, tembusan, dan statusnya, ditambah baris kosong, kotak **Catatan / instruksi pimpinan**, dan kotak paraf untuk diisi tangan. Klik **Cetak** lalu pilih printer atau *Simpan sebagai PDF*. Surat Terbatas ke atas hanya dapat dicetak setelah akses disetujui.
 
 ### Jika Tampil "Perlu persetujuan akses"
 
-Surat berkelas Terbatas, Rahasia, atau Sangat Rahasia tetap tampil di daftar, tetapi isinya baru dapat dibuka setelah permohonan akses kamu disetujui Super Admin. Halaman detail lalu menampilkan judul **Perlu persetujuan akses** beserta nomor dan perihal surat.
+Surat berkelas Terbatas tetap tampil di daftar, tetapi isinya baru dapat dibuka setelah permohonan akses kamu disetujui Super Admin. Surat Rahasia atau Sangat Rahasia tidak tampil bagi Admin Unit Kerja, Admin Dirjen, atau Admin Sesditjen tanpa persetujuan akses rekod. Halaman detail lalu menampilkan judul **Perlu persetujuan akses** beserta nomor dan perihal surat.
 
 1. Klik **Minta Akses**. Halaman permohonan terbuka dengan surat itu sudah terpilih.
 2. Pilih mode akses, tulis tujuan kedinasan, lalu kirim.
