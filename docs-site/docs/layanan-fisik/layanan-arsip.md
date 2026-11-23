@@ -15,6 +15,11 @@ Layanan arsip dipakai untuk **mencatat permohonan layanan** atas arsip yang suda
 ## Mengajukan Layanan
 
 ### Langkah 1: Buka Menu Layanan Arsip
+
+[![Halaman Layanan Arsip](/img/panduan/layanan-arsip.png)](/img/panduan/layanan-arsip.png)
+
+*Contoh tampilan: daftar permohonan penggandaan dan legalisasi beserta statusnya.*
+
 Di sidebar, klik **Layanan Arsip** di bawah **Layanan & Fisik**.
 
 ### Langkah 2: Klik "Buat Permohonan"

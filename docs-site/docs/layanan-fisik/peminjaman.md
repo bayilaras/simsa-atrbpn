@@ -25,12 +25,21 @@ Fitur ini untuk **mencatat sirkulasi arsip fisik** dari tempat penyimpanan. Admi
 ## Cara Mencatat Peminjaman
 
 ### Langkah 1: Buka Menu Peminjaman
+
+[![Halaman Peminjaman Arsip](/img/panduan/peminjaman.png)](/img/panduan/peminjaman.png)
+
+*Contoh tampilan: daftar peminjaman dengan tombol Perpanjang dan Kembalikan di tiap baris.*
+
 Di sidebar, klik **Peminjaman** di bawah **Layanan & Fisik**.
 
 ### Langkah 2: Klik "Catat Peminjaman"
 Klik tombol di pojok kanan atas. Super Admin memilih unit kerja terlebih dahulu.
 
 ### Langkah 3: Isi Form
+
+[![Dialog Catat Peminjaman Baru](/img/panduan/peminjaman-catat.png)](/img/panduan/peminjaman-catat.png)
+
+*Contoh tampilan: dialog Catat Peminjaman Baru.*
 
 | Kolom | Keterangan |
 |-------|------------|

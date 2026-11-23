@@ -18,6 +18,10 @@ Daftar kode klasifikasi yang digunakan untuk **mengelompokkan arsip** berdasarka
 
 ### Melihat Daftar Klasifikasi
 
+[![Halaman Klasifikasi Arsip](/img/panduan/master-klasifikasi.png)](/img/panduan/master-klasifikasi.png)
+
+*Contoh tampilan: halaman Klasifikasi Arsip.*
+
 1. Di sidebar, klik **Master Data** > **Klasifikasi Arsip**.
 2. Lihat tabel klasifikasi:
 
@@ -36,6 +40,10 @@ Versi aktif tidak dapat diedit atau dihapus. Buka **Versi Aturan**, buat draft d
 ---
 
 ## 2. Versi Aturan
+
+[![Halaman Versi Aturan Kearsipan](/img/panduan/versi-aturan.png)](/img/panduan/versi-aturan.png)
+
+*Contoh tampilan: halaman Versi Aturan Kearsipan.*
 
 Klasifikasi arsip dan Jadwal Retensi Arsip (JRA) disimpan sebagai edisi aturan berversi. Di sidebar, klik **Master Data** > **Versi Aturan** untuk membuat draft, memvalidasi, dan mengaktifkan edisi baru. Langkah lengkapnya ada di [Versi Aturan Klasifikasi dan JRA](versi-aturan.md).
 

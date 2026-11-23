@@ -23,6 +23,10 @@ Di sidebar, klik **Audit Log** di bawah **Administrasi**.
 
 ### Langkah 2: Baca Daftar Aktivitas
 
+[![Halaman Audit Log](/img/panduan/audit-log.png)](/img/panduan/audit-log.png)
+
+*Contoh tampilan: Audit Log mencatat siapa melakukan apa dan kapan.*
+
 :::tip Tampilan Audit Log
 Setiap aktivitas tampil sebagai satu baris berisi:
 

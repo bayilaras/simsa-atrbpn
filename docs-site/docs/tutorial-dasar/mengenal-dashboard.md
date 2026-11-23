@@ -6,6 +6,10 @@ Setelah berhasil login, halaman pertama yang kamu lihat adalah **Dashboard**. In
 
 ## Tampilan Dashboard
 
+[![Dashboard SIMSA untuk Admin Unit Kerja](/img/panduan/dashboard.png)](/img/panduan/dashboard.png)
+
+*Contoh tampilan: Dashboard seorang Admin Unit Kerja, dari salam dan tombol tindakan utama sampai kartu statistik dan grafik trend surat.*
+
 :::tip Tampilan Dashboard
 Dashboard SIMSA terdiri dari beberapa bagian utama (dari atas ke bawah):
 
@@ -178,6 +182,10 @@ Tidak perlu refresh browser secara manual!
 ---
 
 ## Tab Pengawasan (Super Admin)
+
+[![Dashboard SIMSA untuk Super Admin](/img/panduan/dashboard-super-admin.png)](/img/panduan/dashboard-super-admin.png)
+
+*Contoh tampilan: Dashboard Super Admin memiliki pilihan unit kerja dan tab Pengawasan di samping Ringkasan.*
 
 Dashboard memiliki tab **Ringkasan**. Jika kamu **Super Admin**, ada tab tambahan **"Pengawasan"** yang menampilkan ringkasan khusus untuk mengawasi aktivitas seluruh unit kerja.
 

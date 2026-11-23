@@ -23,6 +23,10 @@ Ada perubahan pada sesi, kata sandi, nomor agenda, impor, dan beberapa layar. [B
 
 ---
 
+:::note Tentang gambar contoh
+Gambar pada panduan ini diambil dari SIMSA yang diisi **data contoh**. Nama orang, nomor surat, dan isi surat di dalamnya rekaan, bukan surat asli. Klik gambar untuk membukanya dalam ukuran penuh.
+:::
+
 ## 🚀 Mulai dari Sini
 
 <div className="feature-grid">

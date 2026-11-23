@@ -4,6 +4,14 @@ Hanya pengguna aktif dengan peran **Super Admin** dapat membuka **Manajemen Peng
 
 ## Membuat akun
 
+[![Halaman Manajemen Pengguna](/img/panduan/manajemen-pengguna.png)](/img/panduan/manajemen-pengguna.png)
+
+*Contoh tampilan: daftar pengguna dengan peran, unit kerja, dan status akun.*
+
+[![Dialog Tambah Pengguna Baru](/img/panduan/manajemen-pengguna-tambah.png)](/img/panduan/manajemen-pengguna-tambah.png)
+
+*Contoh tampilan: dialog Tambah Pengguna Baru.*
+
 1. Buka **Administrasi → Manajemen Pengguna**, lalu **Tambah Pengguna**.
 2. Isi nama, email unik, peran dan unit kerja yang sesuai penugasan. Jabatan dan NIP membantu identifikasi pejabat; mengisinya tidak membuat tanda tangan elektronik.
 3. Untuk akun email/kata sandi, isi **Kata sandi**: minimal 12 karakter, tidak memuat nama atau bagian depan email pengguna, dan bukan kata sandi yang umum. Isian ini boleh dikosongkan; akun tanpa kata sandi hanya dapat masuk dengan Google. Berikan kata sandi awal melalui saluran internal yang disetujui, lalu minta pegawai menggantinya di [Pengaturan → Profil → Ubah Kata Sandi](settings.md#ubah-kata-sandi) setelah masuk pertama kali.

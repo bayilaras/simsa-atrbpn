@@ -18,6 +18,11 @@ Menu ini tersedia bagi Super Admin dan Admin Unit Kerja, dan hanya muncul bila p
 Di sidebar, klik **Arsip Elektronik** di bawah **Media & Autentikasi**.
 
 ### Langkah 2: Lihat Daftar
+
+[![Halaman Arsip Elektronik](/img/panduan/arsip-elektronik.png)](/img/panduan/arsip-elektronik.png)
+
+*Contoh tampilan: halaman Arsip Elektronik sebelum ada metadata yang dicatat.*
+
 Halaman memiliki tiga tab: **Daftar Arsip Elektronik**, **Verifikasi**, dan **Statistik**. Tabel daftar menampilkan:
 
 | Kolom | Keterangan |

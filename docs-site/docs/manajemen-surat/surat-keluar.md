@@ -13,6 +13,10 @@ Panduan lengkap cara mengelola surat keluar di SIMSA.
 
 ### Langkah 2: Lihat Daftar Surat
 
+[![Halaman daftar Surat Keluar](/img/panduan/surat-keluar-daftar.png)](/img/panduan/surat-keluar-daftar.png)
+
+*Contoh tampilan: daftar Surat Keluar dengan status persetujuan dan arsip di tiap baris.*
+
 Tabel daftar surat keluar mirip dengan surat masuk, dengan perbedaan:
 - Kolom **"Perihal & Tujuan"** menampilkan penerima surat (Kepada), bukan pengirim
 - Kolom **Status** menampilkan status persetujuan: **Draft**, **Menunggu Persetujuan**, **Disetujui**, atau **Perlu Perbaikan** (surat yang ditolak penyetuju). Surat yang sudah diarsipkan bertanda **Arsip**
@@ -36,6 +40,10 @@ Di pojok kanan atas, pilih salah satu:
 Kolom ekspor **Asal Naskah** mencatat pilihan ini.
 
 ### Langkah 2: Isi Form Surat Keluar
+
+[![Form Tambah Surat Keluar yang sudah diisi](/img/panduan/surat-keluar-tambah.png)](/img/panduan/surat-keluar-tambah.png)
+
+*Contoh tampilan: form Tambah Surat Keluar. Nomor surat dibiarkan kosong agar terisi otomatis.*
 
 | Kolom | Keterangan | Wajib |
 |-------|-----------|:-----:|
@@ -126,6 +134,10 @@ Untuk panduan lengkap, lihat bagian [Membalas Surat Masuk](surat-masuk.md#membal
 ---
 
 ## Melihat Detail Surat Keluar
+
+[![Halaman Detail Surat Keluar](/img/panduan/surat-keluar-detail.png)](/img/panduan/surat-keluar-detail.png)
+
+*Contoh tampilan: detail surat keluar yang sudah disetujui dan diarsipkan.*
 
 1. Pada baris surat, klik menu tiga titik (⋯), lalu pilih **Detail & File**.
 2. Lihat informasi lengkap surat, berkas, panel **Alur Surat**, dan kartu **Tunjuk Silang**.

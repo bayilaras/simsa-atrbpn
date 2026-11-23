@@ -32,6 +32,10 @@ Dialog **Disposisi ke Direktorat** terbuka dan menampilkan nomor serta perihal s
 
 ### Langkah 2: Pilih Tujuan
 
+[![Dialog Disposisi ke Direktorat](/img/panduan/surat-masuk-disposisi.png)](/img/panduan/surat-masuk-disposisi.png)
+
+*Contoh tampilan: dialog Disposisi ke Direktorat dengan pilihan unit tujuan, batas waktu, dan instruksi.*
+
 1. Centang satu atau beberapa **Unit tujuan**.
 2. Bila perlu, pilih satu unit sebagai **Penanggung jawab (Unit Pengolah)**.
 3. Isi **Batas waktu** bila ada tenggat.
@@ -55,6 +59,14 @@ Surat akan muncul di **Kotak Masuk** halaman Distribusi unit kerja tujuan. Dispo
 1. Di sidebar, klik menu **Distribusi**. Halaman **Distribusi Surat** terbuka.
 
 ### Langkah 2: Pilih Tab
+
+[![Kotak Masuk pada halaman Distribusi Surat](/img/panduan/distribusi-kotak-masuk.png)](/img/panduan/distribusi-kotak-masuk.png)
+
+*Contoh tampilan: Kotak Masuk unit penerima. Tombol di kolom Aksi dipakai untuk menerima atau menolak disposisi.*
+
+[![Kotak Keluar pada halaman Distribusi Surat](/img/panduan/distribusi-kotak-keluar.png)](/img/panduan/distribusi-kotak-keluar.png)
+
+*Contoh tampilan: Kotak Keluar unit pengirim memperlihatkan status tiap disposisi yang dikirim.*
 
 - **Kotak Masuk** — surat yang didistribusikan kepada unit kamu dan perlu ditindaklanjuti. Centang **Lewat batas waktu** untuk hanya menampilkan yang terlambat.
 - **Kotak Keluar** — surat yang kamu distribusikan ke unit lain.
@@ -82,6 +94,10 @@ Gunakan tombol ikon di kolom **Aksi** pada Kotak Masuk:
 | **Ditolak** | Dikembalikan ke pengirim |
 
 Surat yang isinya belum boleh kamu baca tampil sebagai **Dikecualikan**.
+
+[![Kartu Alur Surat pada detail surat masuk](/img/panduan/surat-masuk-alur.png)](/img/panduan/surat-masuk-alur.png)
+
+*Contoh tampilan: kartu Alur Surat pada detail surat masuk memperlihatkan status tindak lanjut tiap unit penerima.*
 
 ---
 

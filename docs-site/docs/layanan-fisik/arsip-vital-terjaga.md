@@ -18,6 +18,10 @@ Arsip vital adalah arsip yang **sangat penting** bagi kelangsungan organisasi. K
 
 ### Cara Mengelola:
 
+[![Halaman Arsip Vital](/img/panduan/arsip-vital.png)](/img/panduan/arsip-vital.png)
+
+*Contoh tampilan: daftar arsip vital dengan kategori, tingkat kekritisan, dan status proteksi.*
+
 1. Di sidebar, klik **Arsip Vital** di bawah **Layanan & Fisik**. Super Admin memilih unit kerja terlebih dahulu.
 2. Lihat tab **Daftar Arsip Vital**. Kartu di atasnya menunjukkan Total Arsip Vital, Perlu Review, dan Belum Diproteksi.
 3. Klik **"Tetapkan Arsip Vital"** untuk menetapkan arsip sebagai vital.

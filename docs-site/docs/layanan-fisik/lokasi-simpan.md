@@ -21,6 +21,10 @@ Daftar ini dipakai saat mengarsipkan surat dan saat mengubah metadata arsip, seh
 
 ## Melihat Daftar Lokasi
 
+[![Halaman Lokasi Penyimpanan](/img/panduan/lokasi-simpan.png)](/img/panduan/lokasi-simpan.png)
+
+*Contoh tampilan: susunan lokasi dari gedung, ruang, rak, sampai boks.*
+
 1. Di sidebar, klik **Lokasi Simpan** di bawah **Layanan & Fisik**. Halaman **Lokasi Penyimpanan** terbuka. Super Admin memilih unit kerja terlebih dahulu.
 2. Lokasi tampil sebagai susunan bertingkat. Klik sebuah lokasi untuk membuka atau menutup sub-lokasinya, atau cari dengan kode atau nama lokasi.
 
@@ -64,6 +68,10 @@ Lokasi yang masih ditautkan arsip tidak dapat dihapus:
 ---
 
 ## QR Code dan Detail Lokasi
+
+[![Halaman detail lokasi simpan](/img/panduan/lokasi-simpan-detail.png)](/img/panduan/lokasi-simpan-detail.png)
+
+*Contoh tampilan: detail sebuah boks dengan jumlah arsip di dalamnya.*
 
 Ikon **QR Code** pada baris lokasi menampilkan kode yang dapat diunduh lewat **Unduh Kode QR** dan ditempel pada rak atau boks. Memindai kode itu membuka halaman detail lokasi.
 

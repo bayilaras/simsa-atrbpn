@@ -12,6 +12,10 @@ Halaman ini menampilkan **arsip yang status retensinya perlu perhatian**: yang a
 
 ## Melihat Daftar Retensi
 
+[![Halaman Manajemen Retensi Arsip](/img/panduan/manajemen-retensi.png)](/img/panduan/manajemen-retensi.png)
+
+*Contoh tampilan: Manajemen Retensi dengan kartu ringkasan, legal hold, dan daftar kandidat penyusutan.*
+
 1. Di sidebar, klik **Manajemen Retensi**.
 2. Baca kartu **Notifikasi Penyusutan** di bagian atas.
 3. Lihat **Daftar Kandidat Penyusutan** di bawahnya. Daftar dapat disaring menurut status dan hasil akhir (Musnah, Permanen, atau Dinilai Kembali).

@@ -15,6 +15,10 @@ Panduan lengkap cara mengelola surat masuk di SIMSA.
 
 Kamu akan melihat tabel daftar surat masuk:
 
+[![Halaman daftar Surat Masuk](/img/panduan/surat-masuk-daftar.png)](/img/panduan/surat-masuk-daftar.png)
+
+*Contoh tampilan: daftar Surat Masuk dengan tombol di kanan atas, empat kartu ringkasan, kotak pencarian, dan tabel surat.*
+
 :::tip Tampilan Halaman Surat Masuk
 Halaman ini menampilkan:
 - **Header** dengan judul "Surat Masuk" dan deretan tombol: **Refresh**, **Impor dari Google Sheets**, **Impor CSV/XLSX**, **Export**, dan **Surat Baru**. Tombol impor dan **Surat Baru** hanya tampil bagi admin; Super Admin juga melihat pilihan **Unit kerja**
@@ -29,6 +33,10 @@ Kolom **Status** berisi **Belum Diproses** atau **Sudah Dibalas**. Surat yang su
 Super Admin yang memilih **Semua Unit Kerja** melihat kolom tambahan **Unit Kerja** berisi nama unit. Super Admin juga melihat tab **Daftar Surat** dan **Surat Terhapus** di atas tabel; lihat [Memulihkan Surat yang Terhapus](#memulihkan-surat-yang-terhapus).
 
 ### Fitur di Halaman Ini:
+
+[![Panel Filter pada daftar Surat Masuk](/img/panduan/surat-masuk-filter.png)](/img/panduan/surat-masuk-filter.png)
+
+*Contoh tampilan: tombol Filter membuka pilihan tahun, jenis, status, sifat, rentang tanggal, dan tujuan disposisi.*
 
 | Fitur | Keterangan |
 |-------|------------|
@@ -67,6 +75,10 @@ Form terbagi menjadi beberapa bagian:
 | **Klasifikasi** | Pasangan klasifikasi arsip dan JRA. Pilihan ini diteruskan saat surat diarsipkan | ❌ |
 | **Link Dokumen** | Alamat lengkap dokumen, misalnya `https://contoh.go.id/berkas` | ❌ |
 | **Upload Berkas** | Hasil pindai surat dalam bentuk PDF, paling besar 10 MiB | ❌ |
+
+[![Form Tambah Surat Masuk yang sudah diisi](/img/panduan/surat-masuk-tambah.png)](/img/panduan/surat-masuk-tambah.png)
+
+*Contoh tampilan: form Tambah Surat Masuk yang sudah diisi. Tombol Batal dan Simpan ada di bagian bawah.*
 
 :::tip Tampilan Form Tambah Surat Masuk
 Form ini berisi lima bagian bernomor:
@@ -125,6 +137,10 @@ Pada baris surat, klik **menu tiga titik** (⋯) di kolom Aksi, lalu pilih **Det
 
 ### Langkah 2: Lihat Detail
 
+[![Halaman Detail Surat Masuk](/img/panduan/surat-masuk-detail.png)](/img/panduan/surat-masuk-detail.png)
+
+*Contoh tampilan: detail surat masuk. Tombol aksi ada di pita atas dan di kotak Aksi Cepat sebelah kanan.*
+
 Halaman **Detail Surat Masuk** menampilkan informasi surat, pratinjau berkas, panel **Alur Surat**, kartu **Tunjuk Silang**, serta kartu **Status** (Sudah Dibalas / Belum Dibalas dan Sudah Diarsipkan / Belum Diarsipkan).
 
 ### Tombol Aksi di Detail:
@@ -155,6 +171,10 @@ Memilih **Edit Surat** pada surat seperti ini juga membawa kamu ke halaman yang 
 ---
 
 ## Membalas Surat Masuk
+
+[![Menu Tindak Lanjut pada detail surat masuk](/img/panduan/surat-masuk-tindak-lanjut.png)](/img/panduan/surat-masuk-tindak-lanjut.png)
+
+*Contoh tampilan: menu Tindak Lanjut berisi Saya Balas, Buat Nota Dinas, Disposisi ke Direktorat, dan Tautkan ke Rangkaian.*
 
 :::tip Tindak Lanjut
 Menu **Tindak Lanjut** tersedia di header halaman detail dan di kartu **Aksi Cepat** di sisi kanan.
