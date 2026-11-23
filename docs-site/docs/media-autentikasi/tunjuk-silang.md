@@ -20,6 +20,11 @@ Menu ini tersedia bagi Super Admin dan Admin Unit Kerja.
 ## Cara Membuat Tunjuk Silang
 
 ### Langkah 1: Buka Menu
+
+[![Halaman Tunjuk Silang](/img/panduan/tunjuk-silang.png)](/img/panduan/tunjuk-silang.png)
+
+*Contoh tampilan: halaman Tunjuk Silang dengan pilihan dokumen yang akan ditelusuri.*
+
 Di sidebar, klik **Tunjuk Silang** di bawah **Media & Autentikasi**.
 
 ### Langkah 2: Buat Tunjuk Silang Baru

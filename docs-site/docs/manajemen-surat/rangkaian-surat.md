@@ -3,6 +3,11 @@
 Rangkaian Surat menyatukan surat masuk, disposisi, tindak lanjut, dan surat keluar dalam satu berkas naskah berkode `RS-YYYY-NNNNNN`.
 
 ## Melacak Rangkaian
+
+[![Halaman Lacak Surat dengan hasil pencarian](/img/panduan/lacak-surat.png)](/img/panduan/lacak-surat.png)
+
+*Contoh tampilan: hasil Lacak Surat dikelompokkan per rangkaian.*
+
 1. Buka **Surat ▸ Lacak Surat**.
 2. Ketik nomor atau perihal (minimal 3 karakter).
 3. Klik kartu rangkaian untuk melihat panel **Alur Surat**.

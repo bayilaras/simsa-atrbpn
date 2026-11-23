@@ -35,6 +35,10 @@ Alur belajar yang disarankan untuk hari pertama:
 
 ### Login email dan kata sandi
 
+[![Halaman masuk SIMSA](/img/panduan/login.png)](/img/panduan/login.png)
+
+*Contoh tampilan: halaman masuk SIMSA.*
+
 1. Buka alamat aplikasi yang diberikan operator.
 2. Isi **Email kedinasan** dan **Kata sandi**, lalu klik **Masuk**.
 3. Setelah masuk, periksa peran dan unit kerja Anda sebelum mencatat data.
@@ -74,6 +78,10 @@ Bila masuk dengan Google ditolak, halaman masuk menampilkan sebabnya:
 
 ### Sidebar
 
+<a href="/img/panduan/sidebar.png" target="_blank" rel="noopener"><img src="/img/panduan/sidebar.png" alt="Sidebar SIMSA dengan semua kelompok menu terbuka" width="262" /></a>
+
+*Contoh tampilan: sidebar seorang Admin Unit Kerja dengan semua kelompok menu dibuka.*
+
 Menu dikelompokkan menjadi **Utama**, **Manajemen Surat**, **Siklus Hidup Arsip**, **Layanan & Fisik**, **Media & Autentikasi**, dan **Administrasi**. Menu yang muncul mengikuti role. Tidak munculnya sebuah menu biasanya berarti role Anda tidak memiliki akses, bukan kerusakan aplikasi.
 
 - Klik ikon menu di kiri atas untuk membuka atau melipat sidebar.
@@ -83,6 +91,10 @@ Menu dikelompokkan menjadi **Utama**, **Manajemen Surat**, **Siklus Hidup Arsip*
 
 ### Header
 
+[![Header SIMSA dengan menu akun terbuka](/img/panduan/header-menu-akun.png)](/img/panduan/header-menu-akun.png)
+
+*Contoh tampilan: header dengan nama unit kerja, kotak pencarian, notifikasi, dan menu akun.*
+
 - **Unit kerja:** nama unit kerja akun Anda tampil di sebelah kiri kotak pencarian (pada layar yang cukup lebar).
 - **Pencarian:** mencari surat masuk, surat keluar, arsip, dan dosir.
 - **Atur tampilan:** pilih tema **Terang**, **Gelap**, atau **Ikuti perangkat**, serta **Ukuran teks** **Standar** atau **Besar**.
@@ -91,6 +103,10 @@ Menu dikelompokkan menjadi **Utama**, **Manajemen Surat**, **Siklus Hidup Arsip*
 - **Tanda operasional (khusus Super Admin):** tanda **Operasional: perlu perhatian** atau **Operasional: gagal** muncul bila ada pemeriksaan di Monitoring Operasional yang tidak sehat; klik untuk membuka halamannya.
 
 ### Pencarian global
+
+[![Pencarian global dengan hasil](/img/panduan/header-pencarian.png)](/img/panduan/header-pencarian.png)
+
+*Contoh tampilan: pencarian global menampilkan surat, arsip, dan dosir yang cocok dengan kata kunci.*
 
 1. Klik kotak/ikon pencarian pada header, atau tekan `Ctrl+K` di Windows/Linux dan `Command+K` di macOS.
 2. Ketik minimal dua karakter dari nomor, perihal, uraian, atau kata kunci.
@@ -166,6 +182,14 @@ Prinsip yang harus selalu dipakai:
 
 ## 5. Dashboard dan notifikasi
 
+[![Dashboard SIMSA untuk Admin Unit Kerja](/img/panduan/dashboard.png)](/img/panduan/dashboard.png)
+
+*Contoh tampilan: Dashboard seorang Admin Unit Kerja.*
+
+[![Panel Notifikasi](/img/panduan/header-notifikasi.png)](/img/panduan/header-notifikasi.png)
+
+*Contoh tampilan: panel Notifikasi yang terbuka dari ikon lonceng.*
+
 Dashboard merangkum jumlah surat, arsip, tren bulanan, aktivitas terbaru, arsip yang mendekati batas retensi, dan widget pengelolaan arsip. Super Admin dapat memilih **Semua Unit Kerja** atau unit tertentu dan membuka tab **Pengawasan**.
 
 Bagi admin, bagian **Perlu ditindaklanjuti** menampilkan baris *N surat keluar menunggu keputusan Anda* dengan tombol **Tinjau surat yang menunggu** bila ada surat keluar yang diajukan kepada Anda sebagai penyetuju.
@@ -182,6 +206,14 @@ Pada ikon lonceng:
 ## 6. Surat masuk, surat keluar, dan distribusi
 
 ### Surat masuk
+
+[![Halaman daftar Surat Masuk](/img/panduan/surat-masuk-daftar.png)](/img/panduan/surat-masuk-daftar.png)
+
+*Contoh tampilan: daftar Surat Masuk.*
+
+[![Form Tambah Surat Masuk yang sudah diisi](/img/panduan/surat-masuk-tambah.png)](/img/panduan/surat-masuk-tambah.png)
+
+*Contoh tampilan: form Tambah Surat Masuk yang sudah diisi.*
 
 Untuk admin:
 
@@ -201,6 +233,10 @@ Di daftar Surat Masuk, pilihan **Urutkan** menyediakan **Terakhir dicatat**, **T
 
 ### Surat keluar
 
+[![Halaman daftar Surat Keluar](/img/panduan/surat-keluar-daftar.png)](/img/panduan/surat-keluar-daftar.png)
+
+*Contoh tampilan: daftar Surat Keluar.*
+
 1. Buka **Surat > Surat Keluar** lalu klik **Buat Surat Inisiatif**, atau pilih **Tindak Lanjut Surat Masuk…** dari menu panah di sampingnya.
 2. Isi jenis naskah dinas, nomor, tanggal, tujuan, perihal, klasifikasi, dan klasifikasi keamanan sesuai dokumen sumber. **No. Urut** boleh dikosongkan agar nomor dibuat otomatis, atau diisi untuk melanjutkan nomor urut dari buku agenda kantor; aturannya sama dengan No. Agenda surat masuk. Link dokumen dan berkas tidak wajib, tetapi hanya dapat ditambahkan selama surat masih draf atau ditolak, yaitu sebelum diajukan untuk persetujuan.
 3. Untuk membalas surat masuk, buka detail surat masuk, klik **Tindak Lanjut**, lalu pilih **Saya Balas** agar referensi asal tetap terhubung.
@@ -214,6 +250,14 @@ Beberapa surat dapat diajukan atau disetujui sekaligus: centang surat di daftar,
 Pembuat tidak dapat menyetujui suratnya sendiri. Selama status **Menunggu Persetujuan** atau **Disetujui**, surat terkunci dari edit dan hapus; surat belum dapat diarsipkan sebelum persetujuan final. Seluruh pengajuan, keputusan, catatan, dan pelaku tampil pada riwayat. Ini adalah persetujuan proses internal, bukan tanda tangan elektronik, serta tidak menggunakan BSrE/PSrE.
 
 ### Distribusi
+
+[![Dialog Disposisi ke Direktorat](/img/panduan/surat-masuk-disposisi.png)](/img/panduan/surat-masuk-disposisi.png)
+
+*Contoh tampilan: dialog Disposisi ke Direktorat.*
+
+[![Kotak Masuk pada halaman Distribusi Surat](/img/panduan/distribusi-kotak-masuk.png)](/img/panduan/distribusi-kotak-masuk.png)
+
+*Contoh tampilan: Kotak Masuk unit penerima disposisi.*
 
 1. Di daftar Surat Masuk pilih **Distribusi** dari menu tiga titik (⋯), atau di detail surat pilih **Tindak Lanjut > Disposisi ke Direktorat**.
 2. Centang unit tujuan, pilih penanggung jawab dan batas waktu bila perlu, tulis instruksi, lalu klik **Disposisikan**.
@@ -230,6 +274,10 @@ Jangan menghapus surat hanya untuk memperbaiki kesalahan kecil. Gunakan fungsi e
 Super Admin membuka tab **Surat Terhapus** di atas daftar Surat Masuk atau Surat Keluar. Tabelnya memuat Nomor Surat, Perihal, Unit Kerja, Dihapus oleh, Waktu hapus, dan Alasan hapus. Klik **Pulihkan**, isi **Alasan pemulihan** (minimal 10 karakter) pada dialog **Pulihkan surat?**, lalu klik **Pulihkan**. Surat kembali dengan nomor agenda atau nomor urut dan nomor surat semula, dan pemulihannya dicatat di log audit. Bila nomor surat yang sama juga dipakai surat aktif lain di unit itu, pemberitahuan menyebutkannya agar Anda memeriksa apakah suratnya sama. Surat yang rangkaiannya sudah diberkaskan tidak dapat dipulihkan.
 
 ### Impor daftar CSV atau XLSX
+
+[![Dialog Impor Surat Masuk dari CSV/XLSX](/img/panduan/impor-csv.png)](/img/panduan/impor-csv.png)
+
+*Contoh tampilan: dialog Impor CSV/XLSX.*
 
 Admin dapat memilih **Impor CSV/XLSX** pada daftar Surat Masuk atau Surat Keluar. Super Admin memilih satu unit kerja terlebih dahulu. Pilih berkas `.csv` atau `.xlsx`, klik **Pratinjau** (untuk XLSX dengan beberapa lembar, pilih lembar kerja lalu **Pratinjau** lagi), periksa pemetaan kolom dan contoh baris, lalu klik **Impor**. Judul kolom dikenali seperti impor Google Sheets, misalnya `Hal` → Perihal dan `Get link` → Tautan dokumen. Maksimal 1.000 baris data dan 4 MiB per berkas; berkas panjang diimpor per bagian secara otomatis, dan baris yang sudah tersimpan dikenali sebagai duplikat saat impor ulang. Selama pemilih unit menunjukkan Semua Unit Kerja, tombol impor nonaktif.
 
@@ -270,6 +318,10 @@ OCR PDF hasil pindai dibatasi maksimal 10 halaman dan dapat gagal bila citra ter
 
 ### Mengarsipkan surat
 
+[![Dialog Arsipkan Surat](/img/panduan/surat-masuk-arsipkan.png)](/img/panduan/surat-masuk-arsipkan.png)
+
+*Contoh tampilan: dialog Arsipkan Surat.*
+
 1. Buka detail surat yang telah selesai diproses lalu klik **Arsipkan**. Surat keluar harus sudah disetujui admin lain.
 2. Periksa atau isi **Nomor Berkas**.
 3. Pilih **Klasifikasi Arsip & Jadwal Retensi**. Pilih klasifikasi dahulu, kemudian butir JRA yang sesuai.
@@ -283,6 +335,14 @@ Pengarsipan bersifat permanen. Setelah disimpan, surat terkunci: tidak dapat diu
 Saran JRA dari aplikasi membantu pencarian, tetapi **bukan keputusan otomatis**. Petugas tetap menilai isi, fungsi, konteks, dan rumusan pemicu. Pemicu retensi juga tidak ditetapkan pada dialog registrasi; catat setelah arsip dibuat melalui **Tata Kelola Retensi**.
 
 ### Daftar dan detail arsip
+
+[![Halaman Manajemen Arsip](/img/panduan/arsip-daftar.png)](/img/panduan/arsip-daftar.png)
+
+*Contoh tampilan: daftar arsip.*
+
+[![Halaman Detail Arsip](/img/panduan/arsip-detail.png)](/img/panduan/arsip-detail.png)
+
+*Contoh tampilan: detail arsip.*
 
 - **Arsip Surat Masuk/Keluar:** gunakan pencarian, tahun, filter lanjutan, unit (jika berwenang), dan pagination. Kolom **Nasib Akhir** menulis **Menunggu verifikasi** atau **Menunggu rekonsiliasi** selama nasib akhir arsip belum dapat dihitung.
 - **Tab Status Retensi:** merangkum arsip menurut tahap retensinya. Super Admin memilih satu unit kerja terlebih dahulu; selama **Semua Unit Kerja** terpilih tertulis *Pilih unit kerja untuk melihat status retensi.*
@@ -300,6 +360,14 @@ Arsip lama berstatus aturan belum terverifikasi dapat dibaca tetapi tidak boleh 
 Untuk memperbaiki data berkas yang salah catat, admin yang berwenang atas unit arsip memilih **Ubah Metadata** di halaman detail. Isian yang dapat diubah: nomor dan uraian berkas, unit pengolah, kurun waktu, nomor dan uraian item, tingkat perkembangan, tanggal arsip, jumlah, media, No. Filing Cabinet, No. Laci, No. Folder, Lokasi Simpan, klasifikasi keamanan, Penanggung Jawab, dan keterangan. Lokasi Simpan tidak dapat diubah selama arsip atau boksnya dipinjam. Hanya isian yang diubah yang disimpan, dan perubahannya tercatat di log audit. Bila arsip sudah diubah orang lain sejak Anda membuka dialog, penyimpanan ditolak dengan pesan *Data ini sudah diubah pengguna lain sejak Anda membukanya…*; muat ulang halaman lalu ulangi perubahan. Klasifikasi/JRA tetap diubah melalui **Rekonsiliasi Klasifikasi/JRA**. **Ubah Metadata** dikunci bila arsip sedang legal hold, sedang dalam proses penyusutan, atau penyusutannya sudah dilaksanakan. Untuk arsip berkelas Terbatas atau lebih tinggi, **Ubah Metadata** dan **Rekonsiliasi Klasifikasi/JRA** hanya aktif bila persetujuan akses Anda atas arsip itu bermode **Tayang dan kelola**; tombol yang dikunci menampilkan alasannya. Perubahan nomor item, uraian item, tingkat perkembangan, tanggal arsip, atau lokasi ikut memperbarui item ringkasan dan item di lokasi lama yang sama pada tab **Item Arsip**; rinciannya ada di [Arsip Aktif](./siklus-arsip/arsip-aktif.md#daftar-item-ikut-diperbarui). Admin Unit Kerja hanya dapat memilih klasifikasi keamanan Biasa/Terbuka atau Terbatas; kelas yang sudah tersimpan boleh dipertahankan.
 
 ### Dosir dan lokasi fisik
+
+[![Halaman Pemberkasan (Dosir)](/img/panduan/dosir-daftar.png)](/img/panduan/dosir-daftar.png)
+
+*Contoh tampilan: daftar dosir.*
+
+[![Halaman Lokasi Penyimpanan](/img/panduan/lokasi-simpan.png)](/img/panduan/lokasi-simpan.png)
+
+*Contoh tampilan: susunan lokasi simpan dari gedung sampai boks.*
 
 - Gunakan **Pemberkasan (Dosir)** untuk menghimpun surat yang berhubungan dalam satu perkara/kegiatan. Admin yang berwenang atas unit dosir dapat memakai **Edit** dan **Hapus** pada menu kartu dosir, **Edit Dosir** di halaman detail, dan tombol **Lepas dari dosir** pada surat di dalamnya. Catatan yang diisi saat menambahkan surat tampil di bawah surat itu.
 - Gunakan **Lokasi Simpan** untuk mengelola daftar gedung, ruang, rak, dan boks. Kode QR lokasi diunduh lewat **Unduh Kode QR** untuk ditempel pada rak atau boks.
@@ -333,6 +401,10 @@ Menu **Versi Aturan**, termasuk PDF sumber, hasil validasi, dan jejak audit vers
 ## 9. Retensi, appraisal, pemicu, dan legal hold
 
 ### Manajemen Retensi
+
+[![Halaman Manajemen Retensi Arsip](/img/panduan/manajemen-retensi.png)](/img/panduan/manajemen-retensi.png)
+
+*Contoh tampilan: halaman Manajemen Retensi.*
 
 Halaman **Manajemen Retensi** menampilkan ringkasan arsip yang akan/sudah inaktif atau kedaluwarsa serta kandidat berdasarkan hasil Musnah, Permanen, atau Dinilai Kembali. Arsip tanpa pemicu terverifikasi dan arsip yang terkena legal hold dikeluarkan dari kandidat.
 
@@ -405,6 +477,10 @@ Sebelum serah terima, manifest dapat diajukan untuk pembatalan dengan alasan. Re
 
 ### Peminjaman fisik
 
+[![Halaman Peminjaman Arsip](/img/panduan/peminjaman.png)](/img/panduan/peminjaman.png)
+
+*Contoh tampilan: daftar peminjaman arsip.*
+
 1. Buka **Layanan & Fisik > Peminjaman** lalu klik **Catat Peminjaman**.
 2. Pilih tipe **Per Arsip** atau **Per Box**.
 3. Cari arsip/lokasi dengan minimal tiga karakter dan pilih hasil yang benar.
@@ -441,6 +517,10 @@ Khusus Super Admin, tab **Perlu Keputusan** digunakan untuk menyetujui/menolak, 
 
 ### Laporan
 
+[![Halaman Laporan dan Statistik](/img/panduan/laporan.png)](/img/panduan/laporan.png)
+
+*Contoh tampilan: halaman Laporan.*
+
 1. Buka **Administrasi > Laporan**.
 2. Pilih tahun atau isi **Dari Tanggal** / **Sampai Tanggal**, lalu klik **Tampilkan Data**. Bila tanggal diisi, pilihan tahun diabaikan untuk surat masuk dan surat keluar.
 3. Gunakan tab **Ringkasan**, **Surat Masuk**, **Surat Keluar**, **Arsip**, atau **Peminjaman**.
@@ -454,6 +534,10 @@ File ekspor adalah salinan kerja. Lindungi, batasi distribusi, dan hapus salinan
 
 ### Audit Log
 
+[![Halaman Audit Log](/img/panduan/audit-log.png)](/img/panduan/audit-log.png)
+
+*Contoh tampilan: halaman Audit Log.*
+
 Super Admin membuka **Administrasi > Audit Log** untuk:
 
 - mencari nama pengguna, email, atau ID data;
@@ -464,6 +548,10 @@ Super Admin membuka **Administrasi > Audit Log** untuk:
 Audit Log bukan alasan untuk membagikan informasi sensitif. Ekspor atau tangkapan layar audit hanya diberikan kepada pihak berwenang.
 
 ## 14. Pengelolaan pengguna dan administrasi
+
+[![Halaman Manajemen Pengguna](/img/panduan/manajemen-pengguna.png)](/img/panduan/manajemen-pengguna.png)
+
+*Contoh tampilan: daftar pengguna di Manajemen Pengguna.*
 
 Khusus Super Admin:
 

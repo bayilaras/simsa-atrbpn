@@ -6,6 +6,10 @@ Fitur ini digunakan untuk meminta akses ke surat atau arsip dengan klasifikasi *
 
 ## Mengajukan permohonan
 
+[![Halaman Persetujuan Akses Rekod](/img/panduan/persetujuan-akses.png)](/img/panduan/persetujuan-akses.png)
+
+*Contoh tampilan: halaman Persetujuan Akses Rekod dengan tombol Minta akses.*
+
 Cara termudah adalah mengajukan dari rekodnya langsung:
 
 1. Buka surat atau arsip dari daftarnya. Bila isinya belum boleh Anda buka, halaman menampilkan judul **Perlu persetujuan akses** dengan nomor dan perihal rekod. Keterangannya menyebut kelas rekod, misalnya *Surat ini berkelas keamanan Terbatas. Datanya tetap tersimpan dan tidak dihapus, tetapi isinya baru dapat dibuka setelah permohonan akses Anda disetujui Super Admin.*

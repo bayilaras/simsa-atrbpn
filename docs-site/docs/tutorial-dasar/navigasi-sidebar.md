@@ -6,6 +6,10 @@ Sidebar adalah menu navigasi utama di sisi kiri layar SIMSA. Dari sini kamu bisa
 
 ## Tampilan Sidebar
 
+<a href="/img/panduan/sidebar.png" target="_blank" rel="noopener"><img src="/img/panduan/sidebar.png" alt="Sidebar SIMSA dengan semua kelompok menu terbuka" width="262" /></a>
+
+*Contoh tampilan: sidebar seorang Admin Unit Kerja dengan semua kelompok menu dibuka.*
+
 :::tip Tampilan Sidebar
 Sidebar menampilkan menu navigasi yang dikelompokkan sebagai berikut:
 
@@ -96,6 +100,14 @@ Akun lama Admin Dirjen dan Admin Sesditjen melihat menu yang sama dengan Admin U
 
 - Tautan **📖 Panduan** di bagian bawah sidebar membuka **Panduan Pengguna SIMSA** di dalam aplikasi. Halaman itu memuat topik singkat untuk pekerjaan harian, kotak **Butuh bantuan lebih lanjut?**, dan tombol **Panduan lengkap** yang membuka situs panduan ini di tab baru.
 - **Pengaturan** juga dapat dibuka dari menu akun (avatar) di kanan atas header, untuk semua peran.
+
+[![Menu akun di kanan atas header](/img/panduan/header-menu-akun.png)](/img/panduan/header-menu-akun.png)
+
+*Contoh tampilan: menu akun di kanan atas berisi Pengaturan, Panduan Pengguna, dan Keluar.*
+
+[![Halaman Panduan Pengguna di dalam aplikasi](/img/panduan/panduan-dalam-aplikasi.png)](/img/panduan/panduan-dalam-aplikasi.png)
+
+*Contoh tampilan: halaman Panduan di dalam aplikasi, dengan tombol Panduan lengkap di kanan atas.*
 
 ---
 

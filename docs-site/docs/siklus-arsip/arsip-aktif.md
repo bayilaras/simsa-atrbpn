@@ -25,6 +25,10 @@ Halaman **Manajemen Arsip** memiliki empat tab:
 
 ### Langkah 2: Lihat Tabel Arsip
 
+[![Halaman Manajemen Arsip](/img/panduan/arsip-daftar.png)](/img/panduan/arsip-daftar.png)
+
+*Contoh tampilan: daftar arsip dengan kartu jumlah, tab jenis arsip, dan kolom lokasi serta retensi.*
+
 Tabel menampilkan:
 
 | Kolom | Keterangan |
@@ -43,6 +47,10 @@ Gunakan kotak **Cari arsip** (nomor berkas, nomor surat, atau perihal) dan tombo
 Bila daftar dibuka dari halaman [Lokasi Simpan](../layanan-fisik/lokasi-simpan.md), daftar tersaring untuk lokasi itu beserta sub-lokasinya dan menampilkan tanda **Lokasi simpan: nama (kode)** yang dapat dihapus. Bila lokasi itu juga menyimpan arsip jenis lain, di bawahnya ada tautan untuk melihat arsip jenis lain (surat masuk, surat keluar, atau lainnya) di lokasi yang sama.
 
 ### Ekspor Formulir 4 dan Formulir 6
+
+[![Halaman Formulir](/img/panduan/formulir.png)](/img/panduan/formulir.png)
+
+*Contoh tampilan: halaman Formulir. Formulir 4 dan Formulir 6 memiliki tombol Ekspor dari Arsip.*
 
 Klik tombol **Export**, lalu pilih Excel (.xlsx) atau PDF pada formulir yang dibutuhkan. Isi ekspor mengikuti tab, unit, pencarian, dan tahun yang sedang dipilih. Saringan lokasi simpan tidak ikut ke berkas ekspor.
 
@@ -73,6 +81,10 @@ Bila belum ada arsip inaktif untuk filter yang dipilih, Formulir 6 tidak diunduh
 Pada baris arsip, klik menu tiga titik (⋯) lalu pilih **Detail Arsip**. Kamu juga dapat mengeklik uraian berkas untuk melihat pratinjau, lalu membuka detailnya dari sana.
 
 ### Langkah 2: Lihat Halaman Detail
+
+[![Halaman Detail Arsip](/img/panduan/arsip-detail.png)](/img/panduan/arsip-detail.png)
+
+*Contoh tampilan: detail arsip dengan pita ringkasan, tab, dan kotak status di sebelah kanan.*
 
 :::tip Tampilan Detail Arsip
 Halaman detail arsip menampilkan:
@@ -108,6 +120,10 @@ Arsip berkelas Terbatas atau lebih tinggi yang belum boleh kamu buka menampilkan
 ---
 
 ## Menambah Arsip Tanpa Surat
+
+[![Dialog Tambah Arsip](/img/panduan/arsip-tambah.png)](/img/panduan/arsip-tambah.png)
+
+*Contoh tampilan: dialog Tambah Arsip untuk berkas yang tidak berasal dari daftar surat.*
 
 Gunakan **Tambah Arsip** untuk arsip fisik yang belum tercatat sebagai surat di SIMSA, termasuk dokumen yang bukan surat. Untuk surat yang sudah tercatat, tetap gunakan **Arsipkan** pada detail surat.
 
@@ -167,6 +183,10 @@ Admin Unit Kerja hanya dapat memilih klasifikasi keamanan Biasa/Terbuka atau Ter
 ---
 
 ## Mengarsipkan Surat
+
+[![Dialog Arsipkan Surat](/img/panduan/surat-masuk-arsipkan.png)](/img/panduan/surat-masuk-arsipkan.png)
+
+*Contoh tampilan: dialog Arsipkan Surat. Centang pernyataan di bagian bawah sebelum menekan Simpan Arsip.*
 
 Kamu bisa mengarsipkan surat dari daftar surat (menu tiga titik ⋯, lalu **Arsipkan**) atau dari halaman detail surat masuk/keluar. Surat keluar baru dapat diarsipkan setelah [disetujui admin lain](../manajemen-surat/surat-keluar.md#persetujuan-internal-surat-keluar).
 

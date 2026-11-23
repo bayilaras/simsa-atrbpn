@@ -17,6 +17,11 @@ SIMSA tidak membuat tanda tangan elektronik pada berita acara ini.
 ## Cara Menggunakan
 
 ### Langkah 1: Buka Menu
+
+[![Halaman Autentikasi Alih Media](/img/panduan/autentikasi.png)](/img/panduan/autentikasi.png)
+
+*Contoh tampilan: halaman Autentikasi Alih Media sebelum ada berita acara.*
+
 Di sidebar, klik **Autentikasi** di bawah **Media & Autentikasi**. Halaman **Autentikasi Alih Media** menampilkan **Daftar Autentikasi** yang dapat dicari menurut nomor berita acara.
 
 ### Langkah 2: Buat Berita Acara

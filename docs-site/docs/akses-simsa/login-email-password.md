@@ -4,6 +4,10 @@ Gunakan akun pribadi yang dibuat Super Admin melalui **Administrasi → Manajeme
 
 ## Buka dan masuk
 
+[![Halaman masuk SIMSA](/img/panduan/login.png)](/img/panduan/login.png)
+
+*Contoh tampilan: halaman masuk dengan isian Email kedinasan dan Kata sandi, tombol Masuk, serta tombol Masuk dengan Google.*
+
 1. Buka `https://simsa-frontend.vercel.app` di browser.
 2. Isi **Email kedinasan** dan **Kata sandi**.
 3. Klik **Masuk**. Setelah berhasil, periksa peran dan unit kerja Anda sebelum mencatat data. Nama unit kerja tampil di header.

@@ -19,6 +19,14 @@ Super Admin menyiapkan akun melalui **Administrasi → Manajemen Pengguna → Ta
 
 Admin membuka **Manajemen Surat → Surat → Surat Masuk** atau **Surat Keluar**. Cari nomor surat terlebih dahulu agar tidak dicatat dua kali. Klik **Surat Baru** pada daftar Surat Masuk, atau **Buat Surat Inisiatif** pada daftar Surat Keluar, isi metadata sesuai sumber, lalu simpan. Link dokumen dan berkas tidak wajib diisi; hasil pindai surat masuk dapat ditambahkan nanti lewat **Edit Surat**, sedangkan untuk surat keluar hanya selama surat masih draf atau ditolak.
 
+[![Dialog Impor Surat Masuk dari CSV/XLSX](/img/panduan/impor-csv.png)](/img/panduan/impor-csv.png)
+
+*Contoh tampilan: dialog Impor CSV/XLSX pada halaman Surat Masuk.*
+
+[![Dialog Impor Surat Masuk dari Google Sheets](/img/panduan/impor-google-sheets.png)](/img/panduan/impor-google-sheets.png)
+
+*Contoh tampilan: dialog Impor dari Google Sheets meminta tautan lembar kerja.*
+
 Jika sudah memiliki daftar dalam CSV atau Excel (.xlsx):
 
 1. Buka daftar surat yang sesuai. Super Admin memilih **satu unit kerja**, bukan Semua Unit Kerja (selama Semua Unit Kerja terpilih, tombol impor nonaktif).

@@ -23,6 +23,10 @@ Cara Login ke SIMSA menggunakan akun Google kamu.
 
 1. Di bagian bawah form login, cari tombol **"Masuk dengan Google"**.
 
+[![Halaman masuk SIMSA dengan tombol Masuk dengan Google](/img/panduan/login.png)](/img/panduan/login.png)
+
+*Contoh tampilan: tombol Masuk dengan Google ada di bawah pembatas "atau".*
+
 :::tip Tampilan Tombol Google
 Di bawah form login, terdapat pembatas **"atau"** dan tombol **"Masuk dengan Google"**. Di bawah tombol tertulis *Akun Google baru perlu persetujuan administrator.* Klik tombol ini untuk membuka autentikasi Google.
 :::

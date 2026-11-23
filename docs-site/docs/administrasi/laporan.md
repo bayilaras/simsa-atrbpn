@@ -25,6 +25,11 @@ Halaman **Laporan & Statistik** menampilkan **ringkasan dan daftar** surat, arsi
 ## Cara Membuat Laporan
 
 ### Langkah 1: Buka Menu Laporan
+
+[![Halaman Laporan dan Statistik](/img/panduan/laporan.png)](/img/panduan/laporan.png)
+
+*Contoh tampilan: halaman Laporan dengan pengaturan periode, tab, dan grafik trend bulanan.*
+
 Di sidebar, klik **Laporan** di bawah **Administrasi**. Super Admin memilih unit kerja terlebih dahulu.
 
 ### Langkah 2: Atur Periode

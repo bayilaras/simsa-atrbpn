@@ -12,6 +12,10 @@ Panduan mengelola dosir di SIMSA.
 
 ## Melihat Daftar Dosir
 
+[![Halaman Pemberkasan (Dosir)](/img/panduan/dosir-daftar.png)](/img/panduan/dosir-daftar.png)
+
+*Contoh tampilan: daftar dosir berbentuk kartu, lengkap dengan jumlah surat di dalamnya.*
+
 1. Di sidebar, klik **Pemberkasan (Dosir)**.
 2. Lihat kartu dosir yang ada. Menu tiga titik (⋯) pada kartu berisi **Lihat Detail**; pengguna yang berwenang mengubah data unit kerja dosir juga melihat **Edit** dan **Hapus**.
 3. Gunakan pencarian untuk menemukan dosir tertentu. Frasa tetap ditemukan walaupun teks aslinya terpotong baris baru.
@@ -21,6 +25,10 @@ Panduan mengelola dosir di SIMSA.
 ---
 
 ## Melihat Detail Dosir
+
+[![Halaman Detail Dosir](/img/panduan/dosir-detail.png)](/img/panduan/dosir-detail.png)
+
+*Contoh tampilan: detail dosir dengan kronologi surat dan tombol Tambah Surat.*
 
 1. Klik dosir untuk melihat detail.
 2. Halaman detail menampilkan:

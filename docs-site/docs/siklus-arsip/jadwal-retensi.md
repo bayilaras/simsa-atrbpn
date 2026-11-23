@@ -18,6 +18,10 @@ Panduan mengelola jadwal retensi arsip di SIMSA.
 
 ### Langkah 2: Lihat Tabel
 
+[![Halaman Jadwal Retensi Arsip (JRA)](/img/panduan/jadwal-retensi.png)](/img/panduan/jadwal-retensi.png)
+
+*Contoh tampilan: halaman Jadwal Retensi Arsip yang dibuka oleh Super Admin.*
+
 | Kolom | Keterangan |
 |-------|------------|
 | Kode Klasifikasi | Kode klasifikasi arsip |

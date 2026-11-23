@@ -16,6 +16,10 @@ Menu **Pengaturan** (⚙️) di sidebar muncul bagi semua akun yang sudah aktif.
 
 ## Tab Profil
 
+[![Halaman Pengaturan, tab Profil](/img/panduan/pengaturan-profil.png)](/img/panduan/pengaturan-profil.png)
+
+*Contoh tampilan: tab Profil berisi data profil dan bagian Ubah Kata Sandi.*
+
 Tab ini tersedia untuk **semua pengguna** yang login.
 
 ### Mengubah Nama
