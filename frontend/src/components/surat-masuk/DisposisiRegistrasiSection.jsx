@@ -16,6 +16,7 @@ import { KABAG_LABELS, LEGACY_DISPOSISI_LABELS } from '@/lib/disposisi-labels'
 export function DisposisiRegistrasiSection({
     isEditMode, units, value, onChange, penanggungJawab, onPenanggungJawab, batasWaktu, onBatasWaktu,
     instruksi, onInstruksi, opsiInstruksi = [], disabled, error, errorId = 'disposisi-surat-error',
+    errorBatasWaktu, onBatasWaktuInvalid,
 }) {
     const options = isEditMode
         ? Array.from(new Set([...LEGACY_DISPOSISI_LABELS, ...value])).map((label) => ({ label, value: label }))
@@ -58,7 +59,18 @@ export function DisposisiRegistrasiSection({
                     </fieldset>
                     <div className="space-y-1">
                         <Label htmlFor="batas-waktu-registrasi">Batas waktu</Label>
-                        <Input id="batas-waktu-registrasi" type="date" min={hariIniJakarta()} value={batasWaktu} onChange={(event) => onBatasWaktu(event.target.value)} disabled={disabled} />
+                        <Input
+                            id="batas-waktu-registrasi"
+                            type="date"
+                            min={hariIniJakarta()}
+                            value={batasWaktu}
+                            onChange={(event) => onBatasWaktu(event.target.value)}
+                            onInvalid={onBatasWaktuInvalid}
+                            aria-invalid={Boolean(errorBatasWaktu)}
+                            aria-describedby={errorBatasWaktu ? 'batas-waktu-registrasi-error' : undefined}
+                            disabled={disabled}
+                        />
+                        {errorBatasWaktu && <p id="batas-waktu-registrasi-error" className="text-sm text-destructive">{errorBatasWaktu}</p>}
                     </div>
                     <div className="space-y-1">
                         <Label htmlFor="instruksi-registrasi">Instruksi disposisi</Label>

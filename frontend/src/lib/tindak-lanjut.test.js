@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
     JENIS_RELASI_LABEL,
+    PESAN_BATAS_WAKTU_LEWAT,
     buildTindakLanjutState,
+    galatBatasWaktu,
     isKeputusan,
     isSifatTerkendali,
     normalisasiSifat,
@@ -105,5 +107,18 @@ describe('toTindakLanjutPayload', () => {
             .toEqual({ jenis: 'surat_masuk', suratId: 'sm-1', jenisRelasi: 'balasan', distribusiId: 'd1' })
         expect(toTindakLanjutPayload({ jenis: 'surat_keluar', suratId: 'sk-1', jenisRelasi: 'tindak_lanjut', terkunci: true }))
             .toEqual({ jenis: 'surat_keluar', suratId: 'sk-1', jenisRelasi: 'tindak_lanjut' })
+    })
+})
+
+describe('galatBatasWaktu', () => {
+    it('menolak tanggal sebelum hari ini dengan pesan yang sama dengan server', () => {
+        expect(galatBatasWaktu('2026-11-22', '2026-11-23')).toBe(PESAN_BATAS_WAKTU_LEWAT)
+        expect(PESAN_BATAS_WAKTU_LEWAT).toBe('Batas waktu tidak boleh sebelum hari ini')
+    })
+
+    it('menerima hari ini, tanggal mendatang, dan isian kosong', () => {
+        expect(galatBatasWaktu('2026-11-23', '2026-11-23')).toBeNull()
+        expect(galatBatasWaktu('2026-12-01', '2026-11-23')).toBeNull()
+        expect(galatBatasWaktu('', '2026-11-23')).toBeNull()
     })
 })

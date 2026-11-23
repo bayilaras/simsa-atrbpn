@@ -83,3 +83,10 @@ export function toTindakLanjutPayload(referensi) {
 export function hariIniJakarta(now = new Date()) {
     return now.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })
 }
+
+export const PESAN_BATAS_WAKTU_LEWAT = 'Batas waktu tidak boleh sebelum hari ini'
+
+/** Pesan untuk Batas waktu disposisi yang sudah lewat (WIB), sama dengan penolakan server; kosong berarti tanpa batas. */
+export function galatBatasWaktu(nilai, hariIni = hariIniJakarta()) {
+    return nilai && nilai < hariIni ? PESAN_BATAS_WAKTU_LEWAT : null
+}
