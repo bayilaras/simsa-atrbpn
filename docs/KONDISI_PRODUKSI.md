@@ -4,7 +4,7 @@ Halaman ini adalah titik awal bagi siapa pun yang mengoperasikan SIMSA: apa yang
 
 Perbarui halaman ini setiap kali ada rilis, perubahan jadwal, atau perubahan akun. Bila isinya berbeda dengan berkas konfigurasi di repositori (`.github/workflows/`, `backend/vercel.json`, `frontend/vercel.mjs`), berkas konfigurasi yang berlaku; perbaiki halaman ini. Repositori bersifat publik: jangan menulis nama host database, ID project atau deployment, nilai rahasia, maupun nama orang di sini.
 
-**Per 23 November 2026:** produksi menjalankan backend C82 dan frontend C81 dari `main` `afc1508`. Journal database berisi 55 migrasi, terakhir `0054_tanggal_diterima_nomor_urut_hidup`. Laporan rilis disimpan di [`docs/rilis/`](rilis/README.md); laporan terbaru `HASIL_RILIS_C82_C81_2026-11-23.md`. Selain artefak GitHub, backup harian juga disalin ke Google Drive (lihat [backup Google Drive](BACKUP_GOOGLE_DRIVE.md)).
+**Per 23 November 2026:** produksi menjalankan backend C82 dari `main` `afc1508` dan frontend C82 dari `main` `c8d33cd`. Journal database berisi 55 migrasi, terakhir `0054_tanggal_diterima_nomor_urut_hidup`. Laporan rilis disimpan di [`docs/rilis/`](rilis/README.md); laporan terbaru `HASIL_RILIS_FRONTEND_C82_2026-11-23.md`. Selain artefak GitHub, backup harian juga disalin ke Google Drive (lihat [backup Google Drive](BACKUP_GOOGLE_DRIVE.md)).
 
 ## Apa yang berjalan di mana
 
