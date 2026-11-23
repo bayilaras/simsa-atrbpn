@@ -37,7 +37,7 @@ Jika sudah memiliki daftar dalam CSV atau Excel (.xlsx):
 
 Pada surat masuk, kolom Sifat Surat sekaligus menjadi klasifikasi keamanan. Baris bersifat **Rahasia** atau **Sangat Rahasia** hanya dapat diimpor oleh Super Admin. Bila Admin Unit Kerja, Admin Dirjen, atau Admin Sesditjen mengimpornya, baris itu ditolak dengan keterangan "Klasifikasi keamanan melebihi kewenangan pengguna…" dan baris lain tetap tersimpan. Minta Super Admin mengimpor atau mencatat surat tersebut.
 
-Bila sumber diubah setelah diimpor (misalnya perihal diperbaiki), centang **Sinkronkan surat yang sudah tercatat** sebelum mengimpor ulang. Perihal, tanggal, sifat, tautan dokumen, dan jenis naskah surat keluar (surat masuk: perihal, tanggal, jenis surat) yang berbeda diperbarui dan dicatat di log audit; sel kosong tidak menghapus data, dan surat yang sudah disetujui, diarsipkan, atau dihapus tidak diubah.
+Bila sumber diubah setelah diimpor (misalnya perihal diperbaiki), centang **Sinkronkan surat yang sudah tercatat** sebelum mengimpor ulang. Perihal, tanggal, sifat, tautan dokumen, dan jenis naskah surat keluar (surat masuk: perihal, tanggal, jenis surat) yang berbeda diperbarui dan dicatat di log audit; sel kosong tidak menghapus data, dan surat yang sedang menunggu persetujuan atau sudah disetujui, diarsipkan, atau dihapus tidak diubah.
 
 Kolom wajib surat: nomor surat, tanggal surat, perihal (`Hal` juga dikenali), dan pengirim untuk surat masuk. Maksimal 1.000 baris data dan 4 MiB per berkas. Jangan mengganti tanggal yang belum diketahui dengan tanggal hari ini.
 

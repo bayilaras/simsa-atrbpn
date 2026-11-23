@@ -66,6 +66,9 @@ const CATEGORIES = [
     { value: 'pengawasan', label: 'Pengawasan' },
 ]
 
+// Setiap topik hanya memuat ringkasan. Langkah lengkap beserta gambar ada di
+// situs panduan (docs-site/); `docs` menunjuk halamannya dan diperiksa oleh
+// UserGuide.test.jsx terhadap berkas di docs-site/docs.
 const GUIDE_SECTIONS = [
     {
         id: 'mulai-inventaris-internal',
@@ -74,14 +77,15 @@ const GUIDE_SECTIONS = [
         summary: 'Catat metadata dan lokasi arsip fisik, lalu temukan kembali tanpa harus mengunggah hasil pindai.',
         icon: Archive,
         roles: ALL_ROLES,
-        keywords: ['mulai', 'inventaris', 'fisik', 'csv', 'impor', 'akun', 'unit kerja', 'srikandi'],
-        steps: [
-            'Masuk dengan email dan kata sandi dari administrator. Gunakan akun pribadi dengan peran dan unit kerja yang benar: Super Admin mengelola seluruh unit, sedangkan Admin Unit Kerja mencatat dan mengubah data unitnya sendiri. Akun lama Staf atau Auditor hanya dapat membaca data.',
-            'Admin membuka Surat Masuk atau Surat Keluar, mencari nomor yang sama lebih dahulu, lalu mencatat metadata. Untuk daftar yang sudah tersedia (CSV atau Excel .xlsx), pilih satu unit kerja dan gunakan Impor CSV/XLSX → Pratinjau → Impor; judul kolom dikenali seperti impor Google Sheets. Pada surat masuk, kolom Sifat Surat sekaligus menjadi klasifikasi keamanan: baris Rahasia atau Sangat Rahasia hanya dapat diimpor oleh Super Admin. Bila Admin Unit Kerja, Admin Dirjen, atau Admin Sesditjen mengimpornya, baris itu ditolak dan baris lain tetap tersimpan.',
-            'Untuk inventaris arsip yang sudah ada, admin membuka Arsip Aktif lalu Impor CSV; kolom No. Filing Cabinet, No. Laci, No. Folder, dan Kode Lokasi Simpan ikut disimpan, dan Jenis Arsip lainnya dipakai untuk dokumen yang bukan surat. Untuk satu-dua arsip, gunakan Tambah Arsip. Isi tanggal sumber yang benar; klasifikasi dan JRA tidak otomatis terverifikasi.',
-            'Saat mengarsipkan surat yang selesai diproses, isi klasifikasi/JRA yang sesuai serta No. Filing Cabinet, No. Laci, dan No. Folder pada dialog Arsipkan. Pada CSV arsip, catatan lokasi dapat dimasukkan ke Keterangan; kolom lokasi terstruktur belum dipetakan oleh impor.',
-            'Temukan kembali arsip melalui nomor atau uraian, filter unit/tahun, dan halaman detail. Cocokkan catatan lokasi dengan berkas fisik sebelum menyerahkannya kepada peminjam.',
-            'SIMSA mengelola surat dan arsip secara mandiri; koneksi atau akun SRIKANDI tidak diperlukan. Inventaris dapat dicatat tanpa lampiran digital. Gunakan instrumen ATR/BPN yang berlaku; tambahkan lampiran setelah penyimpanan privat dan pemeriksaan file siap.',
+        keywords: ['mulai', 'inventaris', 'fisik', 'csv', 'xlsx', 'excel', 'impor', 'tambah arsip', 'filing cabinet', 'laci', 'folder', 'lokasi', 'akun', 'unit kerja', 'srikandi'],
+        points: [
+            'Admin mencatat surat melalui formulir atau Impor CSV/XLSX, dan arsip yang sudah ada melalui Tambah Arsip atau Impor CSV di Arsip Aktif.',
+            'No. Filing Cabinet, No. Laci, dan No. Folder diisi saat mengarsipkan atau ikut diimpor, sehingga berkas fisik dapat ditemukan kembali.',
+            'Inventaris dapat dicatat tanpa lampiran digital. Akun atau koneksi SRIKANDI tidak diperlukan.',
+        ],
+        docs: [
+            { label: 'Mulai Inventaris Internal', path: '/mulai-inventaris-internal' },
+            { label: 'Menambah arsip tanpa surat', path: '/siklus-arsip/arsip-aktif#menambah-arsip-tanpa-surat' },
         ],
         action: { label: 'Buka Arsip Aktif', to: '/arsip/masuk' },
     },
@@ -92,13 +96,16 @@ const GUIDE_SECTIONS = [
         summary: 'Login, membaca Dashboard, memakai sidebar, breadcrumb, dan pencarian.',
         icon: Rocket,
         roles: ALL_ROLES,
-        keywords: ['login', 'google', 'dashboard', 'sidebar', 'menu', 'navigasi', 'pencarian'],
-        steps: [
+        keywords: ['login', 'google', 'dashboard', 'sidebar', 'menu', 'navigasi', 'pencarian', 'breadcrumb'],
+        points: [
             'Buka SIMSA di https://simsa-frontend.vercel.app dan masuk dengan email serta kata sandi akun pribadi. Login Google digunakan hanya jika telah diaktifkan administrator.',
-            'Gunakan Dashboard untuk melihat ringkasan pekerjaan sesuai unit kerja dan kewenangan Anda.',
-            'Buka sidebar untuk berpindah fitur. Di layar kecil, gunakan tombol menu pada bagian atas.',
-            'Gunakan breadcrumb di atas halaman untuk mengetahui posisi dan kembali ke bagian sebelumnya.',
+            'Dashboard menampilkan ringkasan pekerjaan sesuai unit kerja dan kewenangan Anda. Sidebar dipakai untuk berpindah fitur; di layar kecil, buka lewat tombol menu di bagian atas.',
             'Jika suatu menu tidak terlihat, periksa peran akun Anda atau hubungi administrator.',
+        ],
+        docs: [
+            { label: 'Login email dan kata sandi', path: '/akses-simsa/login-email-password' },
+            { label: 'Mengenal Dashboard', path: '/tutorial-dasar/mengenal-dashboard' },
+            { label: 'Navigasi sidebar', path: '/tutorial-dasar/navigasi-sidebar' },
         ],
         action: { label: 'Buka Dashboard', to: '/' },
     },
@@ -109,13 +116,14 @@ const GUIDE_SECTIONS = [
         summary: 'Ganti kata sandi awal dari administrator melalui Pengaturan › Profil.',
         icon: KeyRound,
         roles: ALL_ROLES,
-        keywords: ['kata sandi', 'password', 'ganti kata sandi', 'ubah kata sandi', 'profil', 'pengaturan', 'akun'],
-        steps: [
-            'Buka menu akun di kanan atas, lalu pilih Pengaturan. Halaman Pengaturan terbuka pada tab Profil.',
-            'Pada kartu Ubah Kata Sandi, isi Kata sandi saat ini, Kata sandi baru, dan Konfirmasi kata sandi baru, lalu tekan Simpan Kata Sandi.',
-            `Kata sandi baru minimal ${PASSWORD_MIN_LENGTH} karakter, tidak memuat nama atau bagian depan email Anda, dan bukan kata sandi yang umum.`,
-            'Setelah kata sandi diubah, sesi SIMSA di perangkat lain ditutup.',
-            'Akun yang masuk dengan Google tidak memiliki kata sandi SIMSA. Bila perlu masuk dengan email dan kata sandi, minta Super Admin mengaturnya melalui Manajemen Pengguna.',
+        keywords: ['kata sandi', 'password', 'ganti kata sandi', 'ubah kata sandi', 'profil', 'pengaturan', 'akun', 'google'],
+        points: [
+            'Buka menu akun di kanan atas, pilih Pengaturan, lalu isi kartu Ubah Kata Sandi pada tab Profil.',
+            `Kata sandi baru minimal ${PASSWORD_MIN_LENGTH} karakter. Setelah diubah, sesi SIMSA di perangkat lain ditutup.`,
+            'Akun yang masuk dengan Google tidak memiliki kata sandi SIMSA.',
+        ],
+        docs: [
+            { label: 'Ubah kata sandi', path: '/administrasi/settings#ubah-kata-sandi' },
         ],
         action: { label: 'Buka Pengaturan', to: '/settings' },
     },
@@ -126,17 +134,16 @@ const GUIDE_SECTIONS = [
         summary: 'Admin mencatat metadata surat melalui formulir atau impor CSV dan menelusurinya kembali.',
         icon: Mail,
         roles: ADMIN_ROLES,
-        keywords: ['surat masuk', 'surat keluar', 'distribusi', 'metadata', 'lampiran', 'csv', 'impor', 'tanggal diterima'],
-        steps: [
-            'Pilih Surat Masuk atau Surat Keluar dari sidebar sesuai naskah yang akan dikelola.',
-            'Cari dahulu berdasarkan nomor, perihal, pengirim, atau penerima untuk mencegah pencatatan ganda.',
-            'Isi metadata dari dokumen sumber secara lengkap dan periksa kembali tanggal serta nomor surat. Tanggal Diterima surat masuk terisi hari ini; ubah bila surat sampai di kantor pada hari lain. Daftar surat masuk dapat diurutkan dan disaring menurut tanggal diterima. Pada formulir surat masuk, admin dapat memilih sifat Terbatas, sedangkan sifat Rahasia dan Sangat Rahasia hanya dapat ditetapkan oleh Super Admin. Surat Terbatas, Rahasia, atau Sangat Rahasia hanya dapat dibuka atau diubah dengan persetujuan akses berjangka, juga oleh pencatatnya; ajukan persetujuan akses setelah menyimpan.',
-            'Untuk daftar CSV atau XLSX, pilih unit kerja konkret lalu Impor CSV/XLSX dan Pratinjau (pilih lembar kerja bila ada beberapa). Periksa pemetaan kolom, lalu Impor; perbaiki judul atau baris yang ditolak karena data tidak lengkap atau tidak valid pada berkas sumber dan periksa hasil karena sebagian baris dapat berhasil saat baris lain gagal.',
-            'Sifat surat masuk sekaligus menjadi klasifikasi keamanan. Tulis Sifat Surat sebagai Biasa, Terbatas, Rahasia, atau Sangat Rahasia; sifat urgensi Segera, Sangat Segera, Amat Segera/Kilat, Penting, dan Undangan dibaca Biasa, begitu pula sel kosong atau “-”. Baris surat baru dengan sifat lain ditolak untuk semua pengguna, termasuk Super Admin, dengan keterangan “Sifat surat tidak dikenal…”. Pratinjau mencantumkan baris yang akan ditolak beserta alasannya sebelum Impor; periksa juga Rincian hasil impor per baris setelah Impor. Impor surat keluar tidak terpengaruh karena sifatnya adalah urgensi.',
-            'Baris surat masuk Rahasia atau Sangat Rahasia hanya dapat diimpor oleh Super Admin. Bila diimpor Admin Unit Kerja, Admin Dirjen, atau Admin Sesditjen, baris itu ditolak dengan keterangan “Klasifikasi keamanan melebihi kewenangan pengguna…”, tidak dicocokkan dengan surat yang sudah tercatat (juga saat sinkron), dan baris lain tetap tersimpan. Minta Super Admin mengimpor lembar yang sama atau mencatat surat itu melalui formulir surat masuk, yang menyediakan pilihan Rahasia dan Sangat Rahasia bagi Super Admin. Surat Rahasia atau Sangat Rahasia yang diimpor Super Admin tidak tampil bagi admin tersebut tanpa persetujuan akses rekod.',
-            'Periksa Rincian hasil impor per baris (filter Perlu dicek) atau unduh laporannya sebagai CSV. Bila sumber diubah setelah diimpor, centang Sinkronkan surat yang sudah tercatat sebelum mengimpor ulang; perubahan dicatat di log audit, sel kosong tidak menghapus data, sifat surat masuk tidak ikut diubah, dan surat yang sedang atau telah disetujui, diarsipkan, dihapus, atau tidak boleh Anda ubah tetap seperti semula.',
-            'Simpan metadata dan pastikan detailnya dapat dibuka. Tambahkan lampiran hanya bila fasilitas penyimpanan file tersedia dan berkasnya memang terkait; arsip fisik tidak memerlukan unggahan pengganti.',
-            'Gunakan Distribusi bila menu tersebut tersedia dan tindak lanjut memang diperlukan.',
+        keywords: ['surat masuk', 'surat keluar', 'distribusi', 'metadata', 'lampiran', 'csv', 'xlsx', 'excel', 'google sheets', 'impor', 'pratinjau', 'sinkron', 'tanggal diterima', 'sifat', 'klasifikasi keamanan', 'terbatas', 'rahasia'],
+        points: [
+            'Cari dahulu nomor atau perihalnya agar surat tidak tercatat ganda, lalu catat melalui formulir atau Impor CSV/XLSX: pilih satu unit kerja, periksa Pratinjau, lalu Impor.',
+            'Sifat surat masuk sekaligus menjadi klasifikasi keamanannya. Rahasia dan Sangat Rahasia hanya dapat ditetapkan atau diimpor oleh Super Admin.',
+            'Surat Terbatas, Rahasia, atau Sangat Rahasia hanya dapat dibuka atau diubah dengan persetujuan akses berjangka, juga oleh pencatatnya.',
+        ],
+        docs: [
+            { label: 'Surat Masuk', path: '/manajemen-surat/surat-masuk' },
+            { label: 'Surat Keluar', path: '/manajemen-surat/surat-keluar' },
+            { label: 'Aturan impor CSV/XLSX', path: '/panduan-pengguna#impor-daftar-csv-atau-xlsx' },
         ],
         action: { label: 'Buka Surat Masuk', to: '/surat/masuk' },
     },
@@ -147,14 +154,13 @@ const GUIDE_SECTIONS = [
         summary: 'Surat keluar diajukan, disetujui, lalu baru dapat diarsipkan; beberapa surat dapat diproses sekaligus.',
         icon: Send,
         roles: ADMIN_ROLES,
-        keywords: ['persetujuan', 'ajukan persetujuan', 'setujui', 'tolak', 'penyetuju', 'arsipkan', 'surat keluar', 'massal', 'perlu perbaikan'],
-        steps: [
-            'Surat keluar yang baru dicatat berstatus Draft. Tombol Arsipkan baru muncul setelah surat berstatus Disetujui.',
-            'Pembuat surat membuka detail surat, menekan Ajukan Persetujuan, lalu memilih penyetuju: administrator aktif lain untuk unit surat itu atau Super Admin.',
-            'Penyetuju membuka surat yang menunggu keputusannya lalu menekan Setujui atau Tolak. Penolakan wajib disertai catatan; surat yang ditolak berstatus Perlu Perbaikan, dapat diubah, lalu diajukan kembali.',
-            'Untuk beberapa surat sekaligus, centang surat di daftar Surat Keluar, lalu pilih Ajukan Persetujuan atau Setujui pada bilah di atas daftar. Setiap surat tetap diperiksa satu per satu; surat yang tidak dapat diproses disebutkan beserta alasannya.',
-            'Jumlah surat yang menunggu keputusan Anda tampil pada menu Surat Keluar dan di Dashboard.',
-            'Setelah Disetujui, pilih Arsipkan pada detail surat atau pada menu baris di daftar. Persetujuan ini adalah persetujuan internal SIMSA, bukan tanda tangan elektronik BSrE/PSrE.',
+        keywords: ['persetujuan', 'ajukan persetujuan', 'setujui', 'tolak', 'penyetuju', 'arsipkan', 'surat keluar', 'massal', 'perlu perbaikan', 'draft'],
+        points: [
+            'Surat keluar yang baru dicatat berstatus Draft. Pembuat menekan Ajukan Persetujuan dan memilih penyetuju; penyetuju memilih Setujui atau Tolak, dan penolakan wajib disertai catatan.',
+            'Tombol Arsipkan baru muncul setelah surat berstatus Disetujui. Beberapa surat dapat diajukan atau disetujui sekaligus dari daftar Surat Keluar.',
+        ],
+        docs: [
+            { label: 'Persetujuan internal surat keluar', path: '/manajemen-surat/surat-keluar#persetujuan-internal-surat-keluar' },
         ],
         action: { label: 'Buka Surat Keluar', to: '/surat/keluar' },
     },
@@ -165,13 +171,14 @@ const GUIDE_SECTIONS = [
         summary: 'Membalas, membuat nota dinas, mendisposisikan, atau menautkan surat langsung dari halaman detailnya.',
         icon: Reply,
         roles: ADMIN_ROLES,
-        keywords: ['tindak lanjut', 'balas', 'saya balas', 'nota dinas', 'nd penjelas', 'disposisi', 'terima disposisi', 'penyelesaian', 'rangkaian', 'tautkan'],
-        steps: [
-            'Buka detail surat masuk atau surat keluar, lalu tekan tombol Tindak Lanjut. Pilihan yang tampil mengikuti kewenangan Anda atas surat itu.',
-            'Saya Balas dan Buat Nota Dinas membuka formulir Tambah Surat Keluar dengan Nomor Referensi surat asal yang sudah terisi. Buat ND Penjelas tersedia untuk surat keluar berjenis Keputusan.',
-            'Pada surat masuk, Disposisi ke Direktorat mengirim surat ke unit tujuan. Unit penerima memilih Terima Disposisi, lalu Penyelesaian setelah disposisinya ditindaklanjuti. Cetak Disposisi membuka Lembar Disposisi siap cetak untuk dilampirkan pada surat fisik.',
-            'Tautkan ke Rangkaian menghubungkan surat dengan surat lain dalam satu rangkaian agar alurnya dapat dilacak.',
-            'Dari daftar Surat Keluar, pilihan Tindak Lanjut Surat Masuk… membuka formulir baru dan langsung meminta Anda memilih surat yang ditindaklanjuti.',
+        keywords: ['tindak lanjut', 'balas', 'saya balas', 'nota dinas', 'nd penjelas', 'disposisi', 'terima disposisi', 'penyelesaian', 'rangkaian', 'tautkan', 'cetak disposisi', 'lembar disposisi'],
+        points: [
+            'Tombol Tindak Lanjut ada di detail surat masuk dan surat keluar. Pilihan yang tampil mengikuti kewenangan Anda atas surat itu.',
+            'Saya Balas dan Buat Nota Dinas membuka formulir Tambah Surat Keluar dengan Nomor Referensi surat asal yang sudah terisi. Disposisi ke Direktorat mengirim surat masuk ke unit tujuan.',
+        ],
+        docs: [
+            { label: 'Membalas surat masuk', path: '/manajemen-surat/surat-masuk#membalas-surat-masuk' },
+            { label: 'Distribusi dan disposisi', path: '/manajemen-surat/distribusi' },
         ],
         action: { label: 'Buka Surat Masuk', to: '/surat/masuk' },
     },
@@ -182,12 +189,13 @@ const GUIDE_SECTIONS = [
         summary: 'Menelusuri surat masuk dan keluar beserta rangkaian tindak lanjutnya dalam satu pencarian.',
         icon: Search,
         roles: ALL_ROLES,
-        keywords: ['lacak', 'lacak surat', 'telusur', 'rangkaian', 'berkas rangkaian', 'perlu dilengkapi', 'nomor surat'],
-        steps: [
-            'Buka Surat › Lacak Surat di sidebar.',
-            'Pada tab Lacak, ketik nomor surat (misalnya B-12/PTPP.1/IX/2024) atau kata dalam perihal. Hasil memuat surat masuk dan keluar yang boleh Anda lihat beserta rangkaian tindak lanjutnya.',
-            'Tab Berkas Rangkaian menampilkan rangkaian surat yang dapat Anda lihat.',
-            'Tab Perlu Dilengkapi menampilkan surat dan rangkaian dalam jangkauan Anda yang rantainya belum lengkap, misalnya surat masuk yang belum ditindaklanjuti atau disposisi yang belum selesai. Bagi admin, angka pada menu Lacak Surat menunjukkan jumlahnya.',
+        keywords: ['lacak', 'lacak surat', 'telusur', 'rangkaian', 'berkas rangkaian', 'perlu dilengkapi', 'nomor surat', 'alur surat'],
+        points: [
+            'Buka Surat › Lacak Surat di sidebar, lalu ketik nomor surat atau kata dalam perihal.',
+            'Tab Berkas Rangkaian menampilkan rangkaian surat yang dapat Anda lihat. Tab Perlu Dilengkapi menampilkan surat yang rantainya belum lengkap.',
+        ],
+        docs: [
+            { label: 'Rangkaian Surat dan Lacak Surat', path: '/manajemen-surat/rangkaian-surat#melacak-rangkaian' },
         ],
         action: { label: 'Buka Lacak Surat', to: '/surat/lacak' },
     },
@@ -198,13 +206,13 @@ const GUIDE_SECTIONS = [
         summary: 'Super Admin dapat melihat dan memulihkan surat yang sudah dihapus.',
         icon: RotateCcw,
         roles: ['super_admin'],
-        keywords: ['terhapus', 'surat terhapus', 'hapus', 'pulihkan', 'kembalikan surat', 'super admin'],
-        steps: [
-            'Surat yang dihapus tidak lagi tampil di daftar. Hanya Super Admin yang dapat melihat dan memulihkannya; admin lain meminta bantuan Super Admin.',
-            'Buka Surat Masuk atau Surat Keluar, lalu pilih tab Surat Terhapus di atas daftar.',
-            'Cari surat, periksa alasan penghapusannya, lalu tekan Pulihkan dan isi alasan pemulihan minimal 10 karakter.',
-            'Surat kembali ke daftar dengan nomor agenda atau nomor urut dan nomor surat semula, dan pemulihannya dicatat di log audit. Bila nomor surat yang sama dipakai surat aktif lain di unit itu, pemberitahuan setelah pemulihan menyebutkannya.',
-            'Nomor agenda atau nomor urut surat yang dihapus boleh dipakai surat lain. Selama nomor itu dipakai, surat terhapus tidak dapat dipulihkan; bila surat pemakainya salah catat, hapus surat itu lebih dulu.',
+        keywords: ['terhapus', 'surat terhapus', 'hapus', 'pulihkan', 'kembalikan surat', 'super admin', 'nomor agenda', 'nomor urut'],
+        points: [
+            'Hanya Super Admin yang dapat melihat dan memulihkannya: buka Surat Masuk atau Surat Keluar, lalu pilih tab Surat Terhapus di atas daftar.',
+            'Tekan Pulihkan dan isi alasannya. Surat kembali dengan nomor semula; pemulihan tidak dapat dilakukan selama nomor agenda atau nomor urutnya dipakai surat lain.',
+        ],
+        docs: [
+            { label: 'Memulihkan surat yang terhapus', path: '/manajemen-surat/surat-masuk#memulihkan-surat-yang-terhapus' },
         ],
         action: { label: 'Buka Surat Masuk', to: '/surat/masuk' },
     },
@@ -215,12 +223,13 @@ const GUIDE_SECTIONS = [
         summary: 'Menelusuri arsip, membaca detail, klasifikasi, lokasi, dan status siklus hidup.',
         icon: Archive,
         roles: STAFF_AND_ADMIN,
-        keywords: ['arsip aktif', 'detail arsip', 'klasifikasi', 'lokasi', 'status'],
-        steps: [
-            'Buka Arsip Aktif dan pilih tab arsip surat masuk atau surat keluar.',
-            'Gunakan filter dan istilah pencarian yang spesifik, misalnya nomor atau perihal.',
-            'Buka detail arsip untuk memeriksa metadata, klasifikasi, berkas, serta informasi retensinya.',
-            'Laporkan data yang tidak tepat kepada pengelola berwenang; jangan membuat rekod pengganti tanpa pemeriksaan.',
+        keywords: ['arsip aktif', 'detail arsip', 'klasifikasi', 'lokasi', 'status', 'ubah metadata'],
+        points: [
+            'Buka Arsip Aktif, lalu cari dengan nomor atau perihal dan filter yang spesifik.',
+            'Halaman detail memuat metadata, klasifikasi, berkas, lokasi simpan, dan informasi retensi arsip.',
+        ],
+        docs: [
+            { label: 'Arsip Aktif', path: '/siklus-arsip/arsip-aktif' },
         ],
         action: { label: 'Buka Arsip Aktif', to: '/arsip/keluar' },
     },
@@ -231,12 +240,14 @@ const GUIDE_SECTIONS = [
         summary: 'Mengelompokkan arsip dalam dosir dan mencatat lokasi penyimpanan fisik.',
         icon: FolderTree,
         roles: ADMIN_ROLES,
-        keywords: ['dosir', 'pemberkasan', 'berkas', 'lokasi simpan', 'fisik'],
-        steps: [
-            'Pastikan setiap arsip sudah memiliki klasifikasi yang tepat sebelum diberkaskan.',
-            'Buat atau pilih dosir berdasarkan urusan/kegiatan yang sama, bukan hanya kemiripan judul.',
-            'Tambahkan arsip yang relevan dan hindari satu arsip masuk ke dosir yang tidak berkaitan.',
+        keywords: ['dosir', 'pemberkasan', 'berkas', 'lokasi simpan', 'fisik', 'filing cabinet', 'laci', 'folder'],
+        points: [
+            'Dosir mengelompokkan arsip dari urusan atau kegiatan yang sama, bukan hanya karena judulnya mirip.',
             'Catat lokasi simpan fisik secara konsisten agar rekod digital dapat ditelusuri ke medianya.',
+        ],
+        docs: [
+            { label: 'Dosir', path: '/siklus-arsip/dosir' },
+            { label: 'Lokasi simpan', path: '/layanan-fisik/lokasi-simpan' },
         ],
         action: { label: 'Buka Dosir', to: '/dosir' },
     },
@@ -247,13 +258,14 @@ const GUIDE_SECTIONS = [
         summary: 'Memilih aturan yang berlaku dan menjaga histori ketika pedoman berubah.',
         icon: Clock3,
         roles: ADMIN_ROLES,
-        keywords: ['jra', 'jadwal retensi', 'klasifikasi', 'aktif', 'inaktif', 'nasib akhir', 'versi aturan'],
-        steps: [
-            'Cari klasifikasi berdasarkan fungsi atau kegiatan yang menghasilkan arsip.',
-            'Cocokkan uraian JRA; jangan menentukan retensi hanya dari judul dokumen.',
-            'Admin Unit Kerja memilih klasifikasi dan JRA aktif saat mencatat surat atau arsip. Katalog berlaku untuk seluruh unit.',
-            'Super Admin menyiapkan PDF resmi, manifest, dan analisis dampak, lalu memvalidasi dan langsung mengaktifkan versi baru.',
-            'Jangan mengubah histori aturan lama untuk menyesuaikan aturan baru.',
+        keywords: ['jra', 'jadwal retensi', 'klasifikasi', 'aktif', 'inaktif', 'nasib akhir', 'versi aturan', 'katalog'],
+        points: [
+            'Pilih klasifikasi menurut fungsi atau kegiatan yang menghasilkan arsip, lalu cocokkan uraian JRA-nya; jangan menentukan retensi hanya dari judul dokumen.',
+            'Katalog berlaku untuk seluruh unit. Versi baru disiapkan dan diaktifkan oleh Super Admin, dan histori aturan lama tidak diubah.',
+        ],
+        docs: [
+            { label: 'Klasifikasi arsip dan JRA', path: '/panduan-pengguna#8-klasifikasi-arsip-dan-jra' },
+            { label: 'Versi aturan', path: '/administrasi/versi-aturan' },
         ],
         actionByRole: {
             super_admin: { label: 'Kelola Katalog Aturan', to: '/master/regulatory-rules' },
@@ -270,12 +282,13 @@ const GUIDE_SECTIONS = [
         icon: Scale,
         roles: ADMIN_AND_AUDITOR,
         keywords: ['pemicu retensi', 'verifikasi', 'appraisal', 'legal hold', 'musnah', 'permanen', 'review'],
-        steps: [
-            'Periksa dasar peristiwa pemicu retensi dan bukti pendukung sebelum memverifikasinya.',
-            'Pastikan petugas pengusul dan pemeriksa berbeda ketika alur meminta pemeriksaan independen.',
-            'Catat appraisal berdasarkan konteks arsip dan JRA yang berlaku, bukan keputusan informal.',
-            'Terapkan legal hold bila arsip harus ditahan; arsip tersebut tidak boleh dilanjutkan ke pemusnahan.',
-            'Baca histori keputusan sebelum melanjutkan ke tahapan penyusutan berikutnya.',
+        points: [
+            'Verifikasi pemicu retensi berdasarkan bukti, dan catat appraisal menurut JRA yang berlaku. Pengusul dan pemeriksa harus petugas berbeda bila alur meminta pemeriksaan independen.',
+            'Arsip yang terkena legal hold tidak boleh dilanjutkan ke pemusnahan.',
+        ],
+        docs: [
+            { label: 'Retensi, appraisal, pemicu, dan legal hold', path: '/panduan-pengguna#9-retensi-appraisal-pemicu-dan-legal-hold' },
+            { label: 'Manajemen Retensi', path: '/siklus-arsip/manajemen-retensi' },
         ],
         action: { label: 'Buka Tata Kelola Retensi', to: '/retention-governance' },
     },
@@ -286,13 +299,14 @@ const GUIDE_SECTIONS = [
         summary: 'Menindaklanjuti keputusan retensi dengan bukti dan pemisahan kewenangan.',
         icon: FileCheck2,
         roles: ADMIN_ROLES,
-        keywords: ['penyusutan', 'pemusnahan', 'penyerahan', 'permanen', 'manifest', 'bukti'],
-        steps: [
+        keywords: ['penyusutan', 'pemusnahan', 'penyerahan', 'permanen', 'manifest', 'bukti', 'legal hold', 'berita acara'],
+        points: [
             'Mulai hanya dari arsip yang keputusan akhirnya sudah sah dan tidak sedang terkena legal hold.',
-            'Periksa daftar arsip, jumlah, status, serta bukti sebelum membuat atau mengajukan proses.',
-            'Untuk arsip permanen, pilih lampiran terkontrol yang lolos pemeriksaan integritas saat menyusun manifest.',
-            'Serah-terima dan penerimaan dilakukan oleh pejabat berbeda sesuai alur di aplikasi.',
-            'Jika proses harus dibatalkan, gunakan alur pembatalan agar alasan dan riwayat tetap tercatat.',
+            'Serah-terima dan penerimaan dilakukan oleh pejabat berbeda. Bila proses harus dibatalkan, gunakan alur pembatalan agar alasan dan riwayatnya tetap tercatat.',
+        ],
+        docs: [
+            { label: 'Penyusutan', path: '/siklus-arsip/penyusutan' },
+            { label: 'Manifest penyerahan permanen', path: '/panduan-pengguna#manifest-penyerahan-permanen' },
         ],
         action: { label: 'Buka Penyusutan', to: '/penyusutan' },
         optionalModule: 'advancedArchiveWorkflows',
@@ -300,12 +314,14 @@ const GUIDE_SECTIONS = [
         // mengarahkan ke halaman "Modul belum diaktifkan".
         moduleOff: {
             summary: 'Modul Penyusutan belum diaktifkan. Pemindahan dan pemusnahan arsip dilakukan di luar SIMSA.',
-            steps: [
-                'Ikuti prosedur penyusutan yang berlaku di unit Anda; SIMSA hanya menyediakan data pendukungnya.',
-                'Penyerahan arsip permanen tetap dicatat di Tata Kelola Retensi, tab Penyerahan Permanen.',
-                'Gunakan Manajemen Retensi untuk melihat arsip yang masa retensinya sudah atau hampir habis sebagai bahan usulan.',
-                'Pastikan keputusan retensi sudah sah dan arsip tidak sedang terkena legal hold sebelum diproses.',
+            points: [
+                'Ikuti prosedur penyusutan yang berlaku di unit Anda; SIMSA hanya menyediakan data pendukungnya, misalnya daftar arsip yang masa retensinya sudah atau hampir habis di Manajemen Retensi.',
                 'Draf berita acara pemusnahan tanpa nomor (nomor diisi manual) dapat dicetak dari Manajemen Retensi melalui tombol Generate Berita Acara.',
+                'Penyerahan arsip permanen tetap dicatat di Tata Kelola Retensi, tab Penyerahan Permanen.',
+            ],
+            docs: [
+                { label: 'Manajemen Retensi', path: '/siklus-arsip/manajemen-retensi#tindakan-pada-halaman-ini' },
+                { label: 'Penyusutan', path: '/siklus-arsip/penyusutan' },
             ],
             action: { label: 'Buka Manajemen Retensi', to: '/retention' },
         },
@@ -317,12 +333,14 @@ const GUIDE_SECTIONS = [
         summary: 'Menggunakan arsip secara terkendali tanpa mengubah rekod sumber.',
         icon: KeyRound,
         roles: ALL_ROLES,
-        keywords: ['akses', 'persetujuan akses', 'layanan', 'peminjaman', 'izin', 'rekod'],
-        steps: [
-            'Gunakan Persetujuan Akses Rekod ketika arsip yang dibutuhkan tidak tersedia bagi akun Anda.',
-            'Jelaskan tujuan penggunaan dan pilih rekod yang tepat agar permintaan dapat dinilai.',
-            'Gunakan hanya akses yang diberikan dan jangan meneruskan berkas kepada pihak lain tanpa kewenangan.',
-            'Bagi pengelola yang memiliki menu layanan/peminjaman, catat penyerahan dan pengembalian pada proses terkait.',
+        keywords: ['akses', 'persetujuan akses', 'minta akses', 'layanan', 'peminjaman', 'izin', 'rekod'],
+        points: [
+            'Ajukan Persetujuan Akses Rekod bila arsip yang dibutuhkan tidak tersedia bagi akun Anda, dan jelaskan tujuan penggunaannya.',
+            'Pengelola yang memiliki menu layanan atau peminjaman mencatat penyerahan dan pengembalian arsip pada proses terkait.',
+        ],
+        docs: [
+            { label: 'Persetujuan Akses', path: '/administrasi/persetujuan-akses' },
+            { label: 'Peminjaman', path: '/layanan-fisik/peminjaman' },
         ],
         action: { label: 'Buka Persetujuan Akses', to: '/record-access-grants' },
     },
@@ -334,11 +352,13 @@ const GUIDE_SECTIONS = [
         icon: ShieldCheck,
         roles: ALL_ROLES,
         keywords: ['laporan', 'audit log', 'histori', 'pengawasan', 'akuntabilitas'],
-        steps: [
-            'Gunakan laporan yang tersedia bagi peran Anda untuk memantau data dan pekerjaan unit.',
-            'Audit Log global hanya dapat dibuka Super Admin sampai seluruh baris audit memiliki pembatas unit yang dapat ditegakkan.',
-            'Gunakan filter waktu, pelaku, atau jenis kejadian bila tersedia untuk mempersempit penelusuran.',
-            'Jangan menganggap tampilan ringkas sebagai keputusan akhir; periksa detail rekod dan buktinya.',
+        points: [
+            'Laporan menampilkan data dan pekerjaan unit sesuai peran Anda.',
+            'Audit Log hanya dapat dibuka Super Admin.',
+        ],
+        docs: [
+            { label: 'Laporan', path: '/administrasi/laporan' },
+            { label: 'Audit Log', path: '/administrasi/audit-log' },
         ],
         actionByRole: {
             super_admin: { label: 'Buka Audit Log', to: '/audit-log' },
@@ -406,7 +426,8 @@ const TROUBLESHOOTING = [
     },
     {
         problem: 'Baris impor surat masuk ditolak karena sifat atau klasifikasi keamanan',
-        answer: 'Keterangan “Klasifikasi keamanan melebihi kewenangan pengguna…” berarti baris bersifat Rahasia atau Sangat Rahasia diimpor oleh Admin Unit Kerja, Admin Dirjen, atau Admin Sesditjen; baris seperti itu hanya dapat diimpor oleh Super Admin. Jangan menurunkan sifat pada sumber agar baris lolos. Minta Super Admin mengimpor lembar yang sama atau mencatat surat itu melalui formulir surat masuk, yang menyediakan pilihan Rahasia dan Sangat Rahasia bagi Super Admin. Impor ulang oleh admin tersebut tetap melaporkan baris itu Ditolak walaupun Super Admin sudah mengimpornya, dan surat Rahasia atau Sangat Rahasia itu tidak tampil bagi admin tersebut tanpa persetujuan akses rekod. Keterangan “Sifat surat tidak dikenal…” berlaku untuk semua pengguna, termasuk Super Admin: sifat pada sumber bukan Biasa, Terbatas, Rahasia, Sangat Rahasia, atau sifat urgensi Segera, Sangat Segera, Amat Segera/Kilat, Penting, atau Undangan. Perbaiki penulisan sifat pada sumber sesuai dokumen aslinya lalu impor ulang; sel kosong atau “-” dicatat sebagai Biasa.',
+        answer: 'Keterangan “Klasifikasi keamanan melebihi kewenangan pengguna…” berarti baris bersifat Rahasia atau Sangat Rahasia diimpor oleh Admin Unit Kerja, Admin Dirjen, atau Admin Sesditjen; baris seperti itu hanya dapat diimpor oleh Super Admin. Jangan menurunkan sifat pada sumber agar baris lolos; minta Super Admin mengimpor lembar yang sama atau mencatat surat itu melalui formulir surat masuk. Keterangan “Sifat surat tidak dikenal…” berlaku untuk semua pengguna, termasuk Super Admin: perbaiki penulisan sifat pada sumber sesuai dokumen aslinya, lalu impor ulang.',
+        docs: { label: 'Aturan impor CSV/XLSX', path: '/panduan-pengguna#impor-daftar-csv-atau-xlsx' },
     },
     {
         problem: 'Sesi berakhir saat bekerja',
@@ -423,6 +444,24 @@ const TROUBLESHOOTING = [
 ]
 
 const normalizeSearch = (value) => value.trim().toLocaleLowerCase('id-ID')
+
+const alamatPanduan = (path) => `${ALAMAT_PANDUAN_LENGKAP}${path}`
+
+/** Tautan ke satu halaman situs panduan; selalu membuka tab baru. */
+function TautanPanduan({ docs }) {
+    return (
+        <a
+            href={alamatPanduan(docs.path)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-sm font-medium text-primary underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-0"
+        >
+            {docs.label}
+            <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span className="sr-only"> (situs panduan, membuka tab baru)</span>
+        </a>
+    )
+}
 
 // Sama dengan sidebar: hanya nilai false eksplisit yang menandai modul mati.
 function resolveGuideSections(capabilities = {}) {
@@ -452,7 +491,8 @@ export default function UserGuide() {
                 section.title,
                 section.summary,
                 ...section.keywords,
-                ...section.steps,
+                ...section.points,
+                ...section.docs.map((item) => item.label),
             ].join(' ').toLocaleLowerCase('id-ID')
 
             return matchesCategory && matchesRole && (!normalizedQuery || searchableText.includes(normalizedQuery))
@@ -475,7 +515,7 @@ export default function UserGuide() {
             <PageHeader
                 icon={BookOpen}
                 title={<span id="panduan-title">Panduan Pengguna SIMSA</span>}
-                description="Pelajari alur kerja pengelolaan surat dan arsip secara bertahap sesuai peran Anda."
+                description="Ringkasan alur kerja surat dan arsip sesuai peran Anda. Langkah lengkap beserta gambar contoh ada di situs Panduan SIMSA."
                 actions={(
                     <div className="flex flex-wrap gap-2 print:hidden">
                         <Button asChild variant="outline" className="min-h-11">
@@ -610,8 +650,8 @@ export default function UserGuide() {
 
             <section id="isi-panduan" aria-labelledby="alur-fitur" className="scroll-mt-20 space-y-4">
                 <div>
-                    <h2 id="alur-fitur" className="text-xl font-semibold">Alur per fitur</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">Ikuti urutan langkah dan baca kembali detail sebelum mengambil tindakan.</p>
+                    <h2 id="alur-fitur" className="text-xl font-semibold">Ringkasan per fitur</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Setiap topik memuat intinya saja. Tautan “Langkah lengkap” membuka urutan langkah beserta gambar contoh di situs Panduan SIMSA.</p>
                 </div>
 
                 {filteredSections.length > 0 ? (
@@ -634,14 +674,22 @@ export default function UserGuide() {
                                         </div>
                                     </CardHeader>
                                     <CardContent className="space-y-4">
-                                        <ol className="space-y-3">
-                                            {section.steps.map((step, index) => (
-                                                <li key={step} className="flex gap-3 text-sm leading-relaxed">
+                                        <ul className="space-y-3">
+                                            {section.points.map((point) => (
+                                                <li key={point} className="flex gap-3 text-sm leading-relaxed">
                                                     <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
-                                                    <span><span className="sr-only">Langkah {index + 1}: </span>{step}</span>
+                                                    <span>{point}</span>
                                                 </li>
                                             ))}
-                                        </ol>
+                                        </ul>
+                                        <div className="rounded-md bg-muted/40 px-3 py-2 text-sm print:bg-transparent print:px-0">
+                                            <p className="font-medium">Langkah lengkap dengan gambar</p>
+                                            <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1" aria-label={`Halaman situs panduan untuk ${section.title}`}>
+                                                {section.docs.map((item) => (
+                                                    <li key={item.path}><TautanPanduan docs={item} /></li>
+                                                ))}
+                                            </ul>
+                                        </div>
                                         <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4 print:hidden">
                                             <div className="flex flex-wrap gap-1.5" aria-label="Peran yang dapat mengakses fitur">
                                                 {section.roles.filter(role => ['super_admin', 'admin_unit'].includes(role)).map((role) => (
@@ -739,10 +787,17 @@ export default function UserGuide() {
                                 {item.problem}
                                 <ChevronRight className="h-4 w-4 shrink-0 transition-transform group-open:rotate-90" aria-hidden="true" />
                             </summary>
-                            <p className="border-t px-4 py-3 text-sm leading-relaxed text-muted-foreground">{item.answer}</p>
+                            <div className="space-y-2 border-t px-4 py-3 text-sm leading-relaxed">
+                                <p className="text-muted-foreground">{item.answer}</p>
+                                {item.docs && <p>Selengkapnya: <TautanPanduan docs={item.docs} /></p>}
+                            </div>
                         </details>
                     ))}
                 </div>
+                <p className="text-sm text-muted-foreground">
+                    Masalah lain dan cara menanganinya:{' '}
+                    <TautanPanduan docs={{ label: 'Pemecahan masalah', path: '/panduan-pengguna#17-pemecahan-masalah' }} />
+                </p>
             </section>
 
             <section aria-labelledby="praktik-aman" className="space-y-4">

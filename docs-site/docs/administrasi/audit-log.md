@@ -2,7 +2,7 @@
 
 Panduan melihat log aktivitas pengguna di SIMSA.
 
-> 🔒 **Hanya Super Admin** yang bisa mengakses Audit Log.
+> 🔒 **Hanya Super Admin** yang bisa mengakses Audit Log. Audit Log bersifat global (lintas unit) dan tetap dibatasi untuk Super Admin sampai seluruh baris audit memiliki pembatas unit yang dapat ditegakkan.
 
 ---
 
