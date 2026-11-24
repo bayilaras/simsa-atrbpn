@@ -1,5 +1,6 @@
 import { ASSIGNABLE_ROLE_OPTIONS, managedUserRoleError } from '@/lib/role-access';
 import { hasProvisionedAccess, isPendingAccess } from '@/lib/provisioning-access';
+import { AKUN_MENUNGGU, mintaSegarkanMenungguKeputusan, PARAM_PERSETUJUAN_AKUN } from '@/lib/menunggu-keputusan';
 import { UserAccessApprovalDialog } from '@/components/UserAccessApprovalDialog';
 import { UserPasswordResetDialog } from '@/components/UserPasswordResetDialog';
 import { pesanGalat } from '@/lib/pesan-galat';
@@ -88,7 +89,10 @@ export default function UserManagement() {
     // Filters
     const [search, setSearch] = useState('');
     const [roleFilter, setRoleFilter] = useState('all');
-    const [approvalFilter, setApprovalFilter] = useState('all');
+    // Lencana menu dan Dashboard menaut langsung ke akun yang menunggu persetujuan.
+    const [approvalFilter, setApprovalFilter] = useState(() => (
+        new URLSearchParams(window.location.search).get(PARAM_PERSETUJUAN_AKUN) === AKUN_MENUNGGU ? 'pending' : 'all'
+    ));
     const [unitKerjaFilter, setUnitKerjaFilter] = useState('all');
 
     // Dropdown data
@@ -629,6 +633,7 @@ export default function UserManagement() {
                 onClose={() => setApprovalTarget(null)} onApproved={approved => {
                     setApprovalTarget(null);
                     setApprovalMessage(`Akses ${approved.name || approved.email} disetujui. Sesi lama telah ditutup; pengguna perlu masuk kembali.`);
+                    mintaSegarkanMenungguKeputusan();
                     loadUsers();
                 }} />}
 

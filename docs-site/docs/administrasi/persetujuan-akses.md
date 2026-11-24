@@ -21,6 +21,8 @@ Anda juga dapat membuka **Administrasi → Persetujuan Akses Arsip** dan mengkli
 
 Permohonan tidak langsung membuka rekod. Status awalnya **Menunggu** sampai diputuskan oleh Super Admin lain. Pantau statusnya pada tab **Permohonan Saya**.
 
+Super Admin melihat jumlah permohonan yang menunggu sebagai angka di samping menu **Persetujuan Akses Arsip** dan pada kartu **Perlu ditindaklanjuti** di Dashboard. SIMSA tidak mengirim email, jadi bila permohonan mendesak, hubungi Super Admin secara langsung.
+
 Rekod milik unit lain, di atas kewenangan kelas peran Anda, atau yang memang tidak ada tetap menampilkan **Surat Tidak Ditemukan** atau **Arsip Tidak Ditemukan**, tanpa tombol **Minta Akses**.
 
 ## Memutuskan permohonan
