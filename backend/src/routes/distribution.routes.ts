@@ -140,14 +140,18 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
 router.get('/surat/:suratId', async (req: AuthRequest, res, next) => {
     try {
         const suratId = req.params.suratId as string;
-        const sourceAccess = await recordAccessService.check(req.user, 'surat_masuk', suratId);
+        // Siapa pun yang boleh membuka surat boleh mencetak lembar disposisinya:
+        // unit pencatat, unit tujuan disposisi (peserta), dan pengawas.
+        const sourceAccess = await recordAccessService.checkRead(req.user, 'surat_masuk', suratId);
         if (!sourceAccess.exists || !sourceAccess.allowed) {
             return res.status(404).json({ error: 'Distribution history not found', message: 'Riwayat disposisi tidak ditemukan.' });
         }
-        const history = await distributionService.getHistoryBySurat(
-            suratId,
-            resolveRecordUnitScope(req),
-        );
+        // Pengawas bukan unit asal maupun tujuan, jadi ia melihat baris yang
+        // dilihat unit pencatat. Pemilik dan peserta tetap dibatasi ke unitnya.
+        const unitScope = sourceAccess.via === 'pengawas' && sourceAccess.unitKerjaId
+            ? sourceAccess.unitKerjaId
+            : resolveRecordUnitScope(req);
+        const history = await distributionService.getHistoryBySurat(suratId, unitScope);
         if (history.length === 0) {
             return res.status(404).json({ error: 'Distribution history not found', message: 'Riwayat disposisi tidak ditemukan.' });
         }

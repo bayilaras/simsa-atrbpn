@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     keluar: { getAll: vi.fn(), getStats: vi.fn(), delete: vi.fn(), archive: vi.fn() },
     approval: { getPending: vi.fn(), getEligibleApprovers: vi.fn(), submitBulk: vi.fn(), approveBulk: vi.fn() },
     toast: vi.fn(),
+    ekspor: vi.fn(),
     role: 'admin_unit',
 }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({
@@ -23,7 +24,7 @@ vi.mock('@/services/surat-keluar.service', () => ({ default: mocks.keluar }))
 vi.mock('@/services/approval.service', () => ({ default: mocks.approval }))
 vi.mock('@/services/settings.service', () => ({ default: { getAllUnitKerja: async () => [] } }))
 vi.mock('@/components/ArchiveDialog', () => ({ ArchiveDialog: () => null }))
-vi.mock('@/components/ExportButton', () => ({ ExportButton: () => null }))
+vi.mock('@/components/ExportButton', () => ({ ExportButton: (props) => { mocks.ekspor(props); return null } }))
 vi.mock('@/components/ImportFromGDrive', () => ({ default: () => null }))
 vi.mock('@/components/ImportFileDialog', () => ({ default: () => null }))
 
@@ -150,6 +151,19 @@ describe('penyaring kerja persetujuan', () => {
         await tampil('/surat/keluar?persetujuan=menunggu_saya')
         expect(mocks.keluar.getAll).toHaveBeenCalledWith(expect.objectContaining({ persetujuan: 'menunggu_saya' }))
         expect(screen.queryByRole('button', { name: 'Tampilkan semua di daftar' })).toBeNull()
+    })
+
+    it('tombol Ekspor membawa penyaring persetujuan yang sama dengan daftar', async () => {
+        await tampil('/surat/keluar?persetujuan=menunggu_saya')
+        await waitFor(() => expect(mocks.ekspor.mock.lastCall[0]).toMatchObject({
+            type: 'surat-keluar',
+            filters: { persetujuan: 'menunggu_saya' },
+        }))
+    })
+
+    it('tanpa penyaring persetujuan, Ekspor tidak mengirimnya', async () => {
+        await tampil()
+        expect(mocks.ekspor.mock.lastCall[0].filters.persetujuan).toBeUndefined()
     })
 
     it('daftar tersaring yang lebih sedikit dari jumlah menunggu: kartu menjelaskan dan menaut ke surat yang tidak tampil', async () => {

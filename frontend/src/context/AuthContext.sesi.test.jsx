@@ -2,7 +2,7 @@ import { act, render } from '@testing-library/react'
 import { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthProvider, useAuth } from './AuthContext'
-import { aturUlangKontakServer, catatKontakServer, PESAN_SESI_BERAKHIR } from '../lib/sesi-masuk'
+import { aturUlangKontakServer, catatKontakServer, KUNCI_AKTIVITAS_BERSAMA, PESAN_SESI_BERAKHIR } from '../lib/sesi-masuk'
 
 const service = vi.hoisted(() => ({
     getSession: vi.fn(), signOut: vi.fn(), refreshSession: vi.fn(), signInWithEmail: vi.fn(),
@@ -40,6 +40,7 @@ beforeEach(() => {
     vi.setSystemTime(new Date('2026-11-14T03:00:00Z'))
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     aturUlangKontakServer()
+    window.localStorage.clear()
     service.getSession.mockReset().mockResolvedValue({ user: { id: 'u-1', role: 'staff', unitKerjaId: 'dir_bppt' } })
     service.signOut.mockReset().mockResolvedValue(undefined)
     service.refreshSession.mockReset().mockResolvedValue('aktif')
@@ -116,5 +117,76 @@ describe('sesi tanpa aktivitas', () => {
         await aktivitas()
         expect(service.refreshSession).toHaveBeenCalledTimes(2)
         expect(auth.user).toMatchObject({ id: 'u-1' })
+    })
+})
+
+// Sesi server dipakai bersama semua tab. Tab lain mencatat aktivitasnya di
+// localStorage; peristiwa `storage` hanya sampai ke tab yang tidak menulisnya.
+function aktivitasDiTabLain({ kabari = true } = {}) {
+    const waktu = String(Date.now())
+    window.localStorage.setItem(KUNCI_AKTIVITAS_BERSAMA, waktu)
+    if (kabari) window.dispatchEvent(new StorageEvent('storage', { key: KUNCI_AKTIVITAS_BERSAMA, newValue: waktu }))
+}
+
+describe('sesi tanpa aktivitas dengan lebih dari satu tab', () => {
+    it('tab yang menganggur tidak menutup sesi selagi pengguna aktif di tab lain', async () => {
+        await masuk()
+        await lewati(20 * MENIT)
+        await act(async () => { aktivitasDiTabLain() })
+
+        await lewati(10 * MENIT) // menit ke-30 bagi tab ini
+        expect(service.signOut).not.toHaveBeenCalled()
+        expect(auth.user).toMatchObject({ id: 'u-1' })
+        expect(auth.idleWarning).toBe(false)
+
+        await lewati(15 * MENIT) // 25 menit sejak aktivitas di tab lain
+        expect(auth.idleWarning).toBe(true)
+        expect(service.signOut).not.toHaveBeenCalled()
+
+        await lewati(5 * MENIT) // 30 menit sejak aktivitas di tab lain
+        expect(service.signOut).toHaveBeenCalledOnce()
+        expect(auth.sessionNotice).toBe(PESAN_SESI_BERAKHIR)
+    })
+
+    it('tetap memeriksa aktivitas tab lain saat timer habis walau peristiwanya tidak sampai', async () => {
+        await masuk()
+        await lewati(28 * MENIT)
+        expect(auth.idleWarning).toBe(true)
+        aktivitasDiTabLain({ kabari: false })
+
+        await lewati(2 * MENIT)
+        expect(service.signOut).not.toHaveBeenCalled()
+        expect(auth.idleWarning).toBe(false)
+
+        await lewati(28 * MENIT)
+        expect(service.signOut).toHaveBeenCalledOnce()
+    })
+
+    it('aktivitas tab lain menghapus peringatan di tab ini', async () => {
+        await masuk()
+        await lewati(26 * MENIT)
+        expect(auth.idleWarning).toBe(true)
+        await act(async () => { aktivitasDiTabLain() })
+        expect(auth.idleWarning).toBe(false)
+    })
+
+    it('catatan aktivitas yang lebih lama atau tidak sah tidak menunda logout', async () => {
+        window.localStorage.setItem(KUNCI_AKTIVITAS_BERSAMA, 'bukan-angka')
+        await masuk()
+        await act(async () => {
+            window.dispatchEvent(new StorageEvent('storage', { key: KUNCI_AKTIVITAS_BERSAMA, newValue: String(Date.now() - 5 * MENIT) }))
+            window.dispatchEvent(new StorageEvent('storage', { key: 'kunci-lain', newValue: String(Date.now()) }))
+        })
+        await lewati(30 * MENIT)
+        expect(service.signOut).toHaveBeenCalledOnce()
+    })
+
+    it('mencatat aktivitas tab ini untuk tab lain', async () => {
+        await masuk()
+        const awal = Number(window.localStorage.getItem(KUNCI_AKTIVITAS_BERSAMA))
+        expect(awal).toBe(Date.now())
+        await lewati(MENIT)
+        await aktivitas()
+        expect(Number(window.localStorage.getItem(KUNCI_AKTIVITAS_BERSAMA))).toBe(awal + MENIT)
     })
 })

@@ -330,7 +330,8 @@ export default function ArchiveLending() {
         try {
             const res = lendingType === 'arsip'
                 ? await arsipService.search({ q: query, limit: 5, unitKerjaId })
-                : await storageLocationService.getAll({ search: query, limit: 5, unitKerjaId })
+                // Hanya boks yang dapat dipinjam; gedung, ruang, dan rak ditolak server.
+                : await storageLocationService.getAll({ search: query, limit: 5, unitKerjaId, level: 'box' })
             if (seq !== targetSearchSeq.current) return
             setTargetResults(toList(res))
         } catch (error) {
@@ -682,7 +683,7 @@ export default function ArchiveLending() {
                         </div>
 
                         <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-4 sm:gap-4">
-                            <Label className="text-left sm:pt-2 sm:text-right">{borrowForm.lendingType === 'arsip' ? 'Arsip' : 'Lokasi / Box'}</Label>
+                            <Label className="text-left sm:pt-2 sm:text-right">{borrowForm.lendingType === 'arsip' ? 'Arsip' : 'Boks'}</Label>
                             <div className="space-y-2 sm:col-span-3">
                                 {targetLabel ? (
                                     <div className="flex items-center gap-2 text-sm bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-100 rounded-md px-3 py-2">
@@ -698,13 +699,13 @@ export default function ArchiveLending() {
                                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                             <Input
                                                 id="lending-target-search"
-                                                aria-label={borrowForm.lendingType === 'arsip' ? 'Cari arsip yang akan dipinjam' : 'Cari lokasi atau boks yang akan dipinjam'}
+                                                aria-label={borrowForm.lendingType === 'arsip' ? 'Cari arsip yang akan dipinjam' : 'Cari boks yang akan dipinjam'}
                                                 value={targetQuery}
                                                 onChange={(e) => handleTargetQueryChange(e.target.value)}
                                                 className="pl-9"
                                                 placeholder={borrowForm.lendingType === 'arsip'
                                                     ? 'Cari nomor berkas atau uraian arsip (min. 3 huruf)'
-                                                    : 'Cari kode atau nama lokasi (min. 3 huruf)'}
+                                                    : 'Cari kode atau nama boks (min. 3 huruf)'}
                                             />
                                         </div>
                                         {targetLoading && (
@@ -721,7 +722,7 @@ export default function ArchiveLending() {
                                                         : item.code
                                                     const subtitle = borrowForm.lendingType === 'arsip'
                                                         ? (item.uraianBerkas || '-')
-                                                        : `${item.name || '-'}${item.level ? ` · ${item.level}` : ''}`
+                                                        : `${item.name || '-'} · Boks`
                                                     return (
                                                         <button
                                                             type="button"

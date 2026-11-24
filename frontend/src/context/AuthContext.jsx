@@ -3,9 +3,14 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { authService } from '../services/auth.service';
 import { clearOfflineStorage } from '../lib/offline-storage';
 import { hapusDrafPenggunaLain, hapusSemuaDrafIsian } from '../lib/draf-isian';
+import { hapusKeadaanDaftarPenggunaLain, hapusSemuaKeadaanDaftar } from '../lib/keadaan-daftar';
 import { normalizeAuthenticatedUserUnitScope } from '../lib/unit-kerja-scope';
 import {
+    aktivitasBersamaTerakhir,
+    bacaWaktuAktivitas,
+    catatAktivitasBersama,
     catatKontakServer,
+    KUNCI_AKTIVITAS_BERSAMA,
     lamaTanpaKontak,
     PERPANJANG_SESI_SETELAH_MS,
     PESAN_SESI_BERAKHIR,
@@ -58,6 +63,46 @@ export function AuthProvider({ children }) {
             .finally(() => { sessionRefreshRef.current = false; });
     }, []);
 
+    // Pasang timer peringatan dan logout dihitung dari `sejak`: aktivitas
+    // terakhir pengguna, di tab ini atau di tab lain. Saat timer habis, tab
+    // memeriksa dulu apakah tab lain mencatat aktivitas yang lebih baru; sesi
+    // server dipakai bersama, jadi tab yang menganggur tidak boleh menutupnya.
+    const armIdleTimers = useCallback((sejak) => {
+        const aktivitasLebihBaru = () => {
+            const bersama = aktivitasBersamaTerakhir();
+            return bersama > sejak ? bersama : 0;
+        };
+        const berlalu = Math.max(0, Date.now() - sejak);
+
+        if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+        if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+        warningTimerRef.current = null;
+
+        setIdleWarning(berlalu >= IDLE_WARNING_MS);
+
+        // Set warning timer (fires 5 min before logout)
+        if (berlalu < IDLE_WARNING_MS) {
+            warningTimerRef.current = setTimeout(() => {
+                const lebihBaru = aktivitasLebihBaru();
+                if (lebihBaru) armIdleTimers(lebihBaru);
+                else setIdleWarning(true);
+            }, IDLE_WARNING_MS - berlalu);
+        }
+
+        // Set logout timer
+        idleTimerRef.current = setTimeout(() => {
+            const lebihBaru = aktivitasLebihBaru();
+            if (lebihBaru && Date.now() - lebihBaru < IDLE_TIMEOUT_MS) {
+                armIdleTimers(lebihBaru);
+                return;
+            }
+            console.warn('[Auth] Session idle timeout — auto logout');
+            setIdleWarning(false);
+            setSessionNotice(PESAN_SESI_BERAKHIR);
+            signOut({ pertahankanIsian: true });
+        }, Math.max(0, IDLE_TIMEOUT_MS - berlalu));
+    }, []);
+
     // Reset idle timers when user activity is detected
     const resetIdleTimer = useCallback(() => {
         const now = Date.now();
@@ -67,44 +112,38 @@ export function AuthProvider({ children }) {
         if (idleTimerRef.current && now - lastActivityRef.current < ACTIVITY_THROTTLE_MS) return;
         lastActivityRef.current = now;
 
-        setIdleWarning(false);
-
-        if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
-        if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-
-        // Set warning timer (fires 5 min before logout)
-        warningTimerRef.current = setTimeout(() => {
-            setIdleWarning(true);
-        }, IDLE_WARNING_MS);
-
-        // Set logout timer
-        idleTimerRef.current = setTimeout(() => {
-            console.warn('[Auth] Session idle timeout — auto logout');
-            setIdleWarning(false);
-            setSessionNotice(PESAN_SESI_BERAKHIR);
-            signOut({ pertahankanIsian: true });
-        }, IDLE_TIMEOUT_MS);
+        catatAktivitasBersama(now);
+        armIdleTimers(now);
 
         keepServerSessionAlive();
-    }, [keepServerSessionAlive]);
+    }, [armIdleTimers, keepServerSessionAlive]);
 
     // Setup and cleanup idle tracking
     useEffect(() => {
         if (!user) return; // Only track when logged in
 
         const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+        // Aktivitas di tab lain: hitung ulang dari sana (peringatan di tab ini
+        // ikut hilang) tanpa menulis balik dan tanpa menghubungi server.
+        const aktivitasTabLain = (event) => {
+            if (event.key !== KUNCI_AKTIVITAS_BERSAMA) return;
+            const waktu = bacaWaktuAktivitas(event.newValue);
+            if (waktu > lastActivityRef.current) armIdleTimers(waktu);
+        };
 
         events.forEach(event => window.addEventListener(event, resetIdleTimer, { passive: true }));
+        window.addEventListener('storage', aktivitasTabLain);
         resetIdleTimer(); // Initialize timers
 
         return () => {
             events.forEach(event => window.removeEventListener(event, resetIdleTimer));
+            window.removeEventListener('storage', aktivitasTabLain);
             if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
             if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
             warningTimerRef.current = null;
             idleTimerRef.current = null;
         };
-    }, [user, resetIdleTimer]);
+    }, [user, resetIdleTimer, armIdleTimers]);
 
     // Check authentication on mount
     useEffect(() => {
@@ -125,6 +164,7 @@ export function AuthProvider({ children }) {
                 catatKontakServer();
                 // Draf isian pengguna lain di tab ini tidak pernah ditawarkan; hapus.
                 hapusDrafPenggunaLain(session.user.id);
+                hapusKeadaanDaftarPenggunaLain(session.user.id);
                 setUser(normalizeAuthenticatedUserUnitScope(session.user));
             } else {
                 await clearOfflineStorage();
@@ -191,7 +231,10 @@ export function AuthProvider({ children }) {
     // Tombol Keluar memanggil signOut dengan event klik; hanya akhir sesi
     // (tidak aktif 30 menit atau ditolak server) yang mempertahankan draf isian.
     async function signOut(opsi) {
-        if (opsi?.pertahankanIsian !== true) hapusSemuaDrafIsian();
+        if (opsi?.pertahankanIsian !== true) {
+            hapusSemuaDrafIsian();
+            hapusSemuaKeadaanDaftar();
+        }
         if (signingOutRef.current) return;
         signingOutRef.current = true;
         authEpochRef.current += 1;

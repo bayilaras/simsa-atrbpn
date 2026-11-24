@@ -46,6 +46,7 @@ import { PageHeader } from '@/components/PageHeader';
 import appConfig from '@/lib/app-config';
 import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope';
 import { useNamaUnitKerja } from '@/hooks/use-nama-unit-kerja';
+import { kelompokSiklusArsip } from '@/lib/kelompok-siklus-arsip';
 
 ChartJS.register(
     CategoryScale,
@@ -147,6 +148,7 @@ export default function Dashboard() {
     const overdueParams = new URLSearchParams({ status: 'overdue' });
     if (actionUnit) overdueParams.set('unitKerjaId', actionUnit);
     const overdueCount = widgetData?.lendingOverview?.overdue;
+    const kelompokSiklus = kelompokSiklusArsip(widgetData?.archiveLifecycle);
     const hasOverdueCount = !error && !widgetError && Number.isFinite(overdueCount) && overdueCount >= 0;
     const scopeKey = user && requestedUnit !== undefined
         ? JSON.stringify([user.id, user.role, requestedUnit]) : null;
@@ -704,15 +706,10 @@ export default function Dashboard() {
                                                 role="img"
                                                 aria-label="Grafik status siklus arsip"
                                                 data={{
-                                                    labels: ['Aktif', 'Inaktif', 'Kadaluarsa', 'Belum Ditentukan'],
+                                                    labels: kelompokSiklus.map(item => item.label),
                                                     datasets: [{
-                                                        data: [
-                                                            widgetData.archiveLifecycle.aktif,
-                                                            widgetData.archiveLifecycle.inaktif,
-                                                            widgetData.archiveLifecycle.kadaluarsa,
-                                                            widgetData.archiveLifecycle.belumDitentukan,
-                                                        ],
-                                                        backgroundColor: ['#10b981', '#3b82f6', '#ef4444', '#94a3b8'],
+                                                        data: kelompokSiklus.map(item => item.value),
+                                                        backgroundColor: kelompokSiklus.map(item => item.warna),
                                                         borderWidth: 0,
                                                         hoverOffset: 4,
                                                     }],
@@ -739,12 +736,7 @@ export default function Dashboard() {
                                         </div>
                                         {/* Legend */}
                                         <div className="grid grid-cols-2 gap-2 mt-4">
-                                            {[
-                                                { label: 'Aktif', value: widgetData.archiveLifecycle.aktif, color: 'bg-emerald-500' },
-                                                { label: 'Inaktif', value: widgetData.archiveLifecycle.inaktif, color: 'bg-blue-500' },
-                                                { label: 'Kadaluarsa', value: widgetData.archiveLifecycle.kadaluarsa, color: 'bg-red-500' },
-                                                { label: 'Belum Ditentukan', value: widgetData.archiveLifecycle.belumDitentukan, color: 'bg-slate-400' },
-                                            ].map(item => (
+                                            {kelompokSiklus.map(item => (
                                                 <div key={item.label} className="flex items-center gap-2 text-xs">
                                                     <span className={`h-2.5 w-2.5 rounded-full ${item.color}`} />
                                                     <span className="text-muted-foreground">{item.label}</span>
