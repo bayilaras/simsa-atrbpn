@@ -60,6 +60,45 @@ describe('exports are audited before any file leaves the server', () => {
     });
 });
 
+describe('ekspor mengikuti penyaring yang tampil di daftar', () => {
+    const LOKASI = '30000000-0000-4000-8000-000000000001';
+    beforeEach(() => {
+        vi.clearAllMocks();
+        state.findAll.mockResolvedValue({ data: [], pagination: { total: 0 } });
+        state.audit.mockResolvedValue(undefined);
+    });
+
+    it.each(['excel', 'pdf'])('arsip/%s meneruskan lokasi simpan ke daftar dan catatan audit', async format => {
+        await request(app).get(`/api/export/arsip/${format}?storageLocationId=${LOKASI}`).expect(200);
+        expect(state.findAll.mock.calls[0][0]).toMatchObject({ unitKerjaId: 'unit-a', storageLocationId: LOKASI });
+        expect(state.audit.mock.calls[0][0].changes.filters).toMatchObject({ storageLocationId: LOKASI });
+    });
+
+    it.each(['excel', 'pdf'])('surat-keluar/%s meneruskan penyaring persetujuan bersama pembacanya', async format => {
+        await request(app).get(`/api/export/surat-keluar/${format}?persetujuan=menunggu_saya`).expect(200);
+        expect(state.findAll.mock.calls[0][0]).toMatchObject({
+            persetujuan: 'menunggu_saya',
+            pembaca: expect.objectContaining({ id: 'admin-a' }),
+        });
+        const filters = state.audit.mock.calls[0][0].changes.filters;
+        expect(filters).toMatchObject({ persetujuan: 'menunggu_saya' });
+        expect(filters.pembaca).toBeUndefined();
+    });
+
+    it.each([
+        '/api/export/arsip/excel?storageLocationId=bukan-uuid',
+        '/api/export/arsip/pdf?storageLocationId=bukan-uuid',
+        '/api/export/surat-keluar/excel?persetujuan=semua',
+        '/api/export/surat-keluar/pdf?persetujuan=semua',
+    ])('penyaring tidak dikenal ditolak, bukan diabaikan: %s', async path => {
+        const response = await request(app).get(path).expect(400);
+        expect(response.body).toMatchObject({ error: 'INVALID_EXPORT_FILTER' });
+        expect(response.headers['content-disposition']).toBeUndefined();
+        expect(state.findAll).not.toHaveBeenCalled();
+        expect(state.audit).not.toHaveBeenCalled();
+    });
+});
+
 describe('Laporan arsip export', () => {
     beforeEach(() => {
         vi.clearAllMocks();

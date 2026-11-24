@@ -23,6 +23,40 @@ export function lamaTanpaKontak(sekarang = Date.now()) {
     return kontakTerakhir > 0 ? sekarang - kontakTerakhir : Infinity
 }
 
+// Sesi server dipakai bersama semua tab, jadi hitungan "tidak ada aktivitas"
+// juga harus bersama: tab yang menganggur tidak boleh menutup sesi selagi
+// pengguna masih bekerja di tab lain (misalnya tab Cetak Disposisi yang
+// dibiarkan terbuka). Tiap tab mencatat aktivitasnya di sini.
+export const KUNCI_AKTIVITAS_BERSAMA = 'simsa:aktivitas-terakhir'
+
+/** Catat aktivitas pengguna di tab ini agar tab lain ikut menghitungnya. */
+export function catatAktivitasBersama(waktu = Date.now()) {
+    try {
+        window.localStorage.setItem(KUNCI_AKTIVITAS_BERSAMA, String(waktu))
+    } catch {
+        // Penyimpanan diblokir: tiap tab kembali menghitung sendiri.
+    }
+}
+
+/** Waktu aktivitas terakhir di tab mana pun; 0 bila tidak diketahui. */
+export function aktivitasBersamaTerakhir(sekarang = Date.now()) {
+    return bacaWaktuAktivitas(ambilAktivitasTersimpan(), sekarang)
+}
+
+/** Nilai dari peristiwa `storage` atau penyimpanan; waktu di masa depan tidak dipercaya. */
+export function bacaWaktuAktivitas(nilai, sekarang = Date.now()) {
+    const waktu = Number(nilai)
+    return Number.isFinite(waktu) && waktu > 0 ? Math.min(waktu, sekarang) : 0
+}
+
+function ambilAktivitasTersimpan() {
+    try {
+        return window.localStorage.getItem(KUNCI_AKTIVITAS_BERSAMA)
+    } catch {
+        return null
+    }
+}
+
 /**
  * Sesi yang ditolak server berakhir karena tidak dipakai bila server sudah
  * paling sedikit 30 menit (masa sesi dikurangi selang perpanjangan) tidak

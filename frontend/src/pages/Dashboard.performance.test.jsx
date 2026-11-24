@@ -13,6 +13,7 @@ const metrics = vi.hoisted(() => ({
 }))
 
 vi.mock('@/hooks/use-nama-unit-kerja', () => ({ useNamaUnitKerja: () => '' }))
+vi.mock('@/hooks/use-menunggu-keputusan-count', () => ({ useMenungguKeputusanCount: () => ({ permohonanAkses: 0, akunBaru: 0, total: 0 }) }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: metrics.user, canWrite: () => false }) }))
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ capabilities: { files: false, fileUploads: false } }) }))
 vi.mock('react-chartjs-2', () => ({ Line: () => null, Bar: () => null, Doughnut: () => null }))

@@ -56,7 +56,7 @@ Di bawah form login, terdapat pembatas **"atau"** dan tombol **"Masuk dengan Goo
 Langkah ini hanya untuk akun baru.
 
 1. SIMSA menampilkan halaman **Menunggu persetujuan administrator**. Dashboard, menu data, dan arsip belum dapat dibuka.
-2. Hubungi Super Admin dan sebutkan email Google yang kamu pakai. Super Admin memastikan langsung kepada kamu bahwa email itu milikmu, lalu menyetujui akun dengan menetapkan peran, serta unit kerja untuk **Admin Unit Kerja**.
+2. Hubungi Super Admin dan sebutkan email Google yang kamu pakai. Super Admin memastikan langsung kepada kamu bahwa email itu milikmu, lalu menyetujui akun dengan menetapkan peran, serta unit kerja untuk **Admin Unit Kerja**. Super Admin juga melihat jumlah akun yang menunggu di samping menu **Manajemen Pengguna** dan di Dashboard, tetapi SIMSA tidak mengirim email pemberitahuan.
 3. Setelah disetujui, sesi lama ditutup. Klik **Periksa ulang akses** atau **Keluar**, lalu masuk lagi dengan **Masuk dengan Google**.
 
 ---

@@ -8,13 +8,14 @@ const mocks = vi.hoisted(() => ({
     getAll: vi.fn(),
     getStats: vi.fn(),
     getById: vi.fn(),
+    ekspor: vi.fn(),
 }))
 
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: mocks.user, canWrite: () => false }) }))
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ capabilities: { files: false } }) }))
 vi.mock('@/services/arsip.service', () => ({ arsipService: { getAll: mocks.getAll, getStats: mocks.getStats } }))
 vi.mock('@/services/storage-location.service', () => ({ default: { getById: mocks.getById } }))
-vi.mock('@/components/ExportButton', () => ({ ExportButton: () => null }))
+vi.mock('@/components/ExportButton', () => ({ ExportButton: (props) => { mocks.ekspor(props); return null } }))
 vi.mock('@/components/ArchiveLifecycleWidget', () => ({ ArchiveLifecycleWidget: () => null }))
 
 const LOKASI = '70000000-0000-4000-8000-000000000004'
@@ -42,6 +43,23 @@ describe('daftar arsip tersaring per lokasi simpan', () => {
         fireEvent.click(chip)
         await waitFor(() => expect(mocks.getAll).toHaveBeenLastCalledWith(expect.objectContaining({ storageLocationId: undefined })))
         expect(screen.queryByRole('button', { name: 'Hapus filter lokasi simpan' })).not.toBeInTheDocument()
+    })
+
+    it('tombol Ekspor membawa lokasi simpan yang sedang menyaring daftar', async () => {
+        mocks.user = { id: 'admin-1', role: 'admin_unit', unitKerjaId: 'unit-1' }
+        try {
+            tampilkan(`/arsip/masuk?lokasi=${LOKASI}`)
+            expect(await screen.findByText('Berkas di boks')).toBeInTheDocument()
+            expect(mocks.ekspor).toHaveBeenLastCalledWith(expect.objectContaining({
+                type: 'arsip',
+                filters: expect.objectContaining({ jenisArsip: 'masuk', storageLocationId: LOKASI, unitKerjaId: 'unit-1' }),
+            }))
+
+            fireEvent.click(await screen.findByRole('button', { name: 'Hapus filter lokasi simpan' }))
+            await waitFor(() => expect(mocks.ekspor.mock.lastCall[0].filters.storageLocationId).toBeUndefined())
+        } finally {
+            mocks.user = { id: 'reader-1', role: 'staff', unitKerjaId: 'unit-1' }
+        }
     })
 
     it('menyebut arsip jenis lain di lokasi yang sama dan menautkan tabnya', async () => {

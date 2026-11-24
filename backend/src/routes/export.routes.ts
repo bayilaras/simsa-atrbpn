@@ -24,6 +24,35 @@ function teksSingkat(value: unknown, maks = 50): string | undefined {
     return typeof value === 'string' && value.trim() && value.length <= maks ? value.trim() : undefined;
 }
 
+const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PERSETUJUAN_DIKENAL = ['menunggu_saya', 'draft_saya'] as const;
+type SaringPersetujuan = typeof PERSETUJUAN_DIKENAL[number];
+
+class SaringanEksporTidakSah extends Error {}
+
+/**
+ * Penyaring yang mempersempit daftar di layar harus ikut mempersempit berkas
+ * ekspor. Nilai yang tidak dikenal ditolak, bukan diabaikan: mengabaikannya
+ * akan menghasilkan berkas yang lebih luas daripada daftar yang dilihat.
+ */
+function saringLokasiSimpan(value: unknown): string | undefined {
+    if (value === undefined || value === '') return undefined;
+    if (typeof value === 'string' && POLA_UUID.test(value)) return value;
+    throw new SaringanEksporTidakSah('Penyaring lokasi simpan tidak dikenali. Muat ulang halaman, lalu ekspor kembali.');
+}
+
+function saringPersetujuan(value: unknown): SaringPersetujuan | undefined {
+    if (value === undefined || value === '') return undefined;
+    if (PERSETUJUAN_DIKENAL.includes(value as SaringPersetujuan)) return value as SaringPersetujuan;
+    throw new SaringanEksporTidakSah('Penyaring persetujuan tidak dikenali. Muat ulang halaman, lalu ekspor kembali.');
+}
+
+function tolakSaringanTidakSah(error: unknown, res: Response): boolean {
+    if (!(error instanceof SaringanEksporTidakSah)) return false;
+    res.status(400).json({ error: 'INVALID_EXPORT_FILTER', message: error.message });
+    return true;
+}
+
 // Apply rate limiting to all export routes
 router.use(exportLimiter);
 router.use(authMiddleware);
@@ -128,10 +157,13 @@ router.get('/surat-keluar/excel', async (req: AuthRequest, res: Response) => {
             klasifikasiFasilitatif: klasifikasiFasilitatif as string,
             klasifikasiSubstantif: klasifikasiSubstantif as string,
             urutan: urutanDaftarSuratDari(req.query.urutan),
+            persetujuan: saringPersetujuan(req.query.persetujuan),
             securityClassifications: allowedSecurityClassifications(req.user),
         };
 
-        const buffer = await exportService.generateExcelSuratKeluar(filters);
+        // Penyaring persetujuan bergantung pada pembaca; identitasnya tidak
+        // ikut ke catatan audit, yang sudah mencatat pelaku ekspor.
+        const buffer = await exportService.generateExcelSuratKeluar({ ...filters, pembaca: req.user });
         await auditExport(req, { source: 'export', type: 'surat-keluar', format: 'excel', filters });
 
         const filename = `surat-keluar-${tahun || 'semua'}-${jakartaDate()}.xlsx`;
@@ -142,6 +174,7 @@ router.get('/surat-keluar/excel', async (req: AuthRequest, res: Response) => {
         if (error instanceof ExportCompletenessError) {
             return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
         }
+        if (tolakSaringanTidakSah(error, res)) return;
         log.error({ err: error }, 'Error exporting Surat Keluar to Excel:');
         res.status(500).json({ error: PESAN_GAGAL_EXCEL });
     }
@@ -164,10 +197,13 @@ router.get('/surat-keluar/pdf', async (req: AuthRequest, res: Response) => {
             klasifikasiFasilitatif: klasifikasiFasilitatif as string,
             klasifikasiSubstantif: klasifikasiSubstantif as string,
             urutan: urutanDaftarSuratDari(req.query.urutan),
+            persetujuan: saringPersetujuan(req.query.persetujuan),
             securityClassifications: allowedSecurityClassifications(req.user),
         };
 
-        const buffer = await exportService.generatePdfSuratKeluar(filters);
+        // Penyaring persetujuan bergantung pada pembaca; identitasnya tidak
+        // ikut ke catatan audit, yang sudah mencatat pelaku ekspor.
+        const buffer = await exportService.generatePdfSuratKeluar({ ...filters, pembaca: req.user });
         await auditExport(req, { source: 'export', type: 'surat-keluar', format: 'pdf', filters });
 
         const filename = `surat-keluar-${tahun || 'semua'}-${jakartaDate()}.pdf`;
@@ -178,6 +214,7 @@ router.get('/surat-keluar/pdf', async (req: AuthRequest, res: Response) => {
         if (error instanceof ExportCompletenessError) {
             return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
         }
+        if (tolakSaringanTidakSah(error, res)) return;
         log.error({ err: error }, 'Error exporting Surat Keluar to PDF:');
         res.status(500).json({ error: PESAN_GAGAL_PDF });
     }
@@ -197,6 +234,7 @@ router.get('/arsip/excel', async (req: AuthRequest, res: Response) => {
             unitKerjaId: unitKerjaId as string,
             jenisArsip: jenisArsip as string,
             tahun: tahun ? Number(tahun) : undefined,
+            storageLocationId: saringLokasiSimpan(req.query.storageLocationId),
             securityClassifications: allowedSecurityClassifications(req.user),
         };
 
@@ -216,6 +254,7 @@ router.get('/arsip/excel', async (req: AuthRequest, res: Response) => {
         if (error instanceof ExportFormulirKosongError) {
             return res.status(error.statusCode).json({ error: error.code, message: error.message });
         }
+        if (tolakSaringanTidakSah(error, res)) return;
         log.error({ err: error }, 'Error exporting Arsip to Excel:');
         res.status(500).json({ error: PESAN_GAGAL_EXCEL });
     }
@@ -233,6 +272,7 @@ router.get('/arsip/pdf', async (req: AuthRequest, res: Response) => {
             unitKerjaId: unitKerjaId as string,
             jenisArsip: jenisArsip as string,
             tahun: tahun ? Number(tahun) : undefined,
+            storageLocationId: saringLokasiSimpan(req.query.storageLocationId),
             securityClassifications: allowedSecurityClassifications(req.user),
         };
 
@@ -252,6 +292,7 @@ router.get('/arsip/pdf', async (req: AuthRequest, res: Response) => {
         if (error instanceof ExportFormulirKosongError) {
             return res.status(error.statusCode).json({ error: error.code, message: error.message });
         }
+        if (tolakSaringanTidakSah(error, res)) return;
         log.error({ err: error }, 'Error exporting Arsip to PDF:');
         res.status(500).json({ error: PESAN_GAGAL_PDF });
     }

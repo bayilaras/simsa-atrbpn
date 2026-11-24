@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useReducedMotion } from '@/hooks/use-reduced-motion'
 import { usePersetujuanMenungguCount } from '@/hooks/use-persetujuan-menunggu-count'
+import { useMenungguKeputusanCount } from '@/hooks/use-menunggu-keputusan-count'
+import { TAUTAN_AKUN_MENUNGGU, TAUTAN_PERMOHONAN_AKSES } from '@/lib/menunggu-keputusan'
 import { TAUTAN_PERSETUJUAN_MENUNGGU } from '@/lib/persetujuan-menunggu'
-import { MailOpen, Send, Archive, AlertTriangle, TrendingUp, Clock, Eye, Loader2, Plus, FileText, FolderArchive, ArrowRight, Building2, CalendarClock, FileBarChart, Inbox, ArrowUpRight, Shield, ShieldAlert, BookOpen, BookX, HardDrive, FileArchive, Image, Film, Music, File, CheckCircle2, ArrowRightCircle, ClipboardCheck, Stamp, Play } from 'lucide-react'
+import { MailOpen, Send, Archive, AlertTriangle, TrendingUp, Clock, Eye, Loader2, Plus, FileText, FolderArchive, ArrowRight, Building2, CalendarClock, FileBarChart, Inbox, ArrowUpRight, Shield, ShieldAlert, BookOpen, BookX, HardDrive, FileArchive, Image, Film, Music, File, CheckCircle2, ArrowRightCircle, ClipboardCheck, Stamp, Play, FileKey2, UserCheck } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -46,6 +48,7 @@ import { PageHeader } from '@/components/PageHeader';
 import appConfig from '@/lib/app-config';
 import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope';
 import { useNamaUnitKerja } from '@/hooks/use-nama-unit-kerja';
+import { kelompokSiklusArsip } from '@/lib/kelompok-siklus-arsip';
 
 ChartJS.register(
     CategoryScale,
@@ -114,6 +117,7 @@ export default function Dashboard() {
     const advancedWorkflowsEnabled = capabilities.advancedArchiveWorkflows !== false;
     const isAdmin = canWrite();
     const persetujuanMenunggu = usePersetujuanMenungguCount({ enabled: isAdmin });
+    const menungguKeputusan = useMenungguKeputusanCount({ enabled: user?.role === 'super_admin' });
     const reducedMotion = useReducedMotion();
     const chartOptions = { ...baseChartOptions, animation: reducedMotion ? false : undefined };
     const [loading, setLoading] = useState(true);
@@ -147,6 +151,7 @@ export default function Dashboard() {
     const overdueParams = new URLSearchParams({ status: 'overdue' });
     if (actionUnit) overdueParams.set('unitKerjaId', actionUnit);
     const overdueCount = widgetData?.lendingOverview?.overdue;
+    const kelompokSiklus = kelompokSiklusArsip(widgetData?.archiveLifecycle);
     const hasOverdueCount = !error && !widgetError && Number.isFinite(overdueCount) && overdueCount >= 0;
     const scopeKey = user && requestedUnit !== undefined
         ? JSON.stringify([user.id, user.role, requestedUnit]) : null;
@@ -487,6 +492,40 @@ export default function Dashboard() {
                                 </Button>
                             </div>
                         )}
+                        {menungguKeputusan.permohonanAkses > 0 && (
+                            <div className="mt-3 flex flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="min-w-0 space-y-1">
+                                    <p className="text-sm flex items-start gap-2">
+                                        <FileKey2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                                        {`${menungguKeputusan.permohonanAkses.toLocaleString('id-ID')} permohonan akses menunggu keputusan Anda`}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">Termasuk permohonan dari disposisi surat Terbatas, Rahasia, atau Sangat Rahasia. Pemohon menunggu sampai Anda memutuskan.</p>
+                                </div>
+                                <Button asChild variant="outline" className="w-full sm:w-auto whitespace-normal text-left h-auto min-h-9 py-2">
+                                    <Link to={TAUTAN_PERMOHONAN_AKSES}>
+                                        Tinjau permohonan akses
+                                        <ArrowRight aria-hidden="true" className="ml-2 h-4 w-4 shrink-0" />
+                                    </Link>
+                                </Button>
+                            </div>
+                        )}
+                        {menungguKeputusan.akunBaru > 0 && (
+                            <div className="mt-3 flex flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="min-w-0 space-y-1">
+                                    <p className="text-sm flex items-start gap-2">
+                                        <UserCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                                        {`${menungguKeputusan.akunBaru.toLocaleString('id-ID')} akun baru menunggu persetujuan Anda`}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">Akun ini belum dapat memakai SIMSA sampai diberi peran dan unit kerja.</p>
+                                </div>
+                                <Button asChild variant="outline" className="w-full sm:w-auto whitespace-normal text-left h-auto min-h-9 py-2">
+                                    <Link to={TAUTAN_AKUN_MENUNGGU}>
+                                        Tinjau akun yang menunggu
+                                        <ArrowRight aria-hidden="true" className="ml-2 h-4 w-4 shrink-0" />
+                                    </Link>
+                                </Button>
+                            </div>
+                        )}
                     </section>}
                     {/* Stats Grid */}
                     <div className="grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7">
@@ -704,15 +743,10 @@ export default function Dashboard() {
                                                 role="img"
                                                 aria-label="Grafik status siklus arsip"
                                                 data={{
-                                                    labels: ['Aktif', 'Inaktif', 'Kadaluarsa', 'Belum Ditentukan'],
+                                                    labels: kelompokSiklus.map(item => item.label),
                                                     datasets: [{
-                                                        data: [
-                                                            widgetData.archiveLifecycle.aktif,
-                                                            widgetData.archiveLifecycle.inaktif,
-                                                            widgetData.archiveLifecycle.kadaluarsa,
-                                                            widgetData.archiveLifecycle.belumDitentukan,
-                                                        ],
-                                                        backgroundColor: ['#10b981', '#3b82f6', '#ef4444', '#94a3b8'],
+                                                        data: kelompokSiklus.map(item => item.value),
+                                                        backgroundColor: kelompokSiklus.map(item => item.warna),
                                                         borderWidth: 0,
                                                         hoverOffset: 4,
                                                     }],
@@ -739,12 +773,7 @@ export default function Dashboard() {
                                         </div>
                                         {/* Legend */}
                                         <div className="grid grid-cols-2 gap-2 mt-4">
-                                            {[
-                                                { label: 'Aktif', value: widgetData.archiveLifecycle.aktif, color: 'bg-emerald-500' },
-                                                { label: 'Inaktif', value: widgetData.archiveLifecycle.inaktif, color: 'bg-blue-500' },
-                                                { label: 'Kadaluarsa', value: widgetData.archiveLifecycle.kadaluarsa, color: 'bg-red-500' },
-                                                { label: 'Belum Ditentukan', value: widgetData.archiveLifecycle.belumDitentukan, color: 'bg-slate-400' },
-                                            ].map(item => (
+                                            {kelompokSiklus.map(item => (
                                                 <div key={item.label} className="flex items-center gap-2 text-xs">
                                                     <span className={`h-2.5 w-2.5 rounded-full ${item.color}`} />
                                                     <span className="text-muted-foreground">{item.label}</span>

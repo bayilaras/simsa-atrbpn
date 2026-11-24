@@ -299,6 +299,34 @@ describe('distribution route unit scoping', () => {
         expect(mocks.distribution.kandidatPenyelesaian).toHaveBeenCalledWith('dist-1', 'unit-a', expect.objectContaining({ id: 'user-1' }));
     });
 
+    it('riwayat disposisi terbuka untuk unit tujuan, dibatasi ke unitnya sendiri', async () => {
+        mocks.recordAccess.checkRead.mockResolvedValue({ exists: true, allowed: true, unitKerjaId: 'sesditjen', via: 'peserta' });
+        mocks.distribution.getHistoryBySurat.mockResolvedValue([{ distribution: { id: 'dist-1' }, targetUnit: { id: 'unit-a', name: 'Unit A' } }]);
+
+        await request(app).get('/distributions/surat/surat-1').expect(200);
+
+        expect(mocks.recordAccess.checkRead).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1' }), 'surat_masuk', 'surat-1');
+        expect(mocks.distribution.getHistoryBySurat).toHaveBeenCalledWith('surat-1', 'unit-a');
+    });
+
+    it('riwayat disposisi untuk pengawas memakai cakupan unit pencatat', async () => {
+        mocks.recordAccess.checkRead.mockResolvedValue({ exists: true, allowed: true, unitKerjaId: 'sesditjen', via: 'pengawas' });
+        mocks.distribution.getHistoryBySurat.mockResolvedValue([{ distribution: { id: 'dist-1' }, targetUnit: { id: 'unit-b', name: 'Unit B' } }]);
+
+        await request(app).get('/distributions/surat/surat-1').expect(200);
+
+        expect(mocks.distribution.getHistoryBySurat).toHaveBeenCalledWith('surat-1', 'sesditjen');
+    });
+
+    it('riwayat disposisi surat tersamar tetap 404 tanpa menyentuh layanan', async () => {
+        mocks.recordAccess.checkRead.mockResolvedValue({ exists: true, allowed: false, masked: true, unitKerjaId: 'sesditjen', via: 'peserta' });
+        mocks.distribution.getHistoryBySurat.mockClear();
+
+        await request(app).get('/distributions/surat/surat-1').expect(404);
+
+        expect(mocks.distribution.getHistoryBySurat).not.toHaveBeenCalled();
+    });
+
     it('returns 404 when no scoped distribution history is visible', async () => {
         mocks.distribution.getHistoryBySurat.mockResolvedValue([]);
 

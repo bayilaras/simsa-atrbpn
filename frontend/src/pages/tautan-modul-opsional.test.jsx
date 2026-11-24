@@ -9,6 +9,7 @@ import Dashboard from './Dashboard'
 import RetentionManagement from './RetentionManagement'
 
 const state = vi.hoisted(() => ({ capabilities: {}, navigate: vi.fn() }))
+vi.mock('@/hooks/use-menunggu-keputusan-count', () => ({ useMenungguKeputusanCount: () => ({ permohonanAkses: 0, akunBaru: 0, total: 0 }) }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({
     user: { id: 'operator', name: 'Siti', role: 'admin_unit', unitKerjaId: 'unit-a' }, canWrite: () => true }) }))
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ loading: false, compatible: true,

@@ -285,6 +285,8 @@ export default function Arsip() {
                                 unitKerjaId: resolvedUnitKerjaId,
                                 search: searchTerm || undefined,
                                 tahun: tahunFilter !== 'all' ? tahunFilter : undefined,
+                                // Berkas ekspor harus sama dengan daftar di layar.
+                                storageLocationId: lokasiFilter || undefined,
                             }}
                         />
                     )}
