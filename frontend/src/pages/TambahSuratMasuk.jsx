@@ -748,7 +748,7 @@ export default function TambahSuratMasuk() {
                 <Alert className="border-emerald-500 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 animate-in slide-in-from-top-2">
                     <CheckCircle2 className="h-4 w-4" />
                     <AlertDescription>
-                        <span className="font-medium">Berhasil!</span> Surat masuk telah disimpan ke sistem.
+                        <p><span className="font-medium">Berhasil!</span> Surat masuk telah disimpan ke sistem.</p>
                     </AlertDescription>
                 </Alert>
             )}

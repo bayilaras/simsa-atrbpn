@@ -23,6 +23,17 @@ const tautanSitus = (root = document) => [...root.querySelectorAll(`a[href^="${S
 beforeEach(() => { state.capabilities = {} })
 afterEach(cleanup)
 
+describe('keterangan peran', () => {
+    // AlertDescription memakai grid: teks dan <strong> yang berdiri sendiri
+    // menjadi baris terpisah, jadi kalimatnya harus berada dalam satu paragraf.
+    it('menampilkan peran pengguna dalam satu kalimat utuh', () => {
+        show()
+        const peran = screen.getByText('Admin Unit Kerja', { selector: 'strong' })
+        expect(peran.parentElement.tagName).toBe('P')
+        expect(peran.parentElement).toHaveTextContent(/^Anda masuk sebagai Admin Unit Kerja\. Dua peran utama/)
+    })
+})
+
 describe('ringkasan surat dan impor', () => {
     it('menyebut batas kelas keamanan surat masuk dan menautkan aturan impor', () => {
         show()
