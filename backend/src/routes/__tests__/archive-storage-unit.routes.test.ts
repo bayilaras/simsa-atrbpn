@@ -164,7 +164,7 @@ describe('archive lending and storage unit boundaries', () => {
                 lendingType: 'arsip',
                 arsipId,
                 borrowerName: 'Petugas',
-                dueDate: '2026-09-01',
+                dueDate: '2099-09-01',
             });
         const storageResponse = await request(app)
             .post('/api/storage-locations')
@@ -181,6 +181,7 @@ describe('archive lending and storage unit boundaries', () => {
             expect.any(Object),
             'sesditjen',
             expect.objectContaining({ userId: state.user.id, userEmail: state.user.email }),
+            expect.any(Array),
         );
         expect(state.storage.create).toHaveBeenCalledWith(
             expect.objectContaining({ unitKerjaId: 'sesditjen' }),
@@ -199,7 +200,7 @@ describe('archive lending and storage unit boundaries', () => {
                 arsipId,
                 storageLocationId: locationId,
                 borrowerName: 'Petugas',
-                dueDate: '2026-09-01',
+                dueDate: '2099-09-01',
             });
 
         expect(response.status).toBe(201);
@@ -211,6 +212,7 @@ describe('archive lending and storage unit boundaries', () => {
             }),
             'sesditjen',
             expect.objectContaining({ userId: state.user.id, userEmail: state.user.email }),
+            expect.any(Array),
         );
     });
 
@@ -223,7 +225,7 @@ describe('archive lending and storage unit boundaries', () => {
                 lendingType: 'arsip',
                 arsipId,
                 borrowerName: 'Petugas',
-                dueDate: '2026-09-01',
+                dueDate: '2099-09-01',
             });
         const returned = await request(app)
             .put(`/api/archive-lending/${lendingId}/return`)
@@ -258,7 +260,7 @@ describe('archive lending and storage unit boundaries', () => {
                 lendingType: 'arsip',
                 arsipId,
                 borrowerName: 'Petugas',
-                dueDate: '2026-09-01',
+                dueDate: '2099-09-01',
             })).status).toBe(201);
         expect((await request(app)
             .post('/api/storage-locations')
@@ -273,6 +275,7 @@ describe('archive lending and storage unit boundaries', () => {
             expect.any(Object),
             'ditjen',
             expect.objectContaining({ userId: state.user.id, userEmail: state.user.email }),
+            expect.any(Array),
         );
         expect(state.storage.create).toHaveBeenCalledWith(
             expect.objectContaining({ unitKerjaId: 'ditjen' }),
@@ -283,7 +286,7 @@ describe('archive lending and storage unit boundaries', () => {
 
     it('scopes return, extension, storage update, and delete mutations', async () => {
         state.lending.return.mockResolvedValue({ id: lendingId, returnDate: '2026-08-25' });
-        state.lending.extend.mockResolvedValue({ id: lendingId, dueDate: '2026-09-05' });
+        state.lending.extend.mockResolvedValue({ id: lendingId, dueDate: '2099-09-05' });
         state.storage.findById.mockResolvedValue({ id: locationId, code: 'G1', name: 'Gedung' });
         state.storage.update.mockResolvedValue({ id: locationId, name: 'Baru' });
         state.storage.delete.mockResolvedValue({ id: locationId });
@@ -293,7 +296,7 @@ describe('archive lending and storage unit boundaries', () => {
             .send({ notes: 'Baik' })).status).toBe(200);
         expect((await request(app)
             .put(`/api/archive-lending/${lendingId}/extend?unitKerjaId=ditjen`)
-            .send({ newDueDate: '2026-09-05' })).status).toBe(200);
+            .send({ newDueDate: '2099-09-05' })).status).toBe(200);
         expect((await request(app)
             .put(`/api/storage-locations/${locationId}?unitKerjaId=ditjen`)
             .send({ name: 'Baru' })).status).toBe(200);
@@ -305,10 +308,10 @@ describe('archive lending and storage unit boundaries', () => {
             userEmail: state.user.email,
         });
         expect(state.lending.return).toHaveBeenCalledWith(
-            lendingId, 'sesditjen', 'Baik', auditContext,
+            lendingId, 'sesditjen', 'Baik', auditContext, expect.any(Array),
         );
         expect(state.lending.extend).toHaveBeenCalledWith(
-            lendingId, 'sesditjen', '2026-09-05', auditContext,
+            lendingId, 'sesditjen', '2099-09-05', auditContext, expect.any(Array),
         );
         expect(state.storage.update).toHaveBeenCalledWith(
             locationId, { name: 'Baru' }, 'sesditjen', auditContext,
