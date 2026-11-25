@@ -16,7 +16,7 @@ beforeAll(async () => {
     const columns = getTableConfig(archiveLending).columns.map(c => `"${c.name}" ${c.getSQLType()}`).join(',');
     await database.exec(`CREATE TABLE archive_lending (${columns});
       CREATE TABLE users(id uuid, name text, email text);
-      CREATE TABLE arsip(id uuid, unit_kerja_id text, nomor_berkas text, uraian_berkas text, klasifikasi_keamanan text DEFAULT 'biasa');
+      CREATE TABLE arsip(id uuid, unit_kerja_id text, nomor_berkas text, uraian_berkas text, klasifikasi_keamanan text DEFAULT 'biasa', storage_location_id uuid);
       CREATE TABLE storage_locations(id uuid, unit_kerja_id text, code text, name text);
       INSERT INTO arsip(id,unit_kerja_id,nomor_berkas,uraian_berkas) VALUES ('${aid}','ditjen','QA-NOMOR-001','Arsip pertama'),('${aid2}','ditjen','QA-NOMOR-002','Sertifikat kedua'),('${foreign}','sesditjen','RAHASIA-UNIT-LAIN','Unit lain');
       INSERT INTO storage_locations VALUES ('${lid}','ditjen','BOX-001','Box sintetis');
@@ -95,11 +95,13 @@ it.each(['admin_unit', 'staff', 'auditor'])('hides same-unit secret archive loan
         expect.soft(JSON.stringify(overdue)).not.toContain('PRIVATE-SECRET');
         expect.soft(await service.getStats('ditjen',securityClassifications)).toMatchObject({total:3,borrowed:1,overdue:1,returned:2});
         expect.soft(await service.findById(secretLoan,'ditjen',securityClassifications)).toBeNull();
-        expect.soft(await service.getHistoryByArsipId(secretArchive,'ditjen',securityClassifications)).toEqual([]);
+        expect.soft(await service.getHistoryByArsipId(secretArchive,'ditjen',securityClassifications)).toEqual({readable:false,active:[],history:[],total:0,limit:10});
         const superClasses=allowedSecurityClassifications({id:'qa-super',role:'super_admin',unitKerjaId:null});
         const authorized=await service.findAll({unitKerjaId:'ditjen',securityClassifications:superClasses,search:'PRIVATE-SECRET-001'});
         expect.soft(authorized.pagination.total).toBe(1);
         expect.soft(authorized.data[0].arsip?.noArsip).toBe('PRIVATE-SECRET-001');
+        expect.soft((await service.getHistoryByArsipId(secretArchive,'ditjen',superClasses)).active)
+            .toEqual([expect.objectContaining({borrowerName:'PRIVATE-SECRET-BORROWER',status:'overdue',daysOverdue:1})]);
     } finally {
         await database.exec(`DELETE FROM archive_lending WHERE id='${secretLoan}'; DELETE FROM arsip WHERE id='${secretArchive}';`);
     }

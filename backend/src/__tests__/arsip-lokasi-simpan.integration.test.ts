@@ -383,7 +383,7 @@ describe('lokasi simpan dan peminjaman', () => {
         const { archiveLendingService } = await import('../services/archive-lending.service');
         await archiveLendingService.borrow({
             lendingType: 'arsip', arsipId: ARSIP.biasaDiRak, borrowerId: USER_ID.tu, borrowerName: 'Peminjam Uji', dueDate: '2099-01-01',
-        }, 'sesditjen');
+        }, 'sesditjen', undefined, ['biasa']);
         const response = await request(app).put(`/api/arsip/${ARSIP.biasaDiRak}`).set(sebagai(PENGGUNA.tu))
             .send({ storageLocationId: LOKASI.boks2 }).expect(409);
         expect(response.body.error).toBe(PESAN_LOKASI_ARSIP_SEDANG_DIPINJAM);

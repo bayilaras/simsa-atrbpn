@@ -4,7 +4,13 @@ import { archiveLending, arsip, storageLocations, users } from '../db/schema';
 import { eq, and, desc, sql, lt, inArray, or, ilike, gte, type SQL } from 'drizzle-orm';
 import type { RecordUnitScope } from '../utils/record-unit-scope.js';
 import auditLogService, { type CriticalAuditContext } from './audit-log.service.js';
-import { jakartaDate } from '../utils/jakarta-date.js';
+import { jakartaDate, selisihHariKalender } from '../utils/jakarta-date.js';
+import { klasifikasiInSql, normalizeSecurityClassification } from './access/visibility-spec.js';
+import {
+    BATAS_RIWAYAT_PINJAM_ARSIP,
+    PESAN_JATUH_TEMPO_LAMPAU,
+    PESAN_PERPANJANGAN_TIDAK_MAJU,
+} from './archive-lending.constants.js';
 
 export interface LendingFilters {
     unitKerjaId: RecordUnitScope;
@@ -167,12 +173,105 @@ export class ArchiveLendingService {
         return result || null;
     }
 
-    async getHistoryByArsipId(arsipId: string, unitKerjaId: RecordUnitScope, securityClassifications: string[] = []) {
-        return await db
-            .select()
+    /**
+     * Peminjaman satu arsip untuk kartu di halaman detail: pinjaman yang masih
+     * berjalan (atas arsip itu sendiri atau atas boks tempatnya disimpan) dan
+     * riwayat pinjaman arsip yang sudah dikembalikan, terbaru lebih dulu.
+     *
+     * Arsip di luar unit atau di atas kelas pemanggil dijawab sama dengan arsip
+     * yang tidak ada (`readable: false`), dan boksnya tidak ikut dicari, supaya
+     * jawaban tidak membenarkan keberadaan arsip itu. Baris pinjamannya tetap
+     * disaring `readableWhere`, sama dengan daftar Peminjaman.
+     */
+    async getHistoryByArsipId(
+        arsipId: string,
+        unitKerjaId: RecordUnitScope,
+        securityClassifications: string[] = [],
+        limit: number = BATAS_RIWAYAT_PINJAM_ARSIP,
+    ) {
+        const today = jakartaDate();
+        const [target] = await db
+            .select({ id: arsip.id, storageLocationId: arsip.storageLocationId })
+            .from(arsip)
+            .where(and(
+                eq(arsip.id, arsipId),
+                unitKerjaId === null ? undefined : eq(arsip.unitKerjaId, unitKerjaId),
+                klasifikasiInSql(arsip.klasifikasiKeamanan, securityClassifications),
+            ))
+            .limit(1);
+
+        if (!target) {
+            return { readable: false, active: [], history: [], total: 0, limit };
+        }
+
+        const view = {
+            id: archiveLending.id,
+            lendingType: archiveLending.lendingType,
+            borrowerName: archiveLending.borrowerName,
+            departmentUnit: archiveLending.departmentUnit,
+            borrowDate: archiveLending.borrowDate,
+            dueDate: archiveLending.dueDate,
+            returnDate: archiveLending.returnDate,
+            status: archiveLending.status,
+            purpose: archiveLending.purpose,
+            storageLocation: { id: storageLocations.id, code: storageLocations.code, name: storageLocations.name },
+        };
+        const boxJoin = and(
+            eq(archiveLending.lendingType, 'box'),
+            eq(archiveLending.storageLocationId, storageLocations.id),
+            unitKerjaId === null ? undefined : eq(storageLocations.unitKerjaId, unitKerjaId),
+        );
+        const ownLoan = and(eq(archiveLending.lendingType, 'arsip'), eq(archiveLending.arsipId, arsipId));
+        // Boks yang dipinjam utuh membawa arsip ini keluar bersama isinya.
+        const openTarget = target.storageLocationId
+            ? or(ownLoan, and(
+                eq(archiveLending.lendingType, 'box'),
+                eq(archiveLending.storageLocationId, target.storageLocationId),
+            ))
+            : ownLoan;
+
+        const active = await db
+            .select(view)
             .from(archiveLending)
-            .where(this.readableWhere(unitKerjaId, securityClassifications, eq(archiveLending.arsipId, arsipId)))
-            .orderBy(desc(archiveLending.borrowDate));
+            .leftJoin(storageLocations, boxJoin)
+            .where(this.readableWhere(
+                unitKerjaId,
+                securityClassifications,
+                openTarget,
+                inArray(archiveLending.status, ['borrowed', 'overdue']),
+            ))
+            .orderBy(archiveLending.lendingType, desc(archiveLending.borrowDate), desc(archiveLending.createdAt));
+
+        const returnedWhere = this.readableWhere(
+            unitKerjaId,
+            securityClassifications,
+            ownLoan,
+            eq(archiveLending.status, 'returned'),
+        );
+        const [{ count }] = await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(archiveLending)
+            .where(returnedWhere);
+        const history = count > 0
+            ? await db
+                .select(view)
+                .from(archiveLending)
+                .leftJoin(storageLocations, boxJoin)
+                .where(returnedWhere)
+                .orderBy(desc(archiveLending.borrowDate), desc(archiveLending.createdAt))
+                .limit(limit)
+            : [];
+
+        const tampil = (row: (typeof active)[number]) => {
+            const status = this.statusTampil(row, today);
+            return {
+                ...row,
+                status,
+                daysOverdue: status === 'overdue' ? Math.max(0, selisihHariKalender(row.dueDate, today)) : 0,
+            };
+        };
+
+        return { readable: true, active: active.map(tampil), history: history.map(tampil), total: count, limit };
     }
 
     async getHistoryByLocationId(locationId: string, unitKerjaId: RecordUnitScope, securityClassifications: string[] = []) {
@@ -194,7 +293,7 @@ export class ArchiveLendingService {
         purpose?: string;
         approvedBy?: string;
         createdBy?: string;
-    }, unitKerjaId: string, auditContext?: CriticalAuditContext) {
+    }, unitKerjaId: string, auditContext?: CriticalAuditContext, securityClassifications: string[] = []) {
         const borrowDate = jakartaDate();
 
         // Validate type-specific IDs
@@ -204,12 +303,19 @@ export class ArchiveLendingService {
         if (data.lendingType === 'box' && !data.storageLocationId) {
             throw new ValidationError('Pilih box yang akan dipinjam.');
         }
+        if (data.dueDate < borrowDate) {
+            throw new ValidationError(PESAN_JATUH_TEMPO_LAMPAU);
+        }
 
         return await db.transaction(async (tx: any) => {
             // Check if already borrowed
             if (data.lendingType === 'arsip' && data.arsipId) {
                 const [existingArsip] = await tx
-                    .select()
+                    .select({
+                        id: arsip.id,
+                        lendingStatus: arsip.lendingStatus,
+                        klasifikasiKeamanan: arsip.klasifikasiKeamanan,
+                    })
                     .from(arsip)
                     .where(and(
                         eq(arsip.id, data.arsipId),
@@ -218,7 +324,10 @@ export class ArchiveLendingService {
                     .limit(1)
                     .for('update');
 
-                if (!existingArsip) {
+                // Arsip di atas kelas pemanggil dijawab sama dengan arsip yang
+                // tidak ada, seperti daftar arsip dan daftar Peminjaman.
+                const classification = normalizeSecurityClassification(existingArsip?.klasifikasiKeamanan);
+                if (!existingArsip || !securityClassifications.includes(classification)) {
                     throw new AppError('Arsip tidak ditemukan.', 404);
                 }
                 if (existingArsip.lendingStatus === 'borrowed') {
@@ -323,16 +432,19 @@ export class ArchiveLendingService {
         unitKerjaId: string,
         notes?: string,
         auditContext?: CriticalAuditContext,
+        securityClassifications: string[] = [],
     ) {
         const returnDate = jakartaDate();
 
         return await db.transaction(async (tx: any) => {
             // Lock and scope the authoritative lending row inside the same
-            // transaction used for all state changes.
+            // transaction used for all state changes. The row is resolved with
+            // the visibility of the list and findById: a loan on an archive
+            // above the caller's class ceiling is answered like a missing one.
             const [lending] = await tx
                 .select()
                 .from(archiveLending)
-                .where(this.scopedWhere(unitKerjaId, eq(archiveLending.id, lendingId)))
+                .where(this.readableWhere(unitKerjaId, securityClassifications, eq(archiveLending.id, lendingId)))
                 .limit(1)
                 .for('update');
 
@@ -414,12 +526,18 @@ export class ArchiveLendingService {
         unitKerjaId: string,
         newDueDate: string,
         auditContext?: CriticalAuditContext,
+        securityClassifications: string[] = [],
     ) {
+        if (newDueDate < jakartaDate()) {
+            throw new ValidationError(PESAN_JATUH_TEMPO_LAMPAU);
+        }
+
         return await db.transaction(async (tx: any) => {
+            // Same visibility as the list and findById (see return()).
             const [lending] = await tx
                 .select()
                 .from(archiveLending)
-                .where(this.scopedWhere(unitKerjaId, eq(archiveLending.id, lendingId)))
+                .where(this.readableWhere(unitKerjaId, securityClassifications, eq(archiveLending.id, lendingId)))
                 .limit(1)
                 .for('update');
 
@@ -428,6 +546,9 @@ export class ArchiveLendingService {
             }
             if (lending.status === 'returned') {
                 throw new ConflictError('Peminjaman yang sudah dikembalikan tidak dapat diperpanjang.');
+            }
+            if (newDueDate <= lending.dueDate) {
+                throw new ValidationError(PESAN_PERPANJANGAN_TIDAK_MAJU);
             }
 
             const [updated] = await tx

@@ -20,6 +20,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { KlasifikasiPicker } from '@/components/KlasifikasiPicker'
 import { EditArsipDialog } from '@/components/arsip/EditArsipDialog'
+import { KartuPeminjamanArsip } from '@/components/arsip/KartuPeminjamanArsip'
 import {
     FIELD_CERMIN_ITEM,
     kelasPerluPersetujuan,
@@ -1053,6 +1054,9 @@ export default function ArsipDetail() {
                             />
                         </CardContent>
                     </Card>
+
+                    {/* Peminjam, jatuh tempo, dan riwayat peminjaman arsip ini */}
+                    <KartuPeminjamanArsip arsip={arsip} />
 
                     {/* Rule provenance */}
                     <Card className="shadow-sm">
