@@ -95,6 +95,28 @@ Gunakan tombol ikon di kolom **Aksi** pada Kotak Masuk:
 
 Surat yang isinya belum boleh kamu baca tampil sebagai **Dikecualikan**.
 
+### Mengekspor Rekap Disposisi
+
+Rekap tindak lanjut disposisi dapat diunduh untuk pelaporan. Tombolnya hanya tampil bagi admin unit, Super Admin, dan auditor.
+
+1. Buka tab **Kotak Masuk** atau **Kotak Keluar**. Di Kotak Masuk, centang **Lewat batas waktu** bila hanya disposisi terlambat yang diperlukan.
+2. Klik **Ekspor Excel** atau **Ekspor PDF** di kanan atas halaman.
+
+Berkas memuat **seluruh** disposisi pada kotak yang sedang dibuka sesuai penyaringnya, bukan hanya halaman yang tampil. Kata kunci di kotak cari tidak ikut menyaring berkas.
+
+| Kolom | Isi |
+|-------|-----|
+| **Nomor Surat**, **Perihal** | Surat yang didisposisikan |
+| **Unit Asal**, **Unit Tujuan** | Unit pengirim dan penerima disposisi |
+| **Instruksi** | Instruksi saat disposisi dibuat |
+| **Catatan** | Catatan penyelesaian, atau alasan penolakan untuk disposisi yang ditolak |
+| **Batas Waktu**, **Status** | Tenggat dan status disposisi (Menunggu, Diterima, Selesai, Ditolak) |
+| **Tanggal Dikirim**, **Tanggal Diterima**, **Tanggal Selesai** | Waktu tiap tahap dalam WIB |
+| **Lewat Batas** | **Ya** bila disposisi belum selesai dan batas waktunya sudah lewat; selain itu **Tidak** |
+
+- Surat yang tampil sebagai **Dikecualikan** di layar juga tertulis **Dikecualikan** di berkas: nomor, perihal, instruksi, dan catatannya tidak ikut diekspor. Unit, status, tanggal, dan batas waktunya tetap tercantum.
+- Ekspor dibatasi 10.000 baris dan setiap ekspor tercatat di Audit Log beserta penyaringnya.
+
 [![Kartu Alur Surat pada detail surat masuk](/img/panduan/surat-masuk-alur.png)](/img/panduan/surat-masuk-alur.png)
 
 *Contoh tampilan: kartu Alur Surat pada detail surat masuk memperlihatkan status tindak lanjut tiap unit penerima.*

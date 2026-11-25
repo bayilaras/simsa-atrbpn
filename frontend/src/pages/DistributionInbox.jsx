@@ -1,7 +1,7 @@
 import { useCallback, useState, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
-import { Inbox, Send, Check, X, Clock, ArrowRight, RefreshCw, Eye, CheckCircle, XCircle, Search, Filter, Mail, ArrowUpRight, ArrowDownLeft, ClipboardCheck, FilePlus2 } from 'lucide-react'
+import { Inbox, Send, Check, X, Clock, ArrowRight, RefreshCw, Eye, CheckCircle, XCircle, Search, Filter, Mail, ArrowUpRight, ArrowDownLeft, ClipboardCheck, FilePlus2, FileSpreadsheet, FileText } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -36,6 +36,7 @@ import { buildTindakLanjutState } from '@/lib/tindak-lanjut'
 import { pesanGalat } from '@/lib/pesan-galat'
 import { usePaginatedResource } from '@/hooks/use-paginated-resource'
 import { ResourcePagination } from '@/components/ResourcePagination'
+import { canExportReports } from '@/lib/provisioning-access'
 
 const statusConfig = {
     sent: { label: 'Menunggu', variant: 'outline', icon: Clock, className: 'text-yellow-600 dark:text-yellow-400 border-yellow-200 bg-yellow-50 dark:bg-yellow-500/15' },
@@ -62,6 +63,8 @@ export default function DistributionInbox() {
     const [searchTerm, setSearchTerm] = useState('')
     const [actionLoading, setActionLoading] = useState(false)
     const [lewatBatas, setLewatBatas] = useState(false)
+    const [exporting, setExporting] = useState(false)
+    const canExport = canExportReports(user?.role)
     const [penyelesaianTarget, setPenyelesaianTarget] = useState(null)
     const [searchParams, setSearchParams] = useSearchParams()
     const navigate = useNavigate()
@@ -190,6 +193,31 @@ export default function DistributionInbox() {
         }
     }
 
+    // Ekspor mengikuti kotak yang sedang dibuka dan penyaring servernya; yang
+    // dikirim sama dengan yang dipakai memuat daftar, tanpa page dan limit.
+    const namaKotakAktif = activeTab === 'inbox' ? 'Kotak Masuk' : 'Kotak Keluar'
+    const handleExport = async (formatBerkas) => {
+        if (!unitKerjaId) return
+        setExporting(true)
+        try {
+            await distributionService.exportKotak(
+                activeTab === 'inbox' ? 'inbox' : 'outbox',
+                formatBerkas,
+                unitKerjaId,
+                activeTab === 'inbox' && lewatBatas ? { lewatBatas: true } : {},
+            )
+            toast({ title: 'Berhasil', description: `Rekap ${namaKotakAktif} diunduh.` })
+        } catch (error) {
+            toast({
+                title: 'Gagal',
+                description: pesanGalat(error, 'Gagal mengekspor rekap disposisi. Silakan coba lagi.'),
+                variant: 'destructive',
+            })
+        } finally {
+            setExporting(false)
+        }
+    }
+
     const openRejectDialog = (distribution) => {
         setSelectedDistribution(distribution)
         setRejectDialogOpen(true)
@@ -235,11 +263,30 @@ export default function DistributionInbox() {
                     </h1>
                     <p className="text-muted-foreground">Kelola aliran surat masuk dan keluar antar unit kerja</p>
                 </div>
-                <Button variant="outline" onClick={loadData} disabled={loading || actionLoading} className="h-9">
-                    <RefreshCw className={`h-3.5 w-3.5 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                    Refresh Data
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                    {canExport && unitKerjaId && (
+                        <>
+                            <Button variant="outline" onClick={() => handleExport('excel')} disabled={exporting || loading} className="h-9">
+                                <FileSpreadsheet className="h-3.5 w-3.5 mr-2" />
+                                Ekspor Excel
+                            </Button>
+                            <Button variant="outline" onClick={() => handleExport('pdf')} disabled={exporting || loading} className="h-9">
+                                <FileText className="h-3.5 w-3.5 mr-2" />
+                                Ekspor PDF
+                            </Button>
+                        </>
+                    )}
+                    <Button variant="outline" onClick={loadData} disabled={loading || actionLoading} className="h-9">
+                        <RefreshCw className={`h-3.5 w-3.5 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                        Refresh Data
+                    </Button>
+                </div>
             </div>
+            {canExport && unitKerjaId && (
+                <p className="text-xs text-muted-foreground">
+                    Ekspor memuat seluruh {namaKotakAktif} sesuai penyaring yang dipilih, bukan hanya halaman yang tampil. Kotak cari tidak ikut menyaring berkas.
+                </p>
+            )}
 
             <RequiredUnitKerjaScope scope={unitScope} disabled={loading || actionLoading} />
 

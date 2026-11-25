@@ -49,6 +49,19 @@ Gunakan penyaring di atas daftar:
 | **Tipe Entity** | Jenis data: Surat Masuk, Surat Keluar, Arsip, User, Persetujuan Akses, Rangkaian Surat, Relasi Rangkaian, atau Disposisi |
 | **Aksi** | Jenis aksi, lihat tabel di bawah |
 
+### Mengekspor Audit Log
+
+1. Atur pencarian dan penyaring (rentang tanggal, tipe entity, aksi) sampai daftar berisi log yang diperlukan.
+2. Klik **Ekspor Excel** di kanan atas halaman. Berkas `audit-log-<tanggal>.xlsx` terunduh.
+
+Berkas memuat **seluruh** log yang cocok dengan pencarian dan penyaring, bukan hanya halaman yang tampil, dengan kolom **Waktu** (WIB), **Pengguna**, **Email**, **Aksi**, **Jenis Data**, **ID Data**, **Alamat IP**, dan **Ringkasan**.
+
+- **Ringkasan** hanya menulis nama isian yang berubah (misalnya *Isian: perihal, status*) dan, untuk aksi Ekspor Data, sumber serta format berkasnya. Nilai sebelum dan sesudah perubahan tidak ikut diekspor; lihat **Detail Perubahan** di layar bila nilainya diperlukan.
+- Ekspor dibatasi 10.000 baris. Bila hasil penyaring lebih banyak, berkas tidak dibuat; persempit rentang tanggal atau penyaring, lalu ekspor per bagian.
+- Ekspor Audit Log sendiri tercatat sebagai aksi **Ekspor Data** pada jenis data **Audit Log**, beserta penyaring yang dipakai.
+
+Berkas ini memuat nama pengguna, email, dan alamat IP. Berikan hanya kepada pihak yang berwenang dan hapus salinan yang tidak lagi diperlukan.
+
 ---
 
 ## Jenis Aksi yang Dicatat

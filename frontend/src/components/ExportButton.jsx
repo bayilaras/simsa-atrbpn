@@ -1,6 +1,6 @@
 import React, { useId, useLayoutEffect, useRef, useState } from 'react';
 import { Download, FileSpreadsheet, FileText, ChevronDown } from 'lucide-react';
-import api from '@/services/api';
+import { unduhEkspor } from '@/lib/unduh-ekspor';
 
 // Server menolak Formulir 6 tanpa arsip inaktif; itu keterangan, bukan kegagalan.
 const KODE_FORMULIR_KOSONG = 'EXPORT_FORMULIR6_EMPTY';
@@ -67,28 +67,11 @@ const ExportButton = ({ type, filters = {} }) => {
                 queryParams.set('formulirType', formulirType);
             }
 
-            const response = await api.get(`/api/export/${type}/${format}`, Object.fromEntries(queryParams), {
-                responseType: 'response',
-            });
-
-            const contentDisposition = response.headers.get('Content-Disposition');
-            let filename = `${type}-export.${format === 'excel' ? 'xlsx' : 'pdf'}`;
-            if (contentDisposition) {
-                const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-                if (filenameMatch) {
-                    filename = filenameMatch[1].replace(/['"]/g, '');
-                }
-            }
-
-            const blob = await response.blob();
-            const downloadUrl = window.URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = downloadUrl;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            window.URL.revokeObjectURL(downloadUrl);
+            await unduhEkspor(
+                `/api/export/${type}/${format}`,
+                Object.fromEntries(queryParams),
+                `${type}-export.${format === 'excel' ? 'xlsx' : 'pdf'}`,
+            );
         } catch (error) {
             // api.js sudah mengisi message dari body JSON (termasuk pesan 422) dan
             // memakai teks Indonesia sendiri untuk 401/429.
