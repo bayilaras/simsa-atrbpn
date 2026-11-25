@@ -1,0 +1,225 @@
+// Nama isian pada "Detail Perubahan" di Audit Log. Backend menulis nama kolom
+// apa adanya ke changes.before/after, jadi kunci berbahasa Inggris diberi label
+// di sini. Kunci berbahasa Indonesia (nomorSurat, tanggal_surat) tidak perlu
+// didaftarkan: labelIsianAudit menuliskannya sebagai kata-kata.
+const LABEL_ISIAN = {
+    // Umum
+    id: 'ID',
+    createdAt: 'Waktu dibuat',
+    createdBy: 'Dibuat oleh',
+    updatedAt: 'Waktu diperbarui',
+    updatedBy: 'Diperbarui oleh',
+    deletedAt: 'Waktu dihapus',
+    deletedBy: 'Dihapus oleh',
+    isDeleted: 'Dihapus',
+    isArchived: 'Diarsipkan',
+    isActive: 'Aktif',
+    unitKerjaId: 'Unit kerja',
+    name: 'Nama',
+    description: 'Deskripsi',
+    code: 'Kode',
+    level: 'Tingkat',
+    parentId: 'Induk',
+    label: 'Label',
+    value: 'Nilai',
+    version: 'Versi',
+    note: 'Catatan',
+    notes: 'Catatan',
+    reason: 'Alasan',
+    purpose: 'Tujuan',
+    evidence: 'Bukti',
+    scope: 'Cakupan',
+    metadata: 'Metadata',
+    userId: 'Pengguna',
+    userEmail: 'Email pengguna',
+
+    // Pengguna, preferensi, dan unit kerja
+    role: 'Peran',
+    nip: 'NIP',
+    image: 'Foto profil',
+    password: 'Kata sandi',
+    identityProvider: 'Cara masuk',
+    emailVerified: 'Email terverifikasi',
+    theme: 'Tema',
+    language: 'Bahasa antarmuka',
+    notificationsEnabled: 'Notifikasi dalam aplikasi',
+    emailNotifications: 'Notifikasi email',
+    canReceiveDistribution: 'Dapat menerima distribusi',
+    isUnitPengawas: 'Unit Pengawas',
+    unitType: 'Jenis unit',
+    driveFolderId: 'Folder Google Drive',
+    driveUploadFolderId: 'Folder unggahan Google Drive',
+
+    // Surat dan disposisi
+    diimporAt: 'Penanda impor',
+    linkDokumen: 'Tautan dokumen',
+    instruction: 'Instruksi',
+    sourceUnitId: 'Unit asal',
+    targetUnitId: 'Unit tujuan',
+    disposisiUnitIds: 'Unit disposisi',
+    ccUnits: 'Unit tembusan',
+    selesaiBy: 'Diselesaikan oleh',
+
+    // Berkas
+    hasFile: 'Ada berkas',
+    fileName: 'Nama berkas',
+    fileOriginalName: 'Nama berkas asli',
+    filePath: 'Lokasi berkas',
+    fileUrl: 'Alamat berkas',
+    fileAttachmentId: 'ID berkas',
+    mimeType: 'Jenis berkas',
+    sizeBytes: 'Ukuran (byte)',
+    sha256: 'SHA-256',
+    storageAccess: 'Akses penyimpanan',
+    integrityStatus: 'Status integritas',
+    malwareScanStatus: 'Status pemindaian malware',
+    lastFixityCheckAt: 'Waktu pemeriksaan integritas terakhir',
+    parentEntityId: 'ID data induk',
+    parentEntityType: 'Jenis data induk',
+    extractedText: 'Teks hasil OCR',
+    ocrStatus: 'Status OCR',
+    ocrProcessedAt: 'Waktu OCR',
+    mediaType: 'Jenis media',
+
+    // Arsip dan lokasi simpan
+    lokasiFc: 'No. Filing Cabinet',
+    lokasiLaci: 'No. Laci',
+    lokasiFolder: 'No. Folder',
+    storageLocationId: 'Lokasi penyimpanan',
+    capacity: 'Kapasitas',
+    currentCount: 'Jumlah terisi',
+    personInCharge: 'Penanggung jawab',
+    sourceSuratId: 'Surat asal',
+    nomorSuratOriginal: 'Nomor surat asli',
+    perihalOriginal: 'Perihal asli',
+    tanggalSuratOriginal: 'Tanggal surat asli',
+    immutable: 'Terkunci',
+    registrationCode: 'Kode registrasi',
+
+    // Peminjaman
+    lendingType: 'Tipe peminjaman',
+    lendingStatus: 'Status peminjaman',
+    borrowerId: 'Peminjam',
+    borrowerName: 'Peminjam',
+    borrowDate: 'Tanggal pinjam',
+    dueDate: 'Jatuh tempo',
+    returnDate: 'Tanggal kembali',
+
+    // Klasifikasi, JRA, dan aturan
+    jraItemId: 'Butir JRA',
+    jraKode: 'Kode JRA',
+    jraUraian: 'Uraian JRA',
+    jraReference: 'Rujukan JRA',
+    jraRuleSetId: 'Versi aturan JRA',
+    jraVersion: 'Versi JRA',
+    klasifikasiItemId: 'Butir klasifikasi',
+    klasifikasiReference: 'Rujukan klasifikasi',
+    klasifikasiRuleSetId: 'Versi aturan klasifikasi',
+    klasifikasiSnapshotHash: 'Sidik salinan klasifikasi',
+    klasifikasiVersion: 'Versi klasifikasi',
+    ruleSetId: 'Versi aturan',
+    ruleProvenanceStatus: 'Status asal aturan',
+    currentRuleSnapshotId: 'Salinan aturan yang berlaku',
+    effectiveFrom: 'Berlaku mulai',
+    effectiveTo: 'Berlaku sampai',
+    publishedAt: 'Waktu diterbitkan',
+    publishedBy: 'Diterbitkan oleh',
+    legalBasis: 'Dasar hukum',
+    regulationNumber: 'Nomor peraturan',
+
+    // Retensi, penilaian, penyusutan, dan penyerahan
+    legalHold: 'Legal Hold',
+    legalHoldReason: 'Alasan Legal Hold',
+    legalHoldPlacedAt: 'Waktu Legal Hold diterapkan',
+    legalHoldPlacedBy: 'Legal Hold diterapkan oleh',
+    legalHoldReleaseReason: 'Alasan pelepasan Legal Hold',
+    legalHoldReleasedAt: 'Waktu Legal Hold dilepas',
+    legalHoldReleasedBy: 'Legal Hold dilepas oleh',
+    retentionTriggerLabel: 'Pemicu retensi',
+    retentionTriggerType: 'Jenis pemicu retensi',
+    retentionTriggerDate: 'Tanggal pemicu retensi',
+    retentionTriggerEvidence: 'Bukti pemicu retensi',
+    retentionDecisionHash: 'Sidik keputusan retensi',
+    currentRetentionTriggerEventId: 'Pemicu retensi yang berlaku',
+    currentAppraisalDecisionId: 'Keputusan penilaian yang berlaku',
+    appraisalDecisionId: 'Keputusan penilaian',
+    eventType: 'Jenis peristiwa',
+    eventDate: 'Tanggal peristiwa',
+    correctionReason: 'Alasan koreksi',
+    rationale: 'Pertimbangan',
+    outcome: 'Hasil',
+    disposalStatus: 'Status pemusnahan',
+    disposalBatchId: 'Daftar pemusnahan',
+    inactiveTransferBatchId: 'Daftar pemindahan inaktif',
+    inactiveTransferredAt: 'Waktu pemindahan inaktif',
+    manifestNumber: 'Nomor daftar penyerahan',
+    sentAt: 'Waktu diserahkan',
+    sentBy: 'Diserahkan oleh',
+    receivedAt: 'Waktu diterima',
+    receivedBy: 'Diterima oleh',
+    cancellationReason: 'Alasan pembatalan',
+    cancellationNotes: 'Catatan pembatalan',
+    cancelledAt: 'Waktu dibatalkan',
+    cancelledBy: 'Dibatalkan oleh',
+
+    // Persetujuan akses dan keputusan
+    accessMode: 'Jenis akses',
+    entityId: 'ID data',
+    entityType: 'Jenis data',
+    targetUserId: 'Pengguna penerima akses',
+    requesterId: 'Pemohon',
+    requestedAt: 'Waktu diminta',
+    expiresAt: 'Masa berlaku',
+    approvedAt: 'Waktu disetujui',
+    approvedBy: 'Disetujui oleh',
+    approvalStatus: 'Status persetujuan',
+    approvalNote: 'Catatan persetujuan',
+    rejectionReason: 'Alasan penolakan',
+    revokedAt: 'Waktu dicabut',
+    revokedBy: 'Dicabut oleh',
+    revocationReason: 'Alasan pencabutan',
+    decidedAt: 'Waktu diputuskan',
+    decidedBy: 'Diputuskan oleh',
+    decisionReason: 'Alasan keputusan',
+    decisionStatus: 'Status keputusan',
+    reviewedAt: 'Waktu ditinjau',
+    reviewedBy: 'Ditinjau oleh',
+    reviewNote: 'Catatan peninjauan',
+    reviewReason: 'Alasan peninjauan',
+    submittedAt: 'Waktu diajukan',
+    submittedBy: 'Diajukan oleh',
+    verifiedAt: 'Waktu diverifikasi',
+    verifiedBy: 'Diverifikasi oleh',
+    verificationNotes: 'Catatan verifikasi',
+    processedAt: 'Waktu diproses',
+    processedBy: 'Diproses oleh',
+    completedAt: 'Waktu selesai',
+
+    // Tunjuk silang
+    sourceId: 'ID sumber',
+    sourceType: 'Jenis sumber',
+    targetId: 'ID tujuan',
+    targetType: 'Jenis tujuan',
+};
+
+const kataDariKunci = (kunci) => kunci.replace(/_/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+
+// Akhiran teknis pada kunci yang tidak terdaftar: suratMasukId menjadi
+// "ID surat Masuk", selesaiAt menjadi "Waktu selesai".
+const AKHIRAN = [
+    [/^(?:(.+)_ids?|(.*[a-z0-9])Ids?)$/, (inti) => `ID ${inti}`],
+    [/^(?:(.+)_at|(.*[a-z0-9])At)$/, (inti) => `Waktu ${inti}`],
+    [/^(?:(.+)_by|(.*[a-z0-9])By)$/, (inti) => `${inti} oleh`],
+];
+
+export const KUNCI_BERLABEL = Object.keys(LABEL_ISIAN);
+
+export function labelIsianAudit(field) {
+    const kunci = String(field);
+    if (Object.hasOwn(LABEL_ISIAN, kunci)) return LABEL_ISIAN[kunci];
+    for (const [pola, tulis] of AKHIRAN) {
+        const cocok = pola.exec(kunci);
+        if (cocok) return tulis(kataDariKunci(cocok[1] ?? cocok[2]));
+    }
+    return kataDariKunci(kunci);
+}

@@ -15,6 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import auditLogService from '@/services/audit-log.service';
 import { useAuth } from '@/context/AuthContext';
 import { canExportReports } from '@/lib/provisioning-access';
+import { labelIsianAudit } from '@/lib/label-isian-audit';
 import { Skeleton } from "@/components/ui/skeleton"
 
 const ACTION_CONFIG = {
@@ -98,22 +99,6 @@ const ENTITY_CONFIG = {
     'unit_kerja': { label: 'Unit Kerja', ...WARNA_NETRAL },
     'audit_log': { label: 'Audit Log', color: 'text-indigo-700', bgColor: 'bg-indigo-50 dark:bg-indigo-500/15' },
 };
-
-// Nama isian pada "Detail Perubahan". Kunci yang tidak terdaftar ditulis sebagai
-// kata-kata: "nomorSurat" dan "nomor_surat" menjadi "nomor surat".
-const LABEL_ISIAN = {
-    diimporAt: 'Penanda impor',
-    createdAt: 'Waktu dibuat',
-    updatedAt: 'Waktu diperbarui',
-    deletedAt: 'Waktu dihapus',
-    isDeleted: 'Dihapus',
-    isArchived: 'Diarsipkan',
-    isActive: 'Aktif',
-    unitKerjaId: 'Unit kerja',
-};
-const labelIsian = (field) => (Object.hasOwn(LABEL_ISIAN, field)
-    ? LABEL_ISIAN[field]
-    : String(field).replace(/_/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2'));
 
 // Nilai pada "Detail Perubahan". Yang diubah hanya bentuk yang sulit dibaca:
 // nilai kosong, ya/tidak, daftar, dan tanggal atau waktu berformat ISO. Nilai
@@ -259,7 +244,7 @@ export default function AuditLog() {
 
     const renderFieldChange = (field, before, after) => (
         <div key={field} className="grid grid-cols-1 sm:grid-cols-[120px_1fr] gap-1 sm:gap-4 text-xs sm:text-sm">
-            <span className="font-medium text-muted-foreground capitalize">{labelIsian(field)}:</span>
+            <span className="font-medium text-muted-foreground capitalize">{labelIsianAudit(field)}:</span>
             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
                 {before?.[field] !== undefined && (
                     <span className="text-red-600 line-through bg-red-50 dark:bg-red-500/15 px-1 rounded truncate max-w-xs block" title={nilaiMentah(before[field])}>
