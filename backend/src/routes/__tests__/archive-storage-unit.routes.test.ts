@@ -47,6 +47,7 @@ vi.mock('../../middlewares/role.middleware', () => ({
 
 vi.mock('../../middlewares/rate-limiter.middleware', () => ({
     sensitiveLimiter: (_req: any, _res: any, next: any) => next(),
+    lendingLimiter: (_req: any, _res: any, next: any) => next(),
 }));
 
 vi.mock('../../services/archive-lending.service', () => ({

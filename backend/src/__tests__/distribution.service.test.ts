@@ -387,7 +387,14 @@ describe('DistributionService', () => {
 
         it('should throw if already received', async () => {
             enqueue([awal], [{ id: 'dist-1', status: 'received', rangkaianId: 'rs-1' }]);
-            await expect(svc.receive('dist-1', 'u1', 'unit-1')).rejects.toThrow();
+            await expect(svc.receive('dist-1', 'u1', 'unit-1')).rejects.toMatchObject({
+                statusCode: 409, message: 'Disposisi ini sudah diterima, diselesaikan, atau ditolak. Muat ulang daftar.',
+            });
+        });
+
+        it('409 bila pengguna lain lebih dulu mengubah statusnya (pembaruan tidak mengenai baris)', async () => {
+            enqueue([awal], [{ id: 'dist-1', status: 'sent', rangkaianId: 'rs-1' }], []);
+            await expect(svc.receive('dist-1', 'u1', 'unit-1')).rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining('Muat ulang daftar.') });
         });
     });
 
@@ -501,7 +508,9 @@ describe('DistributionService', () => {
 
         it('should throw if already processed', async () => {
             enqueue([{ suratMasukId: 'sm-1', rangkaianId: null }], [{ id: 'dist-1', status: 'processed', rangkaianId: null }]);
-            await expect(svc.reject('dist-1', 'reason', 'unit-1')).rejects.toThrow(/tidak bisa ditolak/);
+            await expect(svc.reject('dist-1', 'reason', 'unit-1')).rejects.toMatchObject({
+                statusCode: 409, message: 'Disposisi ini sudah diselesaikan atau ditolak, jadi tidak dapat ditolak lagi. Muat ulang daftar.',
+            });
         });
 
         it('mengunci surat lalu rangkaian sebelum baris distribusi (urutan kunci G-LOCK)', async () => {

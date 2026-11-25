@@ -15,7 +15,7 @@ vi.mock('../../middlewares/auth.middleware', () => ({
     authMiddleware: (req: any, _res: any, next: any) => { req.user = state.user; next(); },
 }));
 vi.mock('../../middlewares/role.middleware', () => ({ canWriteMiddleware: () => (_req: any, _res: any, next: any) => next() }));
-vi.mock('../../middlewares/rate-limiter.middleware', () => ({ sensitiveLimiter: (_req: any, _res: any, next: any) => next() }));
+vi.mock('../../middlewares/rate-limiter.middleware', () => ({ sensitiveLimiter: (_req: any, _res: any, next: any) => next(), lendingLimiter: (_req: any, _res: any, next: any) => next() }));
 vi.mock('../../services/archive-lending.service', () => ({ archiveLendingService: {} }));
 vi.mock('../../services/storage-location.service', () => ({
     storageLocationService: { generateQRCode: state.location, generateArsipQRCode: state.archive },

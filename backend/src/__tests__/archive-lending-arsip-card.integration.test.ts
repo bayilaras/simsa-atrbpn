@@ -19,7 +19,7 @@ vi.mock('../middlewares/auth.middleware', () => ({
         next();
     },
 }));
-vi.mock('../middlewares/rate-limiter.middleware', () => ({ sensitiveLimiter: (_req: any, _res: any, next: any) => next() }));
+vi.mock('../middlewares/rate-limiter.middleware', () => ({ lendingLimiter: (_req: any, _res: any, next: any) => next() }));
 vi.mock('../services/storage-location.service', () => ({ storageLocationService: {} }));
 
 // Kartu Peminjaman di halaman detail arsip (GET /arsip/:arsipId) dan aturan

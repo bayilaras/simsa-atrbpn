@@ -153,15 +153,22 @@ export function deadlineTitle(sisaHari: number): string {
     return `Batas waktu disposisi ${sisaHari} hari lagi`;
 }
 
-/** Spec §5/§8: surat induk rangkaian data lama yang tertutup tidak masuk daftar kerja/notifikasi. */
+/**
+ * Spec §5/§8: surat induk rangkaian data lama yang tertutup tidak masuk daftar kerja/notifikasi.
+ * Register hasil impor (penanda diimpor_at, 0055) yang belum menjadi anggota rangkaian mana pun
+ * juga data lama, sama dengan aturan Perlu Dilengkapi (dataLamaSurat). Begitu surat impor
+ * didisposisikan atau ditindaklanjuti, ia menjadi anggota rangkaian dan kembali dinotifikasi.
+ */
 export function notDataLamaIncomingCondition(): SQL {
-    return sql`NOT EXISTS (
+    return sql`(NOT EXISTS (
         SELECT 1 FROM rangkaian_anggota notif_ra
         JOIN rangkaian_surat notif_rs ON notif_rs.id = notif_ra.rangkaian_id
         WHERE notif_ra.surat_masuk_id = ${suratMasuk.id}
           AND notif_rs.asal = 'data_lama'
           AND notif_rs.status <> 'aktif'
-    )`;
+    ) AND (${suratMasuk.diimporAt} IS NULL OR EXISTS (
+        SELECT 1 FROM rangkaian_anggota notif_rb WHERE notif_rb.surat_masuk_id = ${suratMasuk.id}
+    )))`;
 }
 
 export interface Notification {

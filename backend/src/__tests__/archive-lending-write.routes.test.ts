@@ -4,14 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { jakartaDate } from '../utils/jakarta-date';
 
 // Rute tulis peminjaman: sesi dan hak tulis lebih dulu, lalu validasi, baru
-// pembatas laju. Isian yang ditolak tidak boleh memakai kuota operasi sensitif.
+// pembatas laju. Isian yang ditolak tidak boleh memakai kuota pencatatan peminjaman.
 const mocks = vi.hoisted(() => ({
     user: { id: 'qa-admin', role: 'admin_unit', unitKerjaId: 'ditjen' as string | null, email: 'qa@example.test' },
     limiter: vi.fn((_req: any, _res: any, next: any) => next()),
     service: { borrow: vi.fn(), return: vi.fn(), extend: vi.fn() },
 }));
 vi.mock('../middlewares/auth.middleware', () => ({ authMiddleware: (req: any, _res: any, next: any) => { req.user = { ...mocks.user }; next(); } }));
-vi.mock('../middlewares/rate-limiter.middleware', () => ({ sensitiveLimiter: mocks.limiter }));
+vi.mock('../middlewares/rate-limiter.middleware', () => ({ lendingLimiter: mocks.limiter }));
 vi.mock('../services/archive-lending.service', () => ({ archiveLendingService: mocks.service }));
 vi.mock('../services/storage-location.service', () => ({ storageLocationService: {} }));
 import router from '../routes/archive-lending.routes';

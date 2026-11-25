@@ -294,8 +294,8 @@ describe.skipIf(!adaPostgres)('skenario §2', () => {
             () => distributionService.process(dist.id, 'dir_bppt', audit(bppt), { catatanPenyelesaian: 'Diproses tanpa menunggu terima' }, bppt),
         );
         expect(proses).toBe('ok');
-        // Terima menang lebih dulu (ok), atau kalah karena disposisi sudah diproses (400, bukan 500/deadlock).
-        if (terima !== 'ok') expect(statusCodeDari(terima)).toBe(400);
+        // Terima menang lebih dulu (ok), atau kalah karena disposisi sudah diproses (409, bukan 500/deadlock).
+        if (terima !== 'ok') expect(statusCodeDari(terima)).toBe(409);
         const [akhir] = await distribusiDari(sm.id);
         expect(akhir.status).toBe('processed');
         expect(await statusRangkaian(rs)).toBe('selesai');

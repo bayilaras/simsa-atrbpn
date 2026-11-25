@@ -1,7 +1,7 @@
 import express from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AppError, ValidationError } from '../utils/errors.js';
+import { AppError, ConflictError, ValidationError } from '../utils/errors.js';
 import { publicErrorResponse, publicErrorStatus } from '../utils/public-error.js';
 
 const mocks = vi.hoisted(() => ({
@@ -206,10 +206,10 @@ describe('distribution route unit scoping', () => {
         const missing = await request(app).put('/distributions/dist-1/receive');
         expect(missing.status).toBe(404);
         expect(missing.body).toMatchObject({ code: 'NOT_FOUND', message: 'Distribution not found' });
-        mocks.distribution.reject.mockRejectedValueOnce(new ValidationError('Distribution tidak bisa ditolak'));
+        mocks.distribution.reject.mockRejectedValueOnce(new ConflictError('Disposisi ini sudah diselesaikan atau ditolak, jadi tidak dapat ditolak lagi. Muat ulang daftar.'));
         const conflict = await request(app).put('/distributions/dist-1/reject').send({ reason: 'Bukan unit tujuan' });
-        expect(conflict.status).toBe(400);
-        expect(conflict.body).toMatchObject({ code: 'VALIDATION_ERROR', message: 'Distribution tidak bisa ditolak' });
+        expect(conflict.status).toBe(409);
+        expect(conflict.body).toMatchObject({ code: 'CONFLICT', message: 'Disposisi ini sudah diselesaikan atau ditolak, jadi tidak dapat ditolak lagi. Muat ulang daftar.' });
     });
 
     it('hides record existence and denies writes for a non-super user without a unit', async () => {

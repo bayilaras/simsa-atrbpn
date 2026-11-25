@@ -490,15 +490,74 @@ describe('DELETE /api/storage-locations/:id', () => {
     });
 });
 
-describe('dashboard: isi boks dihitung dari arsip', () => {
+describe('dashboard: kapasitas gedung dihitung dari pohon lokasi', () => {
+    // Isi gedung = arsip di lokasi mana pun di bawahnya: dua arsip biasa di
+    // boks 1 dan satu langsung di rak; arsip terbatas di boks 1 hanya bagi
+    // pembaca yang berwenang.
     it.each([
-        ['staff', ['biasa'], 2],
-        ['admin unit', ['biasa', 'terbatas'], 3],
+        ['staff', ['biasa'], 3],
+        ['admin unit', ['biasa', 'terbatas'], 4],
     ])('kapasitas gedung untuk %s', async (_kasus, kelas, isi) => {
         const { dashboardService } = await import('../services/dashboard.service');
         const data: any = await dashboardService.getWidgetData('sesditjen', kelas);
         expect(data.storageCapacity).toEqual([
-            expect.objectContaining({ id: LOKASI.gedung, totalCapacity: 20, boxCount: 2, currentCount: isi, usagePercent: Math.round((isi / 20) * 100) }),
+            expect.objectContaining({
+                id: LOKASI.gedung, code: 'G1', unitKerjaId: 'sesditjen', unitKerjaName: 'Sekretariat Ditjen',
+                totalCapacity: 20, boxCount: 2, currentCount: isi, usagePercent: Math.round((isi / 20) * 100),
+            }),
+        ]);
+    });
+
+    it('jumlah isi gedung sama dengan jumlah arsip pada pohon lokasi', async () => {
+        const { dashboardService } = await import('../services/dashboard.service');
+        const pohon = await request(app).get('/api/storage-locations/tree?unitKerjaId=sesditjen').set(sebagai(PENGGUNA.tu)).expect(200);
+        const data: any = await dashboardService.getWidgetData('sesditjen', ['biasa', 'terbatas']);
+        expect(data.storageCapacity[0].currentCount).toBe(cari(pohon.body.data, LOKASI.gedung).arsipCount);
+    });
+
+    it('gedung berkode sama milik dua unit tampil terpisah, dan boks berkode bebas ikut dihitung', async () => {
+        const boksBebas = '70000000-0000-4000-8000-000000000007';
+        const boksBppt = '70000000-0000-4000-8000-000000000008';
+        const boksTanpaGedung = '70000000-0000-4000-8000-000000000009';
+        await database.exec(`
+            INSERT INTO storage_locations (id, unit_kerja_id, code, name, level, parent_id, capacity) VALUES
+                ('${boksBebas}','sesditjen','LEMARI-ARSIP-A','Lemari Arsip A','box','${LOKASI.rak}',7),
+                ('${boksBppt}','dir_bppt','BPPT-01','Boks BPPT','box','${LOKASI.gedungBppt}',5),
+                -- Kodenya berawalan G1, tetapi tidak berada di bawah gedung mana pun.
+                ('${boksTanpaGedung}','dir_bppt','G1-LEPAS','Boks lepas','box',NULL,50);
+            INSERT INTO arsip (id, unit_kerja_id, jenis_arsip, tahun, klasifikasi_keamanan, keterangan, storage_location_id) VALUES
+                ('71000000-0000-4000-8000-000000000006','sesditjen','masuk',2026,'biasa','Biasa di lemari berkode bebas','${boksBebas}'),
+                ('71000000-0000-4000-8000-000000000007','dir_bppt','keluar',2026,'biasa','Biasa di boks BPPT','${boksBppt}'),
+                ('71000000-0000-4000-8000-000000000008','dir_bppt','keluar',2026,'biasa','Biasa di boks lepas','${boksTanpaGedung}');
+        `);
+        const { dashboardService } = await import('../services/dashboard.service');
+
+        // Semua unit (Super Admin): satu baris per gedung, masing-masing dengan unitnya.
+        const semua: any = await dashboardService.getWidgetData(null, ['biasa']);
+        expect(semua.storageCapacity).toHaveLength(2);
+        expect(semua.storageCapacity).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                id: LOKASI.gedung, code: 'G1', unitKerjaId: 'sesditjen', unitKerjaName: 'Sekretariat Ditjen',
+                boxCount: 3, totalCapacity: 27, currentCount: 4, usagePercent: Math.round((4 / 27) * 100),
+            }),
+            expect.objectContaining({
+                id: LOKASI.gedungBppt, code: 'G1', unitKerjaId: 'dir_bppt', unitKerjaName: 'Dit. BPPT',
+                boxCount: 1, totalCapacity: 5, currentCount: 1, usagePercent: 20,
+            }),
+        ]));
+
+        // Satu unit: hanya gedung unit itu, dengan angka yang sama.
+        const bppt: any = await dashboardService.getWidgetData('dir_bppt', ['biasa']);
+        expect(bppt.storageCapacity).toEqual([
+            expect.objectContaining({ id: LOKASI.gedungBppt, boxCount: 1, totalCapacity: 5, currentCount: 1 }),
+        ]);
+    });
+
+    it('gedung tanpa boks melaporkan nol tanpa pembagian', async () => {
+        const { dashboardService } = await import('../services/dashboard.service');
+        const data: any = await dashboardService.getWidgetData('dir_bppt', ['biasa']);
+        expect(data.storageCapacity).toEqual([
+            expect.objectContaining({ id: LOKASI.gedungBppt, boxCount: 0, totalCapacity: 0, currentCount: 0, usagePercent: 0 }),
         ]);
     });
 });

@@ -141,6 +141,69 @@ describe('C-I1: distribute membuka kembali rangkaian selesai manual', () => {
     });
 });
 
+describe('label disposisi surat mengikuti baris disposisi', () => {
+    const labelSm = async (id: string) => (await one<{ disposisi: string[] | null }>('SELECT disposisi FROM surat_masuk WHERE id = $1', [id])).disposisi;
+    /** Penyaring "Disposisi Ke" daftar surat masuk untuk unit itu. */
+    async function tersaringKe(unitKerjaId: string, id: string): Promise<boolean> {
+        const { disposisiKeUnitSql } = await import('../services/disposisi-filter');
+        const rows = await holder.db.select({ id: schema.suratMasuk.id }).from(schema.suratMasuk)
+            .where(sql`${schema.suratMasuk.id} = ${id} AND ${disposisiKeUnitSql(unitKerjaId)}`);
+        return rows.length === 1;
+    }
+    const kirim = (targetUnitId: string) => distributionService.distribute(
+        { suratMasukId: SM_A, sourceUnitId: 'sesditjen', targetUnitId, sentBy: USER_ID.tu }, audit(PENGGUNA.tu));
+
+    beforeEach(async () => {
+        await suratMasuk(SM_A, 71, 'SM-A/2026');
+        // Label lama/Kabag yang diisi TU saat registrasi tidak ikut berubah.
+        await database.query(`UPDATE surat_masuk SET disposisi = ARRAY['Kabag Umum'] WHERE id = $1`, [SM_A]);
+    });
+
+    it('Tolak mencabut nama unit yang menolak; label lain dan unit lain tetap', async () => {
+        const bppt = await kirim('dir_bppt');
+        await kirim('dir_ptep');
+        expect(await labelSm(SM_A)).toEqual(['Kabag Umum', 'Dit. BPPT', 'Dit. PTEP']);
+
+        await distributionService.reject(bppt.id, 'Bukan kewenangan kami', 'dir_bppt', audit(PENGGUNA.bppt));
+        expect(await labelSm(SM_A)).toEqual(['Kabag Umum', 'Dit. PTEP']);
+        expect([await tersaringKe('dir_bppt', SM_A), await tersaringKe('dir_ptep', SM_A)]).toEqual([false, true]);
+    });
+
+    it('disposisi ulang ke unit yang pernah menolak menulis kembali namanya', async () => {
+        const pertama = await kirim('dir_bppt');
+        await distributionService.reject(pertama.id, 'Salah alamat', 'dir_bppt', audit(PENGGUNA.bppt));
+        expect(await labelSm(SM_A)).toEqual(['Kabag Umum']);
+
+        await kirim('dir_bppt');
+        expect(await labelSm(SM_A)).toEqual(['Kabag Umum', 'Dit. BPPT']);
+        expect(await tersaringKe('dir_bppt', SM_A)).toBe(true);
+    });
+
+    it('penolakan yang gagal (sudah ditolak) tidak mengubah label', async () => {
+        const bppt = await kirim('dir_bppt');
+        await distributionService.reject(bppt.id, 'Salah alamat', 'dir_bppt', audit(PENGGUNA.bppt));
+        await kirim('dir_bppt');
+        // Baris lama sudah ditolak; baris baru ke unit yang sama masih berlaku.
+        await expect(distributionService.reject(bppt.id, 'Tolak lagi', 'dir_bppt', audit(PENGGUNA.bppt)))
+            .rejects.toMatchObject({ statusCode: 409, message: 'Disposisi ini sudah diselesaikan atau ditolak, jadi tidak dapat ditolak lagi. Muat ulang daftar.' });
+        expect(await labelSm(SM_A)).toEqual(['Kabag Umum', 'Dit. BPPT']);
+    });
+
+    it('Tutup Disposisi oleh pengawas membiarkan label: disposisinya tetap terhitung oleh penyaring', async () => {
+        const bppt = await kirim('dir_bppt');
+        await distributionService.tutupOlehPengawas(bppt.id, PENGGUNA.tu, 'Target tidak dapat memproses surat ini', audit(PENGGUNA.tu));
+        expect(await labelSm(SM_A)).toEqual(['Kabag Umum', 'Dit. BPPT']);
+        expect(await tersaringKe('dir_bppt', SM_A)).toBe(true);
+    });
+
+    it('menerima disposisi yang sudah diterima dijawab 409 dengan pesan muat ulang', async () => {
+        const bppt = await kirim('dir_bppt');
+        await distributionService.receive(bppt.id, USER_ID.bppt, 'dir_bppt', audit(PENGGUNA.bppt));
+        await expect(distributionService.receive(bppt.id, USER_ID.bppt, 'dir_bppt', audit(PENGGUNA.bppt)))
+            .rejects.toMatchObject({ statusCode: 409, message: 'Disposisi ini sudah diterima, diselesaikan, atau ditolak. Muat ulang daftar.' });
+    });
+});
+
 describe('C-M1: disposisiTerbukaSql bentuk jumlah setara bentuk OR lama', () => {
     pakaiDatabaseSebelum0048();
 

@@ -75,6 +75,9 @@ export const SURAT_TERKENDALI_DISPOSISI_MESSAGE =
 
 export const PESAN_BELUM_DAPAT_MEMBACA = 'Surat belum dapat Anda baca. Ajukan akses atau hubungi TU sebelum menindaklanjuti disposisi.';
 const PESAN_KEANGGOTAAN_BERUBAH = 'Keanggotaan rangkaian surat sedang berubah; coba lagi.';
+// Status disposisi berubah sejak daftar dimuat (pengguna lain, atau tab lain): 409, bukan galat isian.
+export const PESAN_DISPOSISI_SUDAH_DITANGANI = 'Disposisi ini sudah diterima, diselesaikan, atau ditolak. Muat ulang daftar.';
+export const PESAN_DISPOSISI_TIDAK_DAPAT_DITOLAK = 'Disposisi ini sudah diselesaikan atau ditolak, jadi tidak dapat ditolak lagi. Muat ulang daftar.';
 
 /** Anggota SM rangkaian berubah di antara prabaca tanpa kunci dan kunci rangkaian; ulangi dari savepoint (C-I1). */
 class KeanggotaanBerubah extends Error {}
@@ -575,7 +578,7 @@ export class DistributionService {
                 throw new AppError('Distribusi tidak ditemukan.', 404);
             }
             if (distribution.status !== 'sent') {
-                throw new ValidationError('Distribution sudah diterima atau diproses');
+                throw new ConflictError(PESAN_DISPOSISI_SUDAH_DITANGANI);
             }
 
             const [result] = await tx
@@ -594,7 +597,7 @@ export class DistributionService {
                 .returning();
 
             if (!result) {
-                throw new ValidationError('Distribution sudah diterima atau diproses');
+                throw new ConflictError(PESAN_DISPOSISI_SUDAH_DITANGANI);
             }
 
             if (auditContext) {
@@ -718,7 +721,7 @@ export class DistributionService {
                 throw new AppError('Distribusi tidak ditemukan.', 404);
             }
             if (distribution.status === 'processed' || distribution.status === 'rejected') {
-                throw new ValidationError('Distribution tidak bisa ditolak');
+                throw new ConflictError(PESAN_DISPOSISI_TIDAK_DAPAT_DITOLAK);
             }
             const actorId = auditContext?.userId || distribution.receivedBy || distribution.sentBy;
             if (!actorId) throw new ValidationError('Pelaku penolakan tidak diketahui');
@@ -738,7 +741,7 @@ export class DistributionService {
                 .returning();
 
             if (!result) {
-                throw new ValidationError('Distribution tidak bisa ditolak');
+                throw new ConflictError(PESAN_DISPOSISI_TIDAK_DAPAT_DITOLAK);
             }
 
             if (auditContext) {
@@ -753,6 +756,20 @@ export class DistributionService {
                     },
                 }, tx);
             }
+
+            // Label text[] surat mengikuti baris disposisi: nama unit yang menolak
+            // dicabut dari label bila tidak ada disposisi lain yang masih berlaku ke
+            // unit itu, sehingga kolom Disposisi dan ekspor sama dengan penyaring
+            // "Disposisi Ke" (disposisi-filter.ts), yang mengabaikan baris ditolak.
+            // Label lain (label lama, label Kabag) tidak disentuh. Baris surat masuk
+            // sudah terkunci oleh kunciDisposisi.
+            await tx.execute(sql`UPDATE surat_masuk sm
+                SET disposisi = array_remove(sm.disposisi, uk.name::text), updated_at = now()
+                FROM unit_kerja uk
+                WHERE sm.id = ${result.suratMasukId} AND uk.id = ${result.targetUnitId}
+                  AND sm.disposisi @> ARRAY[uk.name::text]
+                  AND NOT EXISTS (SELECT 1 FROM surat_distributions d
+                      WHERE d.surat_masuk_id = sm.id AND d.target_unit_id = uk.id AND d.status <> 'rejected')`);
 
             // Awalan sudah ≥ 10 karakter sehingga alasan pendek (min 1) tetap sah untuk cabut.
             await disposisiGrantService.cabut(tx, {

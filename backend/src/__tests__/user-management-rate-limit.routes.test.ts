@@ -54,7 +54,8 @@ vi.mock('../services/user-management.service', () => ({
 import userManagementRouter from '../routes/user-management.routes';
 import userManagementService from '../services/user-management.service';
 
-const SENSITIVE_MAX = 20;
+// Manajemen Pengguna memakai kuota sendiri, terpisah dari kuota operasi sensitif.
+const USER_MANAGEMENT_MAX = 60;
 const TARGET = `/api/users/${ids.target}`;
 const NEW_USER = { email: 'baru@example.go.id', name: 'Pengguna Baru', role: 'admin_unit', unitKerjaId: 'ditjen' };
 
@@ -63,7 +64,8 @@ app.use(express.json());
 app.use('/api/users', userManagementRouter);
 
 const asAdmin = (call: request.Test) => call.set('Cookie', `better-auth.session_token=${ids.admin}`);
-const sensitiveHits = async () => (await stores.get('sensitive')!.get(`user:${ids.admin}`))?.totalHits ?? 0;
+const hits = async (bucket: string) => (await stores.get(bucket)!.get(`user:${ids.admin}`))?.totalHits ?? 0;
+const userManagementHits = () => hits('user-management');
 
 const changes = [
     () => request(app).post('/api/users').send(NEW_USER),
@@ -75,37 +77,40 @@ const changes = [
 describe('user management rate limits', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
+        await stores.get('user-management')!.resetAll();
         await stores.get('sensitive')!.resetAll();
     });
 
-    it('does not count user list reads against the sensitive quota', async () => {
+    it('does not count user list reads against the user management quota', async () => {
         const reads = ['/api/users?search=budi', '/api/users/roles', '/api/users/unit-kerja', TARGET];
-        // Page visits and filter changes add up to more than the sensitive maximum.
-        for (let i = 0; i < SENSITIVE_MAX + 5; i += 1) {
+        // Page visits and filter changes add up to more than the maximum for changes.
+        for (let i = 0; i < USER_MANAGEMENT_MAX + 5; i += 1) {
             const response = await asAdmin(request(app).get(reads[i % reads.length])).expect(200);
             expect(response.headers['ratelimit-limit']).toBeUndefined();
         }
         await asAdmin(request(app).head('/api/users')).expect(200);
-        expect(await sensitiveHits()).toBe(0);
+        expect(await userManagementHits()).toBe(0);
 
         const created = await asAdmin(changes[0]()).expect(201);
-        expect(created.headers['ratelimit-remaining']).toBe(String(SENSITIVE_MAX - 1));
+        expect(created.headers['ratelimit-remaining']).toBe(String(USER_MANAGEMENT_MAX - 1));
     });
 
-    it('limits user changes to the sensitive quota while reads stay available', async () => {
-        for (let i = 0; i < SENSITIVE_MAX; i += 1) {
+    it('limits user changes to their own quota while reads stay available', async () => {
+        for (let i = 0; i < USER_MANAGEMENT_MAX; i += 1) {
             const response = await asAdmin(changes[i % changes.length]());
             expect(response.status).toBeLessThan(300);
         }
-        expect(await sensitiveHits()).toBe(SENSITIVE_MAX);
+        expect(await userManagementHits()).toBe(USER_MANAGEMENT_MAX);
+        // Kuota operasi sensitif (pulihkan surat, keputusan akses, dan lain-lain) tidak terpakai.
+        expect(await hits('sensitive')).toBe(0);
 
         for (const change of changes) {
             const limited = await asAdmin(change()).expect(429);
-            expect(limited.body.message).toBe('Terlalu banyak operasi sensitif. Coba lagi setelah 15 menit.');
+            expect(limited.body.message).toBe('Terlalu banyak perubahan data pengguna. Coba lagi setelah 15 menit.');
         }
         await asAdmin(request(app).patch(TARGET).send({})).expect(429);
-        expect(userManagementService.createUser).toHaveBeenCalledTimes(SENSITIVE_MAX / changes.length);
-        expect(userManagementService.deactivateUser).toHaveBeenCalledTimes(SENSITIVE_MAX / changes.length);
+        expect(userManagementService.createUser).toHaveBeenCalledTimes(USER_MANAGEMENT_MAX / changes.length);
+        expect(userManagementService.deactivateUser).toHaveBeenCalledTimes(USER_MANAGEMENT_MAX / changes.length);
 
         await asAdmin(request(app).get('/api/users')).expect(200);
         await asAdmin(request(app).get(TARGET)).expect(200);
