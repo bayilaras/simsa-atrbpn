@@ -81,6 +81,10 @@ export function PerluDilengkapiTab() {
     const [revisiRingkasan, setRevisiRingkasan] = useState(0)
     const [ringkasan, setRingkasan] = useState(null)
     const [dialog, setDialog] = useState(null)
+    // Surat yang terakhir dibuka untuk disposisi. DistributeDialog tetap terpasang
+    // setelah ditutup, supaya unit dan instruksi yang sudah dipilih tidak hilang
+    // bila dialog tertutup tidak sengaja lalu dibuka lagi untuk surat yang sama.
+    const [suratDisposisi, setSuratDisposisi] = useState(null)
     const [menyimpan, setMenyimpan] = useState(false)
     const [galat, setGalat] = useState(null)
 
@@ -121,6 +125,7 @@ export function PerluDilengkapiTab() {
             navigate('/surat/keluar/tambah', { state: buildTindakLanjutState('surat_keluar', surat, 'buat_nd_penjelas') })
         } else {
             setGalat(null)
+            if (jenis === 'disposisi') setSuratDisposisi(item.surat)
             setDialog({ jenis, item })
         }
     }
@@ -173,12 +178,12 @@ export function PerluDilengkapiTab() {
             )}
             <ResourcePagination resource={resource} label="perlu dilengkapi" />
 
-            {dialog?.jenis === 'disposisi' && (
+            {suratDisposisi && (
                 <DistributeDialog
-                    open
+                    open={dialog?.jenis === 'disposisi'}
                     onOpenChange={tutupBila}
-                    suratData={{ id: item.surat.id, nomorSurat: item.surat.nomorSurat, perihal: item.surat.perihal, sifatSurat: item.surat.sifatSurat }}
-                    sourceUnitId={item.surat.unitKerjaId}
+                    suratData={{ id: suratDisposisi.id, nomorSurat: suratDisposisi.nomorSurat, perihal: suratDisposisi.perihal, sifatSurat: suratDisposisi.sifatSurat }}
+                    sourceUnitId={suratDisposisi.unitKerjaId}
                     onSuccess={() => berhasil()}
                 />
             )}

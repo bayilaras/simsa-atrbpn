@@ -4,7 +4,7 @@ import { createMemoryRouter, RouterProvider, useLocation } from 'react-router-do
 
 const mocks = vi.hoisted(() => ({
     perluDilengkapi: vi.fn(), ringkasanPerluDilengkapi: vi.fn(), tandaiInisiatif: vi.fn(), tandaiSelesaiSuratMasuk: vi.fn(),
-    toast: vi.fn(), distribute: vi.fn(), berkaskan: vi.fn(), tautkan: vi.fn(),
+    toast: vi.fn(), distribute: vi.fn(), distributeLepas: vi.fn(), berkaskan: vi.fn(), tautkan: vi.fn(),
 }))
 vi.mock('@/services/rangkaian.service', () => {
     const service = {
@@ -14,9 +14,18 @@ vi.mock('@/services/rangkaian.service', () => {
     return { default: service, rangkaianService: service }
 })
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }))
-vi.mock('@/components/DistributeDialog', () => ({
-    DistributeDialog: (props) => { mocks.distribute(props); return <div role="dialog" aria-label="Disposisi">{props.suratData.nomorSurat}</div> },
-}))
+// The real dialog keeps its entries in component state, so what matters to the
+// tab is that the component stays mounted while closed (distributeLepas counts unmounts).
+vi.mock('@/components/DistributeDialog', async () => {
+    const { useEffect } = await import('react')
+    return {
+        DistributeDialog: (props) => {
+            mocks.distribute(props)
+            useEffect(() => () => mocks.distributeLepas(), [])
+            return props.open ? <div role="dialog" aria-label="Disposisi">{props.suratData.nomorSurat}</div> : null
+        },
+    }
+})
 vi.mock('@/components/surat/BerkaskanDialog', () => ({
     BerkaskanDialog: (props) => { mocks.berkaskan(props); return <div role="dialog" aria-label="Berkaskan">{props.rangkaian.kode}</div> },
 }))
@@ -169,6 +178,28 @@ describe('Tab Perlu Dilengkapi (D7)', () => {
         expect(mocks.toast).not.toHaveBeenCalled()
         await waitFor(() => expect(mocks.perluDilengkapi).toHaveBeenCalledTimes(2))
         await waitFor(() => expect(mocks.ringkasanPerluDilengkapi).toHaveBeenCalledTimes(2))
+    })
+
+    it('dialog Disposisi tetap terpasang setelah tertutup, sehingga isiannya tidak hilang saat dibuka lagi', async () => {
+        mount()
+        const [, sm] = await baris()
+        expect(mocks.distribute).not.toHaveBeenCalled()
+
+        fireEvent.click(within(sm).getByRole('button', { name: 'Disposisi' }))
+        expect(screen.getByRole('dialog', { name: 'Disposisi' })).toHaveTextContent('SM-1/2026')
+
+        // Tertutup tidak sengaja (Esc atau klik di luar): dialog hilang dari layar, komponennya tidak dilepas.
+        act(() => { mocks.distribute.mock.lastCall[0].onOpenChange(false) })
+        expect(screen.queryByRole('dialog', { name: 'Disposisi' })).toBeNull()
+        expect(mocks.distributeLepas).not.toHaveBeenCalled()
+        expect(mocks.distribute).toHaveBeenLastCalledWith(expect.objectContaining({
+            open: false, sourceUnitId: 'sesditjen', suratData: expect.objectContaining({ id: SM1 }),
+        }))
+
+        fireEvent.click(within(sm).getByRole('button', { name: 'Disposisi' }))
+        expect(screen.getByRole('dialog', { name: 'Disposisi' })).toHaveTextContent('SM-1/2026')
+        expect(mocks.distributeLepas).not.toHaveBeenCalled()
+        expect(mocks.perluDilengkapi).toHaveBeenCalledTimes(1)
     })
 
     it('Tandai Inisiatif meminta konfirmasi, menampilkan galat server, lalu memuat ulang setelah berhasil', async () => {

@@ -47,6 +47,20 @@ const ACTION_CONFIG = {
     'hold': { label: 'Menerapkan Legal Hold', icon: Lock, color: 'bg-amber-100 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300', borderColor: 'border-amber-200', iconColor: 'text-amber-600' },
     'release_hold': { label: 'Melepas Legal Hold', icon: Unlock, color: 'bg-slate-100 dark:bg-slate-500/15 text-slate-800 dark:text-slate-300', borderColor: 'border-slate-200', iconColor: 'text-slate-600' },
     'change_password': { label: 'Mengganti kata sandi', icon: KeyRound, color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300', borderColor: 'border-blue-200', iconColor: 'text-blue-600' },
+    // Aksi tata kelola retensi (audit(...) di backend services/retention-governance.service.ts).
+    'retention_event_create': { label: 'Mencatat Pemicu Retensi', icon: Plus, color: 'bg-rose-100 dark:bg-rose-500/15 text-rose-800 dark:text-rose-300', borderColor: 'border-rose-200', iconColor: 'text-rose-600' },
+    'retention_event_verify': { label: 'Memverifikasi Pemicu Retensi', icon: CheckCircle2, color: 'bg-rose-100 dark:bg-rose-500/15 text-rose-800 dark:text-rose-300', borderColor: 'border-rose-200', iconColor: 'text-rose-600' },
+    'retention_event_correct': { label: 'Mengoreksi Pemicu Retensi', icon: Edit, color: 'bg-rose-100 dark:bg-rose-500/15 text-rose-800 dark:text-rose-300', borderColor: 'border-rose-200', iconColor: 'text-rose-600' },
+    'appraisal_create': { label: 'Membuka Penilaian Arsip', icon: Plus, color: 'bg-rose-100 dark:bg-rose-500/15 text-rose-800 dark:text-rose-300', borderColor: 'border-rose-200', iconColor: 'text-rose-600' },
+    'appraisal_evidence': { label: 'Menambah Bukti Penilaian', icon: FileText, color: 'bg-rose-100 dark:bg-rose-500/15 text-rose-800 dark:text-rose-300', borderColor: 'border-rose-200', iconColor: 'text-rose-600' },
+    'appraisal_submit': { label: 'Mengajukan Penilaian Arsip', icon: Send, color: 'bg-rose-100 dark:bg-rose-500/15 text-rose-800 dark:text-rose-300', borderColor: 'border-rose-200', iconColor: 'text-rose-600' },
+    'appraisal_approve': { label: 'Menyetujui Penilaian Arsip', icon: CheckCircle2, color: 'bg-rose-100 dark:bg-rose-500/15 text-rose-800 dark:text-rose-300', borderColor: 'border-rose-200', iconColor: 'text-rose-600' },
+    'appraisal_reject': { label: 'Menolak Penilaian Arsip', icon: XCircle, color: 'bg-rose-100 dark:bg-rose-500/15 text-rose-800 dark:text-rose-300', borderColor: 'border-rose-200', iconColor: 'text-rose-600' },
+    'transfer_manifest_create': { label: 'Membuat Daftar Penyerahan', icon: Plus, color: 'bg-rose-100 dark:bg-rose-500/15 text-rose-800 dark:text-rose-300', borderColor: 'border-rose-200', iconColor: 'text-rose-600' },
+    'transfer_handover': { label: 'Menyerahkan Arsip Permanen', icon: Send, color: 'bg-rose-100 dark:bg-rose-500/15 text-rose-800 dark:text-rose-300', borderColor: 'border-rose-200', iconColor: 'text-rose-600' },
+    'transfer_acknowledge': { label: 'Mengonfirmasi Penerimaan Arsip', icon: CheckCircle2, color: 'bg-rose-100 dark:bg-rose-500/15 text-rose-800 dark:text-rose-300', borderColor: 'border-rose-200', iconColor: 'text-rose-600' },
+    'transfer_cancellation_request': { label: 'Mengajukan Pembatalan Penyerahan', icon: X, color: 'bg-rose-100 dark:bg-rose-500/15 text-rose-800 dark:text-rose-300', borderColor: 'border-rose-200', iconColor: 'text-rose-600' },
+    'transfer_cancellation_review': { label: 'Memutuskan Pembatalan Penyerahan', icon: RefreshCw, color: 'bg-rose-100 dark:bg-rose-500/15 text-rose-800 dark:text-rose-300', borderColor: 'border-rose-200', iconColor: 'text-rose-600' },
 };
 
 // Satu sumber untuk label jenis data di daftar dan pilihan penyaring "Jenis
@@ -84,6 +98,22 @@ const ENTITY_CONFIG = {
     'unit_kerja': { label: 'Unit Kerja', ...WARNA_NETRAL },
     'audit_log': { label: 'Audit Log', color: 'text-indigo-700', bgColor: 'bg-indigo-50 dark:bg-indigo-500/15' },
 };
+
+// Nama isian pada "Detail Perubahan". Kunci yang tidak terdaftar ditulis sebagai
+// kata-kata: "nomorSurat" dan "nomor_surat" menjadi "nomor surat".
+const LABEL_ISIAN = {
+    diimporAt: 'Penanda impor',
+    createdAt: 'Waktu dibuat',
+    updatedAt: 'Waktu diperbarui',
+    deletedAt: 'Waktu dihapus',
+    isDeleted: 'Dihapus',
+    isArchived: 'Diarsipkan',
+    isActive: 'Aktif',
+    unitKerjaId: 'Unit kerja',
+};
+const labelIsian = (field) => (Object.hasOwn(LABEL_ISIAN, field)
+    ? LABEL_ISIAN[field]
+    : String(field).replace(/_/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2'));
 
 // Status changes.itemSync pada audit ubah arsip (StatusSinkronItemArsip di
 // backend services/arsip.service.ts); hanya status yang perlu penjelasan.
@@ -202,7 +232,7 @@ export default function AuditLog() {
 
     const renderFieldChange = (field, before, after) => (
         <div key={field} className="grid grid-cols-1 sm:grid-cols-[120px_1fr] gap-1 sm:gap-4 text-xs sm:text-sm">
-            <span className="font-medium text-muted-foreground capitalize">{field.replace('_', ' ')}:</span>
+            <span className="font-medium text-muted-foreground capitalize">{labelIsian(field)}:</span>
             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
                 {before?.[field] !== undefined && (
                     <span className="text-red-600 line-through bg-red-50 dark:bg-red-500/15 px-1 rounded truncate max-w-xs block" title={String(before[field])}>
@@ -358,29 +388,9 @@ export default function AuditLog() {
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="all">Semua Aksi</SelectItem>
-                                    <SelectItem value="create">Membuat</SelectItem>
-                                    <SelectItem value="update">Mengubah</SelectItem>
-                                    <SelectItem value="delete">Menghapus</SelectItem>
-                                    <SelectItem value="archive">Mengarsipkan</SelectItem>
-                                    <SelectItem value="request_access">Meminta Akses</SelectItem>
-                                    <SelectItem value="approve_access">Menyetujui Akses</SelectItem>
-                                    <SelectItem value="deny_access">Menolak Akses</SelectItem>
-                                    <SelectItem value="revoke_access">Mencabut Akses</SelectItem>
-                                    <SelectItem value="view_via_rangkaian">Lihat via Rangkaian</SelectItem>
-                                    <SelectItem value="export">Ekspor Data</SelectItem>
-                                    <SelectItem value="merge">Menggabungkan</SelectItem>
-                                    <SelectItem value="link">Menautkan</SelectItem>
-                                    <SelectItem value="cancel">Membatalkan</SelectItem>
-                                    <SelectItem value="distribute">Mendisposisikan</SelectItem>
-                                    <SelectItem value="receive_distribution">Menerima Disposisi</SelectItem>
-                                    <SelectItem value="process_distribution">Menyelesaikan Disposisi</SelectItem>
-                                    <SelectItem value="reject_distribution">Menolak Disposisi</SelectItem>
-                                    <SelectItem value="run_scanner">Menjalankan Pemindai</SelectItem>
-                                    <SelectItem value="verify_integrity">Memeriksa Integritas</SelectItem>
-                                    <SelectItem value="sign_in">Masuk</SelectItem>
-                                    <SelectItem value="sign_in_failed">Gagal masuk</SelectItem>
-                                    <SelectItem value="sign_out">Keluar</SelectItem>
-                                    <SelectItem value="change_password">Mengganti kata sandi</SelectItem>
+                                    {Object.entries(ACTION_CONFIG).map(([kode, konfigurasi]) => (
+                                        <SelectItem key={kode} value={kode}>{konfigurasi.label}</SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                         </div>
