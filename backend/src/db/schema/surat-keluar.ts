@@ -51,6 +51,8 @@ export const suratKeluar = pgTable('surat_keluar', {
     signedAt: timestamp('signed_at'),
 
     createdBy: uuid('created_by').references(() => users.id),
+    // 0055: waktu baris dibuat oleh impor; NULL untuk surat yang dicatat lewat formulir.
+    diimporAt: timestamp('diimpor_at', { withTimezone: true }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({

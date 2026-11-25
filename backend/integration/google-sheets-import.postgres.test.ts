@@ -115,6 +115,8 @@ describe('atomic Sheets import on real PostgreSQL transactions', () => {
             expect(results.every(row => row.success && row.skippedRows === 0 && row.errors.length === 0)).toBe(true);
             const records = (await pools[0].query(`SELECT * FROM surat_${kind} WHERE unit_kerja_id=$1`, [unit])).rows;
             expect(records).toHaveLength(1); expect([17, 99]).toContain(records[0].no_urut); expect(records[0].nomor_surat).toBe(number);
+            // 0055: an imported row carries the import marker (a form registration leaves it NULL).
+            expect(records[0].diimpor_at).not.toBeNull(); expect(records[0].diimpor_at).toBeDefined();
             expect(Number((await pools[0].query('SELECT count(*) FROM audit_log WHERE entity_id=$1 AND action=$2', [records[0].id, 'create'])).rows[0].count)).toBe(1);
             await pools[0].query(`UPDATE surat_${kind} SET is_deleted=true,deleted_at=now() WHERE id=$1`, [records[0].id]);
             expect(await importRow(service(sheet(kind, number, '400')), kind, unit)).toMatchObject({ importedRows: 0, duplicateRows: 1 });

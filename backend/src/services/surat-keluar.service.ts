@@ -58,12 +58,21 @@ export interface SuratKeluarFilters {
     pembaca?: RecordUser;
 }
 
+/**
+ * Kolom daftar dan detail surat: semua kolom selain penanda impor (0055), yang
+ * hanya dibaca kueri daftar kerja Perlu Dilengkapi. Dihitung saat dipakai.
+ */
+function kolomBacaSuratKeluar() {
+    const { diimporAt: _penandaImpor, ...kolom } = { ...getTableColumns(suratKeluar) };
+    return kolom;
+}
+
 // UUID surat masuk sumber hanya untuk pembaca surat itu, sama dengan detail.
 // isBalasan menjaga badge "Balasan" di daftar tanpa membuka UUID.
 function kolomDaftarPembaca(ctx: KonteksBaca) {
     const sumberTerbaca = visibleSql(ctx, { type: 'surat_masuk', alias: 'bsm' }, 'read');
     return {
-        ...getTableColumns(suratKeluar),
+        ...kolomBacaSuratKeluar(),
         balasanUntuk: sql<string | null>`CASE WHEN EXISTS (
             SELECT 1 FROM surat_masuk bsm WHERE bsm.id = ${suratKeluar.balasanUntuk} AND ${sumberTerbaca}
         ) THEN ${suratKeluar.balasanUntuk} END`,
@@ -164,7 +173,7 @@ export class SuratKeluarService {
         const count = countResult?.[0]?.count ?? 0;
 
         const kolom = {
-            ...(pembaca ? kolomDaftarPembaca(await resolveKonteksBaca(pembaca, db)) : getTableColumns(suratKeluar)),
+            ...(pembaca ? kolomDaftarPembaca(await resolveKonteksBaca(pembaca, db)) : kolomBacaSuratKeluar()),
             // Nama unit pemilik untuk kolom Unit Kerja pada tampilan semua unit.
             // Rujukan baris luar ditulis lengkap: kolom di sql pilihan satu tabel ditulis Drizzle tanpa nama tabel.
             unitKerjaNama: sql<string | null>`(SELECT uk.name FROM unit_kerja uk WHERE uk.id = surat_keluar.unit_kerja_id)`,
@@ -190,7 +199,7 @@ export class SuratKeluarService {
 
     async findById(id: string, unitScope: RecordUnitScope) {
         const [result] = await db
-            .select()
+            .select(kolomBacaSuratKeluar())
             .from(suratKeluar)
             .where(and(
                 scopedRecordByIdWhere(
@@ -332,6 +341,8 @@ export class SuratKeluarService {
                         nomorSurat,
                         noUrut,
                         tahun,
+                        // 0055: hanya impor yang mengisi penanda; formulir selalu NULL, apa pun isi input.
+                        diimporAt: importOptions ? sql`now()` : null,
                     })
                     .returning();
 

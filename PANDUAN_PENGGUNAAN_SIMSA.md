@@ -578,7 +578,8 @@ Tab **Perlu Dilengkapi** (menu Surat ▸ Lacak Surat ▸ tab Perlu Dilengkapi) m
 Baris dikelompokkan dalam **enam kategori**: Surat masuk belum ditindaklanjuti, Disposisi belum selesai, Keputusan tanpa ND penjelas, Tindak lanjut tertahan, Siap diberkaskan, dan Surat keluar tanpa asal. Tombol aksi pada setiap baris (Tindak Lanjut, Disposisi, Berkaskan, Tautkan, dan lainnya) hanya muncul bila server mengizinkannya untuk pengguna yang login.
 
 - Ikon **🔔 badge** pada sidebar (menu Lacak Surat) menghitung total baris tanpa data lama, disegarkan seirama notifikasi.
-- Centang **"Tampilkan data lama"** untuk menyertakan rangkaian data lama dalam daftar.
+- Centang **"Tampilkan data lama"** untuk menyertakan rangkaian data lama dalam daftar. Surat hasil impor (Google Sheets, CSV, XLSX) yang belum menjadi bagian rangkaian juga termasuk data lama, sehingga register lama yang baru diimpor tidak memenuhi daftar.
+- **Tandai Selesai** pada baris surat masuk menutup surat yang tidak perlu didisposisikan atau dibalas (undangan, tembusan, edaran) dengan catatan minimal 10 karakter. Surat pindah ke kategori Siap diberkaskan, statusnya menjadi Sudah Dibalas, dan dapat dibuka kembali dari rangkaiannya. Tombol ini hanya tampil bagi admin unit pemilik surat dan hanya untuk surat yang belum punya rangkaian.
 - **Tandai Inisiatif** menandai surat keluar sebagai surat atas prakarsa sendiri (tanpa induk surat masuk); perubahan ini diaudit dan tidak mengubah isi surat.
 
 

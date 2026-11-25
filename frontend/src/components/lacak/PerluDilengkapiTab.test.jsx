@@ -3,12 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router-dom'
 
 const mocks = vi.hoisted(() => ({
-    perluDilengkapi: vi.fn(), ringkasanPerluDilengkapi: vi.fn(), tandaiInisiatif: vi.fn(),
+    perluDilengkapi: vi.fn(), ringkasanPerluDilengkapi: vi.fn(), tandaiInisiatif: vi.fn(), tandaiSelesaiSuratMasuk: vi.fn(),
     toast: vi.fn(), distribute: vi.fn(), berkaskan: vi.fn(), tautkan: vi.fn(),
 }))
 vi.mock('@/services/rangkaian.service', () => {
     const service = {
         perluDilengkapi: mocks.perluDilengkapi, ringkasanPerluDilengkapi: mocks.ringkasanPerluDilengkapi, tandaiInisiatif: mocks.tandaiInisiatif,
+        tandaiSelesaiSuratMasuk: mocks.tandaiSelesaiSuratMasuk,
     }
     return { default: service, rangkaianService: service }
 })
@@ -187,6 +188,63 @@ describe('Tab Perlu Dilengkapi (D7)', () => {
         await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Tandai sebagai Surat Inisiatif?' })).toBeNull())
         expect(mocks.toast).toHaveBeenCalledWith({ title: 'Surat ditandai sebagai Surat Inisiatif' })
         await waitFor(() => expect(mocks.perluDilengkapi).toHaveBeenCalledTimes(2))
+    })
+
+    it('Tandai Selesai hanya tampil bila server mengizinkan; catatan wajib, galat server tampil, lalu daftar dan ringkasan dimuat ulang', async () => {
+        const CATATAN = 'Undangan sudah dihadiri, tidak perlu dibalas'
+        mocks.perluDilengkapi.mockResolvedValue(respons([
+            { ...itemSm, aksiDiizinkan: ['buka_surat', 'disposisi', 'tandai_selesai', 'tindak_lanjut'] }, itemSkTanpaAsal, itemSiap,
+        ]))
+        mocks.tandaiSelesaiSuratMasuk
+            .mockRejectedValueOnce(Object.assign(new Error('Surat ini sudah berada dalam rangkaian. Buka Alur Surat pada detail surat, lalu pilih Tandai Selesai di sana.'), { status: 409 }))
+            .mockResolvedValueOnce({ id: R6, kode: 'RS-2026-000123', status: 'selesai', suratMasukId: SM1 })
+        const diumumkan = vi.fn()
+        window.addEventListener(PERLU_DILENGKAPI_EVENT, diumumkan)
+        mount()
+        const [sm, skTanpaAsal, siap] = await baris()
+        await waitFor(() => expect(mocks.ringkasanPerluDilengkapi).toHaveBeenCalledTimes(1))
+        expect(within(skTanpaAsal).queryByRole('button', { name: 'Tandai Selesai' })).toBeNull()
+        expect(within(siap).queryByRole('button', { name: 'Tandai Selesai' })).toBeNull()
+
+        fireEvent.click(within(sm).getByRole('button', { name: 'Tandai Selesai' }))
+        const dialog = await screen.findByRole('dialog', { name: 'Tandai Selesai' })
+        expect(dialog).toHaveTextContent('SM-1/2026')
+        expect(dialog).toHaveTextContent('Surat pindah ke Siap diberkaskan dan statusnya menjadi Sudah Dibalas')
+        expect(dialog).toHaveTextContent('dapat dibuka kembali')
+        const kirim = within(dialog).getByRole('button', { name: 'Tandai Selesai' })
+        expect(kirim).toBeDisabled()
+        fireEvent.change(within(dialog).getByLabelText('Catatan penyelesaian'), { target: { value: 'singkat' } })
+        expect(kirim).toBeDisabled()
+        fireEvent.change(within(dialog).getByLabelText('Catatan penyelesaian'), { target: { value: `  ${CATATAN} ` } })
+        expect(kirim).toBeEnabled()
+
+        fireEvent.click(kirim)
+        expect(await within(dialog).findByRole('alert')).toHaveTextContent('Surat ini sudah berada dalam rangkaian.')
+        expect(mocks.tandaiSelesaiSuratMasuk).toHaveBeenLastCalledWith(SM1, CATATAN)
+        expect(mocks.perluDilengkapi).toHaveBeenCalledTimes(1)
+        expect(mocks.toast).not.toHaveBeenCalled()
+
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Tandai Selesai' }))
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Tandai Selesai' })).toBeNull())
+        expect(mocks.tandaiSelesaiSuratMasuk).toHaveBeenCalledTimes(2)
+        expect(mocks.toast).toHaveBeenCalledWith({ title: 'Surat ditandai selesai dan kini ada di Siap diberkaskan' })
+        await waitFor(() => expect(mocks.perluDilengkapi).toHaveBeenCalledTimes(2))
+        // Ringkasan dimuat ulang dan diumumkan lagi, sehingga badge sidebar ikut diperbarui.
+        await waitFor(() => expect(mocks.ringkasanPerluDilengkapi).toHaveBeenCalledTimes(2))
+        await waitFor(() => expect(diumumkan).toHaveBeenCalledTimes(2))
+        window.removeEventListener(PERLU_DILENGKAPI_EVENT, diumumkan)
+    })
+
+    it('Tandai Selesai: Batal menutup dialog tanpa memanggil server', async () => {
+        mocks.perluDilengkapi.mockResolvedValue(respons([{ ...itemSm, aksiDiizinkan: ['buka_surat', 'tandai_selesai'] }]))
+        mount()
+        const [sm] = await baris()
+        fireEvent.click(within(sm).getByRole('button', { name: 'Tandai Selesai' }))
+        const dialog = await screen.findByRole('dialog', { name: 'Tandai Selesai' })
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Batal' }))
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Tandai Selesai' })).toBeNull())
+        expect(mocks.tandaiSelesaiSuratMasuk).not.toHaveBeenCalled()
+        expect(mocks.perluDilengkapi).toHaveBeenCalledTimes(1)
     })
 
     it('Tampilkan data lama meminta server secara eksplisit tanpa mengubah badge sidebar', async () => {

@@ -1636,6 +1636,40 @@ describe('PostgreSQL migration chain', () => {
         }
     }, PGLITE_MIGRATION_TIMEOUT_MS);
 
+    it('0055 menambah penanda impor nullable tanpa default pada surat masuk dan surat keluar', async () => {
+        const database = await createDatabase();
+        const index0055 = journal.entries.findIndex(({ tag }) => tag === '0055_surat_diimpor_at');
+        expect(index0055).toBe(journal.entries.findIndex(({ tag }) => tag === '0054_tanggal_diterima_nomor_urut_hidup') + 1);
+        for (const entry of journal.entries.slice(0, index0055)) {
+            await applyMigration(database, entry);
+        }
+        await database.exec(`
+            INSERT INTO unit_kerja (id, name) VALUES ('unit-a', 'Unit A') ON CONFLICT DO NOTHING;
+            INSERT INTO surat_masuk (unit_kerja_id, no_urut, tahun, perihal) VALUES ('unit-a', 1, 2026, 'Sebelum migrasi');
+            INSERT INTO surat_keluar (unit_kerja_id, no_urut, tahun, perihal) VALUES ('unit-a', 1, 2026, 'Sebelum migrasi');
+        `);
+        await applyMigration(database, journal.entries[index0055]);
+        // IF NOT EXISTS: menjalankan ulang tidak gagal.
+        await applyMigration(database, journal.entries[index0055]);
+
+        const { rows: kolom } = await database.query<{ table_name: string; data_type: string; is_nullable: string; column_default: string | null }>(`
+            SELECT table_name, data_type, is_nullable, column_default FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name IN ('surat_masuk', 'surat_keluar') AND column_name = 'diimpor_at'
+             ORDER BY table_name`);
+        expect(kolom).toEqual([
+            { table_name: 'surat_keluar', data_type: 'timestamp with time zone', is_nullable: 'YES', column_default: null },
+            { table_name: 'surat_masuk', data_type: 'timestamp with time zone', is_nullable: 'YES', column_default: null },
+        ]);
+        // Baris lama tidak diberi nilai tebakan; pencatatan tanpa menyebut kolom tetap NULL.
+        for (const tabel of ['surat_masuk', 'surat_keluar']) {
+            await database.exec(`INSERT INTO ${tabel} (unit_kerja_id, no_urut, tahun, perihal) VALUES ('unit-a', 2, 2026, 'Sesudah migrasi')`);
+            const { rows } = await database.query<{ n: number }>(`SELECT count(*)::int AS n FROM ${tabel} WHERE diimpor_at IS NOT NULL`);
+            expect(rows[0].n).toBe(0);
+        }
+        // Pembatalan: kolom dapat dibuang tanpa objek lain yang bergantung padanya.
+        await database.exec(`ALTER TABLE surat_masuk DROP COLUMN diimpor_at; ALTER TABLE surat_keluar DROP COLUMN diimpor_at;`);
+    }, PGLITE_MIGRATION_TIMEOUT_MS);
+
     it('memodelkan setiap kolom integrasi rangkaian di skema Drizzle', async () => {
         const database = await createDatabase();
         for (const entry of journal.entries) {

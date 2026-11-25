@@ -119,6 +119,7 @@ export const KOLOM_SURAT_MASUK = {
     deletedAt: 'kendali',
     deletedBy: 'kendali',
     createdBy: 'kendali',
+    diimporAt: 'kendali',
     createdAt: 'kendali',
     updatedAt: 'kendali',
 } as const satisfies Registri<typeof suratMasuk>;
@@ -156,6 +157,7 @@ export const KOLOM_SURAT_KELUAR = {
     isSigned: 'kendali',
     signedAt: 'kendali',
     createdBy: 'kendali',
+    diimporAt: 'kendali',
     createdAt: 'kendali',
     updatedAt: 'kendali',
 } as const satisfies Registri<typeof suratKeluar>;
