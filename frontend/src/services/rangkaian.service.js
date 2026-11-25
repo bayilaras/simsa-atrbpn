@@ -54,6 +54,14 @@ export const rangkaianService = {
         return (await api.post(`/api/rangkaian/surat-keluar/${encodeURIComponent(suratKeluarId)}/tandai-inisiatif`, {})).data
     },
 
+    /**
+     * POST /api/rangkaian/surat-masuk/:id/selesai. Tandai Selesai untuk surat masuk yang belum punya rangkaian
+     * (aksi `tandai_selesai` di Perlu Dilengkapi). Surat yang sudah ber-rangkaian memakai tandaiSelesai(id rangkaian).
+     */
+    async tandaiSelesaiSuratMasuk(suratMasukId, catatan) {
+        return (await api.post(`/api/rangkaian/surat-masuk/${encodeURIComponent(suratMasukId)}/selesai`, { catatan })).data
+    },
+
     async tandaiSelesai(id, catatan) {
         return (await api.post(`/api/rangkaian/${encodeURIComponent(id)}/selesai`, { catatan })).data
     },

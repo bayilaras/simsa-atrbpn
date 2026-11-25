@@ -145,3 +145,62 @@ ikuti runbook operator khusus: [`docs/RUNBOOK_INTEGRASI_SURAT_P5.md`](RUNBOOK_IN
 Runbook itu mencakup backup, pre-flight `dilewati`, migrasi, dry-run,
 sign-off, `--apply`, dan penyalaan `RANGKAIAN_DISPOSISI_LAMA_READ` sebagai
 langkah terpisah.
+
+## Penanda surat hasil impor (migrasi 0055)
+
+Migrasi `0055_surat_diimpor_at` menambah kolom `diimpor_at` (timestamptz,
+nullable, tanpa default) pada `surat_masuk` dan `surat_keluar`. Impor Google
+Sheets, CSV/XLSX, dan CSV lama mengisinya saat membuat surat; pencatatan lewat
+formulir membiarkannya NULL. Daftar kerja Perlu Dilengkapi memperlakukan surat
+berpenanda yang belum menjadi anggota rangkaian sebagai data lama, sehingga
+register lama yang baru diimpor tidak memenuhi daftar. Kolom ini tidak dikirim
+pada daftar dan detail surat.
+
+**Urutan rilis:** terapkan migrasi 0055 sebelum backend dipromosikan. Kode baru
+membaca dan menulis `diimpor_at`; tanpa kolom itu, daftar Perlu Dilengkapi dan
+pembuatan surat gagal. Kode lama tidak terpengaruh oleh kolom baru, jadi
+migrasi aman diterapkan selagi versi sebelumnya masih berjalan. Pembatalan:
+kembalikan backend ke versi sebelumnya, lalu `ALTER TABLE ... DROP COLUMN
+diimpor_at` pada kedua tabel.
+
+### Menandai surat yang diimpor sebelum 0055
+
+Surat yang diimpor sebelum migrasi tidak berpenanda. Impor tidak menulis
+catatan audit tingkat pekerjaan; setiap baris impor menulis audit `create` yang
+sama dengan pencatatan formulir. Karena itu
+`backend/scripts/tandai-surat-impor.mjs` mengenali impor dari iramanya: deretan
+surat satu unit dan satu pembuat (`created_by`) yang jarak `created_at`
+antarbarisnya paling lama `--jeda-detik` (bawaan 30) dan berisi sedikitnya
+`--minimal-baris` (bawaan 5) surat. Skrip ini tidak dijalankan otomatis oleh
+rilis, cron, maupun CI.
+
+Jalankan dari `backend/` sebagai role runtime `simsa_api`, dengan pola koneksi
+yang sama dengan runbook P5 (`DATABASE_URL` hanya dari shell):
+
+```bash
+read -rs NEON_RUNTIME_DATABASE_URL && export NEON_RUNTIME_DATABASE_URL
+export DATABASE_URL="$NEON_RUNTIME_DATABASE_URL"
+npm run surat:tandai-impor                      # dry-run: tidak menulis apa pun
+```
+
+Dry-run mencetak tiap gelombang (unit, pembuat, rentang waktu, jumlah baris,
+dan beberapa contoh surat), jumlah per unit, total, dan SHA-256 rencana.
+Periksa contoh itu: tanggal surat lama dengan waktu pembuatan yang berdekatan
+adalah ciri impor. Persempit dengan `--unit=<id>`, `--pengguna=<uuid>`,
+`--jenis=masuk|keluar`, `--sejak=<ISO berzona>`, `--sampai=<ISO berzona>`, atau
+ubah ambang, sampai rencana hanya memuat impor. Setelah yakin, ulangi dengan
+argumen yang sama ditambah SHA-256 yang dicetak:
+
+```bash
+npm run surat:tandai-impor -- --unit=ditjen --jenis=keluar --apply --approved-sha256=<sha256 dry-run>
+unset DATABASE_URL NEON_RUNTIME_DATABASE_URL
+```
+
+`--apply` menolak bila rencana berubah sejak dry-run (data atau argumen
+berbeda). Yang ditulis hanya `diimpor_at = created_at` pada surat yang
+penandanya masih NULL dan yang bukan anggota rangkaian mana pun, ditambah satu
+baris audit per surat (`user_email = system:tandai-surat-impor`). Surat anggota
+rangkaian tidak pernah disentuh dan `updated_at` tidak berubah. Menjalankan
+ulang aman: surat yang sudah berpenanda dilewati. Untuk membatalkan penandaan
+satu gelombang, set `diimpor_at = NULL` pada surat yang entitasnya tercatat di
+audit tersebut.

@@ -296,6 +296,7 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'GET /perlu-dilengkapi/ringkasan': proyeksi('perluDilengkapiService.ringkasan'),
         'GET /perlu-dilengkapi': proyeksi('perluDilengkapiService.list'),
         'POST /surat-keluar/:suratKeluarId/tandai-inisiatif': check('asalNaskahService.tandaiInisiatif'),
+        'POST /surat-masuk/:suratMasukId/selesai': check('berkasService.tandaiSelesaiSuratMasuk'),
     },
     'rangkaian.routes.ts': {
         'GET /lacak': proyeksi('lacakService.search'),

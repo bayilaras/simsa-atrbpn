@@ -23,7 +23,7 @@ export const ENV_BATAS_DATA_LAMA = 'RANGKAIAN_DATA_LAMA_SEBELUM';
 const ISO_BERZONA = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 export type PerluDilengkapiAksi = 'tindak_lanjut' | 'disposisi' | 'buka_kotak_disposisi' | 'buat_nd_penjelas'
-    | 'buka_surat' | 'berkaskan' | 'tandai_inisiatif' | 'tautkan';
+    | 'buka_surat' | 'berkaskan' | 'tandai_inisiatif' | 'tautkan' | 'tandai_selesai';
 export type PerluDilengkapiFilter = { kategori?: KategoriPerluDilengkapi; tampilkanDataLama: boolean; page: number; limit: number };
 export type PenggunaPerluDilengkapi = { id: string; role: string; unitKerjaId: string | null; email?: string; name?: string | null };
 type JenisSurat = 'surat_masuk' | 'surat_keluar';
@@ -132,7 +132,13 @@ function cakupanSurat(k: KonteksPd, t: TargetVisibilitas): SQL {
         AND (${milikSendiri(k, sql.raw(`${t.alias}.unit_kerja_id`))} OR ${jangkauanRekamanSql(k.ctx, t.type, t.alias)}))`;
 }
 
-/** Data lama = anggota rangkaian data_lama, atau bukan anggota rangkaian mana pun dan dibuat sebelum batas. */
+/**
+ * Data lama = anggota rangkaian data_lama, atau bukan anggota rangkaian mana pun dan
+ * (dibuat sebelum batas ATAU hasil impor). Surat impor memakai created_at = waktu impor,
+ * jadi tanpa penanda diimpor_at (0055) register lama yang baru diimpor terbaca sebagai
+ * surat baru. Begitu surat impor menjadi anggota rangkaian (disposisi, tindak lanjut,
+ * tautan, Tandai Selesai), ia mengikuti aturan rangkaiannya seperti surat lain.
+ */
 function dataLamaSurat(k: KonteksPd, t: TargetVisibilitas): SQL {
     const fk = sql.raw(t.type === 'surat_masuk' ? 'surat_masuk_id' : 'surat_keluar_id');
     const suratId = sql.raw(`${t.alias}.id`);
@@ -141,9 +147,11 @@ function dataLamaSurat(k: KonteksPd, t: TargetVisibilitas): SQL {
     // baris surat. Pada 50 ribu baris, bentuk EXISTS berkorelasi memakan
     // ~145-200 ms per cabang dan membuat ringkasan melewati statement_timeout 2 s
     // di runner CI. Semantik identik: NULL disaring di dalam subkueri.
+    // Penanda impor adalah uji kolom biasa pada baris surat yang sudah dipindai,
+    // tanpa subkueri tambahan.
     return sql`(${suratId} IN (SELECT dla.${fk} FROM rangkaian_anggota dla JOIN rangkaian_surat dlr ON dlr.id = dla.rangkaian_id
                                  WHERE dla.${fk} IS NOT NULL AND dlr.asal = 'data_lama')
-             OR (${sql.raw(`${t.alias}.created_at`)} < ${k.batas}::timestamptz
+             OR ((${sql.raw(`${t.alias}.created_at`)} < ${k.batas}::timestamptz OR ${sql.raw(`${t.alias}.diimpor_at`)} IS NOT NULL)
                  AND ${suratId} NOT IN (SELECT dlb.${fk} FROM rangkaian_anggota dlb WHERE dlb.${fk} IS NOT NULL)))`;
 }
 
@@ -405,6 +413,11 @@ function aksiUntuk(row: BarisPerluDilengkapi, k: KonteksPd, akses: AksesBaris): 
         if (row.kategori === 'sm_belum_ditindaklanjuti') {
             if (suratAksi.includes('saya_balas') || suratAksi.includes('buat_nota_dinas')) aksi.add('tindak_lanjut');
             if (suratAksi.includes('disposisi')) aksi.add('disposisi');
+            // Surat tanpa rangkaian yang tidak perlu ditindaklanjuti (undangan, tembusan, edaran): pemilik
+            // FULL_ADMIN menutupnya lewat berkasService.tandaiSelesaiSuratMasuk. Predikat sama dengan
+            // endpoint-nya: jalur baca 'owner' (= check().allowed), bukan `mutable`, jadi surat terarsip
+            // ikut; surat yang sudah ber-rangkaian memakai Tandai Selesai rangkaiannya.
+            if (a.via === 'owner' && isFullAdmin(k.user) && row.rangkaian_id === null) aksi.add('tandai_selesai');
         }
         if (row.kategori === 'sk_tanpa_nd_penjelas' && suratAksi.includes('buat_nd_penjelas')) aksi.add('buat_nd_penjelas');
         if (row.kategori === 'sk_tanpa_asal' && suratAksi.includes('tautkan')) aksi.add('tautkan');

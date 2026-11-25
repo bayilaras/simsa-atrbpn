@@ -20,6 +20,36 @@ Halaman Lacak Surat punya tiga tab:
 | **Berkas Rangkaian** | Daftar rangkaian surat yang dapat kamu lihat |
 | **Perlu Dilengkapi** | Surat dan rangkaian dalam jangkauan kamu yang rantainya belum lengkap, misalnya surat masuk yang belum ditindaklanjuti atau disposisi yang belum selesai. Bagi admin, angka pada menu **Lacak Surat** di sidebar menunjukkan jumlahnya |
 
+## Daftar Perlu Dilengkapi
+
+Tab **Perlu Dilengkapi** adalah daftar kerja. Setiap baris punya tombol untuk langkah berikutnya, misalnya **Tindak Lanjut**, **Disposisi**, **Berkaskan ke Direktorat**, **Tandai Inisiatif**, atau **Tautkan**. Tombol hanya tampil bila kamu berwenang atas surat itu. Surat yang tidak boleh kamu baca tampil sebagai "Dikecualikan".
+
+### Menandai surat masuk selesai tanpa balasan
+
+Sebagian surat masuk tidak perlu didisposisikan atau dibalas, misalnya undangan yang sudah dihadiri, tembusan, atau surat edaran. Agar surat seperti itu keluar dari kelompok **Surat masuk belum ditindaklanjuti**:
+
+1. Buka **Surat ▸ Lacak Surat**, lalu tab **Perlu Dilengkapi**.
+2. Pada baris suratnya, klik **Tandai Selesai**.
+3. Isi **Catatan penyelesaian** (minimal 10 karakter), misalnya "Undangan sudah dihadiri, tidak perlu dibalas", lalu klik **Tandai Selesai**.
+
+Yang terjadi setelah itu:
+
+- Surat pindah ke kelompok **Siap diberkaskan**. Dari sana klik **Berkaskan ke Direktorat** bila berkasnya sudah lengkap.
+- Status surat masuk menjadi **Sudah Dibalas**, karena surat dianggap sudah ditangani.
+- Surat mendapat kode rangkaian `RS-YYYY-NNNNNN`. Catatanmu tersimpan dan tindakan ini tercatat di Audit Log.
+- Bila ternyata surat perlu ditindaklanjuti, buka rangkaiannya dan klik **Buka Kembali**; surat tampil lagi di **Surat masuk belum ditindaklanjuti**. Mengirim disposisi atau membuat tindak lanjut juga membuka rangkaiannya kembali. Tulisan status **Sudah Dibalas** pada daftar surat tidak ikut berubah saat rangkaian dibuka kembali.
+
+Tombol **Tandai Selesai** pada baris hanya tampil bagi admin unit pemilik surat (atau Super Admin) dan hanya untuk surat yang belum punya rangkaian. Surat yang sudah punya rangkaian, misalnya karena disposisinya ditolak, ditandai selesai dari panel **Alur Surat** rangkaian itu. Mengarsipkan surat tidak mengeluarkannya dari daftar ini; surat yang sudah diarsipkan tetap dapat ditandai selesai.
+
+### Surat hasil impor dan data lama
+
+Surat yang masuk lewat **Impor dari Google Sheets** atau **Impor CSV/XLSX** biasanya register lama, jadi tidak ditampilkan di Perlu Dilengkapi dan tidak dihitung pada angka di sidebar. Hal yang sama berlaku untuk surat dari aplikasi lama.
+
+- Centang **Tampilkan data lama** untuk melihatnya. Barisnya berlabel **Data lama** dan tombol aksinya tetap berfungsi.
+- Begitu surat impor didisposisikan, ditindaklanjuti, ditautkan, atau ditandai selesai, surat itu masuk ke sebuah rangkaian dan diperlakukan seperti surat lain: tampil tanpa perlu mencentang.
+- Surat yang dicatat lewat tombol **Surat Baru** tidak terpengaruh.
+- Surat yang diimpor sebelum akhir November 2026 baru ikut tersembunyi setelah administrator sistem menandainya sebagai hasil impor.
+
 ## Menautkan Surat ke Rangkaian
 
 Bila sebuah surat berkaitan dengan surat lain tetapi belum berada dalam satu rangkaian, tautkan dari halaman detailnya agar alurnya dapat dilacak:

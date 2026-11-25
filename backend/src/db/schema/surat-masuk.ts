@@ -35,6 +35,8 @@ export const suratMasuk = pgTable('surat_masuk', {
     deletedAt: timestamp('deleted_at'),
     deletedBy: uuid('deleted_by').references(() => users.id),
     createdBy: uuid('created_by').references(() => users.id),
+    // 0055: waktu baris dibuat oleh impor; NULL untuk surat yang dicatat lewat formulir.
+    diimporAt: timestamp('diimpor_at', { withTimezone: true }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({

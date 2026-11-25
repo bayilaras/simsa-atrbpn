@@ -3,7 +3,8 @@ import { db } from '../../config/database.js';
 import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../utils/errors.js';
 import auditLogService, { type CriticalAuditContext } from '../audit-log.service.js';
 import {
-    denganRetryDeadlock, loadJangkauan, lockRangkaian, lockSuratMasukRows, readRefKey, recomputeSuratMasuk, recordAccessService,
+    aktorPenulis, denganRetryDeadlock, isAllowedForRecordUnit, loadJangkauan, lockRangkaian, lockSuratMasukRows,
+    rangkaianKeanggotaanSuratMasuk, rangkaianService, readRefKey, recomputeSuratMasuk, recordAccessService,
     tingkatAksesRangkaian, type Executor, type RangkaianTerkunciP3, type RecordUser, type SuratJenis, type Tx,
 } from './deps.js';
 import { rangkaianStatusService } from './rangkaian-status.service.js';
@@ -59,6 +60,33 @@ async function kunci(tx: Tx, id: string): Promise<Rangkaian> {
         throw new ConflictError('Anggota rangkaian berubah bersamaan; muat ulang lalu coba lagi.');
     }
     return r;
+}
+
+const PESAN_SUDAH_BERANGKAIAN = 'Surat ini sudah berada dalam rangkaian. Buka Alur Surat pada detail surat, lalu pilih Tandai Selesai di sana.';
+
+/**
+ * Inti Tandai Selesai manual (§8), dipakai `tandaiSelesai` dan
+ * `tandaiSelesaiSuratMasuk`. Pemanggil sudah memegang kunci surat masuk
+ * anggota lalu rangkaian `r` (G-LOCK).
+ */
+async function selesaikanManual(
+    tx: Tx, user: RecordUser, r: Rangkaian, catatan: string, audit?: CriticalAuditContext, rincianAudit: Record<string, unknown> = {},
+) {
+    await assertPeran(tx, user, r, ['pengolah', 'pencatat']);
+    if (r.status !== 'aktif') throw new ConflictError('Hanya rangkaian aktif yang dapat ditandai selesai.');
+    const penghalang = await rangkaianStatusService.hitungPenghalang(tx, r.id);
+    if (penghalang.disposisiTerbuka > 0 || penghalang.anggotaBlokir > 0) {
+        throw new ConflictError('Masih ada disposisi terbuka atau surat keluar draft/menunggu/ditolak dalam rangkaian.');
+    }
+    await tx.execute(sql`UPDATE rangkaian_surat
+        SET status = 'selesai', selesai_manual = true, selesai_at = now(), selesai_by = ${user.id}, catatan_selesai = ${catatan.trim()}, updated_at = now()
+        WHERE id = ${r.id} AND status = 'aktif'`);
+    if (audit) {
+        await auditLogService.logActionOrThrow({ ...audit, action: 'status_change', entityType: 'rangkaian_surat', entityId: r.id,
+            changes: { before: { status: 'aktif' }, after: { status: 'selesai', selesaiManual: true }, catatan: catatan.trim(), ...rincianAudit } }, tx);
+    }
+    await recomputeSuratMasuk(tx, await suratMasukAnggota(tx, r.id), audit);
+    return { id: r.id, status: 'selesai' as const };
 }
 
 export const berkasService = {
@@ -137,21 +165,47 @@ export const berkasService = {
     async tandaiSelesai(user: RecordUser, rangkaianId: string, catatan: string, audit?: CriticalAuditContext) {
         return denganRetryDeadlock(() => db.transaction(async (tx) => {
             const r = await kunci(tx, rangkaianId);
-            await assertPeran(tx, user, r, ['pengolah', 'pencatat']);
-            if (r.status !== 'aktif') throw new ConflictError('Hanya rangkaian aktif yang dapat ditandai selesai.');
-            const penghalang = await rangkaianStatusService.hitungPenghalang(tx, rangkaianId);
-            if (penghalang.disposisiTerbuka > 0 || penghalang.anggotaBlokir > 0) {
-                throw new ConflictError('Masih ada disposisi terbuka atau surat keluar draft/menunggu/ditolak dalam rangkaian.');
+            return selesaikanManual(tx, user, r, catatan, audit);
+        }));
+    },
+
+    /**
+     * Tandai Selesai untuk surat masuk yang BELUM punya rangkaian (undangan,
+     * tembusan, edaran: tidak didisposisikan dan tidak dibalas). Rangkaian
+     * hanya terbentuk saat disposisi, tindak lanjut, atau tautan, jadi tanpa
+     * jalur ini surat seperti itu tidak pernah keluar dari daftar kerja
+     * "Belum ditindaklanjuti" (spec §7 D7, §8). Dalam satu transaksi:
+     * rangkaian dipastikan (P1 `ensureForSurat`), lalu ditandai selesai manual
+     * persis seperti `tandaiSelesai`.
+     *
+     * - Pemilik surat: FULL_ADMIN unit rekaman dengan `check().allowed`, sama
+     *   dengan `assertPemilik` tautan. Sengaja bukan `mutable`: yang ditulis
+     *   hanya rangkaian dan status turunan surat (lolos guard 0021), jadi
+     *   surat terarsip tetap dapat ditutup. Selain itu 404 tanpa oracle.
+     * - Urutan kunci G-LOCK: baris surat masuk → rangkaian. Semua jalur yang
+     *   menambah keanggotaan mengunci baris surat lebih dulu, jadi setelah
+     *   kunci surat dipegang keanggotaannya tidak dapat berubah.
+     * - Surat yang SUDAH menjadi anggota rangkaian ditolak 409: rangkaian itu
+     *   bisa memuat surat masuk lain yang harus dikunci sebelum rangkaiannya
+     *   (lihat `kunci`), dan aksi yang benar sudah ada di rangkaian tersebut.
+     */
+    async tandaiSelesaiSuratMasuk(user: RecordUser, suratMasukId: string, catatan: string, audit?: CriticalAuditContext) {
+        return denganRetryDeadlock(() => db.transaction(async (tx) => {
+            const milik = await recordAccessService.check(user, 'surat_masuk', suratMasukId, tx);
+            if (!milik.exists || !milik.allowed || !isFullAdmin(user) || !milik.unitKerjaId
+                || !isAllowedForRecordUnit(user, milik.unitKerjaId)) {
+                throw new NotFoundError('Surat masuk');
             }
-            await tx.execute(sql`UPDATE rangkaian_surat
-                SET status = 'selesai', selesai_manual = true, selesai_at = now(), selesai_by = ${user.id}, catatan_selesai = ${catatan.trim()}, updated_at = now()
-                WHERE id = ${rangkaianId} AND status = 'aktif'`);
-            if (audit) {
-                await auditLogService.logActionOrThrow({ ...audit, action: 'status_change', entityType: 'rangkaian_surat', entityId: rangkaianId,
-                    changes: { before: { status: 'aktif' }, after: { status: 'selesai', selesaiManual: true }, catatan: catatan.trim() } }, tx);
-            }
-            await recomputeSuratMasuk(tx, await suratMasukAnggota(tx, rangkaianId), audit);
-            return { id: rangkaianId, status: 'selesai' as const };
+            const [surat] = await lockSuratMasukRows(tx, [suratMasukId]);
+            if (!surat || surat.isDeleted === true) throw new NotFoundError('Surat masuk');
+            if (await rangkaianKeanggotaanSuratMasuk(tx, suratMasukId)) throw new ConflictError(PESAN_SUDAH_BERANGKAIAN);
+            const dibuat = await rangkaianService.ensureForSurat(tx, { jenis: 'surat_masuk', id: suratMasukId }, aktorPenulis(user, audit));
+            // Pengaman: keanggotaan tidak dapat muncul di bawah kunci surat, tetapi rangkaian lama tidak pernah ditutup dari sini.
+            if (!dibuat.created) throw new ConflictError(PESAN_SUDAH_BERANGKAIAN);
+            const [r] = await lockRangkaian(tx, [dibuat.rangkaianId]); // no-op: baru dibuat di transaksi ini
+            if (!r) throw new NotFoundError('Rangkaian');
+            const hasil = await selesaikanManual(tx, user, r, catatan, audit, { suratMasukId, rangkaianBaru: true });
+            return { ...hasil, kode: dibuat.kode, suratMasukId };
         }));
     },
 
