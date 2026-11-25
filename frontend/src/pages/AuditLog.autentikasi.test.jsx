@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ listLogs: vi.fn() }))
 vi.mock('@/services/audit-log.service', () => ({ default: { listLogs: mocks.listLogs } }))
+vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { id: 'sa', role: 'super_admin', unitKerjaId: null } }) }))
 vi.mock('@/components/ui/select', () => ({
     Select: ({ children, value, onValueChange }) => (
         <select aria-label="Pilihan" value={value} onChange={event => onValueChange(event.target.value)}>{children}</select>
