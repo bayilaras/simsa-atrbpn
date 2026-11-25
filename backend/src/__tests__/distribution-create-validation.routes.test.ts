@@ -16,6 +16,7 @@ vi.mock('../middlewares/auth.middleware.js', () => ({
 }));
 vi.mock('../middlewares/role.middleware.js', () => ({
     canWriteMiddleware: () => (_req: any, _res: any, next: any) => next(),
+    permissionMiddleware: () => (_req: any, _res: any, next: any) => next(),
 }));
 vi.mock('../services/distribution.service.js', () => ({ distributionService: mocks.distribution }));
 vi.mock('../services/record-access.service.js', () => ({

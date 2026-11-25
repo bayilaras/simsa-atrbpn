@@ -909,8 +909,8 @@ Menampilkan ringkasan dan daftar surat, arsip, serta peminjaman untuk satu perio
 2. Pilih **Tahun**, atau isi **Dari Tanggal** dan **Sampai Tanggal**. Bila tanggal diisi, pilihan tahun diabaikan untuk surat masuk dan surat keluar.
 3. Klik **"Tampilkan Data"**.
 4. Buka tab **Ringkasan**, **Surat Masuk**, **Surat Keluar**, **Arsip**, atau **Peminjaman**.
-5. Pada tab Surat Masuk, Surat Keluar, atau Arsip, klik **Excel** atau **PDF** untuk mengekspor. Isi berkas surat sama dengan tabel di layar, dan judulnya menyebut periode bila tanggal diisi. Ekspor arsip hanya memakai tahun.
-6. Pada tab **Peminjaman**, peminjaman yang lewat jatuh tempo berstatus **Terlambat** dan dapat disaring dengan pilihan **Terlambat**.
+5. Pada tab Surat Masuk, Surat Keluar, Arsip, atau Peminjaman, klik **Excel** atau **PDF** untuk mengekspor. Isi berkas surat sama dengan tabel di layar, dan judulnya menyebut periode bila tanggal diisi. Ekspor arsip hanya memakai tahun dan berjudul **Daftar Arsip**.
+6. Pada tab **Peminjaman**, peminjaman yang lewat jatuh tempo berstatus **Terlambat** dan dapat disaring dengan pilihan **Terlambat**. Berkas ekspornya mengikuti penyaring status dan rentang tanggal pinjam, serta memuat kolom **Hari Terlambat**.
 
 Tanggal dan waktu pada laporan dan berkas ekspor mengikuti WIB. Pada PDF, baris yang lebih tinggi dari satu halaman dipotong dengan catatan *Teks yang terlalu panjang dipotong; versi Excel memuat isi lengkap.*
 

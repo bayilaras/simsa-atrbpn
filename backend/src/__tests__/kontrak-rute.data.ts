@@ -120,6 +120,7 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
     },
     'audit-log.routes.ts': {
         'GET /': proyeksi('auditLogService.listLogs'),
+        'GET /export/excel': proyeksi('eksporAuditLogService.tabel'),
         'GET /:entityType/:entityId': checkRead('auditLogService.getEntityHistory'),
     },
     'autentikasi.routes.ts': {
@@ -155,6 +156,7 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'GET /inbox': proyeksi('distributionService.findInbox'),
         'GET /outbox': proyeksi('distributionService.findOutbox'),
         'GET /stats': proyeksi('distributionService.getStats'),
+        'GET /export/:kotak/:format': proyeksi('eksporDisposisiService.tabel'),
         'GET /surat/:suratId': checkRead('recordAccessService.check'),
         'GET /:id/kandidat-penyelesaian': proyeksi('distributionService.kandidatPenyelesaian'),
         'GET /:id': checkRead('recordAccessService.checkRead'),
@@ -347,6 +349,7 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'GET /arsip': proyeksi('reportService.getArsipReport'),
         'GET /lending': proyeksi('reportService.getLendingReport'),
         'GET /summary': proyeksi('reportService.getSummaryReport'),
+        'GET /export/peminjaman/:format': proyeksi('eksporPeminjamanService.tabel'),
         'GET /export/:type/:format': proyeksi('exportService.generate'),
     },
     'retention-governance.routes.ts': {

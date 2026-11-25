@@ -232,7 +232,14 @@ export default function Laporan() {
         if (!unitKerjaId) return;
         setExporting(true);
         try {
-            await reportService.exportReport(type, format, {
+            // Penyaring ekspor sama dengan yang dipakai tabel tab itu. Tab
+            // Peminjaman menyaring status dan tanggal pinjam, bukan tahun.
+            await reportService.exportReport(type, format, type === 'peminjaman' ? {
+                unitKerjaId,
+                status: lendingStatus,
+                tanggalDari,
+                tanggalSampai,
+            } : {
                 unitKerjaId,
                 year,
                 tanggalDari,
@@ -839,14 +846,14 @@ export default function Laporan() {
 
                 {/* Peminjaman Tab */}
                 <TabsContent value="peminjaman" className="space-y-4">
-                    <div className="flex justify-between items-center bg-card p-4 rounded-xl shadow-sm border border-border/60">
+                    <div className="flex flex-wrap justify-between items-center gap-3 bg-card p-4 rounded-xl shadow-sm border border-border/60">
                         <div className="flex items-center gap-2">
                             <div className="h-8 w-1 bg-orange-500 rounded-full"></div>
                             <div className="text-sm font-medium text-foreground">
                                 Total: <span className="font-bold text-foreground">{lendingData?.pagination?.total || 0}</span> peminjaman
                             </div>
                         </div>
-                        <div className="flex gap-4 items-center">
+                        <div className="flex flex-wrap gap-2 items-center justify-end">
                             <Select value={lendingStatus} onValueChange={setLendingStatus}>
                                 <SelectTrigger className="w-full sm:w-[150px] bg-muted/50 border-border">
                                     <SelectValue placeholder="Status" />
@@ -858,6 +865,28 @@ export default function Laporan() {
                                     <SelectItem value="overdue">Terlambat</SelectItem>
                                 </SelectContent>
                             </Select>
+                            {canExport && <>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleExport('peminjaman', 'excel')}
+                                    disabled={exporting || loading}
+                                    className="border-border hover:bg-emerald-50 dark:hover:bg-emerald-500/15 hover:text-emerald-600 dark:hover:text-emerald-400 hover:border-emerald-200 transition-colors"
+                                >
+                                    <FileSpreadsheet className="h-4 w-4 mr-2" />
+                                    Excel
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleExport('peminjaman', 'pdf')}
+                                    disabled={exporting || loading}
+                                    className="border-border hover:bg-rose-50 dark:hover:bg-rose-500/15 hover:text-rose-600 dark:hover:text-rose-400 hover:border-rose-200 transition-colors"
+                                >
+                                    <FileText className="h-4 w-4 mr-2" />
+                                    PDF
+                                </Button>
+                            </>}
                         </div>
                     </div>
                     <Card className="border-border/60 shadow-sm overflow-hidden">
@@ -865,6 +894,7 @@ export default function Laporan() {
                             <TableHeader className="bg-muted/50">
                                 <TableRow className="hover:bg-muted/50">
                                     <TableHead className="w-[60px] text-foreground font-semibold">No</TableHead>
+                                    <TableHead className="text-foreground font-semibold">Arsip / Boks</TableHead>
                                     <TableHead className="text-foreground font-semibold">Peminjam</TableHead>
                                     <TableHead className="text-foreground font-semibold">Unit</TableHead>
                                     <TableHead className="text-foreground font-semibold">Tgl Pinjam</TableHead>
@@ -877,7 +907,7 @@ export default function Laporan() {
                                 {loading ? (
                                     [...Array(5)].map((_, i) => (
                                         <TableRow key={i}>
-                                            <TableCell colSpan={7}>
+                                            <TableCell colSpan={8}>
                                                 <Skeleton className="h-8 w-full rounded-md" />
                                             </TableCell>
                                         </TableRow>
@@ -886,6 +916,14 @@ export default function Laporan() {
                                     lendingData.data.map((item, index) => (
                                         <TableRow key={item.id} className="hover:bg-muted/80 transition-colors">
                                             <TableCell data-label="No" className="font-medium text-muted-foreground">{rowNumber('peminjaman', index)}</TableCell>
+                                            <TableCell data-label="Arsip / Boks" className="max-w-xs">
+                                                <span className="block font-medium">
+                                                    {item.lendingType === 'box' ? `Boks ${item.kodeBoks || '-'}` : (item.nomorBerkas || '-')}
+                                                </span>
+                                                <span className="block truncate text-xs text-muted-foreground" title={(item.lendingType === 'box' ? item.namaBoks : item.uraianBerkas) || undefined}>
+                                                    {(item.lendingType === 'box' ? item.namaBoks : item.uraianBerkas) || '-'}
+                                                </span>
+                                            </TableCell>
                                             <TableCell data-label="Peminjam" className="font-medium">{item.borrowerName}</TableCell>
                                             <TableCell data-label="Unit">{item.departmentUnit || '-'}</TableCell>
                                             <TableCell data-label="Tgl Pinjam">{formatDate(item.borrowDate)}</TableCell>
@@ -896,7 +934,7 @@ export default function Laporan() {
                                     ))
                                 ) : (
                                     <TableRow>
-                                        <TableCell colSpan={7} className="h-32 text-center">
+                                        <TableCell colSpan={8} className="h-32 text-center">
                                             <div className="flex flex-col items-center justify-center text-muted-foreground">
                                                 <BookOpen className="h-8 w-8 mb-2 opacity-50" />
                                                 <p>Tidak ada data peminjaman</p>
