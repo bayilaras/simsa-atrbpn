@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { TambahArsipDialog } from './TambahArsipDialog'
+import { adaPerubahanBelumDisimpan } from '@/lib/perubahan-belum-disimpan'
 
 const mocks = vi.hoisted(() => ({
     user: { id: 'admin-1', role: 'admin_unit', unitKerjaId: 'sesditjen' },
@@ -77,6 +78,83 @@ describe('TambahArsipDialog', () => {
         fireEvent.click(screen.getByRole('button', { name: /Simpan Arsip/ }))
         expect(await screen.findByText(/sudah dipakai arsip lain/)).toBeInTheDocument()
         expect(screen.getByRole('dialog', { name: 'Tambah Arsip' })).toBeInTheDocument()
+    })
+
+    describe('menutup dialog yang sudah diisi', () => {
+        // Radix baru mendengarkan klik di luar dialog setelah satu putaran timer,
+        // dan memutuskan penutupan setelah klik selesai.
+        const jeda = () => act(() => new Promise(resolve => setTimeout(resolve, 0)))
+        const tekanEsc = () => fireEvent.keyDown(document.activeElement || document.body, { key: 'Escape' })
+        async function klikDiLuar() {
+            const latar = document.querySelector('[data-slot="dialog-overlay"]')
+            await jeda()
+            fireEvent.pointerDown(latar)
+            fireEvent.click(latar)
+            await jeda()
+        }
+        // Selagi pertanyaan tampil, dialog di bawahnya tersembunyi dari pembaca layar.
+        const dialogTambah = () => document.querySelector('[data-slot="dialog-content"]')
+
+        it('formulir yang belum diubah tertutup tanpa pertanyaan', async () => {
+            bukaDialog()
+            tekanEsc()
+            await waitFor(() => expect(dialogTambah()).toBeNull())
+            expect(screen.queryByRole('alertdialog')).toBeNull()
+        })
+
+        it('Esc pada formulir terisi bertanya dulu; memilih lanjut mengisi mempertahankan isian', async () => {
+            bukaDialog()
+            isiWajib()
+            ketik('Keterangan', 'Dari lemari lama')
+            expect(adaPerubahanBelumDisimpan()).toBe(true)
+            tekanEsc()
+
+            const tanya = await screen.findByRole('alertdialog', { name: 'Buang isian?' })
+            expect(tanya).toHaveTextContent('Isian arsip ini belum disimpan')
+            fireEvent.click(screen.getByRole('button', { name: 'Lanjut mengisi' }))
+
+            await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+            expect(dialogTambah()).toBeInTheDocument()
+            expect(screen.getByLabelText('Nomor Berkas', { exact: false })).toHaveValue('SK-001/2025')
+            expect(screen.getByLabelText('Uraian Berkas', { exact: false })).toHaveValue('Keputusan tim pengadaan')
+            expect(screen.getByLabelText('No. Folder', { exact: false })).toHaveValue('F-003')
+            expect(screen.getByLabelText('Keterangan')).toHaveValue('Dari lemari lama')
+        })
+
+        it('klik di luar dialog terisi bertanya dulu; memilih buang isian menutup dan mengosongkan formulir', async () => {
+            bukaDialog()
+            isiWajib()
+            await klikDiLuar()
+
+            expect(await screen.findByRole('alertdialog', { name: 'Buang isian?' })).toBeInTheDocument()
+            expect(dialogTambah()).toBeInTheDocument()
+            fireEvent.click(screen.getByRole('button', { name: 'Buang isian' }))
+
+            await waitFor(() => expect(dialogTambah()).toBeNull())
+            expect(adaPerubahanBelumDisimpan()).toBe(false)
+            fireEvent.click(screen.getByRole('button', { name: /Tambah Arsip/ }))
+            expect(screen.getByLabelText('Nomor Berkas', { exact: false })).toHaveValue('')
+            tekanEsc()
+            await waitFor(() => expect(dialogTambah()).toBeNull())
+            expect(screen.queryByRole('alertdialog')).toBeNull()
+        })
+
+        it('tombol tutup pada formulir terisi juga bertanya dulu', async () => {
+            bukaDialog()
+            ketik('Nomor Berkas', 'SK-002/2025')
+            fireEvent.click(screen.getByRole('button', { name: 'Tutup' }))
+            expect(await screen.findByRole('alertdialog', { name: 'Buang isian?' })).toBeInTheDocument()
+            expect(dialogTambah()).toBeInTheDocument()
+        })
+
+        it('Batal menutup dialog tanpa pertanyaan', async () => {
+            bukaDialog()
+            ketik('Nomor Berkas', 'SK-002/2025')
+            fireEvent.click(screen.getByRole('button', { name: 'Batal' }))
+            await waitFor(() => expect(dialogTambah()).toBeNull())
+            expect(screen.queryByRole('alertdialog')).toBeNull()
+            expect(adaPerubahanBelumDisimpan()).toBe(false)
+        })
     })
 
     it('tidak menawarkan kelas Rahasia kepada Admin Unit Kerja', () => {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Info, Loader2, Plus, Save } from 'lucide-react'
 import {
     Dialog, DialogContent, DialogDescription, DialogFooter,
@@ -11,8 +11,10 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/hooks/use-toast'
+import { useKonfirmasi } from '@/hooks/use-konfirmasi'
 import { arsipService } from '@/services/arsip.service'
 import { adaKelasTersembunyi, PESAN_KELAS_TERBATAS_PERAN, saringOpsiKelas } from '@/lib/kelas-keamanan'
+import { tandaiBelumDisimpan } from '@/lib/perubahan-belum-disimpan'
 import {
     KLASIFIKASI_KEAMANAN_OPTIONS,
     MEDIA_OPTIONS,
@@ -29,6 +31,14 @@ import {
 } from './tambah-arsip-form'
 
 const ID = field => `tambah-arsip-${field}`
+
+const PERMINTAAN_BUANG_ISIAN = Object.freeze({
+    judul: 'Buang isian?',
+    pesan: 'Isian arsip ini belum disimpan. Bila dialog ditutup, isian tersebut hilang.',
+    aksi: 'Buang isian',
+    batal: 'Lanjut mengisi',
+    berbahaya: true,
+})
 
 function Bidang({ field, label, wajib, petunjuk, galat, className = '', children }) {
     const id = ID(field)
@@ -59,7 +69,7 @@ function atribut(field, { petunjuk, galat, wajib } = {}) {
 
 const KELAS_SELECT = 'min-h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50'
 
-function FormTambahArsip({ unitKerjaId, jenisAwal, saving, setSaving, onClose, onSaved }) {
+function FormTambahArsip({ unitKerjaId, jenisAwal, saving, setSaving, onDiubah, onClose, onSaved }) {
     const { user } = useAuth()
     const { toast } = useToast()
     const role = user?.role
@@ -74,6 +84,7 @@ function FormTambahArsip({ unitKerjaId, jenisAwal, saving, setSaving, onClose, o
     const ubah = field => value => {
         setForm(current => ({ ...current, [field]: value }))
         setGalatServer('')
+        onDiubah()
     }
     const ubahInput = field => event => ubah(field)(event.target.value)
 
@@ -258,38 +269,75 @@ function FormTambahArsip({ unitKerjaId, jenisAwal, saving, setSaving, onClose, o
 export function TambahArsipDialog({ unitKerjaId, jenisAwal = 'lainnya', onSaved }) {
     const [open, setOpen] = useState(false)
     const [saving, setSaving] = useState(false)
+    // Formulir ini tidak punya draf: begitu ada isian, klik di luar dialog, Esc,
+    // dan tombol tutup tidak langsung menutupnya, tetapi bertanya dulu.
+    const [diubah, setDiubah] = useState(false)
+    const [konfirmasi, dialogKonfirmasi] = useKonfirmasi()
+
+    const tutup = () => {
+        setDiubah(false)
+        setOpen(false)
+    }
+
+    const mintaTutup = async () => {
+        if (!diubah) {
+            tutup()
+            return
+        }
+        if (await konfirmasi(PERMINTAAN_BUANG_ISIAN)) tutup()
+    }
+
+    // Dialog yang sedang diisi tidak dimuat ulang oleh pembaruan aplikasi.
+    useEffect(() => {
+        if (!open || !diubah) return undefined
+        const token = {}
+        tandaiBelumDisimpan(token, true)
+        return () => tandaiBelumDisimpan(token, false)
+    }, [diubah, open])
+
     return (
-        <Dialog open={open} onOpenChange={next => !saving && setOpen(next)}>
-            <DialogTrigger asChild>
-                <Button variant="default" size="sm" className="h-9">
-                    <Plus className="mr-2 h-3.5 w-3.5" aria-hidden="true" /> Tambah Arsip
-                </Button>
-            </DialogTrigger>
-            <DialogContent
-                className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
-                onEscapeKeyDown={event => saving && event.preventDefault()}
-                onInteractOutside={event => saving && event.preventDefault()}
+        <>
+            <Dialog
+                open={open}
+                onOpenChange={next => {
+                    if (saving) return
+                    if (next) setOpen(true)
+                    else mintaTutup()
+                }}
             >
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                        <Plus className="h-5 w-5 text-emerald-600" aria-hidden="true" /> Tambah Arsip
-                    </DialogTitle>
-                    <DialogDescription>
-                        Catat arsip fisik yang belum ada di daftar surat. Penyimpanan tercatat di log audit.
-                    </DialogDescription>
-                </DialogHeader>
-                {open && (
-                    <FormTambahArsip
-                        unitKerjaId={unitKerjaId}
-                        jenisAwal={jenisAwal}
-                        saving={saving}
-                        setSaving={setSaving}
-                        onClose={() => setOpen(false)}
-                        onSaved={onSaved}
-                    />
-                )}
-            </DialogContent>
-        </Dialog>
+                <DialogTrigger asChild>
+                    <Button variant="default" size="sm" className="h-9">
+                        <Plus className="mr-2 h-3.5 w-3.5" aria-hidden="true" /> Tambah Arsip
+                    </Button>
+                </DialogTrigger>
+                <DialogContent
+                    className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+                    onEscapeKeyDown={event => saving && event.preventDefault()}
+                    onInteractOutside={event => saving && event.preventDefault()}
+                >
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Plus className="h-5 w-5 text-emerald-600" aria-hidden="true" /> Tambah Arsip
+                        </DialogTitle>
+                        <DialogDescription>
+                            Catat arsip fisik yang belum ada di daftar surat. Penyimpanan tercatat di log audit.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {open && (
+                        <FormTambahArsip
+                            unitKerjaId={unitKerjaId}
+                            jenisAwal={jenisAwal}
+                            saving={saving}
+                            setSaving={setSaving}
+                            onDiubah={() => setDiubah(true)}
+                            onClose={tutup}
+                            onSaved={onSaved}
+                        />
+                    )}
+                </DialogContent>
+            </Dialog>
+            {dialogKonfirmasi}
+        </>
     )
 }
 

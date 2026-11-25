@@ -18,11 +18,15 @@ export function PemberitahuanVersiBaru({ pembaruan = pembaruanAplikasi }) {
 
     if (!keadaan.tersedia || ditunda) return null
 
+    // data-wilayah-pemberitahuan: menekan kotak ini tidak menutup dialog yang
+    // sedang terbuka (components/ui/dialog.tsx). pointer-events-auto: dialog
+    // mematikan klik di luar dirinya, dan tombol di sini harus tetap dapat ditekan.
     return (
         <div
             role="status"
             aria-live="polite"
-            className="fixed left-4 right-4 top-20 z-[60] mx-auto max-w-sm rounded-lg border border-border bg-card p-4 text-card-foreground shadow-lg sm:left-auto sm:right-4 sm:mx-0 print:hidden"
+            data-wilayah-pemberitahuan=""
+            className="pointer-events-auto fixed left-4 right-4 top-20 z-[60] mx-auto max-w-sm rounded-lg border border-border bg-card p-4 text-card-foreground shadow-lg sm:left-auto sm:right-4 sm:mx-0 print:hidden"
         >
             <p className="flex items-start gap-2 text-sm">
                 <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />

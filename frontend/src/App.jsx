@@ -1,14 +1,14 @@
 import { FileCapabilityGuard } from '@/components/FileCapabilityGuard'
 import { AppServiceNotice } from '@/components/AppServiceNotice'
-import { lazy, Suspense, useEffect } from 'react'
-import { createBrowserRouter, RouterProvider, Navigate, Outlet, Link, useLocation } from 'react-router-dom'
+import { lazy, Suspense, useEffect, useLayoutEffect } from 'react'
+import { createBrowserRouter, RouterProvider, Navigate, Outlet, Link, useLocation, useRouteError } from 'react-router-dom'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/app-sidebar'
 import { AppHeader } from '@/components/app-header'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { Toaster } from '@/components/ui/toaster'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
-import ErrorBoundary from '@/components/ErrorBoundary'
+import ErrorBoundary, { HalamanGalat } from '@/components/ErrorBoundary'
 import { IdleWarningBanner } from '@/components/IdleWarningBanner'
 import { ProvisionedAccessGate } from '@/components/ProvisionedAccessGate'
 import { useAuth } from './context/AuthContext'
@@ -17,54 +17,61 @@ import PrintLayout from '@/layouts/PrintLayout'
 import appConfig from '@/lib/app-config'
 import { PROVISIONED_ROLES, hasProvisionedAccess } from '@/lib/provisioning-access'
 import { useAppConfig } from '@/context/app-config-context'
+import { muatHalaman } from '@/lib/muat-halaman'
+import { ingatHalamanKembali } from '@/lib/sesi-masuk'
 import './index.css'
 
-// Lazy-loaded pages — each becomes a separate chunk for faster initial load
-const Dashboard = lazy(() => import('@/pages/Dashboard'))
-const SuratMasuk = lazy(() => import('@/pages/SuratMasuk'))
-const SuratKeluar = lazy(() => import('@/pages/SuratKeluar'))
-const LacakSurat = lazy(() => import('@/pages/LacakSurat'))
-const TambahSuratMasuk = lazy(() => import('@/pages/TambahSuratMasuk'))
-const TambahSuratKeluar = lazy(() => import('@/pages/TambahSuratKeluar'))
-const Arsip = lazy(() => import('@/pages/Arsip'))
-const ArsipDetail = lazy(() => import('@/pages/ArsipDetail'))
-const UserManagement = lazy(() => import('@/pages/UserManagement'))
-const AuditLog = lazy(() => import('@/pages/AuditLog'))
-const OperationsMonitoring = lazy(() => import('@/pages/OperationsMonitoring'))
-const KlasifikasiArsip = lazy(() => import('@/pages/KlasifikasiArsip'))
-const JadwalRetensi = lazy(() => import('@/pages/JadwalRetensi'))
-const RegulatoryRuleSets = lazy(() => import('@/pages/RegulatoryRuleSets'))
-const StorageLocations = lazy(() => import('@/pages/StorageLocations'))
-const StorageLocationDetail = lazy(() => import('@/pages/StorageLocationDetail'))
-const ArchiveLending = lazy(() => import('@/pages/ArchiveLending'))
-const Dosir = lazy(() => import('@/pages/Dosir'))
-const DosirDetail = lazy(() => import('@/pages/DosirDetail'))
-const RetentionManagement = lazy(() => import('@/pages/RetentionManagement'))
-const RetentionGovernance = lazy(() => import('@/pages/RetentionGovernance'))
-const BulkUpload = lazy(() => import('@/pages/BulkUpload'))
-const DistributionInbox = lazy(() => import('@/pages/DistributionInbox'))
-const SuratMasukDetail = lazy(() => import('@/pages/SuratMasukDetail'))
-const SuratKeluarDetail = lazy(() => import('@/pages/SuratKeluarDetail'))
-const Laporan = lazy(() => import('@/pages/Laporan'))
-const Settings = lazy(() => import('@/pages/Settings'))
-const PenyusutanArsip = lazy(() => import('@/pages/PenyusutanArsip'))
-const ArsipVital = lazy(() => import('@/pages/ArsipVital'))
-const ArsipTerjaga = lazy(() => import('@/pages/ArsipTerjaga'))
-const ArsipElektronik = lazy(() => import('@/pages/ArsipElektronik'))
-const TunjukSilang = lazy(() => import('@/pages/TunjukSilang'))
-const AutentikasiIndex = lazy(() => import('@/pages/Autentikasi/Index'))
-const AutentikasiCreate = lazy(() => import('@/pages/Autentikasi/Create'))
-const FormulirIndex = lazy(() => import('@/pages/Formulir/Index'))
-const FormulirViewer = lazy(() => import('@/pages/Formulir/FormulirViewer'))
-const LembarDisposisi = lazy(() => import('@/pages/LembarDisposisi'))
-const LayananArsipIndex = lazy(() => import('@/pages/LayananArsip/Index'))
-const LayananArsipCreate = lazy(() => import('@/pages/LayananArsip/Create'))
-const LayananArsipDetail = lazy(() => import('@/pages/LayananArsip/Detail'))
-const RecordAccessGrants = lazy(() => import('@/pages/RecordAccessGrants'))
-const UserGuide = lazy(() => import('@/pages/UserGuide'))
-const NotFound = lazy(() => import('@/pages/NotFound'))
+// Lazy-loaded pages — each becomes a separate chunk for faster initial load.
+// muatHalaman: a chunk that cannot be downloaded (e.g. replaced by a new
+// release) reloads the page once, then shows the error screen with a reload
+// action (lib/muat-halaman.js).
+const halaman = (impor) => lazy(muatHalaman(impor))
+
+const Dashboard = halaman(() => import('@/pages/Dashboard'))
+const SuratMasuk = halaman(() => import('@/pages/SuratMasuk'))
+const SuratKeluar = halaman(() => import('@/pages/SuratKeluar'))
+const LacakSurat = halaman(() => import('@/pages/LacakSurat'))
+const TambahSuratMasuk = halaman(() => import('@/pages/TambahSuratMasuk'))
+const TambahSuratKeluar = halaman(() => import('@/pages/TambahSuratKeluar'))
+const Arsip = halaman(() => import('@/pages/Arsip'))
+const ArsipDetail = halaman(() => import('@/pages/ArsipDetail'))
+const UserManagement = halaman(() => import('@/pages/UserManagement'))
+const AuditLog = halaman(() => import('@/pages/AuditLog'))
+const OperationsMonitoring = halaman(() => import('@/pages/OperationsMonitoring'))
+const KlasifikasiArsip = halaman(() => import('@/pages/KlasifikasiArsip'))
+const JadwalRetensi = halaman(() => import('@/pages/JadwalRetensi'))
+const RegulatoryRuleSets = halaman(() => import('@/pages/RegulatoryRuleSets'))
+const StorageLocations = halaman(() => import('@/pages/StorageLocations'))
+const StorageLocationDetail = halaman(() => import('@/pages/StorageLocationDetail'))
+const ArchiveLending = halaman(() => import('@/pages/ArchiveLending'))
+const Dosir = halaman(() => import('@/pages/Dosir'))
+const DosirDetail = halaman(() => import('@/pages/DosirDetail'))
+const RetentionManagement = halaman(() => import('@/pages/RetentionManagement'))
+const RetentionGovernance = halaman(() => import('@/pages/RetentionGovernance'))
+const BulkUpload = halaman(() => import('@/pages/BulkUpload'))
+const DistributionInbox = halaman(() => import('@/pages/DistributionInbox'))
+const SuratMasukDetail = halaman(() => import('@/pages/SuratMasukDetail'))
+const SuratKeluarDetail = halaman(() => import('@/pages/SuratKeluarDetail'))
+const Laporan = halaman(() => import('@/pages/Laporan'))
+const Settings = halaman(() => import('@/pages/Settings'))
+const PenyusutanArsip = halaman(() => import('@/pages/PenyusutanArsip'))
+const ArsipVital = halaman(() => import('@/pages/ArsipVital'))
+const ArsipTerjaga = halaman(() => import('@/pages/ArsipTerjaga'))
+const ArsipElektronik = halaman(() => import('@/pages/ArsipElektronik'))
+const TunjukSilang = halaman(() => import('@/pages/TunjukSilang'))
+const AutentikasiIndex = halaman(() => import('@/pages/Autentikasi/Index'))
+const AutentikasiCreate = halaman(() => import('@/pages/Autentikasi/Create'))
+const FormulirIndex = halaman(() => import('@/pages/Formulir/Index'))
+const FormulirViewer = halaman(() => import('@/pages/Formulir/FormulirViewer'))
+const LembarDisposisi = halaman(() => import('@/pages/LembarDisposisi'))
+const LayananArsipIndex = halaman(() => import('@/pages/LayananArsip/Index'))
+const LayananArsipCreate = halaman(() => import('@/pages/LayananArsip/Create'))
+const LayananArsipDetail = halaman(() => import('@/pages/LayananArsip/Detail'))
+const RecordAccessGrants = halaman(() => import('@/pages/RecordAccessGrants'))
+const UserGuide = halaman(() => import('@/pages/UserGuide'))
+const NotFound = halaman(() => import('@/pages/NotFound'))
 const SrikandiIntegration = appConfig.features.srikandi
-  ? lazy(() => import('@/pages/SrikandiIntegration'))
+  ? halaman(() => import('@/pages/SrikandiIntegration'))
   : null
 
 // Suspense loading fallback
@@ -79,16 +86,72 @@ function PageLoader() {
   )
 }
 
+// Layar galat berbahasa Indonesia untuk satu halaman. Layar itu ditutup saat
+// pengguna berpindah halaman (location.key berganti), sehingga menu lain tetap
+// dapat dibuka setelah satu halaman gagal.
+function BatasGalatHalaman({ children, ...props }) {
+  const location = useLocation()
+  return <ErrorBoundary resetKey={location.key} {...props}>{children}</ErrorBoundary>
+}
+
+// Cadangan terakhir untuk galat di luar BatasGalatHalaman (mis. kerangka
+// aplikasi), pengganti layar galat bawaan router yang berbahasa Inggris.
+function GalatRute({ tanpaDashboard = false }) {
+  const error = useRouteError()
+  useEffect(() => {
+    console.error('Error caught by route:', error)
+  }, [error])
+  return (
+    <main className="flex min-h-svh items-center justify-center bg-background">
+      <HalamanGalat error={error} tanpaDashboard={tanpaDashboard} />
+    </main>
+  )
+}
+
+// Sesi berakhir saat halaman ini terbuka: ingat halamannya (sessionStorage tab
+// ini, bukan alamat halaman masuk) agar pengguna yang sama kembali ke sini
+// setelah masuk lagi. Keluar dengan sengaja tidak meninggalkan apa pun untuk diingat.
+function AlihkanKeHalamanMasuk() {
+  const location = useLocation()
+  const alamat = location.pathname + location.search
+  useLayoutEffect(() => {
+    ingatHalamanKembali(alamat)
+  }, [alamat])
+  return <Navigate to="/login" replace />
+}
+
+// Halaman yang diingat saat sesi berakhir hanya berlaku untuk pendaratan
+// pertama setelah masuk. Masuk dengan Google mendarat di Dashboard, jadi dari
+// sana pengguna dibawa ke halaman itu; begitu halaman lain terbuka, ingatan itu
+// dikosongkan agar Dashboard dapat dibuka seperti biasa.
+function useHalamanKembali() {
+  const { isAuthenticated, halamanKembali, hapusHalamanKembali } = useAuth()
+  const { pathname } = useLocation()
+  const diDashboard = pathname === '/'
+  const usang = isAuthenticated && Boolean(halamanKembali) && !diDashboard
+
+  useEffect(() => {
+    if (usang) hapusHalamanKembali?.()
+  }, [usang, hapusHalamanKembali])
+
+  return isAuthenticated && diDashboard && halamanKembali ? halamanKembali : null
+}
+
 // Protected route wrapper
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading, user, checkAuth, signOut } = useAuth();
+  const halamanKembali = useHalamanKembali()
 
   if (loading) {
     return <PageLoader />;
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <AlihkanKeHalamanMasuk />;
+  }
+
+  if (halamanKembali) {
+    return <Navigate to={halamanKembali} replace />;
   }
 
   return (
@@ -166,11 +229,11 @@ function AppLayout() {
           <div className="mx-auto w-full max-w-[1600px] space-y-5 sm:space-y-6">
             <Breadcrumbs />
             <AppServiceNotice />
-            <ErrorBoundary fallbackMessage="Terjadi kesalahan saat memuat halaman. Silakan coba lagi.">
+            <BatasGalatHalaman fallbackMessage="Terjadi kesalahan saat memuat halaman. Silakan coba lagi.">
               <Suspense fallback={<PageLoader />}>
                 <Outlet />
               </Suspense>
-            </ErrorBoundary>
+            </BatasGalatHalaman>
           </div>
         </main>
         <Toaster />
@@ -183,6 +246,7 @@ function AppLayout() {
 
 function GuideLayout() {
   const { isAuthenticated, loading, user } = useAuth()
+  useHalamanKembali()
 
   if (!loading && isAuthenticated && hasProvisionedAccess(user)) {
     return <AppLayout />
@@ -214,9 +278,11 @@ function GuideLayout() {
       </header>
       <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-[1600px] px-4 py-5 outline-none sm:px-6 sm:py-6 lg:px-8">
         <div className="mb-5"><AppServiceNotice /></div>
-        <Suspense fallback={<PageLoader />}>
-          <Outlet />
-        </Suspense>
+        <BatasGalatHalaman tanpaDashboard={!isAuthenticated}>
+          <Suspense fallback={<PageLoader />}>
+            <Outlet />
+          </Suspense>
+        </BatasGalatHalaman>
       </main>
     </div>
   )
@@ -225,11 +291,13 @@ function GuideLayout() {
 const router = createBrowserRouter([
   {
     path: "/login",
-    element: <Login />,
+    element: <BatasGalatHalaman tanpaDashboard><Login /></BatasGalatHalaman>,
+    errorElement: <GalatRute tanpaDashboard />,
   },
   {
     path: "/panduan",
     element: <GuideLayout />,
+    errorElement: <GalatRute />,
     children: [
       { index: true, element: <UserGuide /> },
     ],
@@ -240,6 +308,7 @@ const router = createBrowserRouter([
         <AppLayout />
       </ProtectedRoute>
     ),
+    errorElement: <GalatRute />,
     children: [
       { path: "/", element: <Dashboard /> },
       { path: "/surat/masuk", element: <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}><SuratMasuk /></RoleGuard> },
@@ -304,22 +373,27 @@ const router = createBrowserRouter([
         <PrintLayout />
       </ProtectedRoute>
     ),
+    errorElement: <GalatRute />,
     children: [
       {
         path: "/formulir/cetak/:id",
         element: (
-          <Suspense fallback={<PageLoader />}>
-            <FormulirViewer />
-          </Suspense>
+          <BatasGalatHalaman>
+            <Suspense fallback={<PageLoader />}>
+              <FormulirViewer />
+            </Suspense>
+          </BatasGalatHalaman>
         ),
       },
       {
         path: "/surat/masuk/:id/lembar-disposisi",
         element: (
           <RoleGuard allowedRoles={ALL_PROVISIONED_ROLES}>
-            <Suspense fallback={<PageLoader />}>
-              <LembarDisposisi />
-            </Suspense>
+            <BatasGalatHalaman>
+              <Suspense fallback={<PageLoader />}>
+                <LembarDisposisi />
+              </Suspense>
+            </BatasGalatHalaman>
           </RoleGuard>
         ),
       },

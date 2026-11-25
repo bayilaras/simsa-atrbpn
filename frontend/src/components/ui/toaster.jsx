@@ -4,8 +4,13 @@ import { AlertCircle, CheckCircle, X, Info } from "lucide-react"
 export function Toaster() {
     const { toasts, dismiss } = useToast()
 
+    // data-wilayah-pemberitahuan: menekan toast tidak menutup dialog yang sedang
+    // terbuka (components/ui/dialog.tsx). Atribut itu juga ada pada tiap toast
+    // karena dialog memeriksanya setelah klik selesai, saat toast yang ditutup
+    // sudah dilepas dari wadahnya. Tiap toast memakai pointer-events-auto
+    // sehingga tetap dapat ditekan selagi dialog mematikan klik di luar dirinya.
     return (
-        <div role="region" aria-label="Pemberitahuan aplikasi" className="fixed right-0 top-0 z-[100] flex w-full max-w-sm flex-col gap-2 p-4 pointer-events-none">
+        <div role="region" aria-label="Pemberitahuan aplikasi" data-wilayah-pemberitahuan="" className="fixed right-0 top-0 z-[100] flex w-full max-w-sm flex-col gap-2 p-4 pointer-events-none">
             {toasts.map(function ({ id, title, description, variant, ...props }) {
                 return (
                     <div
@@ -13,6 +18,7 @@ export function Toaster() {
                         role={variant === 'destructive' ? 'alert' : 'status'}
                         aria-live={variant === 'destructive' ? 'assertive' : 'polite'}
                         aria-atomic="true"
+                        data-wilayah-pemberitahuan=""
                         className={`pointer-events-auto relative w-full overflow-hidden rounded-lg border p-4 shadow-lg transition-all
                             ${variant === 'destructive'
                                 ? 'bg-destructive text-destructive-foreground border-destructive/50'

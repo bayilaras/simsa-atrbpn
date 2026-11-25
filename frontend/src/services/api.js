@@ -1,7 +1,7 @@
 // API Configuration
 import { clearOfflineStorage } from '../lib/offline-storage';
 import { API_BASE_URL } from '../lib/api-url';
-import { alamatMasukSetelahSesiDitolak, catatKontakServer } from '../lib/sesi-masuk';
+import { alamatMasukSetelahSesiDitolak, catatKontakServer, ingatHalamanKembali } from '../lib/sesi-masuk';
 import { gabungPesanValidasi } from '../lib/pesan-galat';
 
 // Cadangan bila server tidak mengirim pesan; tidak menampilkan kode HTTP.
@@ -305,6 +305,9 @@ export class ApiClient {
                 console.warn('[API] Session expired — redirecting to login');
                 // The login page explains a session that ended for lack of use.
                 const loginUrl = alamatMasukSetelahSesiDitolak();
+                // The same user returns to this page after signing in again; it
+                // is kept in this tab's sessionStorage, never in the login URL.
+                ingatHalamanKembali(window.location.pathname + window.location.search);
                 // Purge legacy offline data before handing the workstation to a
                 // subsequent user. This also covers server-side session expiry.
                 try {
