@@ -62,7 +62,7 @@ Sebagian besar pengguna diminta masuk sekali lagi. Hal ini wajar: masuk kembali 
 - Surat hasil impor tidak lagi memenuhi tab Perlu Dilengkapi; centang **Tampilkan data lama** untuk melihatnya. Lihat [Surat hasil impor dan data lama](./manajemen-surat/rangkaian-surat.md#surat-hasil-impor-dan-data-lama).
 - **Tandai Selesai** juga tampil di halaman detail surat masuk, dan lonceng *surat belum diproses* tidak lagi menghitung surat masuk hasil impor.
 - **Setelah sesi berakhir**, masuk kembali dengan akun yang sama membuka lagi halaman yang terakhir Anda buka, bukan Dashboard.
-- **Dialog dan pemberitahuan:** menutup pemberitahuan di pojok layar tidak lagi menutup dialog yang sedang terbuka. Dialog **Tambah Arsip** yang sudah diisi menanyakan *Buang isian?* sebelum tertutup, dan isian dialog **Disposisi** tetap ada bila dialog tertutup tidak sengaja.
+- **Dialog dan pemberitahuan:** menutup pemberitahuan di pojok layar tidak lagi menutup dialog yang sedang terbuka. Dialog **Tambah Arsip** yang sudah diisi menanyakan *Buang isian?* sebelum tertutup, dan isian dialog **Disposisi** tetap ada bila dialog tertutup tidak sengaja, termasuk saat dibuka dari tab Perlu Dilengkapi.
 - **Halaman gagal dimuat:** SIMSA memuat ulang halaman itu satu kali; bila masih gagal tampil *Halaman belum dapat dimuat* dengan tombol **Muat ulang halaman**. Detail surat yang gagal dimuat karena gangguan jaringan kini menampilkan *Surat belum dapat dimuat* dengan tombol **Coba lagi**, bukan *Surat Tidak Ditemukan*.
 - **Disposisi yang ditolak:** nama unit yang menolak tidak lagi tertulis sebagai tujuan disposisi pada detail surat dan berkas ekspor.
 - **Lokasi Simpan:** **Tambah Lokasi** selalu membuat Gedung; tingkat di bawahnya dibuat lewat **Tambah Sub-lokasi**. Daftar yang gagal dimuat menampilkan tombol **Coba lagi**.
@@ -85,6 +85,7 @@ Sebagian besar pengguna diminta masuk sekali lagi. Hal ini wajar: masuk kembali 
 - Akun Google yang menunggu persetujuan hanya disetujui lewat **Setujui akses** setelah mencentang *Saya sudah memastikan langsung kepada pemilik email ini.* Pilihan **Ubah Peran/Unit** tidak tampil untuk akun tersebut.
 - Audit Log mencatat aksi **Masuk**, **Gagal masuk**, **Keluar**, **Mengganti kata sandi**, dan **Menjalankan Pemindai**.
 - Penyaring **Jenis Data** di Audit Log (sebelumnya **Tipe Entity**) kini memuat semua jenis data yang dicatat, dan cetak **Daftar Arsip Vital** tercatat sebagai ekspor.
+- Penyaring **Aksi** di Audit Log memuat semua aksi yang dicatat, termasuk aksi tata kelola retensi, dan nama isian pada **Detail Perubahan** ditulis sebagai kata-kata.
 - Audit Log dapat diunduh dengan **Ekspor Excel** sesuai pencarian dan penyaring yang sedang dipakai. Lihat [Mengekspor Audit Log](./administrasi/audit-log.md#mengekspor-audit-log).
 - Header menampilkan tanda **Operasional: perlu perhatian** atau **Operasional: gagal** yang membuka Monitoring Operasional. Kartu pemindai memiliki tombol **Jalankan pemindai**, dan ada pemeriksaan baru **Pembersihan unggahan langsung**.
 - Keterangan mode **Tayang saja** kini menjelaskan bahwa isi berkas tetap tampil di layar peminta dan dapat disalin; setiap penayangan tercatat di Audit Log.

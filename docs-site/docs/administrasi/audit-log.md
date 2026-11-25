@@ -51,7 +51,7 @@ Gunakan penyaring di atas daftar:
 
 ### Mengekspor Audit Log
 
-1. Atur pencarian dan penyaring (rentang tanggal, tipe entity, aksi) sampai daftar berisi log yang diperlukan.
+1. Atur pencarian dan penyaring (rentang tanggal, jenis data, aksi) sampai daftar berisi log yang diperlukan.
 2. Klik **Ekspor Excel** di kanan atas halaman. Berkas `audit-log-<tanggal>.xlsx` terunduh.
 
 Berkas memuat **seluruh** log yang cocok dengan pencarian dan penyaring, bukan hanya halaman yang tampil, dengan kolom **Waktu** (WIB), **Pengguna**, **Email**, **Aksi**, **Jenis Data**, **ID Data**, **Alamat IP**, dan **Ringkasan**.
@@ -78,8 +78,11 @@ Berkas ini memuat nama pengguna, email, dan alamat IP. Berikan hanya kepada piha
 | **Masuk** / **Gagal masuk** / **Keluar** | Masuk dan keluar aplikasi, termasuk percobaan masuk yang gagal. Percobaan gagal dengan email yang tidak terdaftar tampil dengan pelaku *Pengguna tidak dikenal* |
 | **Mengganti kata sandi** | Pengguna mengganti kata sandinya sendiri di **Pengaturan › Profil**. Rinciannya hanya menulis *kata sandi: diganti*, tanpa isi kata sandi. Pengaturan ulang oleh Super Admin tercatat sebagai **Mengubah** pada data pengguna itu |
 | **Menjalankan Pemindai** | Super Admin menekan **Jalankan pemindai** di Monitoring Operasional |
+| **Melihat** / **Mengunduh** / **Memeriksa Integritas** | Penayangan dan pengunduhan berkas, serta pemeriksaan keutuhan berkas |
+| **Menerapkan Legal Hold** / **Melepas Legal Hold** | Penahanan hukum atas arsip dan pelepasannya |
+| Aksi tata kelola retensi, misalnya **Mencatat Pemicu Retensi**, **Menyetujui Penilaian Arsip**, **Menyerahkan Arsip Permanen** | Pencatatan dan verifikasi pemicu retensi, penilaian arsip, dan penyerahan arsip permanen |
 
-Aksi **Masuk**, **Gagal masuk**, **Keluar**, dan **Mengganti kata sandi** dapat dipilih pada penyaring **Aksi**. Ringkasan **Pengguna Paling Aktif** di tab **Pengawasan** Dashboard tidak menghitung peristiwa masuk dan keluar.
+Semua aksi di atas dapat dipilih pada penyaring **Aksi**. Pada **Detail Perubahan**, nama isian ditulis sebagai kata-kata; penanda surat hasil impor tampil sebagai *Penanda impor*. Ringkasan **Pengguna Paling Aktif** di tab **Pengawasan** Dashboard tidak menghitung peristiwa masuk dan keluar.
 
 Audit Log hanya untuk dibaca; catatan di dalamnya tidak dapat diubah atau dihapus dari halaman ini.
 
