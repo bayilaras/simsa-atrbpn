@@ -107,7 +107,13 @@ export default function SuratKeluar() {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(false);
-    const [pagination, setPagination] = useState({ page: bilanganTersimpan(awal.page, 1), limit: 10, total: 0, totalPages: 1 });
+    const [pagination, setPagination] = useState({
+        page: bilanganTersimpan(awal.page, 1),
+        // Halaman tersimpan hanya bermakna bersama jumlah baris per halamannya.
+        limit: pilihanTersimpan(awal.baris, PILIHAN_BARIS_PER_HALAMAN, PILIHAN_BARIS_PER_HALAMAN[0]),
+        total: 0,
+        totalPages: 1,
+    });
     const [statsSnapshot, setStatsSnapshot] = useState({ scope: null, status: 'loading', data: null });
     const statsSeqRef = useRef(0);
     const [pendingApprovals, setPendingApprovals] = useState([]);
@@ -133,6 +139,7 @@ export default function SuratKeluar() {
     const [urutan, setUrutan] = useState(() => pilihanTersimpan(awal.urutan, PILIHAN_URUTAN_SURAT.map(pilihan => pilihan.value), URUTAN_BAWAAN));
     useSimpanKeadaanDaftar(user?.id, 'surat-keluar', {
         page: pagination.page,
+        baris: pagination.limit,
         unit: isSuperAdmin ? selectedUnitKerja : undefined,
         cari: searchTerm,
         lanjutan: isAdvancedOpen,
