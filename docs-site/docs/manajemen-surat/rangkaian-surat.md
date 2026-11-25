@@ -32,6 +32,8 @@ Sebagian surat masuk tidak perlu didisposisikan atau dibalas, misalnya undangan 
 2. Pada baris suratnya, klik **Tandai Selesai**.
 3. Isi **Catatan penyelesaian** (minimal 10 karakter), misalnya "Undangan sudah dihadiri, tidak perlu dibalas", lalu klik **Tandai Selesai**.
 
+Tombol **Tandai Selesai** yang sama tampil di halaman detail surat masuk, selama surat itu belum didisposisikan, belum dibalas, dan belum menjadi bagian dari rangkaian.
+
 Yang terjadi setelah itu:
 
 - Surat pindah ke kelompok **Siap diberkaskan**. Dari sana klik **Berkaskan ke Direktorat** bila berkasnya sudah lengkap.

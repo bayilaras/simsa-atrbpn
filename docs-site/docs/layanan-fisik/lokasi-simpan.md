@@ -45,7 +45,7 @@ Tombol ikon **Lihat arsip di lokasi ini** membuka daftar Arsip yang sudah tersar
 ## Menambah Lokasi Baru
 
 1. Klik **"Tambah Lokasi"**, atau klik ikon **Tambah Sub-lokasi** pada lokasi induk.
-2. Pilih **Level**, lalu isi **Kode** dan **Nama**. Untuk boks, isi juga **Kapasitas**. **Keterangan** boleh dikosongkan.
+2. Isi **Kode** dan **Nama**. Tingkat lokasi ditentukan sendiri: **Tambah Lokasi** selalu membuat Gedung, sedangkan **Tambah Sub-lokasi** membuat tingkat di bawah induknya (Ruang di bawah Gedung, Rak di bawah Ruang, Boks di bawah Rak). Untuk boks, isi juga **Kapasitas**. **Keterangan** boleh dikosongkan.
 3. Klik **"Tambah"**.
 
 Membuat lokasi tidak otomatis memindahkan arsip. Arsip ditautkan ke lokasi lewat pilihan **Lokasi Simpan** saat [mengarsipkan surat](../siklus-arsip/arsip-aktif.md#mengarsipkan-surat) atau lewat **Ubah Metadata** pada detail arsip.

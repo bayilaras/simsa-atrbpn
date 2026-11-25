@@ -42,7 +42,7 @@ Tabel menampilkan:
 | Nasib Akhir | Permanen atau Musnah menurut JRA. Selama pemicu retensi belum terverifikasi tertulis **Menunggu verifikasi**; selama klasifikasi dan JRA arsip belum direkonsiliasi tertulis **Menunggu rekonsiliasi** |
 | Aksi | Menu tiga titik (⋯) berisi **Detail Arsip** |
 
-Gunakan kotak **Cari arsip** (nomor berkas, nomor surat, atau perihal) dan tombol **Filter** untuk menyaring menurut tahun. Frasa tetap ditemukan walaupun teks aslinya terpotong baris baru. Tombol **Perbarui**, **Tambah Arsip**, **Impor CSV**, dan **Export** ada di kanan atas; **Tambah Arsip** dan **Impor CSV** hanya tampil bagi admin setelah satu unit kerja dipilih.
+Gunakan kotak **Cari arsip** (nomor berkas, nomor surat, atau perihal) dan tombol **Filter** untuk menyaring menurut tahun. Frasa tetap ditemukan walaupun teks aslinya terpotong baris baru. Tombol **Perbarui**, **Tambah Arsip**, **Impor CSV**, dan **Export** ada di kanan atas; **Tambah Arsip** dan **Impor CSV** hanya untuk admin. Bagi Super Admin yang masih memilih **Semua Unit Kerja**, kedua tombol tampil tidak aktif dengan petunjuk *Pilih unit kerja terlebih dahulu*.
 
 Bila daftar dibuka dari halaman [Lokasi Simpan](../layanan-fisik/lokasi-simpan.md), daftar tersaring untuk lokasi itu beserta sub-lokasinya dan menampilkan tanda **Lokasi simpan: nama (kode)** yang dapat dihapus. Bila lokasi itu juga menyimpan arsip jenis lain, di bawahnya ada tautan untuk melihat arsip jenis lain (surat masuk, surat keluar, atau lainnya) di lokasi yang sama.
 
