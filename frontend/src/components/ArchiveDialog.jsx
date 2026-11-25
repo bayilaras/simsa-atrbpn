@@ -502,8 +502,10 @@ export function ArchiveDialog({
                                         <Clock className="h-4 w-4 text-emerald-600 mt-0.5" />
                                         <AlertDescription className="text-sm ml-2">
                                             <span className="font-semibold block mb-0.5 text-emerald-700 dark:text-emerald-300">Jadwal Retensi Arsip Terpilih:</span>
-                                            <span className="font-mono text-xs bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded">{formData.jraKode}</span>
-                                            <span className="ml-2">{formData.jraUraianPreview}</span>
+                                            <p>
+                                                <span className="font-mono text-xs bg-emerald-100 dark:bg-emerald-500/15 px-1.5 py-0.5 rounded">{formData.jraKode}</span>
+                                                <span className="ml-2">{formData.jraUraianPreview}</span>
+                                            </p>
                                         </AlertDescription>
                                     </Alert>
                                 ) : (
