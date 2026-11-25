@@ -85,7 +85,7 @@ Sebagian besar pengguna diminta masuk sekali lagi. Hal ini wajar: masuk kembali 
 - Akun Google yang menunggu persetujuan hanya disetujui lewat **Setujui akses** setelah mencentang *Saya sudah memastikan langsung kepada pemilik email ini.* Pilihan **Ubah Peran/Unit** tidak tampil untuk akun tersebut.
 - Audit Log mencatat aksi **Masuk**, **Gagal masuk**, **Keluar**, **Mengganti kata sandi**, dan **Menjalankan Pemindai**.
 - Penyaring **Jenis Data** di Audit Log (sebelumnya **Tipe Entity**) kini memuat semua jenis data yang dicatat, dan cetak **Daftar Arsip Vital** tercatat sebagai ekspor.
-- Penyaring **Aksi** di Audit Log memuat semua aksi yang dicatat, termasuk aksi tata kelola retensi, dan nama isian pada **Detail Perubahan** ditulis sebagai kata-kata.
+- Penyaring **Aksi** di Audit Log memuat semua aksi yang dicatat, termasuk aksi tata kelola retensi, dan nama isian pada **Detail Perubahan** ditulis sebagai kata-kata. Nilainya ikut dirapikan: isian kosong tampil sebagai *(kosong)*, dan tanggal serta waktu ditulis dalam bentuk yang terbaca (waktu dalam WIB).
 - Audit Log dapat diunduh dengan **Ekspor Excel** sesuai pencarian dan penyaring yang sedang dipakai. Lihat [Mengekspor Audit Log](./administrasi/audit-log.md#mengekspor-audit-log).
 - Header menampilkan tanda **Operasional: perlu perhatian** atau **Operasional: gagal** yang membuka Monitoring Operasional. Kartu pemindai memiliki tombol **Jalankan pemindai**, dan ada pemeriksaan baru **Pembersihan unggahan langsung**.
 - Keterangan mode **Tayang saja** kini menjelaskan bahwa isi berkas tetap tampil di layar peminta dan dapat disalin; setiap penayangan tercatat di Audit Log.
