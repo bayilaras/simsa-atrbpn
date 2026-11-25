@@ -543,9 +543,9 @@ export default function UserGuide() {
                 <AlertTitle>Panduan ini mengikuti kewenangan pengguna</AlertTitle>
                 <AlertDescription>
                     {user ? (
-                        <>Anda masuk sebagai <strong>{ROLE_LABELS[currentRole] || 'Pengguna'}</strong>. Dua peran utama adalah Super Admin dan Admin Unit Kerja. Akun lama tetap mengikuti akses yang sudah diberikan sampai ditetapkan ulang oleh Super Admin.</>
+                        <p>Anda masuk sebagai <strong>{ROLE_LABELS[currentRole] || 'Pengguna'}</strong>. Dua peran utama adalah Super Admin dan Admin Unit Kerja. Akun lama tetap mengikuti akses yang sudah diberikan sampai ditetapkan ulang oleh Super Admin.</p>
                     ) : (
-                        <>Panduan ini dapat dipelajari sebelum login dan tidak memuat data operasional. Pilih peran untuk melihat alur yang relevan.</>
+                        <p>Panduan ini dapat dipelajari sebelum login dan tidak memuat data operasional. Pilih peran untuk melihat alur yang relevan.</p>
                     )}
                 </AlertDescription>
             </Alert>
