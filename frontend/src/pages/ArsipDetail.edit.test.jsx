@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/components/tunjuk-silang/KartuTunjukSilang', () => ({ KartuTunjukSilang: ({ tipe, id }) => <div data-testid="kartu-tunjuk-silang">{`${tipe}:${id}`}</div> }))
+vi.mock('@/components/arsip/KartuPeminjamanArsip', () => ({ KartuPeminjamanArsip: ({ arsip }) => <div data-testid="kartu-peminjaman">{`${arsip.id}:${arsip.unitKerjaId}:${arsip.lendingStatus}`}</div> }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: mocks.user, canWrite: mocks.canWrite }) }))
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }))
 // Formulir Ubah Metadata memuat daftar lokasi simpan unit arsip.
@@ -333,4 +334,10 @@ describe('ArsipDetail - Ubah Metadata', () => {
 it('menyertakan kartu Tunjuk Silang untuk arsip ini', async () => {
     tampilkan()
     expect(await screen.findByTestId('kartu-tunjuk-silang')).toHaveTextContent('arsip:arsip-1')
+})
+
+it('menyertakan kartu Peminjaman dengan unit dan status pinjam arsip ini', async () => {
+    mocks.getById.mockResolvedValue({ ...rekod, lendingStatus: 'borrowed' })
+    tampilkan()
+    expect(await screen.findByTestId('kartu-peminjaman')).toHaveTextContent('arsip-1:unit-1:borrowed')
 })

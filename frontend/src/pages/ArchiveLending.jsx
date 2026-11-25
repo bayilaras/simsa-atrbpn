@@ -22,6 +22,8 @@ import { useAuth } from '@/context/AuthContext'
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 import { usePaginatedResource } from '@/hooks/use-paginated-resource'
+import { hariIniJakarta } from '@/lib/tindak-lanjut'
+import { batasAwalPerpanjangan, galatJatuhTempo, galatPerpanjangan, idDariAlamat } from '@/lib/peminjaman-arsip'
 
 const STATUS_CONFIG = {
     borrowed: { label: 'Dipinjam', variant: 'default', icon: ArrowLeftRight, className: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 hover:bg-blue-200 border-blue-200' },
@@ -173,7 +175,20 @@ export default function ArchiveLending() {
     const [selectedItem, setSelectedItem] = useState(null)
     const [returnNotes, setReturnNotes] = useState('')
     const [newDueDate, setNewDueDate] = useState('')
+    const [extendError, setExtendError] = useState('')
     const [borrowForm, setBorrowForm] = useState(EMPTY_BORROW_FORM)
+    // Saringan dari tautan kartu Peminjaman di halaman detail arsip.
+    const arsipIdFilter = idDariAlamat(searchParams.get('arsipId'))
+    const lokasiIdFilter = arsipIdFilter ? '' : idDariAlamat(searchParams.get('storageLocationId'))
+    const clearTargetFilter = () => setSearchParams(previous => {
+        const next = new URLSearchParams(previous)
+        next.delete('arsipId')
+        next.delete('storageLocationId')
+        return next
+    })
+    // Batas bawah isian tanggal mengikuti hari ini menurut WIB, sama dengan server.
+    const hariIni = hariIniJakarta()
+    const borrowDueDateError = galatJatuhTempo(borrowForm.dueDate, hariIni)
     // Arsip / storage-location picker inside the borrow dialog
     const [targetQuery, setTargetQuery] = useState('')
     const [targetResults, setTargetResults] = useState([])
@@ -189,19 +204,26 @@ export default function ArchiveLending() {
 
     const status = activeTab === 'active' ? 'borrowed' : activeTab === 'overdue' ? 'overdue' : 'returned'
     const fetchPage = useCallback(async ({ page, limit }) => {
-        const response = await archiveLendingService.getAll({ unitKerjaId, status, search: debouncedSearch, page, limit })
+        const response = await archiveLendingService.getAll({
+            unitKerjaId, status, search: debouncedSearch, page, limit,
+            ...(arsipIdFilter ? { arsipId: arsipIdFilter } : {}),
+            ...(lokasiIdFilter ? { storageLocationId: lokasiIdFilter } : {}),
+        })
         if (!response.success || !Array.isArray(response.data)) {
             throw new Error('Daftar peminjaman belum dapat dimuat. Coba lagi.')
         }
         return response
-    }, [unitKerjaId, status, debouncedSearch])
+    }, [unitKerjaId, status, debouncedSearch, arsipIdFilter, lokasiIdFilter])
     const resource = usePaginatedResource(fetchPage, {
-        queryKey: `${unitKerjaId}:${status}:${debouncedSearch}`, enabled: Boolean(unitKerjaId), pageSize: 50,
+        queryKey: `${unitKerjaId}:${status}:${debouncedSearch}:${arsipIdFilter}:${lokasiIdFilter}`, enabled: Boolean(unitKerjaId), pageSize: 50,
     })
     const searchPending = searchQuery.trim() !== debouncedSearch
     const data = searchPending ? [] : resource.rows
     const loading = searchPending || resource.loading
     const loadError = searchPending ? null : resource.error
+    const targetFilterLabel = arsipIdFilter
+        ? data[0]?.arsip?.nomorBerkas || ''
+        : lokasiIdFilter ? data[0]?.storageLocation?.code || '' : ''
     const fetchData = resource.reload
     const fetchStats = useCallback(() => setStatsRevision(value => value + 1), [])
     const stats = statsSnapshot?.unitKerjaId === unitKerjaId && statsSnapshot.revision === statsRevision
@@ -247,6 +269,12 @@ export default function ArchiveLending() {
             toast({ title: 'Data belum lengkap', description: 'Tanggal jatuh tempo baru wajib diisi', variant: 'destructive' })
             return
         }
+        // Pesannya tampil di bawah isian tanggal; server menolak tanggal yang sama.
+        const galatTanggal = galatPerpanjangan(newDueDate, selectedItem.dueDate)
+        if (galatTanggal) {
+            setExtendError(galatTanggal)
+            return
+        }
         setPendingAction('extend')
         try {
             await archiveLendingService.extend(selectedItem.id, actionUnitKerjaId, newDueDate)
@@ -289,6 +317,11 @@ export default function ArchiveLending() {
         }
         if (!borrowForm.dueDate) {
             toast({ title: 'Data belum lengkap', description: 'Tanggal jatuh tempo wajib diisi', variant: 'destructive' })
+            return
+        }
+        // Pesannya sudah tampil di bawah isian tanggal.
+        if (galatJatuhTempo(borrowForm.dueDate)) {
+            document.getElementById('lending-due-date')?.focus()
             return
         }
 
@@ -379,6 +412,7 @@ export default function ArchiveLending() {
     const openExtendDialog = (item) => {
         setSelectedItem(item)
         setNewDueDate(item.dueDate)
+        setExtendError('')
         setExtendDialogOpen(true)
     }
 
@@ -509,6 +543,17 @@ export default function ArchiveLending() {
                             />
                         </div>
                     </div>
+                    {(arsipIdFilter || lokasiIdFilter) && (
+                        <div className="flex flex-wrap items-center gap-2 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800 dark:border-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-200">
+                            <p className="min-w-0 flex-1 break-words">
+                                {arsipIdFilter ? 'Hanya menampilkan peminjaman satu arsip' : 'Hanya menampilkan peminjaman satu boks'}
+                                {targetFilterLabel ? `: ${targetFilterLabel}` : ''}. Pindah tab untuk melihat status lainnya.
+                            </p>
+                            <Button type="button" variant="outline" size="sm" className="h-8 bg-background" onClick={clearTargetFilter}>
+                                Tampilkan semua
+                            </Button>
+                        </div>
+                    )}
                 </CardHeader>
 
                 <CardContent className="p-0">
@@ -630,9 +675,18 @@ export default function ArchiveLending() {
                             <Input
                                 id="newDueDate"
                                 type="date"
+                                min={batasAwalPerpanjangan(selectedItem?.dueDate, hariIni)}
                                 value={newDueDate}
-                                onChange={(e) => setNewDueDate(e.target.value)}
+                                onChange={(e) => {
+                                    setNewDueDate(e.target.value)
+                                    setExtendError(galatPerpanjangan(e.target.value, selectedItem?.dueDate, hariIni))
+                                }}
+                                aria-invalid={extendError ? true : undefined}
+                                aria-describedby={extendError ? 'newDueDate-error' : undefined}
                             />
+                            {extendError && (
+                                <p id="newDueDate-error" role="alert" className="text-sm text-destructive">{extendError}</p>
+                            )}
                         </div>
                     </div>
                     <DialogFooter>
@@ -775,13 +829,21 @@ export default function ArchiveLending() {
 
                         <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
                             <Label htmlFor="lending-due-date" className="text-left sm:text-right">Jatuh Tempo</Label>
-                            <Input
-                                id="lending-due-date"
-                                type="date"
-                                value={borrowForm.dueDate}
-                                onChange={(e) => setBorrowForm({ ...borrowForm, dueDate: e.target.value })}
-                                className="w-full sm:col-span-3"
-                            />
+                            <div className="space-y-1.5 sm:col-span-3">
+                                <Input
+                                    id="lending-due-date"
+                                    type="date"
+                                    min={hariIni}
+                                    value={borrowForm.dueDate}
+                                    onChange={(e) => setBorrowForm({ ...borrowForm, dueDate: e.target.value })}
+                                    className="w-full"
+                                    aria-invalid={borrowDueDateError ? true : undefined}
+                                    aria-describedby={borrowDueDateError ? 'lending-due-date-error' : undefined}
+                                />
+                                {borrowDueDateError && (
+                                    <p id="lending-due-date-error" role="alert" className="text-sm text-destructive">{borrowDueDateError}</p>
+                                )}
+                            </div>
                         </div>
 
                         <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-4 sm:gap-4">

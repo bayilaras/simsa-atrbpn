@@ -37,7 +37,10 @@ export const archiveLendingService = {
     },
 
     /**
-     * Get lending history for an arsip
+     * Lending summary for one arsip (the Peminjaman card on the archive detail page):
+     * { readable, active: [open loans of the arsip or of its box], history: [returned loans,
+     * most recent first, at most `limit`], total, limit }. `readable: false` means the
+     * caller's class ceiling or unit does not cover this arsip's lending data.
      */
     getHistoryByArsip: async (arsipId, unitKerjaId) => {
         const response = await api.get(`${BASE_URL}/arsip/${arsipId}`, { unitKerjaId: requireUnitKerjaId(unitKerjaId) });
