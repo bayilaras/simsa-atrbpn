@@ -137,6 +137,22 @@ describe('daftar Surat Keluar', () => {
         expect(screen.getByText('Halaman 2 dari 5')).toBeInTheDocument()
     })
 
+    it('jumlah baris per halaman ikut dipulihkan bersama halamannya', async () => {
+        const kunci = kunciKeadaanDaftar({ userId: 'admin-a', daftar: 'surat-keluar' })
+        tulisKeadaanDaftar(kunci, { page: 2, baris: 25 })
+        const { unmount } = render(<MemoryRouter initialEntries={['/surat/keluar']}><SuratKeluar /></MemoryRouter>)
+        await screen.findByText('SK-1/2026')
+        expect(mocks.keluar.getAll).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, limit: 25 }))
+        await waitFor(() => expect(JSON.parse(window.sessionStorage.getItem(kunci)).keadaan).toMatchObject({ page: 2, baris: 25 }))
+        unmount()
+
+        // Jumlah baris yang bukan salah satu pilihan tidak dipakai.
+        tulisKeadaanDaftar(kunci, { page: 2, baris: 7 })
+        render(<MemoryRouter initialEntries={['/surat/keluar']}><SuratKeluar /></MemoryRouter>)
+        await screen.findByText('SK-1/2026')
+        expect(mocks.keluar.getAll).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, limit: 10 }))
+    })
+
     it('muat ulang memulihkan filter tersimpan; dari menu mulai dari awal', async () => {
         const kunci = kunciKeadaanDaftar({ userId: 'admin-a', daftar: 'surat-keluar' })
         tulisKeadaanDaftar(kunci, { page: 2, cari: 'nota', tahun: '2025', naskahDinas: 'Nota Dinas', urutan: 'tanggal_terlama' })
