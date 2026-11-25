@@ -15,6 +15,16 @@ const persetujuan = vi.hoisted(() => ({ total: 0, opsi: [] }))
 vi.mock('@/hooks/use-persetujuan-menunggu-count', () => ({
     usePersetujuanMenungguCount: (opsi) => { persetujuan.opsi.push(opsi); return { total: persetujuan.total } },
 }))
+const keputusan = vi.hoisted(() => ({ permohonanAkses: 0, akunBaru: 0, opsi: [] }))
+vi.mock('@/hooks/use-menunggu-keputusan-count', () => ({
+    useMenungguKeputusanCount: (opsi) => {
+        keputusan.opsi.push(opsi)
+        const aktif = opsi?.enabled !== false
+        const permohonanAkses = aktif ? keputusan.permohonanAkses : 0
+        const akunBaru = aktif ? keputusan.akunBaru : 0
+        return { permohonanAkses, akunBaru, total: permohonanAkses + akunBaru }
+    },
+}))
 vi.mock('react-chartjs-2', () => {
     const Chart = ({ options }) => <div data-testid="chart" data-animation={String(options.animation)} />
     return { Line: Chart, Bar: Chart, Doughnut: Chart }
@@ -33,6 +43,9 @@ beforeEach(() => {
     mocks.navigate.mockReset()
     persetujuan.total = 0
     persetujuan.opsi.length = 0
+    keputusan.permohonanAkses = 0
+    keputusan.akunBaru = 0
+    keputusan.opsi.length = 0
     mocks.widgets = { archiveLifecycle: {}, storageCapacity: [], lendingOverview: {}, penyusutanOverview: [], mediaBreakdown: [],
         vitalTerjagaAlerts: { vitalTotal: 0, vitalUnprotected: 0, terjagaTotal: 1, terjagaUnreported: 0,
             terjagaReportingStages: { belum_dilaporkan: 0, dicatat: 1, dikirim: 0, diterima: 0, bukti_diverifikasi: 0, perlu_ditinjau: 0 } } }
@@ -49,6 +62,37 @@ function passFocusRefreshInterval() {
 async function show() { render(<MemoryRouter><Dashboard /></MemoryRouter>); await screen.findByRole('heading', { name: 'Halo, Siti' }) }
 
 describe('dashboard daily workflow', () => {
+    it('memberi tahu Super Admin permohonan akses dan akun baru yang menunggu, dengan tautan ke daftarnya', async () => {
+        mocks.user = { id: 'sa', name: 'Admin', role: 'super_admin', unitKerjaId: null }
+        keputusan.permohonanAkses = 3
+        keputusan.akunBaru = 1
+        render(<MemoryRouter><Dashboard /></MemoryRouter>)
+        const priority = await screen.findByRole('region', { name: 'Perlu ditindaklanjuti' })
+        expect(priority).toHaveTextContent('3 permohonan akses menunggu keputusan Anda')
+        expect(priority).toHaveTextContent('1 akun baru menunggu persetujuan Anda')
+        expect(within(priority).getByRole('link', { name: 'Tinjau permohonan akses' })).toHaveAttribute('href', '/record-access-grants?tab=pending')
+        expect(within(priority).getByRole('link', { name: 'Tinjau akun yang menunggu' })).toHaveAttribute('href', '/users?persetujuan=menunggu')
+        expect(keputusan.opsi.at(-1)).toEqual({ enabled: true })
+    })
+
+    it('tidak menampilkan baris itu bila tidak ada yang menunggu, dan tidak menghitungnya untuk peran lain', async () => {
+        mocks.user = { id: 'sa', name: 'Admin', role: 'super_admin', unitKerjaId: null }
+        const { unmount } = render(<MemoryRouter><Dashboard /></MemoryRouter>)
+        const priority = await screen.findByRole('region', { name: 'Perlu ditindaklanjuti' })
+        expect(priority).not.toHaveTextContent('permohonan akses')
+        expect(priority).not.toHaveTextContent('akun baru')
+        unmount()
+
+        mocks.user = { id: 'admin', name: 'Admin Unit', role: 'admin_unit', unitKerjaId: 'unit-a' }
+        keputusan.permohonanAkses = 4
+        keputusan.akunBaru = 2
+        render(<MemoryRouter><Dashboard /></MemoryRouter>)
+        await screen.findByRole('region', { name: 'Perlu ditindaklanjuti' })
+        expect(keputusan.opsi.at(-1)).toEqual({ enabled: false })
+        expect(screen.queryByText(/permohonan akses menunggu/)).toBeNull()
+        expect(screen.queryByText(/akun baru menunggu/)).toBeNull()
+    })
+
     it('menampilkan kartu Arsip Lainnya sehingga Total Arsip dapat dijumlahkan dari tiga jenis', async () => {
         mocks.user.role = 'admin_unit'
         dashboardService.getStats.mockResolvedValue({ totalMasuk: 0, totalKeluar: 0, totalArsip: 6, arsipMasuk: 1, arsipKeluar: 2, arsipLainnya: 3, monthlyTrend: [] })

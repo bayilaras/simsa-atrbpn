@@ -5,6 +5,7 @@ import Dashboard from './Dashboard'
 import dashboardService from '@/services/dashboard.service'
 
 const mocks = vi.hoisted(() => ({ user: {}, charts: [] }))
+vi.mock('@/hooks/use-menunggu-keputusan-count', () => ({ useMenungguKeputusanCount: () => ({ permohonanAkses: 0, akunBaru: 0, total: 0 }) }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: mocks.user, canWrite: () => false }) }))
 vi.mock('@/services/settings.service', () => ({ default: { getAllUnitKerja: vi.fn(async () => []) } }))
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ capabilities: { files: false, fileUploads: false } }) }))

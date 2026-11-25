@@ -15,6 +15,16 @@ const persetujuan = vi.hoisted(() => ({ total: 0, opsi: [] }))
 vi.mock('@/hooks/use-persetujuan-menunggu-count', () => ({
     usePersetujuanMenungguCount: (opsi) => { persetujuan.opsi.push(opsi); return { total: persetujuan.total } },
 }))
+const keputusan = vi.hoisted(() => ({ permohonanAkses: 0, akunBaru: 0, opsi: [] }))
+vi.mock('@/hooks/use-menunggu-keputusan-count', () => ({
+    useMenungguKeputusanCount: (opsi) => {
+        keputusan.opsi.push(opsi)
+        const aktif = opsi?.enabled !== false
+        const permohonanAkses = aktif ? keputusan.permohonanAkses : 0
+        const akunBaru = aktif ? keputusan.akunBaru : 0
+        return { permohonanAkses, akunBaru, total: permohonanAkses + akunBaru }
+    },
+}))
 function RouteControl() {
     const navigate = useNavigate()
     return <button onClick={() => navigate('/users')}>Pergi ke pengguna</button>
@@ -28,12 +38,41 @@ beforeEach(() => {
     perlu.opsi.length = 0
     persetujuan.total = 0
     persetujuan.opsi.length = 0
+    keputusan.permohonanAkses = 0
+    keputusan.akunBaru = 0
+    keputusan.opsi.length = 0
     vi.stubGlobal('innerWidth', 1366)
     vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('sidebar task groups', () => {
+    it('memberi lencana pada menu yang menunggu keputusan Super Admin dan menaut ke daftarnya', () => {
+        keputusan.permohonanAkses = 3
+        keputusan.akunBaru = 120
+        show({ route: '/audit-log' })
+        expect(keputusan.opsi.at(-1)).toEqual({ enabled: true })
+        const akses = screen.getByRole('link', { name: 'Persetujuan Akses Arsip (3 permohonan menunggu keputusan)' })
+        expect(akses).toHaveAttribute('href', '/record-access-grants?tab=pending')
+        expect(within(akses).getByText('3')).toBeInTheDocument()
+        const pengguna = screen.getByRole('link', { name: 'Manajemen Pengguna (120 akun menunggu persetujuan)' })
+        expect(pengguna).toHaveAttribute('href', '/users?persetujuan=menunggu')
+        expect(within(pengguna).getByText('99+')).toBeInTheDocument()
+    })
+
+    it('tanpa yang menunggu, menu tetap menaut ke halaman biasa; peran lain tidak menghitungnya', () => {
+        const { unmount } = show({ route: '/audit-log' })
+        expect(screen.getByRole('link', { name: 'Persetujuan Akses Arsip' })).toHaveAttribute('href', '/record-access-grants')
+        expect(screen.getByRole('link', { name: 'Manajemen Pengguna' })).toHaveAttribute('href', '/users')
+        unmount()
+
+        state.role = 'admin_unit'
+        keputusan.permohonanAkses = 5
+        show({ route: '/record-access-grants' })
+        expect(keputusan.opsi.at(-1)).toEqual({ enabled: false })
+        expect(screen.getByRole('link', { name: 'Persetujuan Akses Arsip' })).toHaveAttribute('href', '/record-access-grants')
+    })
+
     it('keeps daily correspondence visible and lets a focused native button expand secondary links', () => {
         show()
         fireEvent.click(screen.getByRole('button', { name: 'Surat', exact: true }))

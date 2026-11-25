@@ -58,6 +58,8 @@ import { useAppConfig } from '@/context/app-config-context'
 import { usePerluDilengkapiCount } from '@/hooks/use-perlu-dilengkapi-count'
 import { formatJumlahBadge } from '@/lib/perlu-dilengkapi'
 import { usePersetujuanMenungguCount } from '@/hooks/use-persetujuan-menunggu-count'
+import { useMenungguKeputusanCount } from '@/hooks/use-menunggu-keputusan-count'
+import { TAUTAN_AKUN_MENUNGGU, TAUTAN_PERMOHONAN_AKSES } from '@/lib/menunggu-keputusan'
 
 // Role constants for menu access
 const ADMIN_ROLES = ['super_admin', 'admin_unit', 'admin_dirjen', 'admin_sesditjen']
@@ -237,6 +239,8 @@ const menuGroups = [
                 url: '/record-access-grants',
                 icon: FileKey2,
                 allowedRoles: ALL_PROVISIONED_ROLES,
+                // Hanya Super Admin yang memutuskan; peran lain tidak mendapat lencana.
+                badge: 'permohonanAkses',
             },
             {
                 title: 'Monitoring Operasional',
@@ -262,6 +266,7 @@ const menuGroups = [
                 url: '/users',
                 icon: Users,
                 allowedRoles: ['super_admin'],
+                badge: 'akunBaru',
             },
             {
                 title: 'Master Data',
@@ -307,6 +312,18 @@ export function AppSidebar() {
     const perluDilengkapi = usePerluDilengkapiCount({ enabled: ADMIN_ROLES.includes(userRole) })
     // Hanya administrator yang dapat menjadi penyetuju surat keluar.
     const persetujuanMenunggu = usePersetujuanMenungguCount({ enabled: ADMIN_ROLES.includes(userRole) })
+    // Permohonan akses dan akun baru diputuskan Super Admin; email dimatikan,
+    // jadi lencana inilah yang memberi tahu ada yang menunggu.
+    const menungguKeputusan = useMenungguKeputusanCount({ enabled: userRole === 'super_admin' })
+    const lencanaMenu = (item) => {
+        if (item.badge === 'permohonanAkses') {
+            return { jumlah: menungguKeputusan.permohonanAkses, keterangan: 'permohonan menunggu keputusan', tautan: TAUTAN_PERMOHONAN_AKSES }
+        }
+        if (item.badge === 'akunBaru') {
+            return { jumlah: menungguKeputusan.akunBaru, keterangan: 'akun menunggu persetujuan', tautan: TAUTAN_AKUN_MENUNGGU }
+        }
+        return { jumlah: 0, keterangan: '' }
+    }
 
     useEffect(() => {
         setOpenMobile(false)
@@ -408,9 +425,18 @@ export function AppSidebar() {
                                             ) : (
                                                 <SidebarMenuItem key={item.title}>
                                                     <SidebarMenuButton asChild tooltip={item.title} isActive={isActive(item.url)}>
-                                                        <Link to={item.url} aria-current={isActive(item.url) ? 'page' : undefined}>
+                                                        <Link
+                                                            to={lencanaMenu(item).jumlah > 0 ? lencanaMenu(item).tautan : item.url}
+                                                            aria-current={isActive(item.url) ? 'page' : undefined}
+                                                            aria-label={lencanaMenu(item).jumlah > 0 ? `${item.title} (${lencanaMenu(item).jumlah} ${lencanaMenu(item).keterangan})` : undefined}
+                                                        >
                                                             <item.icon className="h-4 w-4" />
                                                             <span className="font-medium">{item.title}</span>
+                                                            {lencanaMenu(item).jumlah > 0 && (
+                                                                <Badge variant="secondary" aria-hidden="true" className="ml-auto h-5 min-w-5 px-1.5 text-[11px]">
+                                                                    {formatJumlahBadge(lencanaMenu(item).jumlah)}
+                                                                </Badge>
+                                                            )}
                                                         </Link>
                                                     </SidebarMenuButton>
                                                 </SidebarMenuItem>

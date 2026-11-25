@@ -10,6 +10,7 @@ import { AppSidebar } from '@/components/app-sidebar'
 import { SidebarProvider } from '@/components/ui/sidebar'
 
 const state = vi.hoisted(() => ({ path: '/', capabilities: {}, loading: false, navigate: vi.fn() }))
+vi.mock('@/hooks/use-menunggu-keputusan-count', () => ({ useMenungguKeputusanCount: () => ({ permohonanAkses: 0, akunBaru: 0, total: 0 }) }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ isAuthenticated: true, loading: false,
     user: { id: 'operator', name: 'Siti', role: 'admin_dirjen', unitKerjaId: 'unit-a' }, canWrite: () => true }) }))
 vi.mock('@/context/app-config-context', () => ({ useAppConfig: () => ({ loading: state.loading, compatible: true,

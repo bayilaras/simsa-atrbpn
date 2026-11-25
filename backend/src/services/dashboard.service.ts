@@ -43,6 +43,34 @@ function arsipClassificationCondition(classes: string[] | null | undefined) {
     );
 }
 
+/**
+ * Pinjaman yang masuk hitungan Dashboard: sama dengan halaman Peminjaman.
+ * Pinjaman per boks tidak punya arsip_id, jadi cakupannya mengikuti unit
+ * pemilik lokasi simpan; pinjaman per arsip mengikuti unit dan kelas arsipnya.
+ */
+export function lendingTargetCondition(
+    unitKerjaId: string | null | undefined,
+    classes: string[] | null | undefined,
+) {
+    const unitArsip = unitKerjaId ? sql` AND a.unit_kerja_id = ${unitKerjaId}` : sql``;
+    // Normalisasi kelas memakai padanan SQL bersama, sama dengan daftar arsip.
+    const kelas = klasifikasiInSql(sql.raw('a.klasifikasi_keamanan'), classes);
+    const kelasArsip = kelas ? sql` AND ${kelas}` : sql``;
+    const unitBoks = unitKerjaId
+        ? sql` AND EXISTS (
+                SELECT 1 FROM storage_locations sl
+                WHERE sl.id = ${archiveLending.storageLocationId} AND sl.unit_kerja_id = ${unitKerjaId}
+            )`
+        : sql``;
+    return sql`(
+            (${archiveLending.lendingType} = 'arsip' AND EXISTS (
+                SELECT 1 FROM arsip a
+                WHERE a.id = ${archiveLending.arsipId}${unitArsip}${kelasArsip}
+            ))
+            OR (${archiveLending.lendingType} = 'box'${unitBoks})
+        )`;
+}
+
 function incomingClassificationCondition(classes: string[] | null | undefined) {
     return klasifikasiInSql(suratMasuk.sifatSurat, classes);
 }
@@ -439,6 +467,7 @@ export const dashboardService = {
         try {
             const today = jakartaDate();
             const archiveClass = arsipClassificationCondition(securityClassifications);
+            const lendingTarget = lendingTargetCondition(unitKerjaId, securityClassifications);
 
             // Build unit kerja filter conditions for each table
             const arsipUnitFilter = unitKerjaId ? [eq(arsip.unitKerjaId, unitKerjaId)] : [];
@@ -532,23 +561,19 @@ export const dashboardService = {
                     .orderBy(storageLocations.code)
                     .limit(10),
 
-                // 3. Lending — active borrowed
+                // 3. Lending — belum kembali (arsip dan boks), termasuk yang terlambat
                 db.select({ count: count() }).from(archiveLending)
-                    .innerJoin(arsip, eq(archiveLending.arsipId, arsip.id))
                     .where(and(
-                        eq(archiveLending.status, 'borrowed'),
-                        unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined,
-                        archiveClass,
+                        inArray(archiveLending.status, ['borrowed', 'overdue']),
+                        lendingTarget,
                     )),
 
-                // 4. Lending — overdue
+                // 4. Lending — terlambat: jatuh tempo sebelum hari ini (WIB)
                 db.select({ count: count() }).from(archiveLending)
-                    .innerJoin(arsip, eq(archiveLending.arsipId, arsip.id))
                     .where(and(
-                        eq(archiveLending.status, 'borrowed'),
+                        inArray(archiveLending.status, ['borrowed', 'overdue']),
                         lt(archiveLending.dueDate, today),
-                        unitKerjaId ? eq(arsip.unitKerjaId, unitKerjaId) : undefined,
-                        archiveClass,
+                        lendingTarget,
                     )),
 
                 // 5. Penyusutan — count per status

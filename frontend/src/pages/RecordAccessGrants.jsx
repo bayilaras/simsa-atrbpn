@@ -27,6 +27,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/context/AuthContext';
+import { mintaSegarkanMenungguKeputusan, PARAM_TAB_AKSES, TAB_AKSES_PERLU_KEPUTUSAN } from '@/lib/menunggu-keputusan';
 import { useToast } from '@/hooks/use-toast';
 import recordAccessGrantService from '@/services/record-access-grant.service';
 import { LABEL_JENIS_REKAMAN, rekamanDariNavigasi } from '@/lib/akses-rekaman';
@@ -140,6 +141,10 @@ export default function RecordAccessGrants() {
     // langsung terbuka dan terisi, tanpa mengetik ID.
     const [rekamanTerpilih, setRekamanTerpilih] = useState(() => rekamanDariNavigasi(location.state));
     const canReview = user?.role === 'super_admin';
+    // Lencana menu dan Dashboard menaut langsung ke tab "Perlu Keputusan".
+    const tabAwal = canReview && new URLSearchParams(location.search).get(PARAM_TAB_AKSES) === TAB_AKSES_PERLU_KEPUTUSAN
+        ? 'pending'
+        : 'mine';
     const mine = usePaginatedResource(loadMine, { queryKey: user?.id });
     const pending = usePaginatedResource(loadPending, { queryKey: user?.id, enabled: canReview });
     const approved = usePaginatedResource(loadApproved, { queryKey: user?.id, enabled: canReview });
@@ -211,6 +216,7 @@ export default function RecordAccessGrants() {
             }
             setDecision(null);
             toast({ title: 'Keputusan tersimpan', description: 'Status dan jejak audit akses telah diperbarui.' });
+            mintaSegarkanMenungguKeputusan();
             await load();
         } catch (error) {
             toast({ title: 'Keputusan gagal', description: error.message, variant: 'destructive' });
@@ -238,7 +244,7 @@ export default function RecordAccessGrants() {
                     <CardDescription>Peran administratif tidak otomatis membuka berkas digital Terbatas, Rahasia, atau Sangat Rahasia. Persetujuan untuk setiap rekod tetap diperlukan.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <Tabs defaultValue="mine">
+                    <Tabs key={`${location.search}:${tabAwal}`} defaultValue={tabAwal}>
                         <TabsList className="h-auto flex-wrap">
                             <TabsTrigger value="mine"><Eye className="mr-2 h-4 w-4" /> Permohonan Saya</TabsTrigger>
                             {canReview && <TabsTrigger value="pending"><Clock3 className="mr-2 h-4 w-4" /> Perlu Keputusan ({pending.total})</TabsTrigger>}

@@ -20,6 +20,8 @@ import { pesanGalat } from '@/lib/pesan-galat';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DaftarSuratTerhapus } from '@/components/surat/DaftarSuratTerhapus';
 import { PILIHAN_URUTAN_SURAT, URUTAN_BAWAAN, parameterUrutan } from '@/lib/urutan-daftar-surat';
+import { useKeadaanDaftarAwal, useSimpanKeadaanDaftar } from '@/hooks/use-keadaan-daftar';
+import { bilanganTersimpan, pilihanTersimpan, tanggalTersimpan, tanggalUntukDisimpan, teksTersimpan } from '@/lib/keadaan-daftar';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
 import ImportFileDialog from '@/components/ImportFileDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
@@ -97,12 +99,21 @@ export default function SuratKeluar() {
     const { capabilities } = useAppConfig();
     const isAdmin = canWrite();
     const isSuperAdmin = user?.role === 'super_admin';
+    // Filter, pencarian, dan halaman terakhir; hanya terisi saat pengguna
+    // kembali ke daftar ini (mis. dari halaman detail), bukan saat membukanya dari menu.
+    const awal = useKeadaanDaftarAwal(user?.id, 'surat-keluar') || {};
 
     // Data state
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(false);
-    const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+    const [pagination, setPagination] = useState({
+        page: bilanganTersimpan(awal.page, 1),
+        // Halaman tersimpan hanya bermakna bersama jumlah baris per halamannya.
+        limit: pilihanTersimpan(awal.baris, PILIHAN_BARIS_PER_HALAMAN, PILIHAN_BARIS_PER_HALAMAN[0]),
+        total: 0,
+        totalPages: 1,
+    });
     const [statsSnapshot, setStatsSnapshot] = useState({ scope: null, status: 'loading', data: null });
     const statsSeqRef = useRef(0);
     const [pendingApprovals, setPendingApprovals] = useState([]);
@@ -115,17 +126,27 @@ export default function SuratKeluar() {
 
     // Unit kerja filter for super admin
     const [unitKerjaList, setUnitKerjaList] = useState([]);
-    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (resolveEffectiveUnitKerjaId(user) || undefined));
+    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? teksTersimpan(awal.unit, 'all') : (resolveEffectiveUnitKerjaId(user) || undefined));
 
     // Filter states
-    const [searchTerm, setSearchTerm] = useState('');
-    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-    const [isAdvancedOpen, setIsAdvancedOpen] = useState(saringPersetujuan !== 'all');
-    const [tahun, setTahun] = useState('all');
-    const [naskahDinas, setNaskahDinas] = useState('all');
-    const [tanggalDari, setTanggalDari] = useState(null);
-    const [tanggalSampai, setTanggalSampai] = useState(null);
-    const [urutan, setUrutan] = useState(URUTAN_BAWAAN);
+    const [searchTerm, setSearchTerm] = useState(() => teksTersimpan(awal.cari, ''));
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
+    const [isAdvancedOpen, setIsAdvancedOpen] = useState(saringPersetujuan !== 'all' || awal.lanjutan === true);
+    const [tahun, setTahun] = useState(() => teksTersimpan(awal.tahun, 'all'));
+    const [naskahDinas, setNaskahDinas] = useState(() => teksTersimpan(awal.naskahDinas, 'all'));
+    const [tanggalDari, setTanggalDari] = useState(() => tanggalTersimpan(awal.tanggalDari));
+    const [tanggalSampai, setTanggalSampai] = useState(() => tanggalTersimpan(awal.tanggalSampai));
+    const [urutan, setUrutan] = useState(() => pilihanTersimpan(awal.urutan, PILIHAN_URUTAN_SURAT.map(pilihan => pilihan.value), URUTAN_BAWAAN));
+    useSimpanKeadaanDaftar(user?.id, 'surat-keluar', {
+        page: pagination.page,
+        baris: pagination.limit,
+        unit: isSuperAdmin ? selectedUnitKerja : undefined,
+        cari: searchTerm,
+        lanjutan: isAdvancedOpen,
+        tahun, naskahDinas, urutan,
+        tanggalDari: tanggalUntukDisimpan(tanggalDari),
+        tanggalSampai: tanggalUntukDisimpan(tanggalSampai),
+    });
 
     // Dialog states
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
@@ -260,14 +281,16 @@ export default function SuratKeluar() {
         fetchPendingApprovals();
     }, [fetchPendingApprovals]);
 
-    // Debounced search
+    // Debounced search. Hanya kata pencarian yang berubah yang mengembalikan
+    // daftar ke halaman 1; keadaan yang dipulihkan tetap di halamannya.
     useEffect(() => {
+        if (searchTerm === debouncedSearchTerm) return undefined;
         const timer = setTimeout(() => {
             setDebouncedSearchTerm(searchTerm);
             setPagination(prev => ({ ...prev, page: 1 }));
         }, 500);
         return () => clearTimeout(timer);
-    }, [searchTerm]);
+    }, [searchTerm, debouncedSearchTerm]);
 
     const hasActiveFilters = tahun !== 'all' || naskahDinas !== 'all' || saringPersetujuan !== 'all' ||
         tanggalDari || tanggalSampai || searchTerm;
@@ -448,6 +471,8 @@ export default function SuratKeluar() {
                                 search: debouncedSearchTerm || undefined,
                                 tahun: tahun !== 'all' ? tahun : undefined,
                                 naskahDinas: naskahDinas !== 'all' ? naskahDinas : undefined,
+                                // Berkas ekspor harus sama dengan daftar di layar.
+                                persetujuan: saringPersetujuan !== 'all' ? saringPersetujuan : undefined,
                                 tanggalDari: tanggalDari ? format(tanggalDari, 'yyyy-MM-dd') : undefined,
                                 tanggalSampai: tanggalSampai ? format(tanggalSampai, 'yyyy-MM-dd') : undefined,
                                 urutan: parameterUrutan(urutan),

@@ -20,6 +20,8 @@ import { DaftarSuratTerhapus } from '@/components/surat/DaftarSuratTerhapus';
 import { KABAG_LABELS } from '@/lib/disposisi-labels';
 import { JENIS_NASKAH_DINAS } from '@/lib/jenis-naskah';
 import { ACUAN_TANGGAL_BAWAAN, PILIHAN_URUTAN_SURAT_MASUK, URUTAN_BAWAAN, parameterAcuanTanggal, parameterUrutan } from '@/lib/urutan-daftar-surat';
+import { useKeadaanDaftarAwal, useSimpanKeadaanDaftar } from '@/hooks/use-keadaan-daftar';
+import { bilanganTersimpan, pilihanTersimpan, tanggalTersimpan, tanggalUntukDisimpan, teksTersimpan } from '@/lib/keadaan-daftar';
 import ImportFromGDrive from '@/components/ImportFromGDrive';
 import ImportFileDialog from '@/components/ImportFileDialog';
 import { ArchiveDialog } from '@/components/ArchiveDialog';
@@ -103,33 +105,45 @@ export default function SuratMasuk() {
     const { user, canWrite } = useAuth();
     const isAdmin = canWrite();
     const isSuperAdmin = user?.role === 'super_admin';
+    // Filter, pencarian, dan halaman terakhir; hanya terisi saat pengguna
+    // kembali ke daftar ini (mis. dari halaman detail), bukan saat membukanya dari menu.
+    const awal = useKeadaanDaftarAwal(user?.id, 'surat-masuk') || {};
 
     // Data state
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(false);
-    const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
+    const [pagination, setPagination] = useState({ page: bilanganTersimpan(awal.page, 1), limit: 10, total: 0, totalPages: 1 });
     const [statsSnapshot, setStatsSnapshot] = useState({ scope: null, status: 'loading', data: null });
     const statsSeqRef = useRef(0);
 
     // Unit kerja filter for super admin
     const [unitKerjaList, setUnitKerjaList] = useState([]);
-    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? 'all' : (resolveEffectiveUnitKerjaId(user) || undefined));
+    const [selectedUnitKerja, setSelectedUnitKerja] = useState(isSuperAdmin ? teksTersimpan(awal.unit, 'all') : (resolveEffectiveUnitKerjaId(user) || undefined));
 
     // Filter states
-    const [searchTerm, setSearchTerm] = useState('');
-    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-    const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
-    const [tahun, setTahun] = useState('all');
-    const [jenisSurat, setJenisSurat] = useState('all');
-    const [status, setStatus] = useState('all');
-    const [sifatSurat, setSifatSurat] = useState('all');
-    const [disposisiKe, setDisposisiKe] = useState('all');
-    const [tanggalDari, setTanggalDari] = useState(null);
-    const [tanggalSampai, setTanggalSampai] = useState(null);
+    const [searchTerm, setSearchTerm] = useState(() => teksTersimpan(awal.cari, ''));
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
+    const [isAdvancedOpen, setIsAdvancedOpen] = useState(awal.lanjutan === true);
+    const [tahun, setTahun] = useState(() => teksTersimpan(awal.tahun, 'all'));
+    const [jenisSurat, setJenisSurat] = useState(() => teksTersimpan(awal.jenisSurat, 'all'));
+    const [status, setStatus] = useState(() => teksTersimpan(awal.status, 'all'));
+    const [sifatSurat, setSifatSurat] = useState(() => teksTersimpan(awal.sifatSurat, 'all'));
+    const [disposisiKe, setDisposisiKe] = useState(() => teksTersimpan(awal.disposisiKe, 'all'));
+    const [tanggalDari, setTanggalDari] = useState(() => tanggalTersimpan(awal.tanggalDari));
+    const [tanggalSampai, setTanggalSampai] = useState(() => tanggalTersimpan(awal.tanggalSampai));
     // Rentang tanggal menurut tanggal surat atau tanggal diterima.
-    const [acuanTanggal, setAcuanTanggal] = useState(ACUAN_TANGGAL_BAWAAN);
-    const [urutan, setUrutan] = useState(URUTAN_BAWAAN);
+    const [acuanTanggal, setAcuanTanggal] = useState(() => teksTersimpan(awal.acuanTanggal, ACUAN_TANGGAL_BAWAAN));
+    const [urutan, setUrutan] = useState(() => pilihanTersimpan(awal.urutan, PILIHAN_URUTAN_SURAT_MASUK.map(pilihan => pilihan.value), URUTAN_BAWAAN));
+    useSimpanKeadaanDaftar(user?.id, 'surat-masuk', {
+        page: pagination.page,
+        unit: isSuperAdmin ? selectedUnitKerja : undefined,
+        cari: searchTerm,
+        lanjutan: isAdvancedOpen,
+        tahun, jenisSurat, status, sifatSurat, disposisiKe, acuanTanggal, urutan,
+        tanggalDari: tanggalUntukDisimpan(tanggalDari),
+        tanggalSampai: tanggalUntukDisimpan(tanggalSampai),
+    });
 
     // Dialog states
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
@@ -249,14 +263,16 @@ export default function SuratMasuk() {
 
     const refreshAll = () => { fetchData(); fetchStats(); };
 
-    // Debounced search
+    // Debounced search. Hanya kata pencarian yang berubah yang mengembalikan
+    // daftar ke halaman 1; keadaan yang dipulihkan tetap di halamannya.
     useEffect(() => {
+        if (searchTerm === debouncedSearchTerm) return undefined;
         const timer = setTimeout(() => {
             setDebouncedSearchTerm(searchTerm);
             setPagination(prev => ({ ...prev, page: 1 }));
         }, 500);
         return () => clearTimeout(timer);
-    }, [searchTerm]);
+    }, [searchTerm, debouncedSearchTerm]);
 
     // Unit bagian tidak pernah menjadi tujuan disposisi (hanya label), begitu pula unit pencatat sendiri.
     const opsiDisposisi = [
