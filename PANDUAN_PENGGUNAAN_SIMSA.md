@@ -166,10 +166,11 @@ Bila masuk dengan Google ditolak, halaman masuk menjelaskan sebabnya, misalnya *
 
 - Setelah 25 menit tanpa aktivitas muncul peringatan *Sesi Anda akan berakhir dalam 5 menit karena tidak ada aktivitas.* Klik **Tetap Masuk** untuk melanjutkan atau **Keluar Sekarang**.
 - Setelah 30 menit tanpa aktivitas, SIMSA keluar otomatis dan halaman masuk menampilkan *Sesi berakhir karena tidak ada aktivitas. Silakan masuk kembali.*
-- Isian **Tambah/Edit Surat Masuk**, **Tambah/Edit Surat Keluar** (termasuk surat inisiatif), dan dialog **Arsipkan Surat** yang belum disimpan disimpan sementara di tab peramban yang sama (tertulis *Isian tersimpan sementara di tab ini*). Setelah masuk kembali atau memuat ulang halaman, buka lagi formulirnya: SIMSA menanyakan *Pulihkan isian yang belum disimpan?* dengan pilihan **Pulihkan isian** atau **Buang isian**. Berkas PDF yang sudah dipilih perlu dipilih ulang.
+- Isian **Tambah/Edit Surat Masuk**, **Tambah/Edit Surat Keluar** (termasuk surat inisiatif), dan dialog **Arsipkan Surat** yang belum disimpan disimpan sementara di tab peramban yang sama (tertulis *Isian tersimpan sementara di tab ini*). Setelah masuk kembali dengan akun yang sama di tab yang sama, SIMSA membuka lagi halaman yang terakhir dibuka (untuk dialog Arsipkan Surat, buka lagi dialognya): SIMSA menanyakan *Pulihkan isian yang belum disimpan?* dengan pilihan **Pulihkan isian** atau **Buang isian**. Berkas PDF yang sudah dipilih perlu dipilih ulang.
 - Isian sementara hilang bila tab ditutup, bila Anda menekan **Keluar**, **Batal**, atau **Tinggalkan halaman**, dan setelah data tersimpan. Isian yang lebih lama dari 12 jam tidak ditawarkan lagi.
 - Berpindah halaman saat formulir berisi perubahan memunculkan *Tinggalkan halaman ini?* dengan pilihan **Tinggalkan halaman** atau **Tetap di halaman**.
-- Bila muncul *Versi baru SIMSA tersedia. Simpan pekerjaan Anda, lalu muat ulang.*, simpan pekerjaan lalu klik **Muat ulang** (atau **Nanti**). Halaman tidak dimuat ulang sendiri selama formulir surat atau dialog Arsipkan masih berisi isian yang belum disimpan.
+- Bila muncul *Versi baru SIMSA tersedia. Simpan pekerjaan Anda, lalu muat ulang.*, simpan pekerjaan lalu klik **Muat ulang** (atau **Nanti**). Halaman tidak dimuat ulang sendiri selama formulir surat, dialog Arsipkan, atau dialog Tambah Arsip masih berisi isian yang belum disimpan.
+- Bila sebuah halaman gagal dimuat, SIMSA memuat ulang halaman itu satu kali; bila masih gagal tampil *Halaman belum dapat dimuat* dengan tombol **Muat ulang halaman**.
 
 ---
 
@@ -926,7 +927,7 @@ Mencatat aktivitas pengguna dalam sistem untuk keperluan audit dan keamanan.
    - Tindakan apa yang dilakukan
    - Kapan tindakan dilakukan
    - Data apa yang berubah
-3. Gunakan pencarian, rentang tanggal, serta penyaring **Tipe Entity** dan **Aksi** untuk mempersempit pencarian log.
+3. Gunakan pencarian, rentang tanggal, serta penyaring **Jenis Data** dan **Aksi** untuk mempersempit pencarian log.
 4. Selain perubahan data, Audit Log mencatat **Masuk**, **Gagal masuk**, **Keluar**, **Mengganti kata sandi** (rinciannya hanya *kata sandi: diganti*), dan **Menjalankan Pemindai**.
 
 > [!NOTE]

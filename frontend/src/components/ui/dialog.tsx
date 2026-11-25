@@ -47,10 +47,34 @@ function DialogOverlay({
   )
 }
 
+// Pemberitahuan aplikasi (toast, kotak "Versi baru tersedia") tampil di luar
+// lapisan dialog dan ditandai dengan atribut data-wilayah-pemberitahuan. Tanpa
+// pengecualian ini, menekan pemberitahuan dihitung sebagai klik di luar dialog
+// sehingga dialog tertutup dan isiannya hilang.
+const WILAYAH_PEMBERITAHUAN = "[data-wilayah-pemberitahuan]"
+
+export function kecualiWilayahPemberitahuan<E extends Event>(
+  handler?: (event: E) => void
+) {
+  return (event: E) => {
+    const target = event.target
+    if (target instanceof Element && target.closest(WILAYAH_PEMBERITAHUAN)) {
+      // Dialog tetap terbuka; handler pemanggil (mis. konfirmasi "Buang
+      // isian?") tidak dijalankan untuk interaksi dengan pemberitahuan.
+      event.preventDefault()
+      return
+    }
+    handler?.(event)
+  }
+}
+
 function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onPointerDownOutside,
+  onFocusOutside,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
@@ -65,6 +89,9 @@ function DialogContent({
           className
         )}
         {...props}
+        onPointerDownOutside={kecualiWilayahPemberitahuan(onPointerDownOutside)}
+        onFocusOutside={kecualiWilayahPemberitahuan(onFocusOutside)}
+        onInteractOutside={kecualiWilayahPemberitahuan(onInteractOutside)}
       >
         {children}
         {showCloseButton && (

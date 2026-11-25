@@ -175,9 +175,8 @@ describe.skipIf(!adaPostgres)('kotak disposisi dan penyelesaian di PostgreSQL', 
             distributionService.receive(dist.id, ktpp.id, 'dir_ktpp', audit(ktpp)),
             distributionService.process(dist.id, 'dir_ktpp', audit(ktpp), { catatanPenyelesaian: 'Sudah ditangani langsung' }, ktpp),
         ]);
-        for (const r of hasil) {
-            if (r.status === 'rejected') expect(r.reason).toMatchObject({ statusCode: 400 });
-        }
+        // Penyelesaian selalu berhasil; Terima yang kalah dijawab 409 (statusnya sudah berubah).
+        if (hasil[0].status === 'rejected') expect(hasil[0].reason).toMatchObject({ statusCode: 409 });
         expect(hasil[1].status).toBe('fulfilled');
         const [row] = await h.query('SELECT status, received_by, processed_by FROM surat_distributions WHERE id = $1', [dist.id]);
         expect(row).toEqual({ status: 'processed', received_by: ktpp.id, processed_by: ktpp.id });

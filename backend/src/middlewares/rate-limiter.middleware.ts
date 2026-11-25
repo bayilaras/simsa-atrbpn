@@ -39,9 +39,11 @@ export const generalLimiter = rateLimit({
 
 // Failed authentication attempts per 15 minutes. Each account has its own
 // small budget per network, so one person's typos do not lock colleagues
-// behind the same office NAT out; the network ceiling bounds the total.
+// behind the same office NAT out; the network ceiling bounds the total. The
+// ceiling leaves room for a whole office behind one public address signing in
+// for the first time on the same morning (20 people using up their own five).
 export const AUTH_FAILED_ATTEMPTS_PER_ACCOUNT = 5;
-export const AUTH_FAILED_ATTEMPTS_PER_NETWORK = isDev ? 50 : 30;
+export const AUTH_FAILED_ATTEMPTS_PER_NETWORK = 100;
 
 // Better Auth routes on the normalized URL (dot segments and backslashes
 // resolved). Only paths already in that form are served, so the gates below
@@ -119,21 +121,43 @@ const changePasswordGate: RequestHandler = (req, res, next) =>
 // (and refunds) their 429 responses, with shared and local counters alike.
 export const authLimiter: RequestHandler[] = [canonicalAuthPath, authNetworkLimiter, signInAccountGate, changePasswordGate];
 
-// Rate limiter for sensitive operations (e.g., delete, export) - 20 per 15 minutes
-// per user (network quota without a provisioned session).
-export const sensitiveLimiter = rateLimit({
-    store: createRateLimiterStore('sensitive'),
-    passOnStoreError: false,
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 20,
-    keyGenerator: principalRateLimitKey,
-    message: {
-        error: 'Too Many Requests',
-        message: 'Terlalu banyak operasi sensitif. Coba lagi setelah 15 menit.',
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
-});
+// Quotas for sensitive operations per 15 minutes per user (network quota
+// without a provisioned session). Each bucket has its own counter, so using
+// one up does not block the operations of another.
+function createSensitiveOperationLimiter(bucket: string, max: number, operasi: string) {
+    return rateLimit({
+        store: createRateLimiterStore(bucket),
+        passOnStoreError: false,
+        windowMs: 15 * 60 * 1000, // 15 minutes
+        max,
+        keyGenerator: principalRateLimitKey,
+        message: {
+            error: 'Too Many Requests',
+            message: `Terlalu banyak ${operasi}. Coba lagi setelah 15 menit.`,
+        },
+        standardHeaders: true,
+        legacyHeaders: false,
+    });
+}
+
+export const SENSITIVE_RATE_LIMIT_MAX = 20;
+export const USER_MANAGEMENT_RATE_LIMIT_MAX = 60;
+export const LENDING_RATE_LIMIT_MAX = 60;
+
+// Rate limiter for sensitive operations (e.g., delete, restore, access-grant
+// decisions) - 20 per 15 minutes.
+export const sensitiveLimiter = createSensitiveOperationLimiter(
+    'sensitive', SENSITIVE_RATE_LIMIT_MAX, 'operasi sensitif');
+
+// Changes in Manajemen Pengguna - 60 per 15 minutes, enough to set up the
+// accounts of a whole unit in one sitting.
+export const userManagementLimiter = createSensitiveOperationLimiter(
+    'user-management', USER_MANAGEMENT_RATE_LIMIT_MAX, 'perubahan data pengguna');
+
+// Recording a loan (Peminjaman) - 60 per 15 minutes, enough to record the
+// loans of a whole box one archive at a time.
+export const lendingLimiter = createSensitiveOperationLimiter(
+    'lending', LENDING_RATE_LIMIT_MAX, 'pencatatan peminjaman');
 
 // Export rate limiter - 5 exports per minute per user (prevents data dumping)
 export const exportLimiter = rateLimit({

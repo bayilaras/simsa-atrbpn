@@ -4,8 +4,9 @@ import UserManagement from './UserManagement'
 
 const state = vi.hoisted(() => ({
     user: { id: 'sa', role: 'super_admin' },
-    listUsers: vi.fn(), getRoles: vi.fn(), getUnitKerja: vi.fn(), updateUser: vi.fn(), deactivateUser: vi.fn(),
+    listUsers: vi.fn(), getRoles: vi.fn(), getUnitKerja: vi.fn(), updateUser: vi.fn(), deactivateUser: vi.fn(), toast: vi.fn(),
 }))
+vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: state.toast }) }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: state.user, hasRole: roles => roles.includes(state.user.role) }) }))
 vi.mock('@/services/user-management.service', () => ({ default: state }))
 vi.mock('@/components/ui/dropdown-menu', () => ({
@@ -31,7 +32,8 @@ beforeEach(() => {
     state.listUsers.mockResolvedValue({ data: users, pagination: { total: users.length, totalPages: 1 } })
     state.getRoles.mockResolvedValue({ data: [{ value: 'super_admin', label: 'Super Admin' }, { value: 'admin_unit', label: 'Admin Unit Kerja' }] })
     state.getUnitKerja.mockResolvedValue({ data: [{ id: 'ditjen', name: 'Ditjen' }] })
-    vi.spyOn(window, 'alert').mockImplementation(() => {})
+    // Galat tampil lewat toast aplikasi; dialog bawaan browser tidak boleh dipakai.
+    vi.spyOn(window, 'alert').mockImplementation(() => { throw new Error('window.alert tidak boleh dipakai') })
     vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
@@ -47,21 +49,34 @@ describe('pesan galat pengelolaan pengguna', () => {
         state.deactivateUser.mockRejectedValue(galatApi(409, { success: false, error: 'ConflictError', message: 'Minimal satu super admin aktif harus tetap tersedia.', code: 'CONFLICT' }))
         await menu('sa2@example.test', /Nonaktifkan/)
         fireEvent.click(await screen.findByRole('button', { name: 'Nonaktifkan' }))
-        await waitFor(() => expect(window.alert).toHaveBeenCalledWith('Minimal satu super admin aktif harus tetap tersedia.'))
+        await waitFor(() => expect(state.toast).toHaveBeenCalledWith({
+            variant: 'destructive', title: 'Gagal menonaktifkan pengguna', description: 'Minimal satu super admin aktif harus tetap tersedia.',
+        }))
     })
 
     it('mengaktifkan yang ditolak menampilkan pesan server', async () => {
         state.updateUser.mockRejectedValue(galatApi(409, { success: false, error: 'ConflictError', message: 'Akun masih menunggu persetujuan. Setujui akses pengguna terlebih dahulu.', code: 'CONFLICT' }))
         await menu('off@example.test', /Aktifkan/)
         fireEvent.click(await screen.findByRole('button', { name: 'Aktifkan' }))
-        await waitFor(() => expect(window.alert).toHaveBeenCalledWith('Akun masih menunggu persetujuan. Setujui akses pengguna terlebih dahulu.'))
+        await waitFor(() => expect(state.toast).toHaveBeenCalledWith({
+            variant: 'destructive', title: 'Gagal mengaktifkan pengguna', description: 'Akun masih menunggu persetujuan. Setujui akses pengguna terlebih dahulu.',
+        }))
     })
 
     it('menyimpan perubahan yang ditolak menampilkan pesan server', async () => {
         state.updateUser.mockRejectedValue(galatApi(400, { success: false, error: 'ValidationError', message: 'Unit kerja wajib untuk admin unit.', code: 'VALIDATION_ERROR' }))
         await menu('off@example.test', /Ubah Peran\/Unit/)
         fireEvent.click(await screen.findByRole('button', { name: /Simpan Perubahan/ }))
-        await waitFor(() => expect(window.alert).toHaveBeenCalledWith('Unit kerja wajib untuk admin unit.'))
+        await waitFor(() => expect(state.toast).toHaveBeenCalledWith({
+            variant: 'destructive', title: 'Gagal memperbarui pengguna', description: 'Unit kerja wajib untuk admin unit.',
+        }))
+    })
+
+    it('daftar yang gagal dimuat memakai kata pengguna', async () => {
+        state.listUsers.mockRejectedValue(galatApi(500, { success: false, message: 'Terjadi kesalahan pada server.' }))
+        render(<UserManagement />)
+        expect(await screen.findByText('Gagal memuat data pengguna')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Coba Lagi' })).toBeInTheDocument()
     })
 })
 
@@ -80,6 +95,7 @@ describe('konfirmasi status akun memakai dialog aplikasi', () => {
         fireEvent.click(within(row).getByRole('menuitem', { name: /Nonaktifkan/ }))
         fireEvent.click(await screen.findByRole('button', { name: 'Nonaktifkan' }))
         await waitFor(() => expect(state.deactivateUser).toHaveBeenCalledWith('sa-2'))
+        await waitFor(() => expect(state.toast).toHaveBeenCalledWith(expect.objectContaining({ title: 'Pengguna dinonaktifkan' })))
         expect(confirm).not.toHaveBeenCalled()
     })
 })

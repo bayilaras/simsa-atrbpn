@@ -27,6 +27,7 @@ vi.mock('../../middlewares/auth.middleware', () => ({
 
 vi.mock('../../middlewares/rate-limiter.middleware', () => ({
     sensitiveLimiter: (_req: any, _res: any, next: any) => next(),
+    userManagementLimiter: (_req: any, _res: any, next: any) => next(),
     exportLimiter: (_req: any, _res: any, next: any) => next(),
 }));
 

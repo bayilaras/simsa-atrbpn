@@ -5,7 +5,7 @@ import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { validateBody, validateQuery, uuidParamValidator } from '../middlewares/validate.middleware';
 import { borrowArchiveSchema, extendLendingSchema, queryArchiveLendingSchema, returnLendingSchema } from '../validators/schemas';
-import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
+import { lendingLimiter } from '../middlewares/rate-limiter.middleware';
 import { resolveRecordUnitScope } from '../utils/record-unit-scope.js';
 import { allowedSecurityClassifications, isAllowedForClassification } from '../services/record-access.service.js';
 import { getFrontendOrigin } from '../utils/frontend-origin.js';
@@ -148,8 +148,8 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
 });
 
 // Validasi mendahului pembatas laju: isian yang ditolak tidak memakai kuota
-// operasi sensitif, yang juga dipakai pengelolaan pengguna.
-router.post('/borrow', canWriteMiddleware(), validateBody(borrowArchiveSchema), sensitiveLimiter, async (req: AuthRequest, res, next) => {
+// pencatatan peminjaman. Kuota ini terpisah dari kuota operasi sensitif lain.
+router.post('/borrow', canWriteMiddleware(), validateBody(borrowArchiveSchema), lendingLimiter, async (req: AuthRequest, res, next) => {
     try {
         const { unitKerjaId: requestedCreateUnit, lendingType, arsipId, storageLocationId, borrowerName, departmentUnit, dueDate, purpose } = req.body;
         const unitKerjaId = writeUnitScope(req, requestedCreateUnit);

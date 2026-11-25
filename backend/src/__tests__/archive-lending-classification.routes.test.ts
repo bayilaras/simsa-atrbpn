@@ -8,7 +8,7 @@ const mocks=vi.hoisted(() => ({
     service:{findAll:vi.fn(),getOverdue:vi.fn(),getStats:vi.fn(),findById:vi.fn(),getHistoryByArsipId:vi.fn(),getHistoryByLocationId:vi.fn()},
 }));
 vi.mock('../middlewares/auth.middleware',() => ({authMiddleware:(req:any,_res:any,next:any) => {req.user={...mocks.user};next();}}));
-vi.mock('../middlewares/rate-limiter.middleware',() => ({sensitiveLimiter:(_req:any,_res:any,next:any) => next()}));
+vi.mock('../middlewares/rate-limiter.middleware',() => ({lendingLimiter:(_req:any,_res:any,next:any) => next()}));
 vi.mock('../services/archive-lending.service',() => ({archiveLendingService:mocks.service}));
 vi.mock('../services/storage-location.service',() => ({storageLocationService:{}}));
 import router from '../routes/archive-lending.routes';

@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
+import { useKonfirmasi } from '@/hooks/use-konfirmasi'
 import {
     ShieldAlert, Plus, AlertTriangle,
     Shield, ShieldCheck, ShieldX, Printer, FileText, CheckCircle2
@@ -49,6 +50,7 @@ const makeInitialForm = () => {
 export default function ArsipVital() {
     const { user } = useAuth()
     const { toast } = useToast()
+    const [konfirmasi, dialogKonfirmasi] = useKonfirmasi()
     const unitScope = useRequiredUnitKerjaScope(user)
     const unitKerjaId = unitScope.unitKerjaId
 
@@ -153,7 +155,14 @@ export default function ArsipVital() {
     }
 
     const handleDelete = async (id) => {
-        if (!confirm('Apakah Anda yakin ingin menghapus penetapan arsip vital ini?')) return
+        const setuju = await konfirmasi({
+            judul: 'Hapus penetapan arsip vital?',
+            pesan: 'Penetapan arsip vital ini akan dihapus. Arsipnya sendiri tetap tersimpan.',
+            aksi: 'Hapus',
+            batal: 'Batal',
+            berbahaya: true,
+        })
+        if (!setuju) return
         try {
             await arsipVitalService.delete(id)
             toast({ title: 'Berhasil', description: 'Penetapan dihapus' })
@@ -411,6 +420,8 @@ export default function ArsipVital() {
                 setForm={setForm}
                 onUpdate={handleUpdate}
             />
+
+            {dialogKonfirmasi}
         </div>
     )
 }

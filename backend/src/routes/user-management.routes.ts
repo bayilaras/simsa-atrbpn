@@ -8,16 +8,17 @@ import {
     resetPasswordSchema,
 } from '../validations/user-management.validation';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
-import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
+import { userManagementLimiter } from '../middlewares/rate-limiter.middleware';
 import { badanGalatValidasi } from '../utils/galat-validasi.js';
 
 const router = Router();
 
-// Only changes use the sensitive quota, which other routes share. Reads stay
-// under the general /api limiter, so browsing and filtering the user list does
-// not lock an administrator out of changes.
+// Only changes use the user-management quota, which no other module shares, so
+// setting up many accounts does not block other sensitive operations (and the
+// reverse). Reads stay under the general /api limiter, so browsing and
+// filtering the user list does not lock an administrator out of changes.
 router.use((req, res, next) =>
-    req.method === 'GET' || req.method === 'HEAD' ? next() : sensitiveLimiter(req, res, next));
+    req.method === 'GET' || req.method === 'HEAD' ? next() : userManagementLimiter(req, res, next));
 
 // Authentication is deliberately centralized. Besides validating the Better Auth
 // session, authMiddleware rejects deactivated and not-yet-provisioned `user`

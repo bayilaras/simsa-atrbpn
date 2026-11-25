@@ -7,11 +7,13 @@ import { hapusKeadaanDaftarPenggunaLain, hapusSemuaKeadaanDaftar } from '../lib/
 import { normalizeAuthenticatedUserUnitScope } from '../lib/unit-kerja-scope';
 import {
     aktivitasBersamaTerakhir,
+    ambilHalamanKembali,
     bacaWaktuAktivitas,
     catatAktivitasBersama,
     catatKontakServer,
     KUNCI_AKTIVITAS_BERSAMA,
     lamaTanpaKontak,
+    lupakanHalamanKembali,
     PERPANJANG_SESI_SETELAH_MS,
     PESAN_SESI_BERAKHIR,
     sesiBerakhirKarenaTidakAktif,
@@ -33,6 +35,9 @@ export function AuthProvider({ children }) {
     const [logoutError, setLogoutError] = useState(null);
     // Why the previous session ended, shown on the login page.
     const [sessionNotice, setSessionNotice] = useState(null);
+    // Halaman yang dibuka saat sesi sebelumnya berakhir, bila pengguna yang
+    // sama masuk lagi (lib/sesi-masuk.js). Dipakai sekali, lalu dikosongkan.
+    const [halamanKembali, setHalamanKembali] = useState(null);
     const signingOutRef = useRef(false);
     const authEpochRef = useRef(0);
 
@@ -151,20 +156,25 @@ export function AuthProvider({ children }) {
         return () => { authEpochRef.current += 1; };
     }, []);
 
+    // Mengembalikan halaman yang diingat untuk pengguna ini, atau null.
     async function checkAuth() {
-        if (signingOutRef.current) return;
+        if (signingOutRef.current) return null;
         const epoch = ++authEpochRef.current;
         const isCurrent = () => epoch === authEpochRef.current && !signingOutRef.current;
+        let kembali = null;
         try {
             setLoading(true);
             const session = await authService.getSession();
-            if (!isCurrent()) return;
+            if (!isCurrent()) return null;
 
             if (session?.user) {
                 catatKontakServer();
                 // Draf isian pengguna lain di tab ini tidak pernah ditawarkan; hapus.
                 hapusDrafPenggunaLain(session.user.id);
                 hapusKeadaanDaftarPenggunaLain(session.user.id);
+                // Halaman yang diingat saat sesi berakhir hanya untuk pengguna yang sama.
+                kembali = ambilHalamanKembali(session.user.id);
+                if (kembali) setHalamanKembali(kembali);
                 setUser(normalizeAuthenticatedUserUnitScope(session.user));
             } else {
                 await clearOfflineStorage();
@@ -178,6 +188,7 @@ export function AuthProvider({ children }) {
         } finally {
             if (isCurrent()) setLoading(false);
         }
+        return kembali;
     }
 
     async function signInWithGoogle() {
@@ -203,7 +214,8 @@ export function AuthProvider({ children }) {
             setLogoutError(null);
             setSessionNotice(null);
             await authService.signInWithEmail(email, password);
-            await checkAuth();
+            // Halaman tujuan setelah masuk: halaman yang diingat, atau null (Dashboard).
+            return await checkAuth();
         } catch (err) {
             console.error('Email sign in failed:', err);
             setError(err.message || 'Gagal masuk. Silakan coba lagi.');
@@ -234,7 +246,10 @@ export function AuthProvider({ children }) {
         if (opsi?.pertahankanIsian !== true) {
             hapusSemuaDrafIsian();
             hapusSemuaKeadaanDaftar();
+            // Keluar dengan sengaja: masuk berikutnya mulai dari Dashboard.
+            lupakanHalamanKembali();
         }
+        setHalamanKembali(null);
         if (signingOutRef.current) return;
         signingOutRef.current = true;
         authEpochRef.current += 1;
@@ -263,6 +278,9 @@ export function AuthProvider({ children }) {
         }
     }
 
+    // Pengguna sudah dibawa ke halaman yang diingat (atau membuka halaman lain).
+    const hapusHalamanKembali = useCallback(() => setHalamanKembali(null), []);
+
     // Dismiss the idle warning and reset timer
     function dismissIdleWarning() {
         setIdleWarning(false);
@@ -290,6 +308,8 @@ export function AuthProvider({ children }) {
         signingOut,
         logoutError,
         sessionNotice,
+        halamanKembali,
+        hapusHalamanKembali,
         signInWithGoogle,
         signInWithEmail,
         signUp,

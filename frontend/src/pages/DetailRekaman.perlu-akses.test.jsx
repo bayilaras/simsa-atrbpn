@@ -146,6 +146,47 @@ it('403 lain tanpa kode persetujuan tidak dianggap perlu persetujuan akses', asy
     mocks.suratMasuk.mockRejectedValue(Object.assign(new Error('Anda tidak memiliki izin.'), { status: 403, data: { error: 'Anda tidak memiliki izin.' } }))
     renderHalaman(`/surat/masuk/${ID}`, '/surat/masuk/:id', SuratMasukDetail)
 
-    expect(await screen.findByText('Surat Tidak Ditemukan')).toBeInTheDocument()
+    // Bukan 404: surat tidak dinyatakan hilang, dan alasan dari server ditampilkan.
+    expect(await screen.findByText('Surat belum dapat dimuat')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('Anda tidak memiliki izin.')
+    expect(screen.queryByText('Surat Tidak Ditemukan')).not.toBeInTheDocument()
     expect(screen.queryByText('Perlu persetujuan akses')).not.toBeInTheDocument()
+})
+
+describe.each(KASUS.filter(kasus => kasus.jenis !== 'arsip'))('detail $nama yang gagal dimuat', (kasus) => {
+    const galatServer = () => Object.assign(new Error('Terjadi kesalahan pada server. Silakan coba lagi nanti.'), { status: 500, data: {} })
+
+    it('galat selain 404 tampil sebagai "belum dapat dimuat" dan Coba lagi memuat ulang', async () => {
+        kasus.mock().mockRejectedValueOnce(galatServer())
+        renderHalaman(kasus.path, kasus.pola, kasus.Halaman)
+
+        expect(await screen.findByRole('heading', { name: 'Surat belum dapat dimuat' })).toBeInTheDocument()
+        expect(screen.getByRole('alert')).toHaveTextContent('Terjadi kesalahan pada server. Silakan coba lagi nanti.')
+        expect(screen.queryByText('Surat Tidak Ditemukan')).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Kembali ke Daftar Surat' })).toBeInTheDocument()
+
+        kasus.mock().mockRejectedValueOnce(galatTidakAda())
+        fireEvent.click(screen.getByRole('button', { name: 'Coba lagi' }))
+        expect(await screen.findByRole('heading', { name: 'Surat Tidak Ditemukan' })).toBeInTheDocument()
+        expect(kasus.mock()).toHaveBeenCalledTimes(2)
+    })
+
+    it('galat tanpa keterangan dari server memakai kalimat umum, bukan teks teknis', async () => {
+        kasus.mock().mockRejectedValue(new TypeError('Cannot read properties of undefined'))
+        renderHalaman(kasus.path, kasus.pola, kasus.Halaman)
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('Periksa koneksi Anda, lalu coba lagi.')
+        expect(screen.queryByText(/Cannot read/)).not.toBeInTheDocument()
+    })
+
+    it('surat yang tidak ditemukan dijelaskan tanpa kata "ID" dan tanpa Coba lagi', async () => {
+        kasus.mock().mockRejectedValue(galatTidakAda())
+        renderHalaman(kasus.path, kasus.pola, kasus.Halaman)
+
+        expect(await screen.findByRole('heading', { name: 'Surat Tidak Ditemukan' })).toBeInTheDocument()
+        expect(screen.getByText('Surat ini tidak tersedia. Mungkin sudah dihapus, atau Anda tidak memiliki akses untuk membukanya.')).toBeInTheDocument()
+        expect(screen.queryByText(/\bID\b/)).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Coba lagi' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
 })

@@ -49,17 +49,39 @@ const ACTION_CONFIG = {
     'change_password': { label: 'Mengganti kata sandi', icon: KeyRound, color: 'bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300', borderColor: 'border-blue-200', iconColor: 'text-blue-600' },
 };
 
+// Satu sumber untuk label jenis data di daftar dan pilihan penyaring "Jenis
+// Data", berurutan seperti tampil di penyaring. Kuncinya adalah setiap nilai
+// entity_type yang ditulis backend: LogActionData['entityType'] di
+// services/audit-log.service.ts dan pencatat audit di
+// services/retention-governance.service.ts (dijaga AuditLog.jenis-data.test.jsx).
+const WARNA_NETRAL = { color: 'text-slate-700', bgColor: 'bg-slate-50 dark:bg-slate-500/15' };
+const WARNA_ARSIP = { color: 'text-purple-600', bgColor: 'bg-purple-50 dark:bg-purple-500/15' };
 const ENTITY_CONFIG = {
     'surat_masuk': { label: 'Surat Masuk', color: 'text-blue-600', bgColor: 'bg-blue-50 dark:bg-blue-500/15' },
     'surat_keluar': { label: 'Surat Keluar', color: 'text-green-600', bgColor: 'bg-green-50 dark:bg-green-500/15' },
-    'arsip': { label: 'Arsip', color: 'text-purple-600', bgColor: 'bg-purple-50 dark:bg-purple-500/15' },
-    'user': { label: 'User', color: 'text-orange-600', bgColor: 'bg-orange-50 dark:bg-orange-500/15' },
-    'record_access_grant': { label: 'Persetujuan Akses', color: 'text-amber-700', bgColor: 'bg-amber-50 dark:bg-amber-500/15' },
+    'surat_distribution': { label: 'Disposisi', color: 'text-teal-700', bgColor: 'bg-teal-50 dark:bg-teal-500/15' },
     'rangkaian_surat': { label: 'Rangkaian Surat', color: 'text-cyan-700', bgColor: 'bg-cyan-50 dark:bg-cyan-500/15' },
     'rangkaian_relasi': { label: 'Relasi Rangkaian', color: 'text-sky-700', bgColor: 'bg-sky-50 dark:bg-sky-500/15' },
-    'surat_distribution': { label: 'Disposisi', color: 'text-teal-700', bgColor: 'bg-teal-50 dark:bg-teal-500/15' },
-    'file_attachment': { label: 'Berkas', color: 'text-slate-700', bgColor: 'bg-slate-50 dark:bg-slate-500/15' },
+    'tunjuk_silang': { label: 'Tunjuk Silang', color: 'text-sky-700', bgColor: 'bg-sky-50 dark:bg-sky-500/15' },
+    'dosir': { label: 'Dosir', color: 'text-cyan-700', bgColor: 'bg-cyan-50 dark:bg-cyan-500/15' },
+    'surat_template': { label: 'Templat Surat', ...WARNA_NETRAL },
+    'arsip': { label: 'Arsip', ...WARNA_ARSIP },
+    'arsip_elektronik': { label: 'Arsip Elektronik', ...WARNA_ARSIP },
+    'file_attachment': { label: 'Berkas', ...WARNA_NETRAL },
+    'storage_location': { label: 'Lokasi Penyimpanan', ...WARNA_ARSIP },
     'archive_lending': { label: 'Peminjaman Arsip', color: 'text-orange-700', bgColor: 'bg-orange-50 dark:bg-orange-500/15' },
+    'layanan_arsip': { label: 'Layanan Arsip', color: 'text-orange-700', bgColor: 'bg-orange-50 dark:bg-orange-500/15' },
+    'autentikasi': { label: 'Autentikasi Alih Media', ...WARNA_ARSIP },
+    'penyusutan': { label: 'Penyusutan Arsip', color: 'text-rose-700', bgColor: 'bg-rose-50 dark:bg-rose-500/15' },
+    'arsip_rule_assignment': { label: 'Penetapan Aturan Arsip', ...WARNA_ARSIP },
+    'retention_event': { label: 'Pemicu Retensi', color: 'text-rose-700', bgColor: 'bg-rose-50 dark:bg-rose-500/15' },
+    'jra_appraisal': { label: 'Penilaian Arsip', color: 'text-rose-700', bgColor: 'bg-rose-50 dark:bg-rose-500/15' },
+    'permanent_transfer': { label: 'Penyerahan Permanen', color: 'text-rose-700', bgColor: 'bg-rose-50 dark:bg-rose-500/15' },
+    'regulatory_rule_set': { label: 'Versi Aturan Klasifikasi/JRA', color: 'text-indigo-700', bgColor: 'bg-indigo-50 dark:bg-indigo-500/15' },
+    'record_access_grant': { label: 'Persetujuan Akses', color: 'text-amber-700', bgColor: 'bg-amber-50 dark:bg-amber-500/15' },
+    'user': { label: 'Pengguna', color: 'text-orange-600', bgColor: 'bg-orange-50 dark:bg-orange-500/15' },
+    'user_preferences': { label: 'Preferensi Pengguna', color: 'text-orange-600', bgColor: 'bg-orange-50 dark:bg-orange-500/15' },
+    'unit_kerja': { label: 'Unit Kerja', ...WARNA_NETRAL },
     'audit_log': { label: 'Audit Log', color: 'text-indigo-700', bgColor: 'bg-indigo-50 dark:bg-indigo-500/15' },
 };
 
@@ -320,19 +342,14 @@ export default function AuditLog() {
                         <div className="flex flex-wrap items-center gap-2">
                             <Filter className="h-4 w-4 text-muted-foreground mr-1" />
                             <Select value={entityType} onValueChange={applyFilter(setEntityType)}>
-                                <SelectTrigger className="w-full sm:w-[160px] h-8 text-xs bg-background">
-                                    <SelectValue placeholder="Tipe Entity" />
+                                <SelectTrigger aria-label="Jenis data" className="w-full sm:w-[200px] h-8 text-xs bg-background">
+                                    <SelectValue placeholder="Jenis Data" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="all">Semua Tipe</SelectItem>
-                                    <SelectItem value="surat_masuk">Surat Masuk</SelectItem>
-                                    <SelectItem value="surat_keluar">Surat Keluar</SelectItem>
-                                    <SelectItem value="arsip">Arsip</SelectItem>
-                                    <SelectItem value="user">User</SelectItem>
-                                    <SelectItem value="record_access_grant">Persetujuan Akses</SelectItem>
-                                    <SelectItem value="rangkaian_surat">Rangkaian Surat</SelectItem>
-                                    <SelectItem value="rangkaian_relasi">Relasi Rangkaian</SelectItem>
-                                    <SelectItem value="surat_distribution">Disposisi</SelectItem>
+                                    <SelectItem value="all">Semua Jenis Data</SelectItem>
+                                    {Object.entries(ENTITY_CONFIG).map(([kode, { label }]) => (
+                                        <SelectItem key={kode} value={kode}>{label}</SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                             <Select value={action} onValueChange={applyFilter(setAction)}>

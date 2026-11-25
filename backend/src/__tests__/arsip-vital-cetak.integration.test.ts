@@ -11,9 +11,10 @@ import { bootRangkaianDatabase } from './helpers/rangkaian-pglite';
 const holder = vi.hoisted(() => ({ db: null as any }));
 vi.mock('../config/database', () => ({ get db() { return holder.db; } }));
 vi.mock('../middlewares/auth.middleware', () => ({ authMiddleware: (req: any, _res: any, next: any) => {
-    req.user = { id: 'admin-bppt', email: 'admin@example.test', role: 'admin_unit', unitKerjaId: 'dir_bppt' }; next();
+    req.user = { id: '17000000-0000-4000-8000-000000000001', email: 'admin@example.test', role: 'admin_unit', unitKerjaId: 'dir_bppt' }; next();
 } }));
 
+const ADMIN_ID = '17000000-0000-4000-8000-000000000001';
 const ARSIP = ['77000000-0000-4000-8000-000000000001', '77000000-0000-4000-8000-000000000002', '77000000-0000-4000-8000-000000000003'];
 const zonaAsal = process.env.TZ;
 
@@ -31,6 +32,7 @@ beforeAll(async () => {
     PDFDocument = await (await import('../utils/lazy-libraries')).loadPdfKit();
     await database.exec(`
         INSERT INTO unit_kerja (id, name) VALUES ('dir_bppt','Direktorat BPPT') ON CONFLICT (id) DO UPDATE SET name = excluded.name;
+        INSERT INTO users (id, email, role, unit_kerja_id) VALUES ('${ADMIN_ID}','admin@example.test','admin_unit','dir_bppt');
         INSERT INTO arsip (id, unit_kerja_id, jenis_arsip, tahun, klasifikasi_keamanan, nomor_berkas, uraian_berkas, media_type, kurun_waktu) VALUES
             ('${ARSIP[0]}','dir_bppt','keluar',2026,'biasa','VITAL-HUKUM-1','Perjanjian sewa gedung','elektronik','2026'),
             ('${ARSIP[1]}','dir_bppt','keluar',2026,'biasa','VITAL-ASET-1','Sertipikat tanah kantor','kertas','2025'),
@@ -113,6 +115,7 @@ describe('Cetak Daftar Arsip Vital', () => {
         const tabel = await request(app).get('/api/arsip-vital').query({ ...filter, limit: 100 }).expect(200);
         expect(tabel.body.data.map((row: any) => row.nomorBerkas).sort()).toEqual(harapan);
     });
+
     it('uraian 4.000 karakter dipotong di barisnya sendiri dengan catatan', async () => {
         const uraianPanjang = 'Uraian arsip vital yang sangat panjang '.repeat(110).slice(0, 4000);
         const id = '77000000-0000-4000-8000-000000000004';
@@ -131,5 +134,33 @@ describe('Cetak Daftar Arsip Vital', () => {
         // A4 lanskap dengan margin 50 pt.
         expect(y + opsi.height).toBeLessThanOrEqual(595.28 - 50);
         expect(teks).toContain('Teks yang terlalu panjang dipotong; isi lengkap ada pada detail arsip di aplikasi.');
+    });
+});
+
+describe('Cetak Daftar Arsip Vital dicatat sebagai ekspor', () => {
+    const catatanEkspor = async () => (await database.query<any>(
+        `SELECT user_id, user_email, action, entity_type, changes FROM audit_log WHERE action = 'export' ORDER BY created_at`)).rows;
+    beforeEach(async () => { await database.exec('DELETE FROM audit_log'); });
+
+    it('menulis satu catatan audit berisi sumber, format, unit, dan filter yang dipakai', async () => {
+        await cetak({ kategoriVital: 'hukum', search: 'perkara' });
+        const catatan = await catatanEkspor();
+        expect(catatan).toHaveLength(1);
+        expect(catatan[0]).toMatchObject({ user_id: ADMIN_ID, user_email: 'admin@example.test', action: 'export', entity_type: 'arsip' });
+        expect(catatan[0].changes).toEqual({
+            source: 'arsip-vital', format: 'pdf',
+            filters: { unitKerjaId: 'dir_bppt', kategoriVital: 'hukum', search: 'perkara' },
+        });
+    });
+
+    it('berkas tidak dikirim bila catatan audit gagal ditulis', async () => {
+        const { auditLogService } = await import('../services/audit-log.service');
+        vi.spyOn(auditLogService, 'logActionOrThrow').mockRejectedValue(new Error('audit insert failed'));
+        const galat = express().use('/api/arsip-vital', (await import('../routes/arsip-vital.routes')).default)
+            .use((_error: any, _req: any, res: any, _next: any) => res.status(500).json({ error: 'Internal Server Error' }));
+        const response = await request(galat).get('/api/arsip-vital/print/daftar').expect(500);
+        expect(response.headers['content-disposition']).toBeUndefined();
+        expect(response.headers['content-type']).toMatch(/json/);
+        expect(await catatanEkspor()).toHaveLength(0);
     });
 });

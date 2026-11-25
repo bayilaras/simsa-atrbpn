@@ -171,7 +171,7 @@ vi.mock('../services/archive-rule-assignment.service', () => ({
     },
 }));
 
-const { ArsipService } = await import('../services/arsip.service');
+const { ArsipService, PESAN_ATURAN_BEDA_SUMBER, PESAN_ATURAN_BEDA_SURAT_KELUAR_DISETUJUI } = await import('../services/arsip.service');
 const { archiveRuleAssignmentService } = await import('../services/archive-rule-assignment.service');
 const { ArchiveRuleAssignmentService: ActualArchiveRuleAssignmentService } = await vi.importActual<
     typeof import('../services/archive-rule-assignment.service')
@@ -327,6 +327,56 @@ describe('ArsipService', () => {
             )).rejects.toThrow(/sudah menggunakan butir/i);
 
             expect(archiveRuleAssignmentService.appendRevision).not.toHaveBeenCalled();
+        });
+
+        it('explains the source classification guard instead of failing with an unmapped error', async () => {
+            enqueue([{
+                id: 'archive-1',
+                unitKerjaId: 'u1',
+                disposalStatus: 'active',
+                disposalBatchId: null,
+                legalHold: false,
+                ruleProvenanceStatus: 'legacy_unverified',
+                retentionTriggerDate: '2020-01-31',
+            }]);
+            enqueue([]);
+            const guard = Object.assign(
+                new Error('Archive classification does not match source keluar 11111111-1111-4111-8111-111111111111'),
+                { code: '23514' },
+            );
+            vi.mocked(archiveRuleAssignmentService.appendRevision)
+                .mockRejectedValue(new Error('Failed query', { cause: guard }));
+
+            await expect(svc.reconcileRules(
+                'archive-1',
+                'u1',
+                { klasifikasiItemId: 10, jraItemId: 20 },
+                'Koreksi berdasarkan pemeriksaan petugas',
+                'user-1',
+            )).rejects.toThrow(/harus sama dengan klasifikasi suratnya/i);
+        });
+
+        it('leaves other check violations untouched', async () => {
+            enqueue([{
+                id: 'archive-1',
+                unitKerjaId: 'u1',
+                disposalStatus: 'active',
+                disposalBatchId: null,
+                legalHold: false,
+                ruleProvenanceStatus: 'legacy_unverified',
+                retentionTriggerDate: '2020-01-31',
+            }]);
+            enqueue([]);
+            const other = Object.assign(new Error('Archive source metadata does not match keluar x'), { code: '23514' });
+            vi.mocked(archiveRuleAssignmentService.appendRevision).mockRejectedValue(other);
+
+            await expect(svc.reconcileRules(
+                'archive-1',
+                'u1',
+                { klasifikasiItemId: 10, jraItemId: 20 },
+                'Koreksi berdasarkan pemeriksaan petugas',
+                'user-1',
+            )).rejects.toBe(other);
         });
 
         it('fails before database access when the reconciliation reason is not meaningful', async () => {
@@ -906,8 +956,20 @@ describe('ArsipService', () => {
 
         it.each(['klasifikasiItemId', 'jraItemId'] as const)('rejects a %s that differs from the source before any archive write', async field => {
             enqueue([{ ...source, [field]: 99 }], []);
-            await expect(svc[method]('surat-1', { klasifikasiItemId: 10, jraItemId: 20 }, 'u1'))
-                .rejects.toThrow(/Ubah pilihan pada surat sumber/);
+            const galat = await svc[method]('surat-1', { klasifikasiItemId: 10, jraItemId: 20 }, 'u1').catch((error: Error) => error);
+            expect(galat).toMatchObject({ statusCode: 400 });
+            if (method === 'archiveFromSuratMasuk') {
+                // Surat masuk yang belum diarsipkan masih dapat disunting.
+                expect((galat as Error).message).toBe(PESAN_ATURAN_BEDA_SUMBER);
+                expect((galat as Error).message).toMatch(/Ubah pilihan pada surat sumber/);
+            } else {
+                // Surat keluar yang sudah disetujui tidak dapat disunting: pesannya
+                // menunjuk langkah yang tersedia, bukan "ubah surat sumber".
+                expect((galat as Error).message).toBe(PESAN_ATURAN_BEDA_SURAT_KELUAR_DISETUJUI);
+                expect((galat as Error).message).not.toMatch(/Ubah pilihan pada surat sumber/);
+                expect((galat as Error).message).toContain('Arsipkan dengan klasifikasi dan JRA yang tercatat pada surat');
+                expect((galat as Error).message).toContain('"Rekonsiliasi Klasifikasi/JRA" di halaman detail arsip');
+            }
             expect(capturedValues).toHaveLength(0);
             expect(capturedSets).toHaveLength(0);
             expect(transactionRollbacks).toBe(1);

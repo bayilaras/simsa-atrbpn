@@ -26,7 +26,7 @@ import {
     CURRENT_RETENTION_VERIFICATION_JOIN,
     RETENTION_GOVERNANCE_EVIDENCE_SELECT,
 } from './archive-rule-assignment.service.js';
-import { klasifikasiInSql } from './access/visibility-spec.js';
+import { barisDari, klasifikasiInSql } from './access/visibility-spec.js';
 
 const log = createLogger('DashboardService');
 
@@ -546,19 +546,24 @@ export const dashboardService = {
                         eq(arsip.ruleProvenanceStatus, 'verified'),
                     )),
 
-                // 2. Storage Capacity — top-level locations (gedung) with aggregate capacity
+                // 2. Storage Capacity — top-level locations (gedung) with aggregate capacity.
+                // Kode lokasi hanya unik per unit (setiap unit mulai dari G1), jadi
+                // unit pemilik ikut dibaca dan menjadi bagian urutan.
                 db.select({
                     id: storageLocations.id,
                     name: storageLocations.name,
                     code: storageLocations.code,
                     level: storageLocations.level,
                     capacity: storageLocations.capacity,
+                    unitKerjaId: storageLocations.unitKerjaId,
+                    unitKerjaName: unitKerja.name,
                 }).from(storageLocations)
+                    .leftJoin(unitKerja, eq(unitKerja.id, storageLocations.unitKerjaId))
                     .where(and(
                         ...storageUnitFilter,
                         eq(storageLocations.level, 'gedung'),
                     ))
-                    .orderBy(storageLocations.code)
+                    .orderBy(storageLocations.code, storageLocations.unitKerjaId, storageLocations.id)
                     .limit(10),
 
                 // 3. Lending — belum kembali (arsip dan boks), termasuk yang terlambat
@@ -630,60 +635,66 @@ export const dashboardService = {
             }
             const terjagaTotal = Object.values(terjagaReportingStages).reduce((sum, value) => sum + value, 0);
 
-            // Compute storage capacity aggregates per gedung — single query instead of N+1 loop
+            // Kapasitas per gedung dihitung dari pohon lokasi yang sebenarnya
+            // (parent_id), bukan dari awalan kode: kode adalah teks bebas dan
+            // setiap unit memulai kode otomatisnya dari G1. Satu kueri untuk
+            // semua gedung, bukan satu per gedung.
             let storageCapacity: any[] = [];
             if (storageData.length > 0) {
-                const gedungCodes = storageData.map((loc: any) => loc.code);
-                // Build OR conditions for each gedung code prefix
-                const prefixConditions = gedungCodes.map((code: string) =>
-                    sql`${storageLocations.code} LIKE ${code + '%'}`
+                const gedungIds = storageData.map((loc: any) => loc.id);
+                // Isi dihitung dari arsip yang menautkan lokasi mana pun di bawah
+                // gedung (gedung, ruang, rak, atau boks), dengan saringan unit dan
+                // kelas yang sama dengan widget lain; kolom current_count tidak
+                // pernah diisi. UNION (bukan UNION ALL) menghentikan penelusuran
+                // bila parent_id membentuk lingkaran.
+                const isiLokasi = and(
+                    sql`${arsip.storageLocationId} IN (SELECT id FROM pohon)`,
+                    ...arsipUnitFilter,
+                    archiveClass,
                 );
-                const allBoxStats = await db.select({
-                    prefix: sql<string>`LEFT(${storageLocations.code}, 2)`,
-                    totalCapacity: sql<number>`COALESCE(SUM(${storageLocations.capacity}), 0)::int`,
-                    boxCount: count(),
-                }).from(storageLocations)
-                    .where(and(
-                        ...(unitKerjaId ? [eq(storageLocations.unitKerjaId, unitKerjaId)] : []),
-                        eq(storageLocations.level, 'box'),
-                        or(...prefixConditions),
-                    ))
-                    .groupBy(sql`LEFT(${storageLocations.code}, 2)`);
-
-                // Isi boks dihitung dari arsip yang menautkannya, dengan saringan
-                // unit dan kelas yang sama dengan widget lain; kolom
-                // current_count tidak pernah diisi.
-                const arsipPerPrefix = await db.select({
-                    prefix: sql<string>`LEFT(${storageLocations.code}, 2)`,
-                    total: count(),
-                }).from(arsip)
-                    .innerJoin(storageLocations, eq(arsip.storageLocationId, storageLocations.id))
-                    .where(and(
-                        ...arsipUnitFilter,
-                        archiveClass,
-                        eq(storageLocations.level, 'box'),
-                        or(...prefixConditions),
-                    ))
-                    .groupBy(sql`LEFT(${storageLocations.code}, 2)`);
-                const arsipCountMap = new Map<string, number>(
-                    arsipPerPrefix.map((row: any) => [row.prefix, Number(row.total) || 0]),
-                );
-
-                const boxStatsMap = new Map(allBoxStats.map((s: any) => [s.prefix, s]));
+                const perGedung = barisDari<{
+                    gedungId: string; boxCount: number; totalCapacity: number; currentCount: number;
+                }>(await db.execute(sql`
+                    WITH RECURSIVE pohon (gedung_id, id, unit_kerja_id, level, capacity) AS (
+                        SELECT id, id, unit_kerja_id, level, capacity
+                          FROM storage_locations
+                         WHERE ${inArray(storageLocations.id, gedungIds)}
+                        UNION
+                        SELECT pohon.gedung_id, anak.id, anak.unit_kerja_id, anak.level, anak.capacity
+                          FROM storage_locations anak
+                          JOIN pohon ON anak.parent_id = pohon.id AND anak.unit_kerja_id = pohon.unit_kerja_id
+                    ), isi AS (
+                        SELECT ${arsip.storageLocationId} AS id, count(*)::int AS total
+                          FROM arsip
+                         WHERE ${isiLokasi}
+                         GROUP BY ${arsip.storageLocationId}
+                    )
+                    SELECT pohon.gedung_id AS "gedungId",
+                           (count(*) FILTER (WHERE pohon.level = 'box'))::int AS "boxCount",
+                           COALESCE(sum(pohon.capacity) FILTER (WHERE pohon.level = 'box'), 0)::int AS "totalCapacity",
+                           COALESCE(sum(isi.total), 0)::int AS "currentCount"
+                      FROM pohon
+                      LEFT JOIN isi ON isi.id = pohon.id
+                     GROUP BY pohon.gedung_id`));
+                const statsMap = new Map(perGedung.map((row) => [row.gedungId, row]));
 
                 storageCapacity = storageData.map((loc: any) => {
-                    const prefix = loc.code?.substring(0, 2) || '';
-                    const stats = boxStatsMap.get(prefix);
-                    const totalCount = arsipCountMap.get(prefix) || 0;
+                    const stats = statsMap.get(loc.id);
+                    const totalCapacity = Number(stats?.totalCapacity) || 0;
+                    const totalCount = Number(stats?.currentCount) || 0;
                     return {
                         id: loc.id,
                         name: loc.name,
                         code: loc.code,
-                        totalCapacity: stats?.totalCapacity || 0,
+                        // Dua unit dapat memiliki gedung berkode sama; unit pemilik
+                        // membedakan barisnya pada tampilan semua unit.
+                        unitKerjaId: loc.unitKerjaId,
+                        unitKerjaName: loc.unitKerjaName ?? null,
+                        totalCapacity,
                         currentCount: totalCount,
-                        boxCount: stats?.boxCount || 0,
-                        usagePercent: stats?.totalCapacity
-                            ? Math.round((totalCount / stats.totalCapacity) * 100)
+                        boxCount: Number(stats?.boxCount) || 0,
+                        usagePercent: totalCapacity
+                            ? Math.round((totalCount / totalCapacity) * 100)
                             : 0,
                     };
                 });

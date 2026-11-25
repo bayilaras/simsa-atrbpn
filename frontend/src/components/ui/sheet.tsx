@@ -3,6 +3,7 @@ import { XIcon } from "lucide-react"
 import { Dialog as SheetPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { kecualiWilayahPemberitahuan } from "@/components/ui/dialog"
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
@@ -47,6 +48,9 @@ function SheetContent({
   children,
   side = "right",
   showCloseButton = true,
+  onPointerDownOutside,
+  onFocusOutside,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left"
@@ -70,6 +74,9 @@ function SheetContent({
           className
         )}
         {...props}
+        onPointerDownOutside={kecualiWilayahPemberitahuan(onPointerDownOutside)}
+        onFocusOutside={kecualiWilayahPemberitahuan(onFocusOutside)}
+        onInteractOutside={kecualiWilayahPemberitahuan(onInteractOutside)}
       >
         {children}
         {showCloseButton && (

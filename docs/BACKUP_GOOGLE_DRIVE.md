@@ -11,7 +11,7 @@ Backup harian SIMSA (`operations-recovery.yml`, pukul 22:30 WIB) menyimpan datab
 - Masa simpan: semua salinan 30 hari terakhir, ditambah salinan terbaru setiap bulan untuk 12 bulan kalender terakhir (WIB). Salinan yang lebih tua dipindah ke Sampah Drive, yang dikosongkan Google setelah 30 hari. Tidak ada penghapusan permanen oleh workflow.
 - Bila salinan gagal (izin dicabut, Drive penuh, gangguan jaringan berulang), job backup gagal dan job **Report failure** membuka atau memperbarui issue "Pemeriksaan operasional gagal", sehingga pengamat repo mendapat email. Status backup di Monitoring Operasional tetap mengikuti backup utama.
 
-Ukuran: database puluhan MB ditambah dokumen (batas bawaan 4 GiB). Dengan masa simpan di atas ada sekitar 40 salinan; hitung kebutuhan ruang dari ukuran file `.tar` pertama. Kuota gratis Google 15 GB dipakai bersama Gmail dan Google Foto.
+Ukuran: database puluhan MB ditambah dokumen (batas bawaan 4 GiB). Dengan masa simpan di atas, folder itu berisi paling banyak sekitar 42 salinan (30 harian ditambah 12 bulanan). Salinan yang sudah dipindah ke Sampah tetap memakai kuota sampai Google mengosongkannya 30 hari kemudian, jadi sediakan ruang untuk sekitar 70 salinan; hitung kebutuhan ruang dari ukuran file `.tar` pertama. Kuota gratis Google 15 GB dipakai bersama Gmail dan Google Foto.
 
 ## Penyiapan (sekali)
 

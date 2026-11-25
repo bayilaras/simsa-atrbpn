@@ -10,7 +10,7 @@ vi.mock('../middlewares/auth.middleware', () => ({ authMiddleware: (req: any, _r
 } }));
 vi.mock('../middlewares/role.middleware', () => ({ canWriteMiddleware: () => (_req: any, _res: any, next: any) => next() }));
 vi.mock('../middlewares/validate.middleware', async importOriginal => ({ ...await importOriginal<typeof import('../middlewares/validate.middleware')>(), validateBody: () => (_req: any, _res: any, next: any) => next(), uuidParamValidator: (_req: any, _res: any, next: any) => next() }));
-vi.mock('../middlewares/rate-limiter.middleware', () => ({ sensitiveLimiter: (_req: any, _res: any, next: any) => next(), uploadLimiter: (_req: any, _res: any, next: any) => next() }));
+vi.mock('../middlewares/rate-limiter.middleware', () => ({ sensitiveLimiter: (_req: any, _res: any, next: any) => next(), lendingLimiter: (_req: any, _res: any, next: any) => next(), uploadLimiter: (_req: any, _res: any, next: any) => next() }));
 vi.mock('../services/archive-lending.service', () => ({ archiveLendingService: { findAll: mocks.list, borrow: mocks.lending, return: mocks.lending, extend: mocks.lending } }));
 vi.mock('../services/storage-location.service', () => ({ storageLocationService: { create: mocks.storage, update: mocks.storage, delete: mocks.storage, generateArsipQRCode: mocks.storage } }));
 vi.mock('../services/penyusutan.service', () => ({ penyusutanService: { updateStatus: mocks.disposition, addItems: mocks.disposition, removeItems: mocks.disposition, deleteBatch: mocks.disposition } }));

@@ -36,6 +36,7 @@ import { FilePreviewSection } from '@/components/surat-masuk/FilePreviewSection'
 import { format, formatDistanceToNow } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
 import { useAuth } from '@/context/AuthContext'
+import { SuratTidakTermuat } from './SuratTidakTermuat'
 import { PerluPersetujuanAkses } from '@/components/PerluPersetujuanAkses'
 import { rekamanPerluPersetujuan } from '@/lib/akses-rekaman'
 import { useAppConfig } from '@/context/app-config-context'
@@ -59,6 +60,8 @@ export default function SuratKeluarDetail() {
     const namaUnit = useNamaUnitKerja(surat?.unitKerjaId || '')
     const [loading, setLoading] = useState(true)
     const [perluAkses, setPerluAkses] = useState(null)
+    // Galat muat pertama (bukan "perlu persetujuan"); null selama surat termuat.
+    const [galatMuat, setGalatMuat] = useState(null)
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
     const [tautkanOpen, setTautkanOpen] = useState(false)
     const [approvalHistory, setApprovalHistory] = useState([])
@@ -87,23 +90,33 @@ export default function SuratKeluarDetail() {
             const data = await suratKeluarService.getById(id)
             setSurat(data)
             setPerluAkses(null)
+            setGalatMuat(null)
             termuatRef.current = true
         } catch (error) {
             const perlu = rekamanPerluPersetujuan(error, 'surat_keluar', id)
             if (perlu) {
                 setSurat(null)
                 setPerluAkses(perlu)
+                setGalatMuat(null)
                 termuatRef.current = false
                 return
             }
             // Galat lain: jangan sisakan keadaan persetujuan milik surat sebelumnya.
             setPerluAkses(null)
             console.error('Error fetching surat:', error)
-            toast({
-                title: 'Gagal',
-                description: 'Gagal memuat data surat',
-                variant: 'destructive',
-            })
+            if (diam) {
+                // Penyegaran setelah surat tampil: isi yang sudah termuat dipertahankan.
+                toast({
+                    title: 'Gagal',
+                    description: 'Gagal memuat data surat',
+                    variant: 'destructive',
+                })
+                return
+            }
+            // Muat pertama gagal: halaman menjelaskan sendiri (tidak ditemukan
+            // atau belum dapat dimuat) dan surat sebelumnya tidak ikut tampil.
+            setSurat(null)
+            setGalatMuat(error)
         } finally {
             if (!diam) setLoading(false)
         }
@@ -260,28 +273,7 @@ export default function SuratKeluarDetail() {
     }
 
     if (!surat) {
-        return (
-            <div className="space-y-6">
-                <Button variant="ghost" onClick={() => navigate(-1)}>
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Kembali
-                </Button>
-                <Card className="border-dashed">
-                    <CardContent className="flex flex-col items-center justify-center py-16">
-                        <div className="bg-muted/50 p-4 rounded-full mb-4">
-                            <AlertCircle className="h-12 w-12 text-muted-foreground" />
-                        </div>
-                        <h2 className="text-xl font-semibold mb-2">Surat Tidak Ditemukan</h2>
-                        <p className="text-muted-foreground text-center max-w-sm">
-                            Data surat dengan ID tersebut tidak tersedia atau mungkin sudah dihapus.
-                        </p>
-                        <Button className="mt-6" onClick={() => navigate('/surat/keluar')}>
-                            Kembali ke Daftar Surat
-                        </Button>
-                    </CardContent>
-                </Card>
-            </div>
-        )
+        return <SuratTidakTermuat galat={galatMuat} daftarPath="/surat/keluar" onCobaLagi={fetchSurat} />
     }
 
     const approvalStatus = surat.approvalStatus || 'draft'
