@@ -115,6 +115,33 @@ const labelIsian = (field) => (Object.hasOwn(LABEL_ISIAN, field)
     ? LABEL_ISIAN[field]
     : String(field).replace(/_/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2'));
 
+// Nilai pada "Detail Perubahan". Yang diubah hanya bentuk yang sulit dibaca:
+// nilai kosong, ya/tidak, daftar, dan tanggal atau waktu berformat ISO. Nilai
+// aslinya tetap ada di title.
+const NILAI_KOSONG = '(kosong)';
+const POLA_WAKTU_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/;
+const POLA_TANGGAL_ISO = /^\d{4}-\d{2}-\d{2}$/;
+const penulisWaktu = new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'Asia/Jakarta' });
+const penulisTanggal = new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeZone: 'UTC' });
+const nilaiMentah = (nilai) => (nilai !== null && typeof nilai === 'object' ? JSON.stringify(nilai) : String(nilai));
+const tulisNilai = (nilai) => {
+    if (nilai === null || nilai === '') return NILAI_KOSONG;
+    if (typeof nilai === 'boolean') return nilai ? 'Ya' : 'Tidak';
+    if (Array.isArray(nilai)) return nilai.length > 0 ? nilai.map(tulisNilai).join(', ') : NILAI_KOSONG;
+    if (typeof nilai === 'object') return JSON.stringify(nilai);
+    const teks = String(nilai);
+    if (POLA_WAKTU_ISO.test(teks)) {
+        const waktu = new Date(teks);
+        if (Number.isFinite(waktu.getTime())) return `${penulisWaktu.format(waktu)} WIB`;
+    }
+    if (POLA_TANGGAL_ISO.test(teks)) {
+        // Tanggal yang tidak ada di kalender (30 Februari) ditulis apa adanya.
+        const tanggal = new Date(`${teks}T00:00:00Z`);
+        if (Number.isFinite(tanggal.getTime()) && tanggal.toISOString().startsWith(teks)) return penulisTanggal.format(tanggal);
+    }
+    return teks;
+};
+
 // Status changes.itemSync pada audit ubah arsip (StatusSinkronItemArsip di
 // backend services/arsip.service.ts); hanya status yang perlu penjelasan.
 const LABEL_SINKRON_ITEM = {
@@ -235,16 +262,16 @@ export default function AuditLog() {
             <span className="font-medium text-muted-foreground capitalize">{labelIsian(field)}:</span>
             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
                 {before?.[field] !== undefined && (
-                    <span className="text-red-600 line-through bg-red-50 dark:bg-red-500/15 px-1 rounded truncate max-w-xs block" title={String(before[field])}>
-                        {String(before[field])}
+                    <span className="text-red-600 line-through bg-red-50 dark:bg-red-500/15 px-1 rounded truncate max-w-xs block" title={nilaiMentah(before[field])}>
+                        {tulisNilai(before[field])}
                     </span>
                 )}
                 {before?.[field] !== undefined && after?.[field] !== undefined && (
                     <span className="text-muted-foreground hidden sm:inline">→</span>
                 )}
                 {after?.[field] !== undefined && (
-                    <span className="text-green-600 bg-green-50 dark:bg-green-500/15 px-1 rounded font-medium break-all" title={String(after[field])}>
-                        {String(after[field])}
+                    <span className="text-green-600 bg-green-50 dark:bg-green-500/15 px-1 rounded font-medium break-all" title={nilaiMentah(after[field])}>
+                        {tulisNilai(after[field])}
                     </span>
                 )}
             </div>
@@ -383,7 +410,7 @@ export default function AuditLog() {
                                 </SelectContent>
                             </Select>
                             <Select value={action} onValueChange={applyFilter(setAction)}>
-                                <SelectTrigger className="w-full sm:w-[160px] h-8 text-xs bg-background">
+                                <SelectTrigger aria-label="Aksi" className="w-full sm:w-[160px] h-8 text-xs bg-background">
                                     <SelectValue placeholder="Aksi" />
                                 </SelectTrigger>
                                 <SelectContent>
