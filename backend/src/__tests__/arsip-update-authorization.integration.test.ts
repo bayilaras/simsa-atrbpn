@@ -343,7 +343,7 @@ describe('Ubah Metadata saat boks atau arsip dipinjam', () => {
         const pinjam = await archiveLendingService.borrow({
             lendingType: jenis, ...(jenis === 'box' ? { storageLocationId: boxId } : { arsipId: archiveId }),
             borrowerId: userId, borrowerName: 'Peminjam', dueDate: '2026-09-20',
-        }, 'ditjen');
+        }, 'ditjen', undefined, ['biasa']);
         expect((await database.query<any>('SELECT lending_status FROM arsip')).rows[0].lending_status).toBe('borrowed');
         await archiveLendingService.return(pinjam.id, 'ditjen');
         const result = await service.update(archiveId, { keterangan: 'Deskripsi baru' }, { userId, userEmail: 'stale@example.test' },

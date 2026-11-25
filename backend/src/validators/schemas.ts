@@ -7,6 +7,7 @@ import {
     NOTIFICATION_ID_PATTERN,
 } from '../utils/notification-id.js';
 import { jakartaDate } from '../utils/jakarta-date.js';
+import { PESAN_JATUH_TEMPO_LAMPAU } from '../services/archive-lending.constants.js';
 import { PESAN_DITERIMA_SEBELUM_TANGGAL_SURAT, PESAN_DITERIMA_SETELAH_HARI_INI } from '../services/tanggal-diterima.js';
 import { parseJsonObjectString } from '../utils/json-objek-teks.js';
 import { KATEGORI_PERLU_DILENGKAPI } from '../services/perlu-dilengkapi.constants.js';
@@ -842,6 +843,9 @@ export type UpdateStorageLocation = z.infer<typeof updateStorageLocationSchema>;
 
 // ==================== Archive Lending schemas ====================
 
+// Jatuh tempo dibandingkan dengan hari ini menurut WIB; hari ini masih diterima.
+const jatuhTempoPinjamSchema = dateSchema.refine((value) => value >= jakartaDate(), PESAN_JATUH_TEMPO_LAMPAU);
+
 export const borrowArchiveSchema = z.object({
     // Required explicitly for super_admin creates; ignored/overridden for
     // assigned-unit users by the route.
@@ -851,7 +855,7 @@ export const borrowArchiveSchema = z.object({
     storageLocationId: uuidSchema.optional(), // Required when lendingType = 'box'
     borrowerName: z.string().min(1, 'Nama peminjam wajib diisi').max(255),
     departmentUnit: z.string().max(255).optional(),
-    dueDate: dateSchema,
+    dueDate: jatuhTempoPinjamSchema,
     purpose: z.string().max(2000).optional(),
 }).refine(
     (data) => {
@@ -863,7 +867,11 @@ export const borrowArchiveSchema = z.object({
 );
 
 export const extendLendingSchema = z.object({
-    newDueDate: dateSchema,
+    newDueDate: jatuhTempoPinjamSchema,
+});
+
+export const returnLendingSchema = z.object({
+    notes: z.string('Catatan kondisi tidak valid').max(2000, 'Catatan kondisi maksimal 2000 karakter').nullish(),
 });
 
 export type BorrowArchive = z.infer<typeof borrowArchiveSchema>;

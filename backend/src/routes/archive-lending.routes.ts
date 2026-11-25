@@ -4,7 +4,7 @@ import { storageLocationService } from '../services/storage-location.service';
 import { authMiddleware, AuthRequest } from '../middlewares/auth.middleware';
 import { canWriteMiddleware } from '../middlewares/role.middleware';
 import { validateBody, validateQuery, uuidParamValidator } from '../middlewares/validate.middleware';
-import { borrowArchiveSchema, extendLendingSchema, queryArchiveLendingSchema } from '../validators/schemas';
+import { borrowArchiveSchema, extendLendingSchema, queryArchiveLendingSchema, returnLendingSchema } from '../validators/schemas';
 import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
 import { resolveRecordUnitScope } from '../utils/record-unit-scope.js';
 import { allowedSecurityClassifications, isAllowedForClassification } from '../services/record-access.service.js';
@@ -147,7 +147,9 @@ router.get('/:id', async (req: AuthRequest, res, next) => {
     }
 });
 
-router.post('/borrow', canWriteMiddleware(), sensitiveLimiter, validateBody(borrowArchiveSchema), async (req: AuthRequest, res, next) => {
+// Validasi mendahului pembatas laju: isian yang ditolak tidak memakai kuota
+// operasi sensitif, yang juga dipakai pengelolaan pengguna.
+router.post('/borrow', canWriteMiddleware(), validateBody(borrowArchiveSchema), sensitiveLimiter, async (req: AuthRequest, res, next) => {
     try {
         const { unitKerjaId: requestedCreateUnit, lendingType, arsipId, storageLocationId, borrowerName, departmentUnit, dueDate, purpose } = req.body;
         const unitKerjaId = writeUnitScope(req, requestedCreateUnit);
@@ -178,7 +180,7 @@ router.post('/borrow', canWriteMiddleware(), sensitiveLimiter, validateBody(borr
             userId: req.user?.id,
             userEmail: req.user?.email,
             ipAddress: req.ip,
-        });
+        }, allowedSecurityClassifications(req.user));
 
         res.status(201).json({ success: true, data: result });
     } catch (error) {
@@ -186,7 +188,7 @@ router.post('/borrow', canWriteMiddleware(), sensitiveLimiter, validateBody(borr
     }
 });
 
-router.put('/:id/return', canWriteMiddleware(), async (req: AuthRequest, res, next) => {
+router.put('/:id/return', canWriteMiddleware(), validateBody(returnLendingSchema), async (req: AuthRequest, res, next) => {
     try {
         const { id } = req.params;
         const { notes } = req.body;
@@ -196,7 +198,7 @@ router.put('/:id/return', canWriteMiddleware(), async (req: AuthRequest, res, ne
             return res.status(400).json({ error: 'unitKerjaId wajib dipilih untuk pengembalian.' });
         }
 
-        const result = await archiveLendingService.return(id as string, unitKerjaId, notes, {
+        const result = await archiveLendingService.return(id as string, unitKerjaId, notes ?? undefined, {
             userId: req.user?.id,
             userEmail: req.user?.email,
             ipAddress: req.ip,

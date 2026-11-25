@@ -448,7 +448,7 @@ describe('borrowArchiveSchema', () => {
             lendingType: 'arsip',
             arsipId: validUUID,
             borrowerName: 'John Doe',
-            dueDate: '2026-03-15',
+            dueDate: '2099-03-15',
         });
         expect(result.success).toBe(true);
     });
@@ -458,7 +458,7 @@ describe('borrowArchiveSchema', () => {
             lendingType: 'box',
             storageLocationId: validUUID,
             borrowerName: 'Jane Doe',
-            dueDate: '2026-03-15',
+            dueDate: '2099-03-15',
         });
         expect(result.success).toBe(true);
     });
@@ -467,7 +467,7 @@ describe('borrowArchiveSchema', () => {
         const result = borrowArchiveSchema.safeParse({
             lendingType: 'arsip',
             borrowerName: 'John Doe',
-            dueDate: '2026-03-15',
+            dueDate: '2099-03-15',
         });
         expect(result.success).toBe(false);
     });
@@ -476,7 +476,7 @@ describe('borrowArchiveSchema', () => {
         const result = borrowArchiveSchema.safeParse({
             lendingType: 'box',
             borrowerName: 'Jane Doe',
-            dueDate: '2026-03-15',
+            dueDate: '2099-03-15',
         });
         expect(result.success).toBe(false);
     });
@@ -484,8 +484,18 @@ describe('borrowArchiveSchema', () => {
 
 describe('extendLendingSchema', () => {
     it('accepts valid date', () => {
-        const result = extendLendingSchema.safeParse({ newDueDate: '2026-06-30' });
+        const result = extendLendingSchema.safeParse({ newDueDate: '2099-06-30' });
         expect(result.success).toBe(true);
+    });
+
+    it('rejects a due date before today with an Indonesian message, for loans and extensions', () => {
+        const pesan = 'Jatuh tempo tidak boleh sebelum hari ini.';
+        const perpanjang = extendLendingSchema.safeParse({ newDueDate: '2020-06-30' });
+        expect(perpanjang.error?.issues.map(issue => issue.message)).toEqual([pesan]);
+        const pinjam = borrowArchiveSchema.safeParse({
+            lendingType: 'arsip', arsipId: validUUID, borrowerName: 'John Doe', dueDate: '2020-06-30',
+        });
+        expect(pinjam.error?.issues.map(issue => issue.message)).toEqual([pesan]);
     });
 
     it('rejects missing date', () => {
