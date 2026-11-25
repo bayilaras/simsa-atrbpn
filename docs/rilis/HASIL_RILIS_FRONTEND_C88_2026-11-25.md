@@ -35,7 +35,7 @@ Uji baru `AuditLog.label-aksi-isian.test.jsx` membaca kode aksi dari sumber back
 
 ## Pemeriksaan di produksi
 
-Pemeriksaan dilakukan tanpa login. Tidak ada data yang disimpan.
+Tanpa login, segera setelah promosi:
 
 | Bagian | Hasil |
 |---|---|
@@ -45,7 +45,17 @@ Pemeriksaan dilakukan tanpa login. Tidak ada data yang disimpan.
 | Rute yang dilindungi | Menjawab 401 tanpa sesi, lewat backend langsung dan lewat proxy `/api` frontend |
 | Situs panduan | `/administrasi/audit-log` memuat baris aksi tata kelola retensi dan "Penanda impor"; `/perubahan-november-2026` memuat isian Disposisi di tab Perlu Dilengkapi dan penyaring Aksi |
 
-Belum diperiksa dengan akun nyata pada rilis ini: label isian dan aksi pada baris Audit Log, isi penyaring Aksi, dan isian dialog Disposisi yang bertahan di tab Perlu Dilengkapi. Semuanya tercakup uji otomatis yang dijalankan saat build kandidat.
+Dengan akun Super Admin, 21:32–21:34. Tidak ada data yang disimpan: selain proses masuk, peramban hanya mengirim permintaan baca, dan hitungan tab Perlu Dilengkapi tetap 4.
+
+| Bagian | Hasil |
+|---|---|
+| Audit Log, nama isian | Catatan `system:tandai-surat-impor` menampilkan "Penanda Impor" pada Detail Perubahan, bukan lagi `DiimporAt` |
+| Audit Log, penyaring Aksi | 42 aksi selain "Semua Aksi", semuanya berlabel Indonesia, termasuk ketiga belas aksi tata kelola retensi, Memulihkan, Ubah Status, Melihat, Mengunduh, dan kedua aksi Legal Hold |
+| Audit Log, aksi retensi | Penyaring "Memverifikasi Pemicu Retensi" mengirim `action=retention_event_verify` dan menampilkan 1 log, tertulis "Memverifikasi Pemicu Retensi pada Pemicu Retensi" |
+| Perlu Dilengkapi, dialog Disposisi | Pada surat uji `001/SM/2026`: satu unit dicentang dan instruksi diketik, dialog ditutup dengan Esc, lalu dibuka lagi. Centang dan instruksi masih ada. Setelah **Batal**, dialog yang dibuka lagi kosong |
+| Konsol peramban | Tanpa galat selama pemeriksaan |
+
+Dua hal kecil terlihat saat pemeriksaan dan tidak diubah di rilis ini: nilai pada Detail Perubahan masih ditulis mentah (`null` dan waktu berformat ISO), dan penyaring Aksi belum punya nama untuk pembaca layar, berbeda dari penyaring Jenis Data.
 
 ## Deployment
 
