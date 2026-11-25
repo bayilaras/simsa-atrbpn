@@ -86,6 +86,15 @@ function securityClassificationCondition(classes: string[] | null | undefined) {
     return klasifikasiInSql(suratMasuk.sifatSurat, classes);
 }
 
+/**
+ * Kolom daftar dan detail surat: semua kolom selain penanda impor (0055), yang
+ * hanya dibaca kueri daftar kerja Perlu Dilengkapi. Dihitung saat dipakai.
+ */
+function kolomBacaSuratMasuk() {
+    const { diimporAt: _penandaImpor, ...kolom } = { ...getTableColumns(suratMasuk) };
+    return kolom;
+}
+
 export class SuratMasukService {
     async findAll(filters: SuratMasukFilters) {
         const { unitKerjaId, tahun, tanggalDari, tanggalSampai, jenisSurat, sifatSurat, status, disposisi, disposisiUnitId, search, urutan, acuanTanggal, page = 1, limit = 20, securityClassifications } = filters;
@@ -153,7 +162,7 @@ export class SuratMasukService {
         // Get data; nama unit pemilik untuk kolom Unit Kerja pada tampilan semua unit.
         const data = await db
             .select({
-                ...getTableColumns(suratMasuk),
+                ...kolomBacaSuratMasuk(),
                 // Rujukan baris luar ditulis lengkap: kolom di sql pilihan satu tabel ditulis Drizzle tanpa nama tabel.
                 unitKerjaNama: sql<string | null>`(SELECT uk.name FROM unit_kerja uk WHERE uk.id = surat_masuk.unit_kerja_id)`,
             })
@@ -186,7 +195,7 @@ export class SuratMasukService {
         ];
 
         const [result] = await db
-            .select()
+            .select(kolomBacaSuratMasuk())
             .from(suratMasuk)
             .where(and(...conditions))
             .limit(1);
@@ -296,7 +305,8 @@ export class SuratMasukService {
                 const ruleSelection = await prepareSuratRuleSelection(tx, 'masuk', data);
                 const [inserted] = await tx
                     .insert(suratMasuk)
-                    .values({ ...data, ...ruleSelection, nomorSurat, noUrut, tahun })
+                    // 0055: hanya impor yang mengisi penanda; formulir selalu NULL, apa pun isi input.
+                    .values({ ...data, ...ruleSelection, nomorSurat, noUrut, tahun, diimporAt: importOptions ? sql`now()` : null })
                     .returning();
 
                 if (clientBlobClaim) {

@@ -4,6 +4,7 @@ import { suratKeluar } from '../db/schema/surat-keluar';
 import { arsip } from '../db/schema/arsip';
 import {
     archiveLending,
+    storageLocations,
     arsipRuleSnapshots,
     jraAppraisalCases,
     jraAppraisalDecisions,
@@ -629,8 +630,16 @@ class ReportService {
                 returnDate: archiveLending.returnDate,
                 status: archiveLending.status,
                 purpose: archiveLending.purpose,
+                // Yang dipinjam: arsip (nomor berkas, uraian) atau boks (kode,
+                // nama). whereClause sudah membatasi unit dan kelas arsipnya.
+                nomorBerkas: arsip.nomorBerkas,
+                uraianBerkas: arsip.uraianBerkas,
+                kodeBoks: storageLocations.code,
+                namaBoks: storageLocations.name,
             })
             .from(archiveLending)
+            .leftJoin(arsip, and(eq(archiveLending.lendingType, 'arsip'), eq(archiveLending.arsipId, arsip.id)))
+            .leftJoin(storageLocations, and(eq(archiveLending.lendingType, 'box'), eq(archiveLending.storageLocationId, storageLocations.id)))
             .where(whereClause)
             .orderBy(desc(archiveLending.borrowDate), desc(archiveLending.id))
             .limit(limit)

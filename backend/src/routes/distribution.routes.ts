@@ -16,6 +16,13 @@ import {
 } from '../services/record-access.service';
 import auditLogService from '../services/audit-log.service.js';
 import { createLogger } from '../utils/logger';
+import { permissionMiddleware } from '../middlewares/role.middleware';
+import { exportLimiter } from '../middlewares/rate-limiter.middleware';
+import { auditExport } from '../services/export-audit';
+import { ExportCompletenessError } from '../services/export-completeness.js';
+import { eksporDisposisiService, KOTAK_DISPOSISI, STATUS_DISPOSISI } from '../services/export-disposisi';
+import { AKHIRAN_BERKAS, berkasDariTabel, JENIS_KONTEN, pilihanSaringan, SaringanEksporTidakSah } from '../services/export-tabel';
+import { jakartaDate } from '../utils/jakarta-date.js';
 
 const router = Router();
 const log = createLogger('distribution-routes');
@@ -129,6 +136,52 @@ router.get('/stats', async (req: AuthRequest, res, next) => {
         );
         res.json({ success: true, data: stats });
     } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * @route GET /api/distributions/export/:kotak/:format
+ * @desc Rekap disposisi (Excel/PDF) untuk Kotak Masuk atau Kotak Keluar dengan
+ *       penyaring yang sama dengan layar. Baris diambil lewat findInbox /
+ *       findOutbox, sehingga surat yang tidak boleh dibaca tetap tersamar.
+ *       Ekspor dicatat di audit log sebelum berkas dikirim.
+ */
+router.get('/export/:kotak/:format', exportLimiter, permissionMiddleware('reports', 'export'), async (req: AuthRequest, res, next) => {
+    try {
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit.
+        const unitKerjaId = resolveConcreteDistributionUnit(req, res);
+        if (!unitKerjaId) return;
+
+        const kotak = pilihanSaringan(req.params.kotak, KOTAK_DISPOSISI, 'kotak disposisi');
+        const format = pilihanSaringan(req.params.format, ['excel', 'pdf'] as const, 'format berkas');
+        if (!kotak || !format) throw new SaringanEksporTidakSah('Jenis ekspor tidak dikenali.');
+        const lewatBatas = pilihanSaringan(req.query.lewatBatas, ['true', 'false'] as const, 'lewat batas waktu') === 'true';
+        if (lewatBatas && kotak !== 'inbox') {
+            throw new SaringanEksporTidakSah('Penyaring lewat batas waktu hanya tersedia untuk Kotak Masuk.');
+        }
+        const saringan = {
+            kotak,
+            unitKerjaId,
+            status: pilihanSaringan(req.query.status, STATUS_DISPOSISI, 'status'),
+            lewatBatas: lewatBatas || undefined,
+        };
+
+        const tabel = await eksporDisposisiService.tabel(saringan, req.user, allowedSecurityClassifications(req.user));
+        const buffer = await berkasDariTabel(tabel, format);
+        await auditExport(req, { source: 'distribusi', type: 'disposisi', format, filters: saringan });
+
+        const nama = kotak === 'inbox' ? 'kotak-masuk' : 'kotak-keluar';
+        res.setHeader('Content-Type', JENIS_KONTEN[format]);
+        res.setHeader('Content-Disposition', `attachment; filename="rekap-disposisi-${nama}-${jakartaDate()}.${AKHIRAN_BERKAS[format]}"`);
+        res.send(buffer);
+    } catch (error) {
+        if (error instanceof ExportCompletenessError) {
+            return res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
+        }
+        if (error instanceof SaringanEksporTidakSah) {
+            return res.status(400).json({ error: 'INVALID_EXPORT_FILTER', message: error.message });
+        }
         next(error);
     }
 });

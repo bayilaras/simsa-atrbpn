@@ -13,6 +13,7 @@ import { loadExcelJS, loadPdfKit } from '../utils/lazy-libraries.js';
 import { tanggalCetakWib, waktuWib } from '../utils/jakarta-date.js';
 import { batasBawahPdf, CATATAN_TEKS_DIPOTONG, lebarPenuh, tinggiBarisPdf, tulisBarisPdf } from './export-pdf-tabel.js';
 import { klasifikasiSuratKeluar, labelKelasKeamanan, labelSifatSuratMasuk, labelStatusSuratMasuk } from './export-label.js';
+import { CENTER_ALIGN, DATA_FONT, HEADER_FILL, HEADER_FONT, LEBAR_TABEL_PDF, LEFT_ALIGN, SUBTITLE_FONT, THIN_BORDER, TITLE_FONT } from './export-gaya.js';
 
 export const PESAN_FORMULIR6_KOSONG = 'Belum ada arsip inaktif untuk filter ini. Arsip masuk Formulir 6 setelah masa aktifnya berakhir menurut JRA dan pemicu retensi yang terverifikasi, atau setelah pemindahannya dicatat di SIMSA melalui modul Penyusutan. Pemindahan yang dilakukan di luar SIMSA tidak mengubah daftar ini.';
 
@@ -56,28 +57,12 @@ export interface ExportOptions {
     formulirType?: 'formulir4' | 'formulir6'; // For arsip export
 }
 
-// ============================================
-// Styling constants matching Permen ATRBPN 2/2026
-// ============================================
-const HEADER_FILL: ExcelJS.Fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FF1E3A5F' },
-};
-const HEADER_FONT: Partial<ExcelJS.Font> = { bold: true, color: { argb: 'FFFFFFFF' }, size: 9 };
-const TITLE_FONT: Partial<ExcelJS.Font> = { bold: true, size: 14, name: 'Arial' };
-const SUBTITLE_FONT: Partial<ExcelJS.Font> = { bold: true, size: 10, name: 'Arial' };
-const DATA_FONT: Partial<ExcelJS.Font> = { size: 9, name: 'Arial' };
-const THIN_BORDER: Partial<ExcelJS.Borders> = {
-    top: { style: 'thin' },
-    left: { style: 'thin' },
-    bottom: { style: 'thin' },
-    right: { style: 'thin' },
-};
-const CENTER_ALIGN: Partial<ExcelJS.Alignment> = { horizontal: 'center', vertical: 'middle', wrapText: true };
-const LEFT_ALIGN: Partial<ExcelJS.Alignment> = { horizontal: 'left', vertical: 'middle', wrapText: true };
-/** Lebar tabel PDF A4 lanskap dengan margin 30 pt. */
-const LEBAR_TABEL_PDF = 782;
+/**
+ * Judul daftar arsip. Ekspor dari halaman Laporan (tanpa formulirType) memuat
+ * semua arsip, aktif maupun inaktif, sehingga tidak diberi judul Formulir 4.
+ */
+const JUDUL_DAFTAR_ARSIP = 'DAFTAR ARSIP';
+const JUDUL_FORMULIR4 = 'DAFTAR ARSIP AKTIF';
 
 export class ExportService {
     // ============== EXCEL EXPORTS ==============
@@ -299,8 +284,9 @@ export class ExportService {
             return this.generateExcelArsipFormulir6(workbook, data, filters, unitPengolah, namaUnit);
         }
 
-        // Default: Formulir 4 - Daftar Arsip Aktif
-        return this.generateExcelArsipFormulir4(workbook, data, filters, unitPengolah, namaUnit);
+        // Formulir 4 - Daftar Arsip Aktif. Tanpa formulirType (ekspor Laporan)
+        // kolomnya sama, tetapi isinya semua arsip sehingga judulnya netral.
+        return this.generateExcelArsipFormulir4(workbook, data, filters, unitPengolah, namaUnit, formulirType === undefined);
     }
 
     /**
@@ -348,8 +334,8 @@ export class ExportService {
      * Formulir 4 — DAFTAR ARSIP AKTIF
      * Permen ATRBPN 2 Tahun 2026 Kearsipan
      */
-    private async generateExcelArsipFormulir4(workbook: ExcelJS.Workbook, data: BarisFormulirArsip[], filters: ArsipFilters, unitPengolah: string, namaUnit: Map<string, string> | null): Promise<Buffer> {
-        const worksheet = workbook.addWorksheet('Formulir 4 - Arsip Aktif', {
+    private async generateExcelArsipFormulir4(workbook: ExcelJS.Workbook, data: BarisFormulirArsip[], filters: ArsipFilters, unitPengolah: string, namaUnit: Map<string, string> | null, semuaArsip = false): Promise<Buffer> {
+        const worksheet = workbook.addWorksheet(semuaArsip ? 'Daftar Arsip' : 'Formulir 4 - Arsip Aktif', {
             pageSetup: { orientation: 'landscape', paperSize: 9 /* A4 */ },
         });
         // Ekspor Semua Unit Kerja menambah kolom (14) Unit Kerja.
@@ -358,7 +344,7 @@ export class ExportService {
         // Title
         worksheet.mergeCells(1, 1, 1, kolomTerakhir);
         const titleCell = worksheet.getCell('A1');
-        titleCell.value = 'DAFTAR ARSIP AKTIF';
+        titleCell.value = semuaArsip ? JUDUL_DAFTAR_ARSIP : JUDUL_FORMULIR4;
         titleCell.font = TITLE_FONT;
         titleCell.alignment = CENTER_ALIGN;
 
@@ -514,12 +500,14 @@ export class ExportService {
         worksheet.getCell(sigRow + 5, 9).value = 'NIP ....................................';
         worksheet.getCell(sigRow + 5, 9).alignment = CENTER_ALIGN;
 
-        // Formulir label
-        const labelRow = sigRow + 7;
-        worksheet.mergeCells(labelRow, 10, labelRow, 13);
-        worksheet.getCell(labelRow, 10).value = 'Formulir 4. Daftar Arsip Aktif';
-        worksheet.getCell(labelRow, 10).font = { ...DATA_FONT, italic: true, size: 8 };
-        worksheet.getCell(labelRow, 10).alignment = { horizontal: 'right' };
+        // Formulir label; daftar semua arsip bukan Formulir 4.
+        if (!semuaArsip) {
+            const labelRow = sigRow + 7;
+            worksheet.mergeCells(labelRow, 10, labelRow, 13);
+            worksheet.getCell(labelRow, 10).value = 'Formulir 4. Daftar Arsip Aktif';
+            worksheet.getCell(labelRow, 10).font = { ...DATA_FONT, italic: true, size: 8 };
+            worksheet.getCell(labelRow, 10).alignment = { horizontal: 'right' };
+        }
 
         const buffer = await workbook.xlsx.writeBuffer();
         return Buffer.from(buffer);
@@ -856,8 +844,9 @@ export class ExportService {
                 doc.fontSize(10).font('Helvetica').text(`Pencipta Arsip      : Kementerian ATR/BPN`, 30);
                 doc.text(`Unit Pengolah        : ${unitPengolah}`, 30);
             } else {
-                // Formulir 4 – Daftar Arsip Aktif
-                doc.fontSize(16).font('Helvetica-Bold').text('DAFTAR ARSIP AKTIF', { align: 'center' });
+                // Formulir 4 – Daftar Arsip Aktif; tanpa formulirType (ekspor
+                // Laporan) isinya semua arsip sehingga judulnya netral.
+                doc.fontSize(16).font('Helvetica-Bold').text(formulirType === undefined ? JUDUL_DAFTAR_ARSIP : JUDUL_FORMULIR4, { align: 'center' });
                 doc.moveDown(0.5);
                 doc.fontSize(10).font('Helvetica').text(`Unit Pengolah : ${unitPengolah}`, 30);
             }
@@ -996,7 +985,9 @@ export class ExportService {
                 }
                 doc.fontSize(8).text(totalFormulirArsip(jumlahArsip, data.length), 30, yPos + 20);
                 if (adaDipotong) doc.fontSize(7).text(CATATAN_TEKS_DIPOTONG, 30, yPos + 35, { width: 540 });
-                doc.fontSize(7).text('Formulir 4. Daftar Arsip Aktif', 600, yPos + 35, { align: 'right' });
+                if (formulirType !== undefined) {
+                    doc.fontSize(7).text('Formulir 4. Daftar Arsip Aktif', 600, yPos + 35, { align: 'right' });
+                }
             }
 
             doc.end();

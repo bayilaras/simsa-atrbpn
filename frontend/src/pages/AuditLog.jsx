@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, Filter, Clock, User, FileText, Edit, Trash2, Archive, Plus, RefreshCw, Loader2, AlertTriangle, ChevronDown, ChevronRight, Laptop, CalendarRange, Shield, Eye, GitMerge, Link, X, Send, Inbox, CheckCircle2, XCircle, LogIn, LogOut, ShieldAlert, KeyRound, Download, ShieldCheck, Lock, Unlock } from 'lucide-react';
+import { Search, Filter, Clock, User, FileText, Edit, Trash2, Archive, Plus, RefreshCw, Loader2, AlertTriangle, ChevronDown, ChevronRight, Laptop, CalendarRange, Shield, Eye, GitMerge, Link, X, Send, Inbox, CheckCircle2, XCircle, LogIn, LogOut, ShieldAlert, KeyRound, Download, ShieldCheck, Lock, Unlock, FileSpreadsheet } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,8 @@ import {
 } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import auditLogService from '@/services/audit-log.service';
+import { useAuth } from '@/context/AuthContext';
+import { canExportReports } from '@/lib/provisioning-access';
 import { Skeleton } from "@/components/ui/skeleton"
 
 const ACTION_CONFIG = {
@@ -57,6 +59,8 @@ const ENTITY_CONFIG = {
     'rangkaian_relasi': { label: 'Relasi Rangkaian', color: 'text-sky-700', bgColor: 'bg-sky-50 dark:bg-sky-500/15' },
     'surat_distribution': { label: 'Disposisi', color: 'text-teal-700', bgColor: 'bg-teal-50 dark:bg-teal-500/15' },
     'file_attachment': { label: 'Berkas', color: 'text-slate-700', bgColor: 'bg-slate-50 dark:bg-slate-500/15' },
+    'archive_lending': { label: 'Peminjaman Arsip', color: 'text-orange-700', bgColor: 'bg-orange-50 dark:bg-orange-500/15' },
+    'audit_log': { label: 'Audit Log', color: 'text-indigo-700', bgColor: 'bg-indigo-50 dark:bg-indigo-500/15' },
 };
 
 // Status changes.itemSync pada audit ubah arsip (StatusSinkronItemArsip di
@@ -66,6 +70,11 @@ const LABEL_SINKRON_ITEM = {
 };
 
 export default function AuditLog() {
+    const { user } = useAuth();
+    // Server hanya mengizinkan Super Admin mengekspor audit log.
+    const canExport = user?.role === 'super_admin' && canExportReports(user.role);
+    const [exporting, setExporting] = useState(false);
+    const [exportError, setExportError] = useState(null);
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -125,6 +134,26 @@ export default function AuditLog() {
         const timer = setTimeout(loadLogs, 300);
         return () => clearTimeout(timer);
     }, [loadLogs]);
+
+    // Ekspor memakai penyaring yang sama dengan daftar, tanpa halaman.
+    const handleExport = async () => {
+        setExporting(true);
+        setExportError(null);
+        try {
+            const params = {};
+            if (entityType && entityType !== 'all') params.entityType = entityType;
+            if (action && action !== 'all') params.action = action;
+            if (search) params.search = search;
+            if (startDate) params.startDate = startDate;
+            if (endDate) params.endDate = endDate;
+            await auditLogService.exportLogs(params);
+        } catch (err) {
+            // api.js sudah mengisi message dari jawaban server (422 batas ekspor, 429).
+            setExportError(err?.message || 'Gagal mengekspor audit log. Silakan coba lagi.');
+        } finally {
+            setExporting(false);
+        }
+    };
 
     const formatDate = (date) => {
         return new Date(date).toLocaleString('id-ID', {
@@ -224,11 +253,31 @@ export default function AuditLog() {
                         Riwayat aktivitas dan perubahan data sistem untuk keamanan dan audit
                     </p>
                 </div>
-                <Badge variant="outline" className="h-8 gap-2 bg-background">
-                    <Clock className="h-3.5 w-3.5" />
-                    Total: {pagination.total} Log
-                </Badge>
+                <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className="h-8 gap-2 bg-background">
+                        <Clock className="h-3.5 w-3.5" />
+                        Total: {pagination.total} Log
+                    </Badge>
+                    {canExport && (
+                        <Button variant="outline" size="sm" className="h-8" onClick={handleExport} disabled={exporting || loading}>
+                            {exporting ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5 mr-2" />}
+                            Ekspor Excel
+                        </Button>
+                    )}
+                </div>
             </div>
+            {canExport && (
+                <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                        Ekspor memuat seluruh log sesuai pencarian dan penyaring di bawah, paling banyak 10.000 baris. Berkas berisi ringkasan nama isian yang berubah, tanpa nilai sebelum dan sesudahnya.
+                    </p>
+                    {exportError && (
+                        <p role="alert" className="max-w-xl rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                            {exportError}
+                        </p>
+                    )}
+                </div>
+            )}
 
             {/* Filters */}
             <Card className="shadow-sm border-border/60">

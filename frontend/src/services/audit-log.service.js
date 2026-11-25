@@ -1,4 +1,5 @@
 import api from './api';
+import { unduhEkspor } from '@/lib/unduh-ekspor';
 
 const auditLogService = {
     /**
@@ -17,6 +18,21 @@ const auditLogService = {
 
         const query = searchParams.toString();
         return api.get(`/api/audit-log${query ? `?${query}` : ''}`);
+    },
+
+    /**
+     * Unduh audit log sebagai Excel. `params` sama dengan penyaring daftar,
+     * tanpa page/limit: berkas memuat seluruh hasil penyaring.
+     */
+    async exportLogs(params = {}) {
+        return unduhEkspor('/api/audit-log/export/excel', {
+            entityType: params.entityType,
+            action: params.action,
+            userId: params.userId,
+            search: params.search,
+            startDate: params.startDate,
+            endDate: params.endDate,
+        }, 'audit-log.xlsx');
     },
 
     /**

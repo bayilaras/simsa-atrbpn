@@ -578,7 +578,8 @@ Tab **Perlu Dilengkapi** (menu Surat ▸ Lacak Surat ▸ tab Perlu Dilengkapi) m
 Baris dikelompokkan dalam **enam kategori**: Surat masuk belum ditindaklanjuti, Disposisi belum selesai, Keputusan tanpa ND penjelas, Tindak lanjut tertahan, Siap diberkaskan, dan Surat keluar tanpa asal. Tombol aksi pada setiap baris (Tindak Lanjut, Disposisi, Berkaskan, Tautkan, dan lainnya) hanya muncul bila server mengizinkannya untuk pengguna yang login.
 
 - Ikon **🔔 badge** pada sidebar (menu Lacak Surat) menghitung total baris tanpa data lama, disegarkan seirama notifikasi.
-- Centang **"Tampilkan data lama"** untuk menyertakan rangkaian data lama dalam daftar.
+- Centang **"Tampilkan data lama"** untuk menyertakan rangkaian data lama dalam daftar. Surat hasil impor (Google Sheets, CSV, XLSX) yang belum menjadi bagian rangkaian juga termasuk data lama, sehingga register lama yang baru diimpor tidak memenuhi daftar.
+- **Tandai Selesai** pada baris surat masuk menutup surat yang tidak perlu didisposisikan atau dibalas (undangan, tembusan, edaran) dengan catatan minimal 10 karakter. Surat pindah ke kategori Siap diberkaskan, statusnya menjadi Sudah Dibalas, dan dapat dibuka kembali dari rangkaiannya. Tombol ini hanya tampil bagi admin unit pemilik surat dan hanya untuk surat yang belum punya rangkaian.
 - **Tandai Inisiatif** menandai surat keluar sebagai surat atas prakarsa sendiri (tanpa induk surat masuk); perubahan ini diaudit dan tidak mengubah isi surat.
 
 
@@ -908,8 +909,8 @@ Menampilkan ringkasan dan daftar surat, arsip, serta peminjaman untuk satu perio
 2. Pilih **Tahun**, atau isi **Dari Tanggal** dan **Sampai Tanggal**. Bila tanggal diisi, pilihan tahun diabaikan untuk surat masuk dan surat keluar.
 3. Klik **"Tampilkan Data"**.
 4. Buka tab **Ringkasan**, **Surat Masuk**, **Surat Keluar**, **Arsip**, atau **Peminjaman**.
-5. Pada tab Surat Masuk, Surat Keluar, atau Arsip, klik **Excel** atau **PDF** untuk mengekspor. Isi berkas surat sama dengan tabel di layar, dan judulnya menyebut periode bila tanggal diisi. Ekspor arsip hanya memakai tahun.
-6. Pada tab **Peminjaman**, peminjaman yang lewat jatuh tempo berstatus **Terlambat** dan dapat disaring dengan pilihan **Terlambat**.
+5. Pada tab Surat Masuk, Surat Keluar, Arsip, atau Peminjaman, klik **Excel** atau **PDF** untuk mengekspor. Isi berkas surat sama dengan tabel di layar, dan judulnya menyebut periode bila tanggal diisi. Ekspor arsip hanya memakai tahun dan berjudul **Daftar Arsip**.
+6. Pada tab **Peminjaman**, peminjaman yang lewat jatuh tempo berstatus **Terlambat** dan dapat disaring dengan pilihan **Terlambat**. Berkas ekspornya mengikuti penyaring status dan rentang tanggal pinjam, serta memuat kolom **Hari Terlambat**.
 
 Tanggal dan waktu pada laporan dan berkas ekspor mengikuti WIB. Pada PDF, baris yang lebih tinggi dari satu halaman dipotong dengan catatan *Teks yang terlalu panjang dipotong; versi Excel memuat isi lengkap.*
 

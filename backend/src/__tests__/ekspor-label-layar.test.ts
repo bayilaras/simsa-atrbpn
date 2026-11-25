@@ -238,7 +238,7 @@ describe('pesan galat ekspor berbahasa Indonesia', () => {
     });
 
     it('jenis laporan yang tidak dikenal ditolak dengan pesan Indonesia', async () => {
-        const response = await request(app).get('/api/reports/export/peminjaman/excel').expect(400);
+        const response = await request(app).get('/api/reports/export/ringkasan/excel').expect(400);
         expect(response.body).toEqual({ error: 'Jenis laporan tidak dikenal.' });
     });
 });

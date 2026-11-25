@@ -216,4 +216,69 @@ describe.skipIf(!adaPostgres)('berkaskan dan status manual', () => {
         }
         expect(hasil.some((r2) => r2.status === 'fulfilled')).toBe(true);
     });
+
+    it('(h) tandai selesai surat masuk tanpa rangkaian: rangkaian baru selesai manual; pemanggilan ulang 409', async () => {
+        const catatan = 'Undangan sudah dihadiri, tidak perlu dibalas';
+        const sm = await h.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'B-10/2026' });
+        // Bukan pemilik surat (unit lain, staf unit pemilik) → 404 tanpa rangkaian.
+        await expect(berkasService.tandaiSelesaiSuratMasuk(ptep, sm, catatan, audit(ptep))).rejects.toMatchObject({ statusCode: 404 });
+        await expect(berkasService.tandaiSelesaiSuratMasuk(stafSes, sm, catatan, audit(stafSes))).rejects.toMatchObject({ statusCode: 404 });
+        expect(await h.query('SELECT 1 FROM rangkaian_anggota WHERE surat_masuk_id = $1', [sm])).toEqual([]);
+
+        const hasil = await berkasService.tandaiSelesaiSuratMasuk(tu, sm, catatan, audit(tu));
+        expect(hasil).toMatchObject({ status: 'selesai', suratMasukId: sm });
+        const [rs] = await h.query(`SELECT rs.id, rs.asal, rs.status, rs.selesai_manual, rs.selesai_by, rs.catatan_selesai, rs.unit_pencatat_id, ra.peran
+              FROM rangkaian_anggota ra JOIN rangkaian_surat rs ON rs.id = ra.rangkaian_id WHERE ra.surat_masuk_id = $1`, [sm]);
+        expect(rs).toEqual({
+            id: hasil.id, asal: 'surat_masuk', status: 'selesai', selesai_manual: true, selesai_by: tu.id, catatan_selesai: catatan,
+            unit_pencatat_id: 'sesditjen', peran: 'induk',
+        });
+        expect((await h.query('SELECT status FROM surat_masuk WHERE id = $1', [sm]))[0].status).toBe('sudah_dibalas');
+        const jejak = await h.query<{ kunci: string }>(`SELECT entity_type || ':' || action AS kunci FROM audit_log
+             WHERE entity_id = ANY($1::uuid[]) ORDER BY 1`, [[sm, hasil.id]]);
+        expect(jejak.map((row) => row.kunci)).toEqual(['rangkaian_surat:create', 'rangkaian_surat:status_change', 'surat_masuk:status_change']);
+
+        // Sudah ber-rangkaian: ditolak 409, rangkaian tetap satu dan tidak berubah.
+        await expect(berkasService.tandaiSelesaiSuratMasuk(tu, sm, catatan, audit(tu))).rejects.toMatchObject({ statusCode: 409 });
+        expect(await h.query('SELECT rangkaian_id FROM rangkaian_anggota WHERE surat_masuk_id = $1', [sm])).toEqual([{ rangkaian_id: hasil.id }]);
+        // Selesai manual dapat dibuka kembali seperti rangkaian lain.
+        await berkasService.bukaKembali(tu, hasil.id, 'Ternyata perlu dibalas oleh pimpinan', audit(tu));
+        expect((await h.query('SELECT status, selesai_manual FROM rangkaian_surat WHERE id = $1', [hasil.id]))[0]).toEqual({ status: 'aktif', selesai_manual: false });
+    });
+
+    it('(i) tandai selesai surat masuk tanpa rangkaian ∥ distribute tanpa 40P01 (G-LOCK: surat → rangkaian)', async () => {
+        const sm = await h.insertSuratMasuk({ unitKerjaId: 'sesditjen', nomorSurat: 'B-11/2026' });
+        const transaksiAsli = h.db.transaction.bind(h.db);
+        const gagalKonkurensi: string[] = [];
+        const spy = vi.spyOn(h.db, 'transaction').mockImplementation(async (...args: any[]) => {
+            try {
+                return await (transaksiAsli as any)(...args);
+            } catch (error) {
+                for (const kode of ['40P01', '40001']) if (hasPostgresErrorCode(error, kode)) gagalKonkurensi.push(kode);
+                throw error;
+            }
+        });
+        let hasil: PromiseSettledResult<unknown>[];
+        try {
+            hasil = await Promise.allSettled([
+                berkasService.tandaiSelesaiSuratMasuk(tu, sm, 'Undangan sudah dihadiri, tidak perlu dibalas', audit(tu)),
+                distributionService.distribute({ suratMasukId: sm, sourceUnitId: 'sesditjen', targetUnitId: 'dir_ptep', sentBy: tu.id }, audit(tu)),
+            ]);
+        } finally {
+            spy.mockRestore();
+        }
+        expect(gagalKonkurensi).toEqual([]);
+        // Siapa pun yang menang, yang kalah hanya boleh gagal dengan 409 bisnis.
+        for (const r2 of hasil) {
+            if (r2.status === 'rejected') expect(r2.reason).toMatchObject({ statusCode: 409 });
+        }
+        expect(hasil.some((r2) => r2.status === 'fulfilled')).toBe(true);
+        // Surat masuk tetap hanya di satu rangkaian, apa pun urutannya.
+        const anggota = await h.query<{ rangkaian_id: string }>('SELECT rangkaian_id FROM rangkaian_anggota WHERE surat_masuk_id = $1', [sm]);
+        expect(anggota).toHaveLength(1);
+        // Disposisi yang berhasil dikirim selalu membuat rangkaiannya aktif (selesai manual dibuka kembali otomatis).
+        if (hasil[1].status === 'fulfilled') {
+            expect((await h.query('SELECT status FROM rangkaian_surat WHERE id = $1', [anggota[0].rangkaian_id]))[0].status).toBe('aktif');
+        }
+    });
 });

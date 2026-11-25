@@ -58,11 +58,16 @@ Sebagian besar pengguna diminta masuk sekali lagi. Hal ini wajar: masuk kembali 
 - **Impor CSV** arsip kini mengisi **No. Filing Cabinet**, **No. Laci**, **No. Folder**, dan **Kode Lokasi Simpan**, serta menerima Jenis Arsip `lainnya`.
 - **Cetak Disposisi** pada detail surat masuk membuka Lembar Disposisi siap cetak. Lihat [Lembar Disposisi](./manajemen-surat/surat-masuk.md#lembar-disposisi).
 - **Pengingat peminjaman:** lonceng notifikasi admin menampilkan peminjaman yang terlambat atau jatuh tempo dalam dua hari. Lihat [Pengingat jatuh tempo](./layanan-fisik/peminjaman.md#pengingat-jatuh-tempo).
+- **Tandai Selesai** di tab Perlu Dilengkapi menutup surat masuk yang tidak perlu didisposisikan atau dibalas, misalnya undangan, tembusan, atau edaran. Lihat [Menandai surat masuk selesai tanpa balasan](./manajemen-surat/rangkaian-surat.md#menandai-surat-masuk-selesai-tanpa-balasan).
+- Surat hasil impor tidak lagi memenuhi tab Perlu Dilengkapi; centang **Tampilkan data lama** untuk melihatnya. Lihat [Surat hasil impor dan data lama](./manajemen-surat/rangkaian-surat.md#surat-hasil-impor-dan-data-lama).
 
 ## Laporan, ekspor, dan pencarian
 
 - Waktu pada berkas ekspor ditulis dalam WIB. Ekspor Super Admin dari daftar surat atau arsip dengan pilihan **Semua Unit Kerja** memuat kolom **Unit Kerja**. Teks yang terlalu panjang untuk satu halaman PDF dipotong dengan catatan; versi Excel memuat isi lengkap.
 - Tab **Peminjaman** di Laporan menampilkan dan menyaring peminjaman yang lewat jatuh tempo sebagai **Terlambat**.
+- Tab **Peminjaman** di Laporan kini dapat diekspor ke **Excel** atau **PDF**, lengkap dengan arsip atau boks yang dipinjam dan kolom **Hari Terlambat**. Lihat [Ekspor tab Peminjaman](./administrasi/laporan.md#ekspor-tab-peminjaman).
+- Halaman **Distribusi** memiliki **Ekspor Excel** dan **Ekspor PDF** untuk rekap disposisi Kotak Masuk atau Kotak Keluar. Surat yang tampil **Dikecualikan** tetap tertulis Dikecualikan di berkas. Lihat [Mengekspor Rekap Disposisi](./manajemen-surat/distribusi.md#mengekspor-rekap-disposisi).
+- Berkas arsip yang diekspor dari halaman Laporan kini berjudul **Daftar Arsip**, karena memuat semua arsip dan bukan hanya arsip aktif.
 - Pencarian `Ctrl+K` menampilkan *Menampilkan 10 dari N hasil.* dan tombol **Tampilkan lebih banyak**. Pencarian tidak mencakup isi PDF hasil pindaian.
 - Angka "bulan ini" di Dashboard dan tanggal pada laporan mengikuti WIB.
 
@@ -70,6 +75,7 @@ Sebagian besar pengguna diminta masuk sekali lagi. Hal ini wajar: masuk kembali 
 
 - Akun Google yang menunggu persetujuan hanya disetujui lewat **Setujui akses** setelah mencentang *Saya sudah memastikan langsung kepada pemilik email ini.* Pilihan **Ubah Peran/Unit** tidak tampil untuk akun tersebut.
 - Audit Log mencatat aksi **Masuk**, **Gagal masuk**, **Keluar**, **Mengganti kata sandi**, dan **Menjalankan Pemindai**.
+- Audit Log dapat diunduh dengan **Ekspor Excel** sesuai pencarian dan penyaring yang sedang dipakai. Lihat [Mengekspor Audit Log](./administrasi/audit-log.md#mengekspor-audit-log).
 - Header menampilkan tanda **Operasional: perlu perhatian** atau **Operasional: gagal** yang membuka Monitoring Operasional. Kartu pemindai memiliki tombol **Jalankan pemindai**, dan ada pemeriksaan baru **Pembersihan unggahan langsung**.
 - Keterangan mode **Tayang saja** kini menjelaskan bahwa isi berkas tetap tampil di layar peminta dan dapat disalin; setiap penayangan tercatat di Audit Log.
 - Tab **Surat Terhapus** di Surat Masuk dan Surat Keluar untuk melihat dan memulihkan surat yang dihapus.

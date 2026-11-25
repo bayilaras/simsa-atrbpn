@@ -14,6 +14,7 @@
     "rangkaian:backfill-lama:apply": "node scripts/backfill-rangkaian-lama.mjs --apply",
     "rangkaian:backfill-lama:isi-pengolah:plan": "node scripts/backfill-rangkaian-lama.mjs --isi-pengolah",
     "rangkaian:backfill-lama:isi-pengolah:apply": "node scripts/backfill-rangkaian-lama.mjs --isi-pengolah --apply",
+    "surat:tandai-impor": "node scripts/tandai-surat-impor.mjs",
     "start:files:letter-scan-backfill:plan": "node dist/scripts/backfill-letter-attachment-scan.js",
     "start:files:letter-scan-backfill:apply": "node dist/scripts/backfill-letter-attachment-scan.js --apply",
     "dev:malware-worker": "tsx src/workers/malware-scan.ts",

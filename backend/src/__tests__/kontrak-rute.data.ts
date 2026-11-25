@@ -120,6 +120,7 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
     },
     'audit-log.routes.ts': {
         'GET /': proyeksi('auditLogService.listLogs'),
+        'GET /export/excel': proyeksi('eksporAuditLogService.tabel'),
         'GET /:entityType/:entityId': checkRead('auditLogService.getEntityHistory'),
     },
     'autentikasi.routes.ts': {
@@ -155,6 +156,7 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'GET /inbox': proyeksi('distributionService.findInbox'),
         'GET /outbox': proyeksi('distributionService.findOutbox'),
         'GET /stats': proyeksi('distributionService.getStats'),
+        'GET /export/:kotak/:format': proyeksi('eksporDisposisiService.tabel'),
         'GET /surat/:suratId': checkRead('recordAccessService.check'),
         'GET /:id/kandidat-penyelesaian': proyeksi('distributionService.kandidatPenyelesaian'),
         'GET /:id': checkRead('recordAccessService.checkRead'),
@@ -294,6 +296,7 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'GET /perlu-dilengkapi/ringkasan': proyeksi('perluDilengkapiService.ringkasan'),
         'GET /perlu-dilengkapi': proyeksi('perluDilengkapiService.list'),
         'POST /surat-keluar/:suratKeluarId/tandai-inisiatif': check('asalNaskahService.tandaiInisiatif'),
+        'POST /surat-masuk/:suratMasukId/selesai': check('berkasService.tandaiSelesaiSuratMasuk'),
     },
     'rangkaian.routes.ts': {
         'GET /lacak': proyeksi('lacakService.search'),
@@ -346,6 +349,7 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'GET /arsip': proyeksi('reportService.getArsipReport'),
         'GET /lending': proyeksi('reportService.getLendingReport'),
         'GET /summary': proyeksi('reportService.getSummaryReport'),
+        'GET /export/peminjaman/:format': proyeksi('eksporPeminjamanService.tabel'),
         'GET /export/:type/:format': proyeksi('exportService.generate'),
     },
     'retention-governance.routes.ts': {
