@@ -49,6 +49,7 @@ vi.mock('../middlewares/auth.middleware.js', () => ({
 
 vi.mock('../middlewares/role.middleware.js', () => ({
     canWriteMiddleware: () => (_req: any, _res: any, next: any) => next(),
+    permissionMiddleware: () => (_req: any, _res: any, next: any) => next(),
     roleMiddleware: (allowedRoles: string[]) => (req: any, res: any, next: any) => {
         const staffHierarchy = ['super_admin', 'admin_dirjen', 'admin_sesditjen', 'staff'];
         if (allowedRoles.includes('staff') && staffHierarchy.includes(req.user?.role)) return next();
