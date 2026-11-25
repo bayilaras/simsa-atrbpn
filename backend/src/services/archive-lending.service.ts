@@ -432,16 +432,19 @@ export class ArchiveLendingService {
         unitKerjaId: string,
         notes?: string,
         auditContext?: CriticalAuditContext,
+        securityClassifications: string[] = [],
     ) {
         const returnDate = jakartaDate();
 
         return await db.transaction(async (tx: any) => {
             // Lock and scope the authoritative lending row inside the same
-            // transaction used for all state changes.
+            // transaction used for all state changes. The row is resolved with
+            // the visibility of the list and findById: a loan on an archive
+            // above the caller's class ceiling is answered like a missing one.
             const [lending] = await tx
                 .select()
                 .from(archiveLending)
-                .where(this.scopedWhere(unitKerjaId, eq(archiveLending.id, lendingId)))
+                .where(this.readableWhere(unitKerjaId, securityClassifications, eq(archiveLending.id, lendingId)))
                 .limit(1)
                 .for('update');
 
@@ -523,16 +526,18 @@ export class ArchiveLendingService {
         unitKerjaId: string,
         newDueDate: string,
         auditContext?: CriticalAuditContext,
+        securityClassifications: string[] = [],
     ) {
         if (newDueDate < jakartaDate()) {
             throw new ValidationError(PESAN_JATUH_TEMPO_LAMPAU);
         }
 
         return await db.transaction(async (tx: any) => {
+            // Same visibility as the list and findById (see return()).
             const [lending] = await tx
                 .select()
                 .from(archiveLending)
-                .where(this.scopedWhere(unitKerjaId, eq(archiveLending.id, lendingId)))
+                .where(this.readableWhere(unitKerjaId, securityClassifications, eq(archiveLending.id, lendingId)))
                 .limit(1)
                 .for('update');
 

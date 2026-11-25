@@ -345,7 +345,7 @@ describe('Ubah Metadata saat boks atau arsip dipinjam', () => {
             borrowerId: userId, borrowerName: 'Peminjam', dueDate: '2026-09-20',
         }, 'ditjen', undefined, ['biasa']);
         expect((await database.query<any>('SELECT lending_status FROM arsip')).rows[0].lending_status).toBe('borrowed');
-        await archiveLendingService.return(pinjam.id, 'ditjen');
+        await archiveLendingService.return(pinjam.id, 'ditjen', undefined, undefined, ['biasa']);
         const result = await service.update(archiveId, { keterangan: 'Deskripsi baru' }, { userId, userEmail: 'stale@example.test' },
             { expectedUpdatedAt: dimuat });
         expect(result?.keterangan).toBe('Deskripsi baru');

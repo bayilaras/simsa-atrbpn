@@ -202,7 +202,7 @@ router.put('/:id/return', canWriteMiddleware(), validateBody(returnLendingSchema
             userId: req.user?.id,
             userEmail: req.user?.email,
             ipAddress: req.ip,
-        });
+        }, allowedSecurityClassifications(req.user));
 
         res.json({ success: true, data: result });
     } catch (error) {
@@ -228,7 +228,7 @@ router.put('/:id/extend', canWriteMiddleware(), validateBody(extendLendingSchema
             userId: req.user?.id,
             userEmail: req.user?.email,
             ipAddress: req.ip,
-        });
+        }, allowedSecurityClassifications(req.user));
 
         res.json({ success: true, data: result });
     } catch (error) {

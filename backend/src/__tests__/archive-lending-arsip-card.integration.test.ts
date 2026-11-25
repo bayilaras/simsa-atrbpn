@@ -293,3 +293,85 @@ describe('PUT /api/archive-lending/:id/extend', () => {
         expect((await kartu(ARSIP.terlambat, PENGGUNA.tu)).active[0]).toMatchObject({ status: 'borrowed', daysOverdue: 0, dueDate: hariIni });
     });
 });
+
+describe('PUT /:id/return dan /:id/extend mengikuti plafon kelas daftar Peminjaman', () => {
+    const TIDAK_ADA = '76000000-0000-4000-8000-0000000000ff';
+    const barisPinjaman = async (kolom: 'arsip_id' | 'storage_location_id', id: string) =>
+        (await database.query<any>(
+            `SELECT id, status, due_date::text AS due_date, return_date::text AS return_date, notes, updated_at::text AS updated_at
+             FROM archive_lending WHERE ${kolom} = $1 AND return_date IS NULL`, [id],
+        )).rows[0];
+    const jumlahAudit = async () =>
+        (await database.query<{ n: number }>("SELECT count(*)::int AS n FROM audit_log WHERE entity_type = 'archive_lending'")).rows[0].n;
+    const kembalikan = (id: string, user: object, query = '') =>
+        request(app).put(`/api/archive-lending/${id}/return${query}`).set(sebagai(user)).send({ notes: 'Kembali lengkap' });
+    const perpanjang = (id: string, user: object, query = '') =>
+        request(app).put(`/api/archive-lending/${id}/extend${query}`).set(sebagai(user)).send({ newDueDate: geserHari(hariIni, 30) });
+
+    it('pinjaman arsip di atas plafon dijawab seperti pinjaman yang tidak ada; tidak ada yang berubah', async () => {
+        const semula = await barisPinjaman('arsip_id', ARSIP.rahasia);
+        const tidakAdaKembali = await kembalikan(TIDAK_ADA, PENGGUNA.tu).expect(404);
+        const tidakAdaPerpanjang = await perpanjang(TIDAK_ADA, PENGGUNA.tu).expect(404);
+        expect(tidakAdaKembali.body).toEqual({ error: 'Data peminjaman tidak ditemukan.' });
+
+        const kembali = await kembalikan(semula.id, PENGGUNA.tu).expect(404);
+        const panjang = await perpanjang(semula.id, PENGGUNA.tu).expect(404);
+        expect(kembali.body).toEqual(tidakAdaKembali.body);
+        expect(panjang.body).toEqual(tidakAdaPerpanjang.body);
+        // Pinjaman unit lain mendapat jawaban yang sama.
+        const unitLain = await barisPinjaman('arsip_id', ARSIP.bppt);
+        expect((await kembalikan(unitLain.id, PENGGUNA.tu).expect(404)).body).toEqual(tidakAdaKembali.body);
+        expect((await perpanjang(unitLain.id, PENGGUNA.tu).expect(404)).body).toEqual(tidakAdaPerpanjang.body);
+
+        expect(await barisPinjaman('arsip_id', ARSIP.rahasia)).toEqual(semula);
+        expect(await barisPinjaman('arsip_id', ARSIP.bppt)).toEqual(unitLain);
+        expect(await statusArsip(ARSIP.rahasia)).toBe('borrowed');
+        expect(await jumlahAudit()).toBe(0);
+    });
+
+    it('Super Admin memperpanjang dan mengembalikan pinjaman arsip Rahasia', async () => {
+        const pinjaman = await barisPinjaman('arsip_id', ARSIP.rahasia);
+        await perpanjang(pinjaman.id, PENGGUNA.superAdmin, '?unitKerjaId=sesditjen').expect(200);
+        expect((await barisPinjaman('arsip_id', ARSIP.rahasia)).due_date).toBe(geserHari(hariIni, 30));
+        const kembali = await kembalikan(pinjaman.id, PENGGUNA.superAdmin, '?unitKerjaId=sesditjen').expect(200);
+        expect(kembali.body.data).toMatchObject({ status: 'returned', returnDate: hariIni, notes: 'Kembali lengkap' });
+        expect(await statusArsip(ARSIP.rahasia)).toBe('available');
+        expect(await jumlahAudit()).toBe(2);
+        // Unit yang salah tetap tidak menemukan pinjaman itu.
+        await perpanjang(pinjaman.id, PENGGUNA.superAdmin, '?unitKerjaId=dir_bppt').expect(404);
+    });
+
+    it('dalam plafon: admin unit memperpanjang dan mengembalikan pinjaman arsip Biasa dan Terbatas', async () => {
+        await request(app).post('/api/archive-lending/borrow').set(sebagai(PENGGUNA.tu))
+            .send({ lendingType: 'arsip', arsipId: ARSIP.terbatas, borrowerName: 'Peminjam Terbatas', dueDate: geserHari(hariIni, 7) }).expect(201);
+        for (const arsipId of [ARSIP.dipinjam, ARSIP.terbatas]) {
+            const pinjaman = await barisPinjaman('arsip_id', arsipId);
+            await perpanjang(pinjaman.id, PENGGUNA.tu).expect(200);
+            expect((await barisPinjaman('arsip_id', arsipId)).due_date).toBe(geserHari(hariIni, 30));
+            await kembalikan(pinjaman.id, PENGGUNA.tu).expect(200);
+            expect(await barisPinjaman('arsip_id', arsipId)).toBeUndefined();
+            expect(await statusArsip(arsipId)).toBe('available');
+        }
+        // Satu catatan audit untuk pencatatan, lalu perpanjangan dan pengembalian tiap pinjaman.
+        expect(await jumlahAudit()).toBe(5);
+    });
+
+    it('pinjaman boks tidak punya kelas arsip: admin unit tetap dapat memperpanjang dan mengembalikannya', async () => {
+        // Boks ini memuat arsip Biasa dan arsip Rahasia.
+        const pinjaman = await barisPinjaman('storage_location_id', BOKS.ses);
+        await perpanjang(pinjaman.id, PENGGUNA.tu).expect(200);
+        expect((await barisPinjaman('storage_location_id', BOKS.ses))).toMatchObject({ status: 'borrowed', due_date: geserHari(hariIni, 30) });
+        await kembalikan(pinjaman.id, PENGGUNA.tu).expect(200);
+        expect(await barisPinjaman('storage_location_id', BOKS.ses)).toBeUndefined();
+        expect(await statusArsip(ARSIP.dalamBoks)).toBe('available');
+        expect(await statusArsip(ARSIP.rahasiaDalamBoks)).toBe('available');
+        expect(await jumlahAudit()).toBe(2);
+        // Boks unit lain tidak terjangkau.
+        await database.exec(`INSERT INTO archive_lending (lending_type, storage_location_id, borrower_id, borrower_name, borrow_date, due_date, status)
+            VALUES ('box','${BOKS.bppt}','${USER_ID.bppt}','Peminjam Boks BPPT','${geserHari(hariIni, -2)}','${geserHari(hariIni, 5)}','borrowed')`);
+        const boksLain = await barisPinjaman('storage_location_id', BOKS.bppt);
+        await kembalikan(boksLain.id, PENGGUNA.tu).expect(404);
+        await perpanjang(boksLain.id, PENGGUNA.tu).expect(404);
+        expect(await barisPinjaman('storage_location_id', BOKS.bppt)).toEqual(boksLain);
+    });
+});

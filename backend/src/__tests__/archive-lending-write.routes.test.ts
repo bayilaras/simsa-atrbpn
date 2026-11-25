@@ -103,7 +103,7 @@ describe('PUT /:id/extend and /:id/return', () => {
     it('passes a valid extension to the service', async () => {
         const baru = geserHari(hariIni(), 14);
         await request(app).put(`/lending/${loanId}/extend`).send({ newDueDate: baru }).expect(200);
-        expect(mocks.service.extend).toHaveBeenCalledWith(loanId, 'ditjen', baru, expect.objectContaining({ userId: 'qa-admin' }));
+        expect(mocks.service.extend).toHaveBeenCalledWith(loanId, 'ditjen', baru, expect.objectContaining({ userId: 'qa-admin' }), ['biasa', 'terbatas']);
     });
 
     it('validates the return note', async () => {
@@ -111,8 +111,26 @@ describe('PUT /:id/extend and /:id/return', () => {
         await request(app).put(`/lending/${loanId}/return`).send({ notes: 'x'.repeat(2001) }).expect(400);
         expect(mocks.service.return).not.toHaveBeenCalled();
         await request(app).put(`/lending/${loanId}/return`).send({ notes: 'Kembali dalam kondisi baik' }).expect(200);
-        expect(mocks.service.return).toHaveBeenCalledWith(loanId, 'ditjen', 'Kembali dalam kondisi baik', expect.objectContaining({ userId: 'qa-admin' }));
+        expect(mocks.service.return).toHaveBeenCalledWith(loanId, 'ditjen', 'Kembali dalam kondisi baik', expect.objectContaining({ userId: 'qa-admin' }), ['biasa', 'terbatas']);
         await request(app).put(`/lending/${loanId}/return`).send({}).expect(200);
-        expect(mocks.service.return).toHaveBeenLastCalledWith(loanId, 'ditjen', undefined, expect.anything());
+        expect(mocks.service.return).toHaveBeenLastCalledWith(loanId, 'ditjen', undefined, expect.anything(), ['biasa', 'terbatas']);
+    });
+
+    it.each([
+        ['staff is read-only', 'staff', null],
+        ['super admin', 'super_admin', ['biasa', 'terbatas', 'rahasia', 'sangat_rahasia']],
+    ])('return and extend carry the class ceiling of the caller role (%s)', async (_label, role, classes) => {
+        mocks.user = { ...mocks.user, role, unitKerjaId: role === 'super_admin' ? null : 'ditjen' };
+        const baru = geserHari(hariIni(), 14);
+        const status = classes ? 200 : 403;
+        await request(app).put(`/lending/${loanId}/return`).query({ unitKerjaId: 'ditjen' }).send({}).expect(status);
+        await request(app).put(`/lending/${loanId}/extend`).query({ unitKerjaId: 'ditjen' }).send({ newDueDate: baru }).expect(status);
+        if (classes) {
+            expect(mocks.service.return).toHaveBeenCalledWith(loanId, 'ditjen', undefined, expect.anything(), classes);
+            expect(mocks.service.extend).toHaveBeenCalledWith(loanId, 'ditjen', baru, expect.anything(), classes);
+        } else {
+            expect(mocks.service.return).not.toHaveBeenCalled();
+            expect(mocks.service.extend).not.toHaveBeenCalled();
+        }
     });
 });
