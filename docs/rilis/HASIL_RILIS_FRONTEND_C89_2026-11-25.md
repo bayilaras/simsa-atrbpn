@@ -44,7 +44,20 @@ Tanpa login, segera setelah promosi:
 | Rute yang dilindungi | Menjawab 401 tanpa sesi, lewat backend langsung dan lewat proxy `/api` frontend |
 | Situs panduan | `/administrasi/audit-log` memuat penjelasan "(kosong)", waktu dalam WIB, dan petunjuk mengarahkan kursor; `/perubahan-november-2026` memuat catatan bahwa nilai ikut dirapikan |
 
-Belum diperiksa dengan akun nyata pada rilis ini, karena sesi di peramban pemeriksa sudah berakhir: nilai pada Detail Perubahan di baris Audit Log. Perubahan ini tercakup uji otomatis yang dijalankan saat build kandidat.
+Dengan akun Super Admin, 22:19–22:21. Tidak ada data yang disimpan: selain proses masuk, peramban hanya mengirim permintaan baca.
+
+| Bagian | Hasil |
+|---|---|
+| Penanda impor | Catatan `system:tandai-surat-impor` tertulis "(kosong) → 20 Okt 2026, 22.13.21 WIB". Nilai aslinya (`null` dan waktu ISO) muncul saat kursor diarahkan ke nilai |
+| Nilai kosong dan daftar | Pada halaman pertama catatan Mengubah sampai 24 November (50 catatan, 227 nilai): teks kosong dan daftar kosong tertulis "(kosong)"; daftar disposisi tertulis sebagai nama unit, tanpa kurung siku |
+| Tanggal | Pada halaman yang sama, 21 nilai tanggal tertulis seperti "23 November 2026", antara lain Tanggal Surat, Tanggal Diterima, Tanggal Mulai, dan Tanggal Selesai |
+| Ya/tidak | Pada halaman yang sama, 36 nilai tertulis "Ya" atau "Tidak" |
+| Teks biasa | Pada halaman yang sama, 160 nilai tampil sama seperti aslinya |
+| Nilai mentah | Tidak ada lagi `null`, `true`, `false`, tanggal ISO, atau `[object Object]` pada tiga halaman yang diperiksa (semua aksi, Mengubah, dan Mengubah sampai 24 November) |
+| Penyaring | Kedua penyaring punya nama: "Jenis data" dan "Aksi" |
+| Konsol peramban | Tanpa galat selama pemeriksaan |
+
+Satu hal terlihat saat pemeriksaan dan tidak diubah di rilis ini: sebagian nama isian masih berbahasa Inggris karena ditulis dari nama kolomnya, misalnya "Due Date", "Return Date", "Can Receive Distribution", dan "Email Notifications".
 
 ## Deployment
 
