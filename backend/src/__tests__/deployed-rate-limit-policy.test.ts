@@ -162,9 +162,11 @@ describe('deployed rate limit policy', { timeout: 30_000 }, () => {
         await signInAs('A@x.TEST').expect(429);
     });
 
-    it('keeps a ceiling of 30 failed attempts per network across accounts', async () => {
-        const { signInAs } = await authApp();
-        for (let i = 0; i < 30; i += 1) await signInAs(`staf${i}@x.test`).expect(401);
+    it('keeps a ceiling of 100 failed attempts per network across accounts', async () => {
+        const { signInAs, limits } = await authApp();
+        expect(limits.AUTH_FAILED_ATTEMPTS_PER_NETWORK).toBe(100);
+        // Satu kantor di balik satu alamat publik: 20 orang masing-masing gagal 5 kali.
+        for (let i = 0; i < 20; i += 1) await repeat(5, () => signInAs(`staf${i}@x.test`), 401);
         const limited = await signInAs('baru@x.test').expect(429);
         expect(limited.body).toEqual({
             error: 'Too Many Attempts',
@@ -272,7 +274,7 @@ describe('deployed rate limit policy', { timeout: 30_000 }, () => {
 
     it('applies the same refunds and account reset with local counters', async () => {
         const { signInAs, limits } = await authApp(signInOutcome, localDevelopment);
-        expect(limits.AUTH_FAILED_ATTEMPTS_PER_NETWORK).toBe(50);
+        expect(limits.AUTH_FAILED_ATTEMPTS_PER_NETWORK).toBe(100);
         await repeat(5, () => signInAs('a@x.test'), 401);
         // Retrying a locked account is not another failure for the network.
         await repeat(limits.AUTH_FAILED_ATTEMPTS_PER_NETWORK, () => signInAs('a@x.test'), 429);
@@ -332,6 +334,39 @@ describe('deployed rate limit policy', { timeout: 30_000 }, () => {
         expect(exportLimited.body.message).toBe('Terlalu banyak permintaan export. Coba lagi setelah 1 menit.');
         await exported('staff-b').expect(200);
         await exported().expect(200);
+    });
+
+    it('gives user management and lending their own quotas of 60 per user', async () => {
+        deployedDevelopment();
+        const limits = await import('../middlewares/rate-limiter.middleware.js');
+        expect(limits.USER_MANAGEMENT_RATE_LIMIT_MAX).toBe(60);
+        expect(limits.LENDING_RATE_LIMIT_MAX).toBe(60);
+        const app = express();
+        app.post('/api/users', limits.userManagementLimiter, (_req, res) => res.sendStatus(200));
+        app.post('/api/archive-lending/borrow', limits.lendingLimiter, (_req, res) => res.sendStatus(200));
+        app.post('/api/surat-terhapus/pulihkan', limits.sensitiveLimiter, (_req, res) => res.sendStatus(200));
+        const addUser = (user?: string) => asUser(request(app).post('/api/users'), user);
+        const borrow = (user?: string) => asUser(request(app).post('/api/archive-lending/borrow'), user);
+        const restore = (user?: string) => asUser(request(app).post('/api/surat-terhapus/pulihkan'), user);
+
+        // Menyiapkan 60 akun tidak mengurangi kuota peminjaman maupun operasi sensitif lain.
+        await repeat(60, () => addUser('staff-a'), 200);
+        const usersLimited = await addUser('staff-a').expect(429);
+        expect(usersLimited.body.message).toBe('Terlalu banyak perubahan data pengguna. Coba lagi setelah 15 menit.');
+        const firstLoan = await borrow('staff-a').expect(200);
+        expect(firstLoan.headers['ratelimit-remaining']).toBe('59');
+        const firstRestore = await restore('staff-a').expect(200);
+        expect(firstRestore.headers['ratelimit-remaining']).toBe(String(limits.SENSITIVE_RATE_LIMIT_MAX - 1));
+
+        await repeat(59, () => borrow('staff-a'), 200);
+        const lendingLimited = await borrow('staff-a').expect(429);
+        expect(lendingLimited.body.message).toBe('Terlalu banyak pencatatan peminjaman. Coba lagi setelah 15 menit.');
+        const secondRestore = await restore('staff-a').expect(200);
+        expect(secondRestore.headers['ratelimit-remaining']).toBe(String(limits.SENSITIVE_RATE_LIMIT_MAX - 2));
+
+        // Kuota tetap per pengguna.
+        await addUser('staff-b').expect(200);
+        await borrow('staff-b').expect(200);
     });
 
     it('does not count attachment reads against the per-user upload quota', async () => {

@@ -13,6 +13,7 @@ import {
     recordAccessService,
 } from '../services/record-access.service.js';
 import type { CriticalAuditContext } from '../services/audit-log.service.js';
+import { auditExport } from '../services/export-audit';
 
 const router = Router();
 
@@ -35,15 +36,24 @@ router.get('/print/daftar', canReadMiddleware(), async (req: AuthRequest, res, n
 
         // Daftar tercetak memakai filter yang sama dengan tabel di layar.
         const filterTeks = (nilai: unknown) => (typeof nilai === 'string' && nilai ? nilai.slice(0, 200) : undefined);
+        const filter = {
+            search: filterTeks(req.query.search),
+            kategoriVital: filterTeks(req.query.kategoriVital),
+            statusProteksi: filterTeks(req.query.statusProteksi),
+        };
         const pdfBuffer = await printTemplateService.generateDaftarArsipVital(
             unitKerjaId,
             allowedSecurityClassifications(req.user),
-            {
-                search: filterTeks(req.query.search),
-                kategoriVital: filterTeks(req.query.kategoriVital),
-                statusProteksi: filterTeks(req.query.statusProteksi),
-            },
+            filter,
         );
+        // Daftar tercetak adalah ekspor data: dicatat sebelum berkas dikirim,
+        // dan kegagalan pencatatan membatalkan pengiriman (sama dengan ekspor lain).
+        await auditExport(req, {
+            source: 'arsip-vital',
+            type: 'arsip',
+            format: 'pdf',
+            filters: { unitKerjaId, ...filter },
+        });
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename="daftar-arsip-vital-${unitKerjaId}.pdf"`);

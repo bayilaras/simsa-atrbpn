@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ChevronRight, ChevronDown, Search, Plus, Edit2, Trash2, MapPin, Loader2, QrCode, Building2, Archive, Package, Box as BoxIcon, Download, Layers } from 'lucide-react'
+import { ChevronRight, ChevronDown, Search, Plus, Edit2, Trash2, MapPin, Loader2, QrCode, Building2, Archive, Package, Download, Layers, AlertCircle, RefreshCw } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import storageLocationService from '@/services/storage-location.service'
 import { Skeleton } from "@/components/ui/skeleton"
@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast'
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope'
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope'
 import { pesanGalat } from '@/lib/pesan-galat'
+import { useKonfirmasi } from '@/hooks/use-konfirmasi'
 import { Link } from 'react-router-dom'
 import { rincianArsipLokasi, tautanArsipLokasi } from '@/components/arsip/lokasi-simpan'
 
@@ -184,9 +185,13 @@ export default function StorageLocations() {
     const unitScope = useRequiredUnitKerjaScope(user)
     const unitKerjaId = unitScope.unitKerjaId
     const { toast } = useToast()
+    const [konfirmasi, dialogKonfirmasi] = useKonfirmasi()
 
     const [treeData, setTreeData] = useState([])
     const [loading, setLoading] = useState(true)
+    // Muat yang gagal tidak boleh tampil sebagai "belum ada data".
+    const [loadError, setLoadError] = useState(false)
+    const [saving, setSaving] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
     const [dialogOpen, setDialogOpen] = useState(false)
     const [editMode, setEditMode] = useState(false)
@@ -211,13 +216,17 @@ export default function StorageLocations() {
     const fetchData = useCallback(async () => {
         if (!unitKerjaId) return
         setLoading(true)
+        setLoadError(false)
         try {
             const response = await storageLocationService.getTree(unitKerjaId)
-            if (response.success) {
-                setTreeData(response.data)
+            if (!response?.success || !Array.isArray(response.data)) {
+                throw new Error('Data lokasi penyimpanan tidak lengkap.')
             }
+            setTreeData(response.data)
         } catch (error) {
             console.error('Gagal memuat data lokasi:', error)
+            setTreeData([])
+            setLoadError(true)
         } finally {
             setLoading(false)
         }
@@ -228,6 +237,7 @@ export default function StorageLocations() {
             fetchData()
         } else {
             setTreeData([])
+            setLoadError(false)
             setLoading(false)
         }
     }, [fetchData, unitKerjaId])
@@ -260,7 +270,8 @@ export default function StorageLocations() {
 
     // Handle save
     const handleSave = async () => {
-        if (!unitKerjaId) return
+        if (!unitKerjaId || saving) return
+        setSaving(true)
         try {
             const data = {
                 ...formData,
@@ -289,6 +300,8 @@ export default function StorageLocations() {
                 title: 'Gagal menyimpan data',
                 description: pesanGalat(error, 'Terjadi kesalahan'),
             })
+        } finally {
+            setSaving(false)
         }
     }
 
@@ -325,7 +338,14 @@ export default function StorageLocations() {
 
     const handleDelete = async (node) => {
         if (!unitKerjaId) return
-        if (!confirm(`Hapus lokasi "${node.code} - ${node.name}"?`)) return
+        const setuju = await konfirmasi({
+            judul: 'Hapus lokasi penyimpanan?',
+            pesan: `Lokasi "${node.code} - ${node.name}" akan dihapus dari daftar.`,
+            aksi: 'Hapus',
+            batal: 'Batal',
+            berbahaya: true,
+        })
+        if (!setuju) return
 
         try {
             await storageLocationService.delete(node.id, unitKerjaId)
@@ -448,7 +468,7 @@ export default function StorageLocations() {
                                 </CardTitle>
                             </CardHeader>
                             <CardContent>
-                                <div className={`text-2xl font-bold ${config.textColor}`}>{count}</div>
+                                <div className={`text-2xl font-bold ${config.textColor}`}>{loadError ? '—' : count}</div>
                             </CardContent>
                         </Card>
                     )
@@ -477,6 +497,15 @@ export default function StorageLocations() {
                             {[1, 2, 3, 4, 5].map(i => (
                                 <Skeleton key={i} className="h-12 w-full" />
                             ))}
+                        </div>
+                    ) : loadError ? (
+                        <div role="alert" className="flex flex-col items-center gap-3 px-4 py-12 text-center">
+                            <AlertCircle className="h-8 w-8 text-destructive" aria-hidden="true" />
+                            <p className="font-medium">Gagal memuat lokasi penyimpanan</p>
+                            <p className="text-sm text-muted-foreground">Data lokasi yang tersimpan tidak berubah. Periksa koneksi Anda lalu coba lagi.</p>
+                            <Button variant="outline" onClick={fetchData}>
+                                <RefreshCw className="h-4 w-4" aria-hidden="true" /> Coba lagi
+                            </Button>
                         </div>
                     ) : filteredData.length === 0 ? (
                         <div className="text-center py-16 text-muted-foreground">
@@ -519,24 +548,33 @@ export default function StorageLocations() {
                     <div className="grid gap-4 py-4">
                         <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
                             <Label htmlFor="level" className="sm:text-right">Level</Label>
+                            {/* Level tidak pernah dipilih bebas: lokasi tanpa induk selalu gedung,
+                                sub-lokasi mengikuti induknya, dan level lokasi lama tidak diubah. */}
                             <Select
                                 value={formData.level}
                                 onValueChange={(v) => setFormData({ ...formData, level: v })}
-                                disabled={editMode || parentItem}
+                                disabled
                             >
-                                <SelectTrigger className="sm:col-span-3">
+                                <SelectTrigger id="level" className="sm:col-span-3">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {Object.entries(LEVEL_CONFIG).map(([key, config]) => (
-                                        <SelectItem key={key} value={key}>
-                                            <div className="flex items-center gap-2">
-                                                <config.icon className="h-4 w-4" /> {config.label}
-                                            </div>
-                                        </SelectItem>
-                                    ))}
+                                    {Object.entries(LEVEL_CONFIG)
+                                        .filter(([key]) => editMode || parentItem || key === 'gedung')
+                                        .map(([key, config]) => (
+                                            <SelectItem key={key} value={key}>
+                                                <div className="flex items-center gap-2">
+                                                    <config.icon className="h-4 w-4" /> {config.label}
+                                                </div>
+                                            </SelectItem>
+                                        ))}
                                 </SelectContent>
                             </Select>
+                            {!editMode && !parentItem && (
+                                <p className="text-xs text-muted-foreground sm:col-span-3 sm:col-start-2">
+                                    Lokasi paling atas selalu gedung. Ruang, rak, dan box ditambahkan lewat tombol + pada lokasi induknya.
+                                </p>
+                            )}
                         </div>
 
                         <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
@@ -589,15 +627,18 @@ export default function StorageLocations() {
                     </div>
 
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                        <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>
                             Batal
                         </Button>
-                        <Button onClick={handleSave} className="bg-primary hover:bg-primary/90">
-                            {editMode ? 'Simpan Perubahan' : 'Tambah'}
+                        <Button onClick={handleSave} disabled={saving} className="bg-primary hover:bg-primary/90">
+                            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
+                            {saving ? 'Menyimpan…' : editMode ? 'Simpan Perubahan' : 'Tambah'}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {dialogKonfirmasi}
 
             {/* QR Code Dialog */}
             <QRCodeDialog

@@ -29,6 +29,7 @@ import {
 import { hasPermission, type Role } from '../config/permissions';
 import { lockAuthorizationMandatesShared } from '../utils/authorization-mandate-lock';
 import { pastikanBelumBerubah } from '../utils/versi-rekaman.js';
+import { hasPostgresErrorCode } from '../utils/postgres-errors.js';
 import { jakartaTanggalPanjang } from '../utils/jakarta-date.js';
 import { isAllowedForClassification, recordAccessService } from './record-access.service';
 import { barisDari, kelasSumberSurat, normalizeSecurityClassification, rankKelas } from './access/visibility-spec';
@@ -224,6 +225,32 @@ function lokasiDanSubLokasi(storageLocationId: string): SQL {
 
 export const PESAN_KELAS_DI_BAWAH_SUMBER = 'Klasifikasi arsip tidak boleh lebih rendah dari surat sumber';
 
+export const PESAN_ATURAN_BEDA_SUMBER =
+    'Pilihan klasifikasi atau JRA berbeda dari surat sumber. Ubah pilihan pada surat sumber sebelum mengarsipkan.';
+// Surat keluar hanya dapat diarsipkan setelah disetujui, dan surat yang sudah
+// disetujui tidak dapat disunting, jadi "ubah surat sumber" bukan jalan keluar.
+// Rekonsiliasi pada detail arsip dapat mengganti JRA; kode klasifikasi arsip
+// dari surat tetap dijaga sama dengan suratnya oleh pengaman basis data (0021).
+export const PESAN_ATURAN_BEDA_SURAT_KELUAR_DISETUJUI =
+    'Pilihan klasifikasi atau JRA berbeda dari surat keluar sumber, dan surat keluar yang sudah disetujui tidak dapat diubah. '
+    + 'Arsipkan dengan klasifikasi dan JRA yang tercatat pada surat. '
+    + 'Bila JRA perlu diganti, gunakan tombol "Rekonsiliasi Klasifikasi/JRA" di halaman detail arsip sesudahnya; '
+    + 'kode klasifikasi arsip tetap mengikuti surat.';
+
+export const PESAN_KLASIFIKASI_ARSIP_IKUT_SURAT =
+    'Kode klasifikasi arsip yang berasal dari surat harus sama dengan klasifikasi suratnya, jadi tidak dapat diganti lewat rekonsiliasi. '
+    + 'Pilih butir dengan kode klasifikasi yang sama; JRA tetap dapat diganti.';
+
+function pesanGalatMemuat(error: unknown, potongan: string): boolean {
+    let current: unknown = error;
+    for (let depth = 0; depth < 16 && current && typeof current === 'object'; depth += 1) {
+        const candidate = current as { message?: unknown; cause?: unknown };
+        if (typeof candidate.message === 'string' && candidate.message.includes(potongan)) return true;
+        current = candidate.cause;
+    }
+    return false;
+}
+
 function dispositionLabel(code: string | null | undefined): Arsip['hasilAkhir'] {
     if (code === 'musnah') return 'Musnah';
     if (code === 'permanen') return 'Permanen';
@@ -234,10 +261,25 @@ export class ArsipService {
     private assertRuleIdentityMatchesSource(
         assignment: { cache: { klasifikasiArsipId: number; jraItemId: number } },
         source: { klasifikasiItemId?: number | null; jraItemId?: number | null },
+        pesan: string = PESAN_ATURAN_BEDA_SUMBER,
     ) {
         if ((source.klasifikasiItemId && source.klasifikasiItemId !== assignment.cache.klasifikasiArsipId)
             || (source.jraItemId && source.jraItemId !== assignment.cache.jraItemId)) {
-            throw new ValidationError('Pilihan klasifikasi atau JRA berbeda dari surat sumber. Ubah pilihan pada surat sumber sebelum mengarsipkan.');
+            throw new ValidationError(pesan);
+        }
+    }
+
+    // Migration 0021 keeps a source-linked archive's classification code equal
+    // to its letter's. Without this mapping a reconciliation to another code
+    // surfaces as an unexplained 500.
+    private async denganPesanKlasifikasiSumber<T>(operasi: () => Promise<T>): Promise<T> {
+        try {
+            return await operasi();
+        } catch (error) {
+            if (hasPostgresErrorCode(error, '23514') && pesanGalatMemuat(error, 'Archive classification does not match source')) {
+                throw new ValidationError(PESAN_KLASIFIKASI_ARSIP_IKUT_SURAT);
+            }
+            throw error;
         }
     }
 
@@ -653,7 +695,7 @@ export class ArsipService {
             throw new ValidationError('Alasan rekonsiliasi minimal 10 karakter.');
         }
 
-        return db.transaction(async (tx: any) => {
+        return this.denganPesanKlasifikasiSumber(() => db.transaction(async (tx: any) => {
             const [existing] = await tx
                 .select()
                 .from(arsip)
@@ -725,7 +767,7 @@ export class ArsipService {
                 }, tx);
             }
             return result;
-        });
+        }));
     }
 
     async update(
@@ -1267,7 +1309,7 @@ export class ArsipService {
                 klasifikasiItemId: metadata.klasifikasiItemId ?? (metadata.kodeKlasifikasi?.trim() ? undefined : surat.klasifikasiItemId ?? undefined),
                 jraItemId: metadata.jraItemId ?? (metadata.jraKode?.trim() ? undefined : surat.jraItemId ?? undefined),
             });
-            this.assertRuleIdentityMatchesSource(assignment, surat);
+            this.assertRuleIdentityMatchesSource(assignment, surat, PESAN_ATURAN_BEDA_SURAT_KELUAR_DISETUJUI);
             // Surat tanpa identitas katalog (kode mentah dari sumber impor) tidak
             // dapat dicocokkan secara harfiah dan tidak dapat lagi disunting
             // setelah disetujui. Butir katalog pilihan pengarsip dipakai, dan kode

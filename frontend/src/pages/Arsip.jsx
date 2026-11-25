@@ -3,9 +3,12 @@ import { useAuth } from '@/context/AuthContext'
 import { useAppConfig } from '@/context/app-config-context'
 import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope'
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Archive, RefreshCw, Search, Eye, Clock, Upload, ChevronUp, ExternalLink, Inbox, Filter, ChevronDown, CheckCircle2, AlertCircle, FileText, MoreHorizontal, FolderArchive, Building2, X, Files } from 'lucide-react'
+import { Archive, RefreshCw, Search, Eye, Clock, Upload, ChevronUp, ExternalLink, Inbox, Filter, ChevronDown, CheckCircle2, AlertCircle, FileText, MoreHorizontal, FolderArchive, Building2, X, Files, Plus } from 'lucide-react'
+import { format, isValid, parseISO } from 'date-fns'
+import { id as localeId } from 'date-fns/locale'
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
+import ImportUnitRequiredButton from '@/components/ImportUnitRequiredButton'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { ExportButton } from '@/components/ExportButton'
@@ -73,6 +76,14 @@ const JENIS_TAB = Object.freeze({
     keluar: { hitungan: 'arsipKeluarCount', label: 'arsip surat keluar' },
     lainnya: { hitungan: 'arsipLainnyaCount', label: 'arsip lainnya' },
 })
+
+// Tanggal di daftar ditulis seperti di halaman detail arsip ("3 November 2026").
+// Nilai yang bukan tanggal ditampilkan apa adanya.
+function formatTanggal(nilai) {
+    if (!nilai) return '—'
+    const tanggal = nilai instanceof Date ? nilai : parseISO(String(nilai))
+    return isValid(tanggal) ? format(tanggal, 'd MMMM yyyy', { locale: localeId }) : String(nilai)
+}
 
 // Server baru mengisi nasib akhir setelah pemicu retensi terverifikasi; sampai
 // itu kolom memakai keterangan yang sama dengan halaman detail, dipendekkan.
@@ -277,6 +288,19 @@ export default function Arsip() {
 
                     {isAdmin && resolvedUnitKerjaId && <ImportCsvDialog type="arsip" unitKerjaId={resolvedUnitKerjaId} onImportComplete={() => setRefreshVersion(version => version + 1)} />}
 
+                    {/* Super Admin pada "Semua Unit Kerja": tombol tetap terlihat, tidak
+                        aktif, dengan petunjuk memilih unit (sama dengan impor surat). */}
+                    {isAdmin && isSuperAdmin && !resolvedUnitKerjaId && (
+                        <>
+                            <ImportUnitRequiredButton className={`${buttonVariants({ variant: 'default', size: 'sm' })} h-9`}>
+                                <Plus className="mr-2 h-3.5 w-3.5" aria-hidden="true" /> Tambah Arsip
+                            </ImportUnitRequiredButton>
+                            <ImportUnitRequiredButton className={`${buttonVariants({ variant: 'outline', size: 'sm' })} h-9`}>
+                                <Upload className="mr-2 h-3.5 w-3.5" aria-hidden="true" />Impor CSV
+                            </ImportUnitRequiredButton>
+                        </>
+                    )}
+
                     {canExportReports(user?.role) && (
                         <ExportButton
                             type="arsip"
@@ -391,7 +415,7 @@ export default function Arsip() {
                             <CardContent className="text-sm space-y-4 pt-4">
                                 <p className="text-muted-foreground leading-relaxed">
                                     Jadwal Retensi Arsip (JRA) memakai <strong>master aturan aktif yang sudah diverifikasi</strong>.
-                                    Sistem menghitung masa retensi hanya setelah klasifikasi, aturan JRA, dan pemicu retensinya tercatat secara kanonis.
+                                    Sistem menghitung masa retensi hanya setelah klasifikasi, aturan JRA, dan pemicu retensinya tercatat resmi.
                                 </p>
                                 <div className="space-y-3 pt-2">
                                     <div className="flex items-start gap-3">
@@ -584,7 +608,7 @@ export default function Arsip() {
                                                                 </div>
                                                             </TableCell>
                                                             <TableCell data-label="Tanggal / Unit" className="text-xs">
-                                                                <p>{row.tanggalArsip || row.tanggalSuratOriginal || '—'}</p>
+                                                                <p>{formatTanggal(row.tanggalArsip || row.tanggalSuratOriginal)}</p>
                                                                 <p className="mt-1 text-muted-foreground">{row.unitPengolah || unitKerjaList.find(unit => unit.id === row.unitKerjaId)?.name || row.unitKerjaId || '—'}</p>
                                                             </TableCell>
                                                             <TableCell data-label="Lokasi" className="text-xs text-muted-foreground">

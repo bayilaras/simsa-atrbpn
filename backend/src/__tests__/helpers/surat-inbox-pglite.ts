@@ -21,7 +21,7 @@ CREATE TABLE surat_masuk (
     id uuid PRIMARY KEY, unit_kerja_id varchar(50) NOT NULL, nomor_surat varchar(255), perihal text, dari text,
     tanggal_surat date, sifat_surat varchar(50), status varchar(50) DEFAULT 'belum_dibalas',
     is_archived boolean DEFAULT false, is_deleted boolean DEFAULT false,
-    created_at timestamp NOT NULL DEFAULT now());
+    created_at timestamp NOT NULL DEFAULT now(), diimpor_at timestamptz);
 CREATE TABLE surat_distributions (
     id uuid PRIMARY KEY, surat_masuk_id uuid NOT NULL REFERENCES surat_masuk(id),
     source_unit_id varchar(50) NOT NULL, target_unit_id varchar(50) NOT NULL, cc_units text, instruction text,

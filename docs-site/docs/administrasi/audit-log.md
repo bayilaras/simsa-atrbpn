@@ -46,7 +46,7 @@ Gunakan penyaring di atas daftar:
 |-----------|------------|
 | **Cari audit log** | Cari nama pengguna, email, atau ID data |
 | **Rentang** | Tanggal mulai dan tanggal akhir |
-| **Tipe Entity** | Jenis data: Surat Masuk, Surat Keluar, Arsip, User, Persetujuan Akses, Rangkaian Surat, Relasi Rangkaian, atau Disposisi |
+| **Jenis Data** | Jenis data yang dicatat, misalnya Surat Masuk, Surat Keluar, Arsip, Pengguna, Persetujuan Akses, Rangkaian Surat, Disposisi, Peminjaman Arsip, Dosir, atau Audit Log. Daftarnya memuat semua jenis data yang dicatat SIMSA |
 | **Aksi** | Jenis aksi, lihat tabel di bawah |
 
 ### Mengekspor Audit Log

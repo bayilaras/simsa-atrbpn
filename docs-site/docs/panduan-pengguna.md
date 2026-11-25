@@ -66,12 +66,14 @@ Bila masuk dengan Google ditolak, halaman masuk menampilkan sebabnya:
 ### Sesi dan keluar aplikasi
 
 - Setelah 25 menit tanpa aktivitas muncul peringatan *Sesi Anda akan berakhir dalam 5 menit karena tidak ada aktivitas.* Klik **Tetap Masuk** untuk melanjutkan atau **Keluar Sekarang** untuk keluar.
-- Setelah 30 menit tanpa aktivitas, SIMSA keluar otomatis. Halaman masuk lalu menampilkan *Sesi berakhir karena tidak ada aktivitas. Silakan masuk kembali.*
+- Setelah 30 menit tanpa aktivitas, SIMSA keluar otomatis. Halaman masuk lalu menampilkan *Sesi berakhir karena tidak ada aktivitas. Silakan masuk kembali.* beserta keterangan bahwa isian yang belum disimpan masih dapat dipulihkan.
 - Isian formulir **Tambah/Edit Surat Masuk**, **Tambah/Edit Surat Keluar** (termasuk surat inisiatif), dan dialog **Arsipkan Surat** yang belum disimpan disimpan sementara di tab peramban yang sama. Penanda *Isian tersimpan sementara di tab ini* tampil di dekat tombol simpan.
-- Setelah masuk kembali atau memuat ulang halaman di tab yang sama, buka lagi formulir atau dialog itu. SIMSA menanyakan *Pulihkan isian yang belum disimpan?*; pilih **Pulihkan isian** untuk melanjutkan atau **Buang isian** untuk mulai dari kosong. Berkas PDF yang sudah dipilih tidak ikut tersimpan dan perlu dipilih ulang.
+- Setelah masuk kembali dengan akun yang sama di tab yang sama, SIMSA membuka lagi halaman yang terakhir Anda buka; untuk dialog **Arsipkan Surat**, buka lagi dialognya. Bila Anda sengaja menekan **Keluar** atau masuk dengan akun lain, SIMSA membuka Dashboard. SIMSA menanyakan *Pulihkan isian yang belum disimpan?*; pilih **Pulihkan isian** untuk melanjutkan atau **Buang isian** untuk mulai dari kosong. Berkas PDF yang sudah dipilih tidak ikut tersimpan dan perlu dipilih ulang.
 - Isian sementara hilang bila tab ditutup, bila Anda menekan **Keluar**, **Batal**, atau **Tinggalkan halaman**, dan setelah surat atau arsip tersimpan. Isian yang lebih lama dari 12 jam tidak ditawarkan lagi. Tetap simpan pekerjaan sebelum meninggalkan komputer.
 - Bila Anda berpindah halaman saat formulir masih berisi perubahan, SIMSA bertanya *Tinggalkan halaman ini?*; pilih **Tetap di halaman** untuk kembali ke formulir.
-- Bila muncul *Versi baru SIMSA tersedia. Simpan pekerjaan Anda, lalu muat ulang.*, simpan pekerjaan lalu klik **Muat ulang**, atau **Nanti** untuk menunda. Halaman tidak dimuat ulang sendiri selama formulir surat atau dialog Arsipkan masih berisi isian yang belum disimpan.
+- Bila muncul *Versi baru SIMSA tersedia. Simpan pekerjaan Anda, lalu muat ulang.*, simpan pekerjaan lalu klik **Muat ulang**, atau **Nanti** untuk menunda. Halaman tidak dimuat ulang sendiri selama formulir surat, dialog Arsipkan, atau dialog Tambah Arsip masih berisi isian yang belum disimpan.
+- Bila sebuah halaman gagal dimuat, SIMSA memuat ulang halaman itu satu kali. Bila masih gagal, atau bila ada isian yang belum disimpan, tampil *Halaman belum dapat dimuat* dengan tombol **Muat ulang halaman**. Layar galat hilang sendiri saat Anda membuka menu lain.
+- Pemberitahuan di pojok layar dapat ditutup tanpa menutup dialog yang sedang terbuka. Dialog **Tambah Arsip** yang sudah diisi menanyakan *Buang isian?* sebelum tertutup, dan isian dialog **Disposisi** tetap ada bila dialog tertutup tidak sengaja.
 - Untuk keluar, klik avatar di kanan atas lalu pilih **Keluar**.
 
 ## 2. Navigasi dasar
@@ -602,7 +604,7 @@ Kartu **Antrean pemindaian** menunjukkan jumlah berkas **Menunggu**, **Terlambat
 | Halaman hanya menampilkan *Peramban ini tidak didukung SIMSA. …* | Perbarui peramban ke Chrome atau Edge 111 ke atas, Firefox 128 ke atas, atau Safari 16.4 ke atas. Lihat [Browser yang Kompatibel](./tutorial-dasar/browser-kompatibel.md). |
 | Berhasil login tetapi menu sangat sedikit | Role atau unit kerja belum ditetapkan/diaktifkan. Lihat role pada menu avatar dan hubungi Super Admin. |
 | Menu tertentu tidak ada atau kembali ke Dashboard | Role tidak memiliki kewenangan atau fitur dinonaktifkan pada profil internal. Jangan mencoba memakai URL langsung. |
-| Sesi tiba-tiba berakhir | Sesi berakhir setelah 30 menit tanpa aktivitas, atau ditutup karena kata sandi atau peran Anda diubah. Masuk kembali, lalu buka lagi formulir surat atau dialog Arsipkan di tab yang sama untuk memulihkan isian yang belum disimpan. Periksa apakah perubahan terakhir sudah tersimpan. |
+| Sesi tiba-tiba berakhir | Sesi berakhir setelah 30 menit tanpa aktivitas, atau ditutup karena kata sandi atau peran Anda diubah. Masuk kembali dengan akun yang sama di tab yang sama; SIMSA membuka lagi halaman terakhir dan menawarkan pemulihan isian formulir surat yang belum disimpan (untuk dialog Arsipkan, buka lagi dialognya). Periksa apakah perubahan terakhir sudah tersimpan. |
 | Muncul *Versi baru SIMSA tersedia. …* | Simpan pekerjaan yang sedang diisi, lalu klik **Muat ulang**. |
 | Unggah berkas PDF lama atau melewati batas waktu | Periksa koneksi internet. Kecilkan ukuran PDF (misalnya dengan fitur kompres PDF), pilih berkas yang sudah dikecilkan, lalu simpan kembali; isian formulir tetap ada. |
 | *Data ini sudah diubah pengguna lain sejak Anda membukanya. …* | Klik **Muat ulang**, periksa perubahan terbaru, lalu ulangi perubahan Anda. |

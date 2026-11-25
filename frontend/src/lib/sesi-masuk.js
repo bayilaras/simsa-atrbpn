@@ -5,7 +5,114 @@
 const MASA_SESI_MS = 35 * 60 * 1000
 export const PERPANJANG_SESI_SETELAH_MS = 5 * 60 * 1000
 
-export const PESAN_SESI_BERAKHIR = 'Sesi berakhir karena tidak ada aktivitas. Silakan masuk kembali.'
+// Kalimat kedua mengikuti lib/draf-isian.js: draf formulir Tambah/Ubah Surat
+// Masuk, Surat Keluar, dan dialog Arsipkan disimpan di tab yang sama paling lama
+// 12 jam untuk akun yang sama; berkas yang dipilih tidak ikut tersimpan.
+export const PESAN_SESI_BERAKHIR = 'Sesi berakhir karena tidak ada aktivitas. Silakan masuk kembali. '
+    + 'Isian formulir surat atau dialog Arsipkan Surat yang belum disimpan tetap tersimpan sementara di tab ini (paling lama 12 jam) '
+    + 'dan dapat dipulihkan saat dibuka kembali. Berkas yang dipilih perlu dipilih ulang.'
+
+// Halaman yang sedang dibuka saat sesi berakhir, agar pengguna yang sama
+// dikembalikan ke sana setelah masuk lagi. Disimpan di sessionStorage (hanya
+// tab ini, hilang saat tab ditutup), tidak pernah di alamat halaman masuk.
+// Isinya { userId, alamat }: pengguna tab ini dicatat saat masuk, alamatnya
+// diisi saat sesi berakhir. Keluar dengan sengaja menghapus keduanya.
+const KUNCI_HALAMAN_KEMBALI = 'simsa:halaman-kembali'
+const PANJANG_ALAMAT_MAKS = 2000
+// Hanya untuk mengurai alamat; tidak pernah dihubungi.
+const ASAL_URAI = 'https://simsa.invalid'
+
+/**
+ * Alamat dalam aplikasi yang aman dituju setelah masuk: jalur + kueri saja,
+ * diawali tepat satu "/", bukan halaman masuk dan bukan Dashboard (tujuan
+ * bawaan). Alamat situs lain ("//host", "/\host", "https://...") atau yang
+ * rusak menghasilkan null.
+ */
+export function alamatKembaliAman(nilai) {
+    if (typeof nilai !== 'string' || nilai.length > PANJANG_ALAMAT_MAKS) return null
+    if (!nilai.startsWith('/') || nilai.startsWith('//')) return null
+    // Garis miring terbalik dan karakter kendali diperlakukan peramban sebagai
+    // "/" atau dibuang, sehingga "/\host" menjadi alamat situs lain.
+    for (let i = 0; i < nilai.length; i += 1) {
+        const kode = nilai.charCodeAt(i)
+        if (kode <= 0x1f || kode === 0x7f || kode === 0x5c) return null
+    }
+    let url
+    try {
+        url = new URL(nilai, ASAL_URAI)
+    } catch {
+        return null
+    }
+    if (url.origin !== ASAL_URAI || url.username || url.password) return null
+    const jalur = url.pathname
+    if (jalur === '/' || jalur.startsWith('//')) return null
+    if (jalur === '/login' || jalur.startsWith('/login/')) return null
+    return jalur + url.search
+}
+
+function penyimpananTab() {
+    try {
+        return typeof window === 'undefined' ? null : window.sessionStorage ?? null
+    } catch {
+        return null
+    }
+}
+
+function bacaHalamanKembali() {
+    try {
+        const catatan = JSON.parse(penyimpananTab()?.getItem(KUNCI_HALAMAN_KEMBALI) ?? 'null')
+        return catatan && typeof catatan === 'object' && typeof catatan.userId === 'string' && catatan.userId
+            ? catatan
+            : null
+    } catch {
+        return null
+    }
+}
+
+function tulisHalamanKembali(catatan) {
+    try {
+        penyimpananTab()?.setItem(KUNCI_HALAMAN_KEMBALI, JSON.stringify(catatan))
+    } catch {
+        // Penyimpanan diblokir: pengguna mendarat di Dashboard seperti biasa.
+    }
+}
+
+/**
+ * Sesi berakhir (bukan keluar dengan sengaja): ingat halaman yang sedang dibuka
+ * untuk pengguna tab ini. Tidak berbuat apa-apa bila pengguna tab ini tidak
+ * diketahui (belum pernah masuk, atau sudah keluar) atau alamatnya tidak aman.
+ */
+export function ingatHalamanKembali(alamat) {
+    const catatan = bacaHalamanKembali()
+    const aman = alamatKembaliAman(alamat)
+    if (!catatan || !aman) return
+    tulisHalamanKembali({ userId: catatan.userId, alamat: aman })
+}
+
+/**
+ * Pengguna berhasil masuk: catat dia sebagai pengguna tab ini dan kembalikan
+ * halaman yang diingat bila yang masuk adalah pengguna yang sama (null bila
+ * tidak ada, atau bila pengguna lain yang masuk). Halaman itu langsung
+ * dilupakan, jadi hanya dipakai sekali.
+ */
+export function ambilHalamanKembali(userId) {
+    const catatan = bacaHalamanKembali()
+    if (!userId) {
+        lupakanHalamanKembali()
+        return null
+    }
+    tulisHalamanKembali({ userId: String(userId), alamat: null })
+    return catatan?.userId === String(userId) ? alamatKembaliAman(catatan.alamat) : null
+}
+
+/** Pengguna keluar dengan sengaja: halaman yang diingat dan pengguna tab ini dilupakan. */
+export function lupakanHalamanKembali() {
+    try {
+        penyimpananTab()?.removeItem(KUNCI_HALAMAN_KEMBALI)
+    } catch {
+        // Penyimpanan dapat ditolak kebijakan peramban.
+    }
+}
 
 // Alamat halaman masuk setelah server menolak sesi yang habis karena tidak dipakai.
 export const PARAM_SESI = 'sesi'

@@ -5,6 +5,7 @@ import { UserAccessApprovalDialog } from '@/components/UserAccessApprovalDialog'
 import { UserPasswordResetDialog } from '@/components/UserPasswordResetDialog';
 import { pesanGalat } from '@/lib/pesan-galat';
 import { useKonfirmasi } from '@/hooks/use-konfirmasi';
+import { useToast } from '@/hooks/use-toast';
 import { FIRST_LOGIN_PASSWORD_NOTE, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_RULES_HINT, passwordRuleError } from '@/lib/password-policy';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Search, Filter, Users, Edit2, UserX, MoreHorizontal, Loader2, AlertTriangle, Shield, Building2, UserPlus, Mail, CheckCircle2, Ban, Eye, EyeOff, Lock, KeyRound } from 'lucide-react';
@@ -85,6 +86,7 @@ export default function UserManagement() {
     const [approvalMessage, setApprovalMessage] = useState('');
     const [passwordResetTarget, setPasswordResetTarget] = useState(null);
     const [konfirmasi, dialogKonfirmasi] = useKonfirmasi();
+    const { toast } = useToast();
 
     // Filters
     const [search, setSearch] = useState('');
@@ -168,7 +170,7 @@ export default function UserManagement() {
         } catch (err) {
             if (generation !== loadGeneration.current) return;
             console.error('Failed to load users:', err);
-            setError('Gagal memuat data users');
+            setError('Gagal memuat data pengguna');
         } finally {
             if (generation === loadGeneration.current) setLoading(false);
         }
@@ -204,7 +206,10 @@ export default function UserManagement() {
     const handleSave = async () => {
         if (!editingUser) return;
         const roleError = managedUserRoleError(editData.role, editData.unitKerjaId, editingUser.role);
-        if (roleError) { alert(roleError); return; }
+        if (roleError) {
+            toast({ variant: 'destructive', title: 'Perubahan belum dapat disimpan', description: roleError });
+            return;
+        }
 
         try {
             setSaving(true);
@@ -216,10 +221,15 @@ export default function UserManagement() {
                 nip: editData.nip || null,
             });
             setEditOpen(false);
+            toast({ title: 'Data pengguna berhasil diperbarui' });
             loadUsers();
         } catch (err) {
             console.error('Failed to update user:', err);
-            alert(pesanGalat(err, 'Gagal mengupdate user'));
+            toast({
+                variant: 'destructive',
+                title: 'Gagal memperbarui pengguna',
+                description: pesanGalat(err, 'Perubahan belum tersimpan. Coba lagi.'),
+            });
         } finally {
             setSaving(false);
         }
@@ -257,7 +267,7 @@ export default function UserManagement() {
             loadUsers();
         } catch (err) {
             console.error('Failed to create user:', err);
-            setAddError(err.message || 'Gagal membuat user baru');
+            setAddError(pesanGalat(err, 'Gagal membuat pengguna baru'));
         } finally {
             setCreating(false);
         }
@@ -265,7 +275,7 @@ export default function UserManagement() {
 
     const handleDeactivate = async (user) => {
         if (user.id === currentUser?.id) {
-            alert('Tidak dapat menonaktifkan akun sendiri');
+            toast({ variant: 'destructive', title: 'Tidak dapat menonaktifkan akun sendiri' });
             return;
         }
 
@@ -280,10 +290,15 @@ export default function UserManagement() {
 
         try {
             await userManagementService.deactivateUser(user.id);
+            toast({ title: 'Pengguna dinonaktifkan', description: `Akun ${user.name || user.email} tidak dapat dipakai untuk masuk.` });
             loadUsers();
         } catch (err) {
             console.error('Failed to deactivate user:', err);
-            alert(pesanGalat(err, 'Gagal menonaktifkan user'));
+            toast({
+                variant: 'destructive',
+                title: 'Gagal menonaktifkan pengguna',
+                description: pesanGalat(err, 'Status akun belum berubah. Coba lagi.'),
+            });
         }
     };
 
@@ -298,10 +313,15 @@ export default function UserManagement() {
 
         try {
             await userManagementService.updateUser(user.id, { isActive: true });
+            toast({ title: 'Pengguna diaktifkan kembali', description: `Akun ${user.name || user.email} dapat dipakai untuk masuk.` });
             loadUsers();
         } catch (err) {
             console.error('Failed to activate user:', err);
-            alert(pesanGalat(err, 'Gagal mengaktifkan user'));
+            toast({
+                variant: 'destructive',
+                title: 'Gagal mengaktifkan pengguna',
+                description: pesanGalat(err, 'Status akun belum berubah. Coba lagi.'),
+            });
         }
     };
 

@@ -80,18 +80,35 @@ describe('pengecualian data lama pada notifikasi surat masuk', () => {
               ('00000000-0000-4000-8000-000000000a01', 'ditjen', 1, 2023),
               ('00000000-0000-4000-8000-000000000a02', 'ditjen', 2, 2023),
               ('00000000-0000-4000-8000-000000000a03', 'ditjen', 3, 2023);
+            -- Register hasil impor (0055): a04 belum masuk rangkaian, a05 sudah didisposisikan (anggota rangkaian aktif).
+            INSERT INTO surat_masuk (id, unit_kerja_id, no_urut, tahun, diimpor_at) VALUES
+              ('00000000-0000-4000-8000-000000000a04', 'ditjen', 4, 2023, now()),
+              ('00000000-0000-4000-8000-000000000a05', 'ditjen', 5, 2023, now());
             INSERT INTO rangkaian_surat (id, kode, asal, status, unit_pencatat_id, judul, tahun) VALUES
               ('00000000-0000-4000-8000-000000000b01', 'RS-2023-990001', 'data_lama', 'selesai', 'ditjen', 'Lama selesai', 2023),
-              ('00000000-0000-4000-8000-000000000b02', 'RS-2023-990002', 'data_lama', 'aktif', 'ditjen', 'Lama dibuka kembali', 2023);
+              ('00000000-0000-4000-8000-000000000b02', 'RS-2023-990002', 'data_lama', 'aktif', 'ditjen', 'Lama dibuka kembali', 2023),
+              ('00000000-0000-4000-8000-000000000b03', 'RS-2023-990003', 'surat_masuk', 'aktif', 'ditjen', 'Impor yang didisposisikan', 2023);
             INSERT INTO rangkaian_anggota (rangkaian_id, surat_masuk_id, unit_kerja_id, peran, sumber) VALUES
               ('00000000-0000-4000-8000-000000000b01', '00000000-0000-4000-8000-000000000a01', 'ditjen', 'induk', 'data_lama'),
-              ('00000000-0000-4000-8000-000000000b02', '00000000-0000-4000-8000-000000000a02', 'ditjen', 'induk', 'data_lama');`);
+              ('00000000-0000-4000-8000-000000000b02', '00000000-0000-4000-8000-000000000a02', 'ditjen', 'induk', 'data_lama'),
+              ('00000000-0000-4000-8000-000000000b03', '00000000-0000-4000-8000-000000000a05', 'ditjen', 'induk', 'aplikasi');`);
     }, 180_000);
     afterAll(async () => { await database?.close(); });
 
     it('surat induk rangkaian data lama yang tertutup tidak dinotifikasi; yang dibuka kembali tetap', async () => {
         const rows = await drizzle(database).select({ id: suratMasuk.id }).from(suratMasuk)
             .where(notDataLamaIncomingCondition()).orderBy(suratMasuk.id);
-        expect(rows.map((row) => row.id.slice(-3))).toEqual(['a02', 'a03']);
+        expect(rows.map((row) => row.id.slice(-3))).toEqual(['a02', 'a03', 'a05']);
+    });
+
+    it('register hasil impor tidak dinotifikasi sampai menjadi anggota rangkaian', async () => {
+        const rows = await drizzle(database).select({ id: suratMasuk.id }).from(suratMasuk)
+            .where(notDataLamaIncomingCondition()).orderBy(suratMasuk.id);
+        const ids = rows.map((row) => row.id.slice(-3));
+        // a04: diimpor, belum masuk rangkaian → data lama. a05: diimpor lalu didisposisikan → pekerjaan berjalan.
+        expect(ids).not.toContain('a04');
+        expect(ids).toContain('a05');
+        // a03: dicatat manual (tanpa penanda impor) dan belum masuk rangkaian → tetap dinotifikasi.
+        expect(ids).toContain('a03');
     });
 });

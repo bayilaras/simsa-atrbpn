@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DistributeDialog, PESAN_TERKENDALI } from './DistributeDialog'
@@ -68,6 +69,90 @@ describe('DistributeDialog', () => {
             description: 'Surat sudah didistribusikan ke unit ini', variant: 'destructive',
         })))
         console.error.mockRestore()
+    })
+
+    describe('isian saat dialog tertutup', () => {
+        function Halaman({ onSuccess }) {
+            const [open, setOpen] = useState(true)
+            const [suratData, setSuratData] = useState(surat)
+            return (
+                <>
+                    <button type="button" onClick={() => setOpen(true)}>Buka disposisi</button>
+                    <button type="button" onClick={() => { setSuratData({ ...surat, id: 'sm-2', nomorSurat: 'B-2/2026' }); setOpen(true) }}>Buka surat lain</button>
+                    <DistributeDialog open={open} onOpenChange={setOpen} suratData={suratData} sourceUnitId="sesditjen" onSuccess={onSuccess} />
+                </>
+            )
+        }
+
+        async function isi() {
+            fireEvent.click(await screen.findByRole('checkbox', { name: 'Dit. BPPT' }))
+            fireEvent.click(screen.getByRole('radio', { name: 'Dit. BPPT' }))
+            fireEvent.change(screen.getByLabelText('Batas waktu'), { target: { value: '2026-12-01' } })
+            fireEvent.change(screen.getByLabelText('Instruksi / Catatan'), { target: { value: 'Mohon telaah' } })
+        }
+
+        const bukaLagi = (nama = 'Buka disposisi') => fireEvent.click(screen.getByRole('button', { name: nama, hidden: true }))
+
+        it('tertutup tanpa sengaja (Esc): unit tujuan dan instruksi masih ada saat dibuka lagi', async () => {
+            render(<Halaman />)
+            await isi()
+            fireEvent.keyDown(document.activeElement || document.body, { key: 'Escape' })
+            await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+            bukaLagi()
+            expect(await screen.findByRole('checkbox', { name: 'Dit. BPPT' })).toBeChecked()
+            expect(screen.getByRole('radio', { name: 'Dit. BPPT' })).toBeChecked()
+            expect(screen.getByLabelText('Batas waktu')).toHaveValue('2026-12-01')
+            expect(screen.getByLabelText('Instruksi / Catatan')).toHaveValue('Mohon telaah')
+        })
+
+        it('tombol tutup (X) juga mempertahankan isian', async () => {
+            render(<Halaman />)
+            await isi()
+            fireEvent.click(screen.getByRole('button', { name: 'Tutup' }))
+            await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+            bukaLagi()
+            expect(await screen.findByRole('checkbox', { name: 'Dit. BPPT' })).toBeChecked()
+            expect(screen.getByLabelText('Instruksi / Catatan')).toHaveValue('Mohon telaah')
+        })
+
+        it('Batal membuang isian', async () => {
+            render(<Halaman />)
+            await isi()
+            fireEvent.click(screen.getByRole('button', { name: 'Batal' }))
+            await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+            bukaLagi()
+            expect(await screen.findByRole('checkbox', { name: 'Dit. BPPT' })).not.toBeChecked()
+            expect(screen.getByLabelText('Batas waktu')).toHaveValue('')
+            expect(screen.getByLabelText('Instruksi / Catatan')).toHaveValue('')
+        })
+
+        it('disposisi yang terkirim mengosongkan isian', async () => {
+            const onSuccess = vi.fn()
+            render(<Halaman onSuccess={onSuccess} />)
+            await isi()
+            fireEvent.click(screen.getByRole('button', { name: /Disposisikan/ }))
+            await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce())
+            await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+            bukaLagi()
+            expect(await screen.findByRole('checkbox', { name: 'Dit. BPPT' })).not.toBeChecked()
+            expect(screen.getByLabelText('Instruksi / Catatan')).toHaveValue('')
+        })
+
+        it('isian satu surat tidak terbawa ke surat lain', async () => {
+            render(<Halaman />)
+            await isi()
+            fireEvent.keyDown(document.activeElement || document.body, { key: 'Escape' })
+            await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+            bukaLagi('Buka surat lain')
+            expect(await screen.findByText('B-2/2026')).toBeInTheDocument()
+            expect(await screen.findByRole('checkbox', { name: 'Dit. BPPT' })).not.toBeChecked()
+            expect(screen.getByLabelText('Instruksi / Catatan')).toHaveValue('')
+        })
     })
 
     it('jalur akses menyala: info permohonan grant disposisi', async () => {

@@ -15,7 +15,7 @@ import {
     Loader2,
 } from 'lucide-react'
 import appConfig from '@/lib/app-config'
-import { PARAM_SESI, PESAN_SESI_BERAKHIR, SESI_BERAKHIR, pesanGagalMasukGoogle } from '@/lib/sesi-masuk'
+import { PARAM_SESI, PESAN_SESI_BERAKHIR, SESI_BERAKHIR, alamatKembaliAman, pesanGagalMasukGoogle } from '@/lib/sesi-masuk'
 import { AUTH_PROVIDER } from '@/lib/cloud-provider-config'
 import { useAppConfig } from '@/context/app-config-context'
 import { AppServiceNotice } from '@/components/AppServiceNotice'
@@ -25,7 +25,7 @@ import { AppServiceNotice } from '@/components/AppServiceNotice'
 const ADDRESS_PARAMS = [PARAM_SESI, 'error', 'error_description']
 
 export default function Login() {
-    const { signInWithGoogle, signInWithEmail, signOut, signingOut, logoutError, loading, error, isAuthenticated, sessionNotice } = useAuth()
+    const { signInWithGoogle, signInWithEmail, signOut, signingOut, logoutError, loading, error, isAuthenticated, sessionNotice, halamanKembali } = useAuth()
     const navigate = useNavigate()
     const [searchParams, setSearchParams] = useSearchParams()
     const [email, setEmail] = useState('')
@@ -57,8 +57,11 @@ export default function Login() {
         </main>
     }
 
+    // Pengguna yang sama kembali ke halaman yang dibukanya saat sesi berakhir
+    // (AuthContext memeriksa penggunanya); selain itu ke Dashboard. Alamatnya
+    // diperiksa lagi di sini: hanya alamat di dalam aplikasi yang dituju.
     if (isAuthenticated) {
-        return <Navigate to="/" replace />
+        return <Navigate to={alamatKembaliAman(halamanKembali) || '/'} replace />
     }
 
     const handleEmailLogin = async (event) => {
@@ -68,8 +71,8 @@ export default function Login() {
         setGoogleError('')
 
         try {
-            await signInWithEmail(email, password)
-            navigate('/', { replace: true })
+            const kembali = await signInWithEmail(email, password)
+            navigate(alamatKembaliAman(kembali) || '/', { replace: true })
         } catch (loginError) {
             setLocalError(loginError.message || 'Login gagal. Periksa kembali akun Anda.')
         }

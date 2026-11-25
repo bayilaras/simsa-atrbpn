@@ -406,7 +406,7 @@ const TROUBLESHOOTING = [
     },
     {
         problem: 'Tidak dapat login dengan Google',
-        answer: 'Pastikan memakai akun dinas yang sudah diprovisikan, buka dari alamat resmi aplikasi, lalu coba kembali. Jika tetap gagal, kirimkan alamat email dan waktu kejadian kepada administrator—jangan mengirim kata sandi.',
+        answer: 'Pastikan memakai akun dinas yang aksesnya sudah diaktifkan, buka dari alamat resmi aplikasi, lalu coba kembali. Jika tetap gagal, kirimkan alamat email dan waktu kejadian kepada administrator—jangan mengirim kata sandi.',
     },
     {
         problem: 'Menu yang dibutuhkan tidak terlihat',
@@ -616,7 +616,7 @@ export default function UserGuide() {
                 </div>
                 <ol className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                     {[
-                        ['1', 'Login', 'Gunakan akun dinas yang telah diprovisikan.'],
+                        ['1', 'Login', 'Gunakan akun dinas yang aksesnya sudah diaktifkan.'],
                         ['2', 'Baca Dashboard', 'Kenali ringkasan dan pekerjaan yang relevan.'],
                         ['3', 'Cari dahulu', 'Cegah duplikasi sebelum membuat rekod.'],
                         ['4', 'Periksa metadata', 'Cocokkan data dengan dokumen sumber.'],

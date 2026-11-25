@@ -15,6 +15,9 @@ import { api } from '@/services/api'
 import regulatoryRuleSetService from '@/services/regulatory-rule-set.service'
 import { useAuth } from '@/context/AuthContext'
 import { Skeleton } from "@/components/ui/skeleton"
+import { useToast } from '@/hooks/use-toast'
+import { useKonfirmasi } from '@/hooks/use-konfirmasi'
+import { pesanGalat } from '@/lib/pesan-galat'
 
 // Tree Node Component
 function TreeNode({ node, level = 0, onEdit, onDelete, editable }) {
@@ -131,6 +134,10 @@ export default function KlasifikasiArsip() {
     const [dialogOpen, setDialogOpen] = useState(false)
     const [editMode, setEditMode] = useState(false)
     const [currentItem, setCurrentItem] = useState(null)
+    const [saving, setSaving] = useState(false)
+    const [saveError, setSaveError] = useState('')
+    const { toast } = useToast()
+    const [konfirmasi, dialogKonfirmasi] = useKonfirmasi()
     const [formData, setFormData] = useState({
         kode: '',
         sourceCode: '',
@@ -215,6 +222,9 @@ export default function KlasifikasiArsip() {
 
     // Handle create/edit
     const handleSave = async () => {
+        if (saving) return
+        setSaving(true)
+        setSaveError('')
         try {
             if (editMode && currentItem) {
                 // Update
@@ -229,10 +239,8 @@ export default function KlasifikasiArsip() {
                     isSelectable: formData.isSelectable,
                     ruleSetId,
                 })
-                if (response.success) {
-                    // alert('Klasifikasi berhasil diperbarui')
-                    fetchData()
-                }
+                if (response?.success === false) throw new Error(response.message || '')
+                fetchData()
             } else {
                 // Create
                 const response = await api.post('/api/klasifikasi', {
@@ -246,21 +254,24 @@ export default function KlasifikasiArsip() {
                     tipe: activeTab,
                     level: selectedParent ? Number(selectedParent.level || 0) + 1 : 0,
                 })
-                if (response.success) {
-                    // alert('Klasifikasi berhasil ditambahkan')
-                    fetchData()
-                    fetchStats()
-                }
+                if (response?.success === false) throw new Error(response.message || '')
+                fetchData()
+                fetchStats()
             }
+            toast({ title: editMode ? 'Klasifikasi berhasil diperbarui' : 'Klasifikasi berhasil ditambahkan' })
             setDialogOpen(false)
             resetForm()
         } catch (error) {
-            // alert('Gagal menyimpan data')
             console.error(error)
+            // Dialog tetap terbuka dengan alasan penolakan agar isian dapat diperbaiki.
+            setSaveError(pesanGalat(error, 'Klasifikasi belum dapat disimpan. Coba lagi.'))
+        } finally {
+            setSaving(false)
         }
     }
 
     const handleEdit = (node) => {
+        setSaveError('')
         setEditMode(true)
         setCurrentItem(node)
         setFormData({
@@ -280,18 +291,28 @@ export default function KlasifikasiArsip() {
     }
 
     const handleDelete = async (node) => {
-        if (!confirm(`Hapus klasifikasi "${node.kode} - ${node.jenis}"?`)) return
+        const setuju = await konfirmasi({
+            judul: 'Nonaktifkan klasifikasi?',
+            pesan: `Klasifikasi "${node.kode} - ${node.jenis}" akan dinonaktifkan pada rancangan ini.`,
+            aksi: 'Nonaktifkan',
+            batal: 'Batal',
+            berbahaya: true,
+        })
+        if (!setuju) return
 
         try {
             const response = await api.delete(`/api/klasifikasi/items/${node.id}?ruleSetId=${encodeURIComponent(ruleSetId)}`)
-            if (response.success) {
-                // alert('Klasifikasi berhasil dihapus')
-                fetchData()
-                fetchStats()
-            }
+            if (response?.success === false) throw new Error(response.message || '')
+            toast({ title: 'Klasifikasi berhasil dinonaktifkan' })
+            fetchData()
+            fetchStats()
         } catch (error) {
-            // alert('Gagal menghapus data')
             console.error(error)
+            toast({
+                variant: 'destructive',
+                title: 'Gagal menonaktifkan klasifikasi',
+                description: pesanGalat(error, 'Klasifikasi belum dapat dinonaktifkan. Coba lagi.'),
+            })
         }
     }
 
@@ -311,6 +332,7 @@ export default function KlasifikasiArsip() {
         })
         setEditMode(false)
         setCurrentItem(null)
+        setSaveError('')
     }
 
     const handleAddNew = () => {
@@ -535,7 +557,7 @@ export default function KlasifikasiArsip() {
                         </div>
 
                         <div className="grid gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
-                            <Label htmlFor="parentKode" className="sm:text-right font-medium">Parent</Label>
+                            <Label htmlFor="parentKode" className="sm:text-right font-medium">Induk</Label>
                             {editMode ? (
                                 <Input value={formData.parentKode || 'Root'} className="sm:col-span-3 font-mono" disabled />
                             ) : (
@@ -544,10 +566,10 @@ export default function KlasifikasiArsip() {
                                     onValueChange={(value) => setFormData({ ...formData, parentItemId: value })}
                                 >
                                     <SelectTrigger id="parentKode" className="sm:col-span-3">
-                                        <SelectValue placeholder="Pilih parent" />
+                                        <SelectValue placeholder="Pilih induk" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="__root__">Root / tanpa parent</SelectItem>
+                                        <SelectItem value="__root__">Tingkat teratas (tanpa induk)</SelectItem>
                                         {parentOptions.map((parent) => (
                                             <SelectItem key={parent.id || parent.sourceRecordKey} value={String(parent.id)}>
                                                 {parent.kode} — {parent.jenis}
@@ -625,15 +647,21 @@ export default function KlasifikasiArsip() {
                     </div>
 
                     <DialogFooter sticky>
-                        <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                        {/* Di dalam footer yang menempel agar alasan penolakan terlihat tanpa menggulir. */}
+                        {saveError && (
+                            <p role="alert" className="min-w-full rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{saveError}</p>
+                        )}
+                        <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>
                             Batal
                         </Button>
-                        <Button onClick={handleSave} className="bg-primary hover:bg-primary/90">
-                            {editMode ? 'Simpan Perubahan' : 'Tambah'}
+                        <Button onClick={handleSave} disabled={saving} className="bg-primary hover:bg-primary/90">
+                            {saving ? 'Menyimpan…' : editMode ? 'Simpan Perubahan' : 'Tambah'}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {dialogKonfirmasi}
         </div>
     )
 }

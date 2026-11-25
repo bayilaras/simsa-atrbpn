@@ -26,6 +26,7 @@ import dosirService from '@/services/dosir.service'
 import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/hooks/use-toast'
 import { pesanGalat } from '@/lib/pesan-galat'
+import { useKonfirmasi } from '@/hooks/use-konfirmasi'
 import { TimelineItem } from '@/components/surat/TimelineItem'
 import { TambahSuratDosirDialog } from '@/components/dosir/TambahSuratDosirDialog'
 import { format, parseISO, formatDistanceToNow } from 'date-fns'
@@ -75,6 +76,7 @@ export default function DosirDetail() {
     const navigate = useNavigate()
     const { canWrite } = useAuth()
     const { toast } = useToast()
+    const [konfirmasi, dialogKonfirmasi] = useKonfirmasi()
     const [dosir, setDosir] = useState(null)
     const [timeline, setTimeline] = useState([])
     const [loading, setLoading] = useState(true)
@@ -133,10 +135,16 @@ export default function DosirDetail() {
     }
 
     const handleRemoveSurat = async (type, surat) => {
-        if (!confirm('Hapus surat dari dosir ini?')) return
+        const label = surat.nomorSurat || surat.perihal
+        const setuju = await konfirmasi({
+            judul: 'Lepas surat dari dosir?',
+            pesan: `${type === 'keluar' ? 'Surat keluar' : 'Surat masuk'}${label ? ` ${label}` : ''} tidak lagi tercatat di dosir ini. Suratnya sendiri tetap tersimpan.`,
+            aksi: 'Lepas',
+            batal: 'Batal',
+        })
+        if (!setuju) return
         try {
             await dosirService.removeSurat(id, type, surat.id)
-            const label = surat.nomorSurat || surat.perihal
             toast({
                 title: 'Surat dilepas dari dosir',
                 description: `${type === 'keluar' ? 'Surat keluar' : 'Surat masuk'}${label ? ` ${label}` : ''} tidak lagi tercatat di dosir ini.`,
@@ -608,6 +616,8 @@ export default function DosirDetail() {
                     onMuatUlang={() => fetchData({ silent: true })}
                 />
             )}
+
+            {dialogKonfirmasi}
         </div>
     )
 }

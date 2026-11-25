@@ -33,6 +33,15 @@ export function DistributeDialog({ open, onOpenChange, suratData, sourceUnitId, 
         setInstruction('')
     }
 
+    // Isian dipertahankan saat dialog tertutup tanpa sengaja, tetapi hanya untuk
+    // surat yang sama: dialog yang dibuka untuk surat lain mulai dari kosong.
+    const kunciIsian = `${suratData?.id ?? ''}|${sourceUnitId ?? ''}`
+    const [kunciTerisi, setKunciTerisi] = useState(kunciIsian)
+    if (open && kunciTerisi !== kunciIsian) {
+        setKunciTerisi(kunciIsian)
+        reset()
+    }
+
     const toggleTarget = (id) => {
         setTargets((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]))
         setPenanggungJawab((prev) => (prev === id ? '' : prev))
@@ -72,14 +81,21 @@ export function DistributeDialog({ open, onOpenChange, suratData, sourceUnitId, 
         }
     }
 
-    const handleClose = () => {
+    // Batal membuang isian. Penutupan lain (klik di luar dialog, Esc, tombol
+    // tutup) bisa tidak disengaja, jadi unit tujuan dan instruksi yang sudah
+    // dipilih tetap ada saat dialog dibuka lagi untuk surat yang sama.
+    const handleBatal = () => {
         if (loading) return
         reset()
         onOpenChange(false)
     }
+    const handleOpenChange = (next) => {
+        if (loading) return
+        onOpenChange(next)
+    }
 
     return (
-        <Dialog open={open} onOpenChange={handleClose}>
+        <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogContent className="sm:max-w-[560px]">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
@@ -157,7 +173,7 @@ export function DistributeDialog({ open, onOpenChange, suratData, sourceUnitId, 
                 </div>
 
                 <DialogFooter>
-                    <Button variant="outline" onClick={handleClose} disabled={loading}>Batal</Button>
+                    <Button variant="outline" onClick={handleBatal} disabled={loading}>Batal</Button>
                     <Button onClick={handleSubmit} disabled={loading || diblokir || !sourceUnitId || targets.length === 0}>
                         {loading ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" />Mengirim...</>) : (<><Send className="mr-2 h-4 w-4" />Disposisikan</>)}
                     </Button>

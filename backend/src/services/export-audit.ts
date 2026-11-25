@@ -1,7 +1,7 @@
 import type { AuthRequest } from '../middlewares/auth.middleware';
 import { auditLogService, type LogActionData } from './audit-log.service';
 
-export type ExportSource = 'export' | 'laporan' | 'distribusi' | 'audit-log';
+export type ExportSource = 'export' | 'laporan' | 'distribusi' | 'audit-log' | 'arsip-vital';
 export type ExportType = 'surat-masuk' | 'surat-keluar' | 'arsip' | 'peminjaman' | 'disposisi' | 'audit-log';
 
 export interface ExportAuditDetails {

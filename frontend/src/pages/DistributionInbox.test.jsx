@@ -117,13 +117,13 @@ describe('Kotak Disposisi', () => {
     })
 
     it('menerima surat yang ditolak server menampilkan pesannya, bukan nama kelas galat', async () => {
-        mocks.svc.receive.mockRejectedValue(galatApi(400, { success: false, error: 'ValidationError', message: 'Distribution sudah diterima atau diproses', code: 'VALIDATION_ERROR' }))
+        mocks.svc.receive.mockRejectedValue(galatApi(409, { success: false, error: 'ConflictError', message: 'Disposisi ini sudah diterima, diselesaikan, atau ditolak. Muat ulang daftar.', code: 'CONFLICT' }))
         mocks.svc.getInbox.mockResolvedValue(halaman([{ ...terbuka, status: 'sent' }]))
         tampil()
         const baris = (await screen.findByRole('link', { name: 'SM-1/2026' })).closest('tr')
         fireEvent.click(within(baris).getByRole('button', { name: 'Terima Surat' }))
         await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
-            description: 'Distribution sudah diterima atau diproses', variant: 'destructive',
+            description: 'Disposisi ini sudah diterima, diselesaikan, atau ditolak. Muat ulang daftar.', variant: 'destructive',
         })))
     })
 
