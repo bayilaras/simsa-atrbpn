@@ -961,6 +961,9 @@ export default function Dashboard() {
                                                                 <Building2 className="h-4 w-4 text-muted-foreground" />
                                                                 <span className="text-sm font-medium">{loc.name}</span>
                                                                 <Badge variant="outline" className="text-[10px] font-mono">{loc.code}</Badge>
+                                                                {loc.unitKerjaName && widgetData.storageCapacity.some((lain) => lain.unitKerjaId !== loc.unitKerjaId) && (
+                                                                    <span className="text-xs text-muted-foreground">{loc.unitKerjaName}</span>
+                                                                )}
                                                             </div>
                                                             <span className="text-xs text-muted-foreground">
                                                                 {loc.currentCount}/{loc.totalCapacity} ({loc.usagePercent}%)

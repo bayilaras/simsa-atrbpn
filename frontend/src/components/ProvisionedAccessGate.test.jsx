@@ -31,7 +31,7 @@ describe('ProvisionedAccessGate', () => {
         expect(childMounted).not.toHaveBeenCalled()
         expect(screen.queryByText('Data arsip')).not.toBeInTheDocument()
         expect(screen.getByRole('status')).toHaveTextContent('Akun dinonaktifkan')
-        expect(screen.queryByText('Akun belum diprovisikan')).not.toBeInTheDocument()
+        expect(screen.queryByText('Akses belum diaktifkan')).not.toBeInTheDocument()
         fireEvent.click(screen.getByRole('button', { name: 'Periksa ulang akses' }))
         fireEvent.click(screen.getByRole('button', { name: 'Keluar' }))
         expect(onRefresh).toHaveBeenCalledOnce()
@@ -59,7 +59,7 @@ describe('ProvisionedAccessGate', () => {
                 </ProvisionedAccessGate>,
             )
 
-            expect(screen.getByRole('status')).toHaveTextContent(user.role === 'user' ? 'Menunggu persetujuan administrator' : 'Akun belum diprovisikan')
+            expect(screen.getByRole('status')).toHaveTextContent(user.role === 'user' ? 'Menunggu persetujuan administrator' : 'Akses belum diaktifkan')
             expect(screen.getByText(/Dashboard, menu data, dan proses arsip tidak dimuat/i)).toBeInTheDocument()
             expect(screen.queryByText('Dashboard rahasia')).not.toBeInTheDocument()
             expect(childMounted).not.toHaveBeenCalled()
@@ -82,7 +82,7 @@ describe('ProvisionedAccessGate', () => {
         expect(PROVISIONED_ROLES).toContain(user.role)
         expect(hasProvisionedAccess(user)).toBe(true)
         expect(screen.getByText('Konten aplikasi')).toBeInTheDocument()
-        expect(screen.queryByText('Akun belum diprovisikan')).not.toBeInTheDocument()
+        expect(screen.queryByText('Akses belum diaktifkan')).not.toBeInTheDocument()
     })
 
     it('lets the user refresh provisioning status or sign out', () => {

@@ -21,7 +21,7 @@ export function ProvisionedAccessGate({ user, onRefresh, onSignOut, children }) 
                     <div className="mb-2 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
                         <ShieldAlert className="h-7 w-7" aria-hidden="true" />
                     </div>
-                    <CardTitle className="text-xl" role="heading" aria-level={1}>{deactivated ? 'Akun dinonaktifkan' : pending ? 'Menunggu persetujuan administrator' : 'Akun belum diprovisikan'}</CardTitle>
+                    <CardTitle className="text-xl" role="heading" aria-level={1}>{deactivated ? 'Akun dinonaktifkan' : pending ? 'Menunggu persetujuan administrator' : 'Akses belum diaktifkan'}</CardTitle>
                     <CardDescription className="max-w-md leading-6">
                         {deactivated
                             ? `Akses akun Anda ke ${appConfig.shortName} telah dinonaktifkan oleh administrator.`
@@ -37,7 +37,7 @@ export function ProvisionedAccessGate({ user, onRefresh, onSignOut, children }) 
                         <p className="mt-3 leading-6 text-muted-foreground">
                             {deactivated
                                 ? 'Hubungi Administrator SIMSA jika Anda masih memerlukan akses. Dashboard, menu data, dan proses arsip tidak dimuat selama akun nonaktif.'
-                                : 'Hubungi Administrator SIMSA untuk menetapkan peran dan unit kerja sesuai tugas Anda. Dashboard, menu data, dan proses arsip tidak dimuat sampai provisioning selesai.'}
+                                : 'Hubungi Administrator SIMSA untuk menetapkan peran dan unit kerja sesuai tugas Anda. Dashboard, menu data, dan proses arsip tidak dimuat sampai akses Anda diaktifkan.'}
                         </p>
                         {pending && <p className="mt-3 leading-6 text-muted-foreground">
                             Setelah disetujui, sesi lama akan ditutup dan Anda perlu masuk kembali untuk menggunakan akses yang ditetapkan. Periksa ulang akses untuk mengetahui apakah sesi Anda masih berlaku.

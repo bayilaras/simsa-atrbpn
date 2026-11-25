@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import Dosir from './Dosir'
@@ -11,11 +11,16 @@ vi.mock('@/services/dosir.service', () => ({ default: { getAll: mocks.getAll, ge
 
 const dosir = { id: 'd1', unitKerjaId: 'ditjen', kode: 'ditjen-2026-001', judul: 'Perkara sintetis', status: 'open', suratMasukCount: 2, suratKeluarCount: 1 }
 
-async function hapusDosir() {
+async function hapusDosir(jawaban = 'Hapus') {
     render(<MemoryRouter><Dosir /></MemoryRouter>)
     await screen.findByText('Perkara sintetis')
     fireEvent.keyDown(screen.getByRole('button', { name: 'Buka menu aksi dosir' }), { key: 'Enter' })
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Hapus' }))
+    // Konfirmasi memakai dialog aplikasi, bukan window.confirm.
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Hapus dosir?')
+    expect(dialog).toHaveTextContent('Dosir ditjen-2026-001 akan dihapus. Surat yang pernah ditautkan tetap tersimpan.')
+    fireEvent.click(within(dialog).getByRole('button', { name: jawaban }))
 }
 
 beforeEach(() => {
@@ -24,7 +29,7 @@ beforeEach(() => {
     mocks.getAll.mockReset().mockResolvedValue([dosir])
     mocks.getStats.mockReset().mockResolvedValue({ total: 1, open: 1, closed: 0, archived: 0 })
     mocks.remove.mockReset().mockResolvedValue({ success: true })
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.spyOn(window, 'confirm').mockImplementation(() => { throw new Error('window.confirm tidak boleh dipakai') })
     vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
@@ -59,6 +64,13 @@ describe('hapus dosir', () => {
             title: 'Dosir gagal dihapus', description: pesan, variant: 'destructive',
         }))
         expect(mocks.getAll).toHaveBeenCalledTimes(1)
+    })
+
+    it('tidak menghapus apa pun bila konfirmasi dibatalkan', async () => {
+        await hapusDosir('Batal')
+        await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+        expect(mocks.remove).not.toHaveBeenCalled()
+        expect(mocks.toast).not.toHaveBeenCalled()
     })
 
     it('memakai pesan Indonesia dari server saat batas operasi tercapai', async () => {

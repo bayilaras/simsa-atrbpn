@@ -11,6 +11,7 @@ import { Search, Plus, FolderOpen, Loader2, Calendar, FileText, ArrowRight, Edit
 import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/hooks/use-toast'
 import { pesanGalat } from '@/lib/pesan-galat'
+import { useKonfirmasi } from '@/hooks/use-konfirmasi'
 import { resolveEffectiveUnitKerjaId } from '@/lib/unit-kerja-scope'
 import dosirService from '@/services/dosir.service'
 import settingsService from '@/services/settings.service'
@@ -76,6 +77,7 @@ function DosirSkeleton() {
 export default function Dosir() {
     const { user, canWrite } = useAuth()
     const { toast } = useToast()
+    const [konfirmasi, dialogKonfirmasi] = useKonfirmasi()
     const navigate = useNavigate()
     const isSuperAdmin = user?.role === 'super_admin'
     const [request, setRequest] = useState(null)
@@ -209,7 +211,14 @@ export default function Dosir() {
     }
 
     const handleDelete = async (item) => {
-        if (!confirm('Apakah Anda yakin ingin menghapus dosir ini?')) return
+        const setuju = await konfirmasi({
+            judul: 'Hapus dosir?',
+            pesan: `Dosir ${item.kode} akan dihapus. Surat yang pernah ditautkan tetap tersimpan.`,
+            aksi: 'Hapus',
+            batal: 'Batal',
+            berbahaya: true,
+        })
+        if (!setuju) return
 
         try {
             await dosirService.delete(item.id)
@@ -582,6 +591,8 @@ export default function Dosir() {
                 kategoriOptions={KATEGORI_OPTIONS}
                 onBerhasil={fetchData}
             />
+
+            {dialogKonfirmasi}
         </div>
     )
 }

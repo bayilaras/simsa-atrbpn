@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import DosirDetail from './DosirDetail';
@@ -36,6 +36,13 @@ function renderPage() {
     );
 }
 const bukaTab = async (nama) => fireEvent.mouseDown(await screen.findByRole('tab', { name: nama }), { button: 0, ctrlKey: false });
+// Konfirmasi memakai dialog aplikasi, bukan window.confirm.
+const jawabKonfirmasi = async (jawaban, isi) => {
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Lepas surat dari dosir?');
+    if (isi) expect(dialog).toHaveTextContent(isi);
+    fireEvent.click(within(dialog).getByRole('button', { name: jawaban }));
+};
 const paragrafCatatan = (isi) => screen.getByText((_, el) => el?.tagName === 'P' && el.textContent === `Catatan: ${isi}`);
 
 beforeEach(() => {
@@ -44,7 +51,7 @@ beforeEach(() => {
     mocks.getById.mockReset().mockResolvedValue(dosir);
     mocks.getTimeline.mockReset().mockResolvedValue([]);
     mocks.removeSurat.mockReset().mockResolvedValue({ success: true });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.spyOn(window, 'confirm').mockImplementation(() => { throw new Error('window.confirm tidak boleh dipakai'); });
     vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -64,6 +71,7 @@ describe('daftar surat di dosir', () => {
         renderPage();
         await bukaTab(/Surat Masuk/);
         fireEvent.click(screen.getByRole('button', { name: 'Lepas dari dosir' }));
+        await jawabKonfirmasi('Lepas', 'Surat masuk SM-001/2026 tidak lagi tercatat di dosir ini. Suratnya sendiri tetap tersimpan.');
 
         await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith({
             title: 'Surat dilepas dari dosir',
@@ -81,6 +89,7 @@ describe('daftar surat di dosir', () => {
         renderPage();
         await bukaTab(/Surat Keluar/);
         fireEvent.click(screen.getAllByRole('button', { name: 'Lepas dari dosir' })[0]);
+        await jawabKonfirmasi('Lepas');
 
         await waitFor(() => expect(mocks.toast).toHaveBeenCalledWith({
             title: 'Surat gagal dilepas dari dosir', description: pesan, variant: 'destructive',
@@ -105,10 +114,11 @@ describe('daftar surat di dosir', () => {
     });
 
     it('tidak melepas apa pun bila konfirmasi dibatalkan', async () => {
-        window.confirm.mockReturnValue(false);
         renderPage();
         await bukaTab(/Surat Masuk/);
         fireEvent.click(screen.getByRole('button', { name: 'Lepas dari dosir' }));
+        await jawabKonfirmasi('Batal');
+        await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
         expect(mocks.removeSurat).not.toHaveBeenCalled();
         expect(mocks.toast).not.toHaveBeenCalled();
     });

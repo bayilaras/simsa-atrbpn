@@ -1,9 +1,12 @@
 import { useCallback, useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, AlertCircle, Loader2 } from 'lucide-react'
+import { CheckCircle2, Loader2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
+import { SuratTidakTermuat } from './SuratTidakTermuat'
+import { AlasanDialog } from '@/components/surat/AlasanDialog'
+import rangkaianService from '@/services/rangkaian.service'
 import { ArchiveDialog } from '@/components/ArchiveDialog'
 import { DistributeDialog } from '@/components/DistributeDialog'
 import suratMasukService from '@/services/surat-masuk.service'
@@ -34,9 +37,12 @@ export default function SuratMasukDetail() {
     const isAdmin = Boolean(surat && aksesMelalui === 'owner' && canWrite(surat.unitKerjaId))
     const [loading, setLoading] = useState(true)
     const [perluAkses, setPerluAkses] = useState(null)
+    // Galat muat pertama (bukan "perlu persetujuan"); null selama surat termuat.
+    const [galatMuat, setGalatMuat] = useState(null)
     const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
     const [distributeDialogOpen, setDistributeDialogOpen] = useState(false)
     const [tautkanOpen, setTautkanOpen] = useState(false)
+    const [tandaiSelesaiOpen, setTandaiSelesaiOpen] = useState(false)
     const [penyelesaianTarget, setPenyelesaianTarget] = useState(null)
     // Sinyal reload AlurSuratPanel yang dikendalikan halaman ini (N1): dinaikkan
     // hanya setelah Terima/Arsip/Distribusi SUKSES, tidak pernah dari refresh
@@ -58,23 +64,33 @@ export default function SuratMasukDetail() {
             const data = await suratMasukService.getById(id)
             setSurat(data)
             setPerluAkses(null)
+            setGalatMuat(null)
             termuatRef.current = true
         } catch (error) {
             const perlu = rekamanPerluPersetujuan(error, 'surat_masuk', id)
             if (perlu) {
                 setSurat(null)
                 setPerluAkses(perlu)
+                setGalatMuat(null)
                 termuatRef.current = false
                 return
             }
             // Galat lain: jangan sisakan keadaan persetujuan milik surat sebelumnya.
             setPerluAkses(null)
             console.error('Error fetching surat:', error)
-            toast({
-                title: 'Gagal',
-                description: 'Gagal memuat data surat',
-                variant: 'destructive',
-            })
+            if (diam) {
+                // Penyegaran setelah surat tampil: isi yang sudah termuat dipertahankan.
+                toast({
+                    title: 'Gagal',
+                    description: 'Gagal memuat data surat',
+                    variant: 'destructive',
+                })
+                return
+            }
+            // Muat pertama gagal: halaman menjelaskan sendiri (tidak ditemukan
+            // atau belum dapat dimuat) dan surat sebelumnya tidak ikut tampil.
+            setSurat(null)
+            setGalatMuat(error)
         } finally {
             if (!diam) setLoading(false)
         }
@@ -142,6 +158,25 @@ export default function SuratMasukDetail() {
         fetchSurat()
         setAlurVersi((v) => v + 1)
     }
+    // Galat dilempar kembali agar AlasanDialog menampilkan pesan server di dalam dialog.
+    const handleTandaiSelesai = async (catatan) => {
+        try {
+            await rangkaianService.tandaiSelesaiSuratMasuk(surat.id, catatan)
+        } catch (error) {
+            // 409: keadaan surat sudah berubah (mis. sudah masuk rangkaian); halaman ikut dimuat ulang.
+            if (error?.status === 409) {
+                fetchSurat()
+                setAlurVersi((v) => v + 1)
+            }
+            throw error
+        }
+        toast({
+            title: 'Surat ditandai selesai',
+            description: 'Status surat menjadi Sudah Dibalas dan surat kini ada di Siap diberkaskan.',
+        })
+        fetchSurat()
+        setAlurVersi((v) => v + 1)
+    }
 
     if (loading) {
         return (
@@ -162,29 +197,18 @@ export default function SuratMasukDetail() {
     }
 
     if (!surat) {
-        return (
-            <div className="space-y-6">
-                <Button variant="ghost" onClick={() => navigate(-1)}>
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Kembali
-                </Button>
-                <Card className="border-dashed">
-                    <CardContent className="flex flex-col items-center justify-center py-16">
-                        <div className="bg-muted/50 p-4 rounded-full mb-4">
-                            <AlertCircle className="h-12 w-12 text-muted-foreground" />
-                        </div>
-                        <h2 className="text-xl font-semibold mb-2">Surat Tidak Ditemukan</h2>
-                        <p className="text-muted-foreground text-center max-w-sm">
-                            Data surat dengan ID tersebut tidak tersedia atau mungkin sudah dihapus.
-                        </p>
-                        <Button className="mt-6" onClick={() => navigate('/surat/masuk')}>
-                            Kembali ke Daftar Surat
-                        </Button>
-                    </CardContent>
-                </Card>
-            </div>
-        )
+        return <SuratTidakTermuat galat={galatMuat} daftarPath="/surat/masuk" onCobaLagi={fetchSurat} />
     }
+
+    // Tandai Selesai untuk surat masuk yang tidak perlu ditindaklanjuti. Syaratnya
+    // sama dengan tab Perlu Dilengkapi (kategori sm_belum_ditindaklanjuti di
+    // backend services/perlu-dilengkapi.service.ts) dan dengan
+    // POST /api/rangkaian/surat-masuk/:id/selesai: admin penuh unit pemilik
+    // (isAdmin), surat belum berada dalam rangkaian, dan belum ada disposisi
+    // atau balasan (statusAlur 'terdaftar'). Semuanya dibaca dari jawaban
+    // server; jawaban tanpa bidang `rangkaian` tidak menawarkan tombol ini.
+    // Surat yang sudah ber-rangkaian memakai Tandai Selesai di Alur Surat.
+    const bolehTandaiSelesai = isAdmin && surat.rangkaian === null && surat.statusAlur === 'terdaftar'
 
     return (
         <div className="space-y-6">
@@ -206,6 +230,21 @@ export default function SuratMasukDetail() {
                 {/* Main Content */}
                 <div className="lg:col-span-2 space-y-6">
                     <InfoSection surat={surat} />
+                    {bolehTandaiSelesai && (
+                        <Card>
+                            <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="space-y-1">
+                                    <p className="text-sm font-medium">Tidak perlu ditindaklanjuti?</p>
+                                    <p className="text-sm text-muted-foreground">
+                                        Bila surat ini tidak perlu didisposisikan atau dibalas, misalnya undangan, tembusan, atau edaran, tandai selesai dengan catatan singkat.
+                                    </p>
+                                </div>
+                                <Button type="button" variant="outline" className="shrink-0" onClick={() => setTandaiSelesaiOpen(true)}>
+                                    <CheckCircle2 className="mr-2 h-4 w-4" aria-hidden="true" /> Tandai Selesai
+                                </Button>
+                            </CardContent>
+                        </Card>
+                    )}
                     <AlurSuratPanel jenis="surat_masuk" suratId={surat.id} aksesMelalui={aksesMelalui} onChanged={fetchSurat} muatUlangKe={alurVersi} />
                     <FilePreviewSection surat={surat} />
                 </div>
@@ -248,6 +287,19 @@ export default function SuratMasukDetail() {
                 jenis="surat_masuk"
                 surat={surat}
                 onBerhasil={handleTautkanBerhasil}
+            />
+
+            {/* Dialog yang sama dengan tab Perlu Dilengkapi; tetap terpasang agar pesan
+                penolakan server masih terbaca setelah halaman dimuat ulang. */}
+            <AlasanDialog
+                open={tandaiSelesaiOpen}
+                onOpenChange={setTandaiSelesaiOpen}
+                title="Tandai Selesai"
+                label="Catatan penyelesaian"
+                submitLabel="Tandai Selesai"
+                description={`Untuk surat ${surat.nomorSurat || 'ini'} yang tidak perlu didisposisikan atau dibalas, misalnya undangan, tembusan, atau edaran. `
+                    + 'Surat pindah ke Siap diberkaskan dan statusnya menjadi Sudah Dibalas. Tindakan ini diaudit dan dapat dibuka kembali.'}
+                onSubmit={handleTandaiSelesai}
             />
 
             <DistributeDialog
