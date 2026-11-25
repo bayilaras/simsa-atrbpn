@@ -1,4 +1,5 @@
 import api from './api';
+import { unduhEkspor } from '@/lib/unduh-ekspor';
 
 function requireUnitKerjaId(unitKerjaId) {
     if (!unitKerjaId) throw new Error('Pilih unit kerja terlebih dahulu');
@@ -33,6 +34,21 @@ export const distributionService = {
     async getOutbox(unitKerjaId, filters = {}) {
         requireUnitKerjaId(unitKerjaId);
         return api.get('/api/distributions/outbox', { unitKerjaId, ...filters });
+    },
+
+    /**
+     * Unduh rekap disposisi satu kotak ('inbox' atau 'outbox') sebagai Excel
+     * atau PDF. `filters` sama dengan penyaring daftarnya, tanpa page/limit:
+     * berkas memuat seluruh hasil penyaring, bukan satu halaman.
+     */
+    async exportKotak(kotak, format, unitKerjaId, filters = {}) {
+        requireUnitKerjaId(unitKerjaId);
+        const nama = kotak === 'inbox' ? 'kotak-masuk' : 'kotak-keluar';
+        return unduhEkspor(
+            `/api/distributions/export/${kotak}/${format}`,
+            { unitKerjaId, ...filters },
+            `rekap-disposisi-${nama}.${format === 'excel' ? 'xlsx' : 'pdf'}`,
+        );
     },
 
     /**

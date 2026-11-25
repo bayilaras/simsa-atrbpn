@@ -11,6 +11,8 @@ import { ExportCompletenessError } from '../services/export-completeness.js';
 import { auditExport } from '../services/export-audit';
 import { keteranganPeriodeLaporan, periodeLaporanArsip, periodeLaporanSurat } from '../services/laporan-periode';
 import { jakartaDate } from '../utils/jakarta-date.js';
+import { eksporPeminjamanService, STATUS_PEMINJAMAN } from '../services/export-peminjaman';
+import { AKHIRAN_BERKAS, berkasDariTabel, JENIS_KONTEN, pilihanSaringan, SaringanEksporTidakSah, tanggalSaringan } from '../services/export-tabel';
 
 const log = createLogger('ReportRoutes');
 
@@ -177,6 +179,47 @@ router.get('/summary', async (req: AuthRequest, res: Response) => {
 });
 
 // ==================== EXPORT REPORTS ====================
+
+// Rekap peminjaman memakai penyaring tab Peminjaman (status, rentang tanggal
+// pinjam), bukan tahun; didaftarkan sebelum rute ekspor umum di bawah.
+router.get('/export/peminjaman/:format', exportLimiter, permissionMiddleware('reports', 'export'), async (req: AuthRequest, res: Response) => {
+    try {
+        // Enforce unit-kerja isolation: staff/admin roles are forced to their own unit;
+        // only super_admin/auditor may target another unit via query param.
+        const unitKerjaId = resolveUnitKerjaId(req) || undefined;
+        if (!unitKerjaId) {
+            res.status(400).json({ error: 'Unit kerja wajib dipilih.' });
+            return;
+        }
+        const format = pilihanSaringan(req.params.format, ['excel', 'pdf'] as const, 'format berkas');
+        if (!format) throw new SaringanEksporTidakSah('Format berkas tidak dikenali.');
+
+        const saringan = {
+            unitKerjaId,
+            status: pilihanSaringan(req.query.status, STATUS_PEMINJAMAN, 'status') ?? 'all',
+            tanggalDari: tanggalSaringan(req.query.tanggalDari, 'Dari Tanggal'),
+            tanggalSampai: tanggalSaringan(req.query.tanggalSampai, 'Sampai Tanggal'),
+            securityClassifications: allowedSecurityClassifications(req.user),
+        };
+        const buffer = await berkasDariTabel(await eksporPeminjamanService.tabel(saringan), format);
+        await auditExport(req, { source: 'laporan', type: 'peminjaman', format, filters: saringan });
+
+        res.setHeader('Content-Type', JENIS_KONTEN[format]);
+        res.setHeader('Content-Disposition', `attachment; filename="laporan-peminjaman-${jakartaDate()}.${AKHIRAN_BERKAS[format]}"`);
+        res.send(buffer);
+    } catch (error) {
+        if (error instanceof ExportCompletenessError) {
+            res.status(error.statusCode).json({ error: error.code, message: error.message, limit: error.limit, total: error.total });
+            return;
+        }
+        if (error instanceof SaringanEksporTidakSah) {
+            res.status(400).json({ error: 'INVALID_EXPORT_FILTER', message: error.message });
+            return;
+        }
+        log.error({ err: error }, 'Error exporting lending report:');
+        res.status(500).json({ error: 'Gagal mengekspor laporan. Silakan coba lagi.' });
+    }
+});
 
 router.get('/export/:type/:format', exportLimiter, permissionMiddleware('reports', 'export'), async (req: AuthRequest, res: Response) => {
     try {

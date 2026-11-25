@@ -262,6 +262,7 @@ Pembuat tidak dapat menyetujui suratnya sendiri. Selama status **Menunggu Perset
 1. Di daftar Surat Masuk pilih **Distribusi** dari menu tiga titik (⋯), atau di detail surat pilih **Tindak Lanjut > Disposisi ke Direktorat**.
 2. Centang unit tujuan, pilih penanggung jawab dan batas waktu bila perlu, tulis instruksi, lalu klik **Disposisikan**.
 3. Buka menu **Distribusi**: tab **Kotak Masuk** untuk kiriman masuk (terima, buat tindak lanjut, selesaikan, atau tolak) dan tab **Kotak Keluar** untuk kiriman yang Anda buat.
+4. Untuk rekap tindak lanjut, klik **Ekspor Excel** atau **Ekspor PDF** pada tab yang sedang dibuka. Berkas memuat seluruh disposisi kotak itu sesuai penyaringnya; surat yang tampil **Dikecualikan** tetap tertulis Dikecualikan di berkas. Lihat [Mengekspor Rekap Disposisi](./manajemen-surat/distribusi.md#mengekspor-rekap-disposisi).
 
 Jangan menghapus surat hanya untuk memperbaiki kesalahan kecil. Gunakan fungsi edit/koreksi yang tersedia agar jejak aktivitas tetap dapat ditelusuri. Penghapusan hanya dilakukan oleh petugas berwenang setelah memastikan dampaknya.
 
@@ -524,8 +525,8 @@ Khusus Super Admin, tab **Perlu Keputusan** digunakan untuk menyetujui/menolak, 
 1. Buka **Administrasi > Laporan**.
 2. Pilih tahun atau isi **Dari Tanggal** / **Sampai Tanggal**, lalu klik **Tampilkan Data**. Bila tanggal diisi, pilihan tahun diabaikan untuk surat masuk dan surat keluar.
 3. Gunakan tab **Ringkasan**, **Surat Masuk**, **Surat Keluar**, **Arsip**, atau **Peminjaman**.
-4. Pada tab Surat Masuk, Surat Keluar, atau Arsip, pilih **Excel** atau **PDF**. Isi berkas surat sama dengan tabel di layar; ekspor arsip hanya memakai tahun.
-5. Pada tab **Peminjaman**, peminjaman yang lewat jatuh tempo dan belum dikembalikan berstatus **Terlambat** dan dapat disaring dengan pilihan **Terlambat**.
+4. Pada tab Surat Masuk, Surat Keluar, Arsip, atau Peminjaman, pilih **Excel** atau **PDF**. Isi berkas surat sama dengan tabel di layar; ekspor arsip hanya memakai tahun dan berjudul **Daftar Arsip**.
+5. Pada tab **Peminjaman**, peminjaman yang lewat jatuh tempo dan belum dikembalikan berstatus **Terlambat** dan dapat disaring dengan pilihan **Terlambat**. Berkas ekspornya mengikuti penyaring status dan rentang tanggal pinjam, serta memuat kolom **Hari Terlambat**.
 6. Periksa periode, unit, jumlah baris, dan filter sebelum menggunakan hasil.
 
 Tanggal dan waktu pada laporan serta berkas ekspor mengikuti WIB, dan label di berkas sama dengan label di layar. Bila Super Admin mengekspor dari daftar Surat Masuk, Surat Keluar, atau Arsip dengan pilihan **Semua Unit Kerja**, berkasnya memuat kolom **Unit Kerja** berisi nama unit. Pada PDF, baris yang lebih tinggi dari satu halaman dipotong dengan catatan *Teks yang terlalu panjang dipotong; versi Excel memuat isi lengkap.*
@@ -542,8 +543,9 @@ Super Admin membuka **Administrasi > Audit Log** untuk:
 
 - mencari nama pengguna, email, atau ID data;
 - memfilter tipe entitas dan aksi, termasuk aksi **Masuk**, **Gagal masuk**, **Keluar**, dan **Mengganti kata sandi** (rinciannya hanya menulis *kata sandi: diganti*, tanpa isi kata sandi); aksi **Menjalankan Pemindai** dari Monitoring Operasional juga tercatat;
-- memeriksa waktu, pelaku, rekod, IP, dan rincian perubahan yang tersedia; serta
-- menelusuri urutan kejadian bersama jejak aturan, appraisal, pemicu, atau manifest.
+- memeriksa waktu, pelaku, rekod, IP, dan rincian perubahan yang tersedia;
+- menelusuri urutan kejadian bersama jejak aturan, appraisal, pemicu, atau manifest; serta
+- mengunduh log sesuai penyaring dengan **Ekspor Excel** (paling banyak 10.000 baris; kolom Ringkasan hanya memuat nama isian yang berubah, tanpa nilainya). Lihat [Mengekspor Audit Log](./administrasi/audit-log.md#mengekspor-audit-log).
 
 Audit Log bukan alasan untuk membagikan informasi sensitif. Ekspor atau tangkapan layar audit hanya diberikan kepada pihak berwenang.
 
