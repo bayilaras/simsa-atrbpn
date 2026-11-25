@@ -11,6 +11,13 @@ sama (`importRows`). Selama
 pemilih unit menunjukkan "Semua Unit Kerja", tombol impor tetap tampil tetapi
 nonaktif dengan petunjuk "Pilih unit kerja terlebih dahulu".
 
+Setiap surat yang dibuat impor (berkas, Google Sheets, maupun CSV lama) diberi
+penanda `diimpor_at` (migrasi 0055). Surat berpenanda yang belum menjadi bagian
+rangkaian diperlakukan sebagai data lama di daftar kerja Perlu Dilengkapi: tidak
+tampil dan tidak dihitung kecuali **Tampilkan data lama** dicentang. Cara
+menandai surat yang diimpor sebelum migrasi itu ada di
+[operasional backend](OPERASIONAL_BACKEND.md#penanda-surat-hasil-impor-migrasi-0055).
+
 1. Pilih berkas `.csv` atau `.xlsx` (maksimal 4 MiB, 1.000 baris data, 64 kolom,
    16 KiB per sel). Batas 4 MiB berada di bawah batas badan permintaan Vercel.
 2. Tekan **Pratinjau**. Untuk XLSX dengan beberapa lembar, pilih lembar kerja

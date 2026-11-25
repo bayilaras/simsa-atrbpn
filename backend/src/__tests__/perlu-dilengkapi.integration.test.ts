@@ -184,7 +184,7 @@ describe('Perlu Dilengkapi (D7) — cakupan §4', () => {
     it('aksiDiizinkan dihitung server dengan aturan P3 (computeSuratAksi/computeRangkaianAksi)', async () => {
         const aksi = async (nama: NamaPengguna, kunci: string, tampilkanDataLama = false) =>
             (await daftar(nama, { tampilkanDataLama })).data.find(item => item.kunci === kunci)?.aksiDiizinkan;
-        expect(await aksi('tu', `sm_belum_ditindaklanjuti:${id.SM1}`)).toEqual(['buka_surat', 'disposisi', 'tindak_lanjut']);
+        expect(await aksi('tu', `sm_belum_ditindaklanjuti:${id.SM1}`)).toEqual(['buka_surat', 'disposisi', 'tandai_selesai', 'tindak_lanjut']);
         expect(await aksi('staffTu', `sm_belum_ditindaklanjuti:${id.SM1}`)).toEqual(['buka_surat']);
         expect(await aksi('bppt', `sk_tanpa_nd_penjelas:${id.SK7}`)).toEqual(['buat_nd_penjelas', 'buka_surat']);
         expect(await aksi('bppt', `sk_tanpa_asal:${id.SK10}`)).toEqual(['buka_surat', 'tandai_inisiatif', 'tautkan']);
@@ -364,5 +364,124 @@ describe('FE-I1: rangkaian per baris mengikuti mode baca (dapatDibuka, FR:35)', 
         for (const bocoran of ['RS-2026-000041', rR.id, 'PERIHAL-RAHASIA-41']) expect(json).not.toContain(bocoran);
         // Kontrol: R6 (anggota terbaca bagi staff) tetap tampil dengan dapatDibuka.
         expect(hasil.data.find(item => item.kunci === `siap_diberkaskan:${id.R6}`)?.rangkaian).toMatchObject({ id: id.R6, dapatDibuka: true });
+    });
+});
+
+describe('Tandai Selesai untuk surat masuk tanpa rangkaian (aksi tandai_selesai)', () => {
+    const aksi = async (nama: NamaPengguna, kunci: string, tampilkanDataLama = false) =>
+        (await daftar(nama, { tampilkanDataLama })).data.find(item => item.kunci === kunci)?.aksiDiizinkan;
+
+    it('hanya pemilik FULL_ADMIN atas surat terbaca yang belum ber-rangkaian', async () => {
+        const kunci = `sm_belum_ditindaklanjuti:${id.SM1}`;
+        expect(await aksi('tu', kunci)).toContain('tandai_selesai');
+        expect(await aksi('superAdmin', kunci)).toContain('tandai_selesai');
+        // Staf unit pemilik membaca, tetapi tidak menulis.
+        expect(await aksi('staffTu', kunci)).toEqual(['buka_surat']);
+        // SM5 sudah punya rangkaian (disposisinya ditolak): penutupan lewat Tandai Selesai rangkaian itu.
+        expect(await aksi('tu', `sm_belum_ditindaklanjuti:${id.SM5}`)).toEqual(['buka_surat', 'disposisi', 'tindak_lanjut']);
+    });
+
+    it('pengawas atas surat direktorat tidak ditawari; pemilik direktoratnya ditawari', async () => {
+        const smDir = await insertSuratMasuk(database, { n: 50, unit: 'dir_bppt', nomor: 'ED-50/2026', tanggal: '2026-09-25', perihal: 'Surat edaran lima puluh' });
+        const kunci = `sm_belum_ditindaklanjuti:${smDir}`;
+        expect(await aksi('bppt', kunci)).toContain('tandai_selesai');
+        const pengawas = await aksi('tu', kunci);
+        expect(pengawas).toContain('buka_surat');
+        expect(pengawas).not.toContain('tandai_selesai');
+        // Paritas dengan gerbang endpoint: check() pemilik menolak pengawas (404), menerima pemilik.
+        expect((await access.check(pengguna.tu, 'surat_masuk', smDir, holder.db)).allowed).toBe(false);
+        expect((await access.check(pengguna.bppt, 'surat_masuk', smDir, holder.db)).allowed).toBe(true);
+    });
+
+    it('surat kelas terkendali tampil tersamar tanpa aksi apa pun', async () => {
+        const smRahasia = await insertSuratMasuk(database, { n: 51, unit: 'sesditjen', nomor: 'R-51/2026', tanggal: '2026-09-26', perihal: 'PERIHAL-RAHASIA-51', sifat: 'Rahasia' });
+        const hasil = await daftar('tu', { kategori: 'sm_belum_ditindaklanjuti' });
+        const tersamar = hasil.data.filter(item => item.masked);
+        expect(tersamar).toHaveLength(1);
+        expect(tersamar[0]).toMatchObject({ label: 'Dikecualikan', surat: null, aksiDiizinkan: [] });
+        expect(JSON.stringify(hasil)).not.toContain(smRahasia);
+    });
+
+    it('surat terarsip tetap di daftar dan tetap dapat ditandai selesai (arsip tidak menutup tindak lanjut)', async () => {
+        await database.exec(`UPDATE surat_masuk SET is_archived = true WHERE id = '${id.SM1}'`);
+        const terarsip = await aksi('tu', `sm_belum_ditindaklanjuti:${id.SM1}`);
+        expect(terarsip).toBeDefined();
+        expect(terarsip).toContain('tandai_selesai');
+    });
+});
+
+describe('surat hasil impor (diimpor_at, migrasi 0055) diperlakukan sebagai data lama', () => {
+    const kunciData = async (nama: NamaPengguna, tampilkanDataLama: boolean) =>
+        new Map((await daftar(nama, { tampilkanDataLama })).data.map(item => [item.kunci, item.dataLama]));
+
+    it('surat impor tanpa rangkaian tersembunyi secara bawaan dan tampil berlabel data lama saat diminta', async () => {
+        // Dibuat SETELAH batas (created_at = waktu impor): hanya penanda yang membedakannya dari surat baru.
+        const smImpor = await insertSuratMasuk(database, { n: 60, unit: 'sesditjen', nomor: 'SM-60/2024', tanggal: '2024-03-01', perihal: 'Register lama enam puluh' });
+        const skImpor = await insertSuratKeluar(database, { n: 65, unit: 'dir_bppt', nomor: 'ND-65/2024', tanggal: '2024-03-02', perihal: 'Register keluar enam lima' });
+        const kunciSm = `sm_belum_ditindaklanjuti:${smImpor}`;
+        const kunciSk = `sk_tanpa_asal:${skImpor}`;
+        const sebelum = await svc.perluDilengkapiService.ringkasan(pengguna.tu, { tampilkanDataLama: false });
+        expect([...(await kunciData('tu', false)).keys()]).toEqual(expect.arrayContaining([kunciSm, kunciSk]));
+
+        await database.exec(`
+            UPDATE surat_masuk SET diimpor_at = created_at WHERE id = '${smImpor}';
+            UPDATE surat_keluar SET diimpor_at = created_at WHERE id = '${skImpor}';
+        `);
+        const bawaan = await kunciData('tu', false);
+        expect(bawaan.has(kunciSm)).toBe(false);
+        expect(bawaan.has(kunciSk)).toBe(false);
+        const sesudah = await svc.perluDilengkapiService.ringkasan(pengguna.tu, { tampilkanDataLama: false });
+        expect(sesudah.perKategori.sm_belum_ditindaklanjuti).toBe(sebelum.perKategori.sm_belum_ditindaklanjuti - 1);
+        expect(sesudah.perKategori.sk_tanpa_asal).toBe(sebelum.perKategori.sk_tanpa_asal - 1);
+        expect(sesudah.total).toBe(sebelum.total - 2);
+
+        const semua = await kunciData('tu', true);
+        expect(semua.get(kunciSm)).toBe(true);
+        expect(semua.get(kunciSk)).toBe(true);
+        // Surat formulir (penanda NULL) yang dibuat setelah batas tidak ikut menjadi data lama.
+        expect(semua.get(`sm_belum_ditindaklanjuti:${id.SM1}`)).toBe(false);
+        expect(semua.get(`sk_tanpa_asal:${id.SK10}`)).toBe(false);
+        // Pemilik tetap dapat menindaklanjuti atau menutup surat impor dari tampilan data lama.
+        const barisSm = (await daftar('tu', { tampilkanDataLama: true })).data.find(item => item.kunci === kunciSm)!;
+        expect(barisSm.aksiDiizinkan).toEqual(['buka_surat', 'disposisi', 'tandai_selesai', 'tindak_lanjut']);
+    });
+
+    it('surat impor yang sudah menjadi anggota rangkaian mengikuti rangkaiannya, bukan penanda impor', async () => {
+        const smImpor = await insertSuratMasuk(database, { n: 62, unit: 'sesditjen', nomor: 'SM-62/2024', tanggal: '2024-03-03', perihal: 'Register lama enam dua' });
+        const skKep = await insertSuratKeluar(database, { n: 63, unit: 'dir_bppt', nomor: 'KEP-63/2024', tanggal: '2024-03-04', naskah: 'Keputusan', perihal: 'Keputusan impor enam tiga' });
+        await database.exec(`
+            UPDATE surat_masuk SET diimpor_at = created_at WHERE id = '${smImpor}';
+            UPDATE surat_keluar SET diimpor_at = created_at, asal_naskah = 'inisiatif' WHERE id = '${skKep}';
+        `);
+        const kunciSm = `sm_belum_ditindaklanjuti:${smImpor}`;
+        const kunciKep = `sk_tanpa_nd_penjelas:${skKep}`;
+        expect((await kunciData('tu', false)).has(kunciSm)).toBe(false);
+        expect((await kunciData('bppt', false)).has(kunciKep)).toBe(false);
+
+        // Disposisi (di sini ditolak) dan tindak lanjut membuat rangkaian biasa (asal bukan data_lama).
+        const rSm = await insertRangkaian(database, {
+            n: 62, kode: 'RS-2026-000062', tahun: 2026, pencatat: 'sesditjen', judul: 'Register lama enam dua',
+            anggota: [{ jenis: 'surat_masuk', id: smImpor, peran: 'induk', unit: 'sesditjen' }],
+        });
+        await insertDisposisi(database, { suratMasukId: smImpor, sumber: 'sesditjen', target: 'dir_ptep', status: 'rejected', rangkaianId: rSm.id });
+        await insertRangkaian(database, {
+            n: 63, kode: 'RS-2026-000063', tahun: 2026, asal: 'inisiatif', pencatat: 'dir_bppt', judul: 'Keputusan impor enam tiga',
+            anggota: [{ jenis: 'surat_keluar', id: skKep, peran: 'induk', unit: 'dir_bppt' }],
+        });
+        expect((await kunciData('tu', false)).get(kunciSm)).toBe(false);
+        expect((await kunciData('bppt', false)).get(kunciKep)).toBe(false);
+    });
+
+    it('surat impor Rahasia tetap tersamar saat data lama ditampilkan', async () => {
+        const smImpor = await insertSuratMasuk(database, { n: 64, unit: 'sesditjen', nomor: 'R-64/2024', tanggal: '2024-03-05', perihal: 'PERIHAL-RAHASIA-IMPOR-64', sifat: 'Rahasia' });
+        await database.exec(`UPDATE surat_masuk SET diimpor_at = created_at WHERE id = '${smImpor}'`);
+        const bawaan = await daftar('tu', { kategori: 'sm_belum_ditindaklanjuti' });
+        expect(bawaan.data.some(item => item.masked)).toBe(false);
+        const semua = await daftar('tu', { kategori: 'sm_belum_ditindaklanjuti', tampilkanDataLama: true });
+        const tersamar = semua.data.filter(item => item.masked);
+        expect(tersamar).toHaveLength(1);
+        expect(tersamar[0]).toMatchObject({ dataLama: true, surat: null, aksiDiizinkan: [] });
+        const json = JSON.stringify(semua);
+        for (const bocoran of ['PERIHAL-RAHASIA-IMPOR-64', 'R-64/2024', smImpor]) expect(json).not.toContain(bocoran);
     });
 });

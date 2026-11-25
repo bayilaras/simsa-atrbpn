@@ -58,6 +58,8 @@ Sebagian besar pengguna diminta masuk sekali lagi. Hal ini wajar: masuk kembali 
 - **Impor CSV** arsip kini mengisi **No. Filing Cabinet**, **No. Laci**, **No. Folder**, dan **Kode Lokasi Simpan**, serta menerima Jenis Arsip `lainnya`.
 - **Cetak Disposisi** pada detail surat masuk membuka Lembar Disposisi siap cetak. Lihat [Lembar Disposisi](./manajemen-surat/surat-masuk.md#lembar-disposisi).
 - **Pengingat peminjaman:** lonceng notifikasi admin menampilkan peminjaman yang terlambat atau jatuh tempo dalam dua hari. Lihat [Pengingat jatuh tempo](./layanan-fisik/peminjaman.md#pengingat-jatuh-tempo).
+- **Tandai Selesai** di tab Perlu Dilengkapi menutup surat masuk yang tidak perlu didisposisikan atau dibalas, misalnya undangan, tembusan, atau edaran. Lihat [Menandai surat masuk selesai tanpa balasan](./manajemen-surat/rangkaian-surat.md#menandai-surat-masuk-selesai-tanpa-balasan).
+- Surat hasil impor tidak lagi memenuhi tab Perlu Dilengkapi; centang **Tampilkan data lama** untuk melihatnya. Lihat [Surat hasil impor dan data lama](./manajemen-surat/rangkaian-surat.md#surat-hasil-impor-dan-data-lama).
 
 ## Laporan, ekspor, dan pencarian
 

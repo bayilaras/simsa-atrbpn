@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ResourcePagination } from '@/components/ResourcePagination'
 import { DistributeDialog } from '@/components/DistributeDialog'
+import { AlasanDialog } from '@/components/surat/AlasanDialog'
 import { BerkaskanDialog } from '@/components/surat/BerkaskanDialog'
 import { TautkanDialog } from '@/components/surat/AlurSuratActions'
 import { usePaginatedResource } from '@/hooks/use-paginated-resource'
@@ -61,6 +62,7 @@ function AksiBaris({ item, onAksi }) {
         <div className="flex shrink-0 flex-wrap gap-2">
             {aksi.has('tindak_lanjut') && <Button type="button" size="sm" onClick={() => onAksi('tindak_lanjut', item)}>Tindak Lanjut</Button>}
             {aksi.has('disposisi') && <Button type="button" size="sm" variant="outline" onClick={() => onAksi('disposisi', item)}>Disposisi</Button>}
+            {aksi.has('tandai_selesai') && item.surat && <Button type="button" size="sm" variant="outline" onClick={() => onAksi('tandai_selesai', item)}>Tandai Selesai</Button>}
             {aksi.has('buka_kotak_disposisi') && <Button size="sm" variant="outline" asChild><Link to="/distribusi">Buka Kotak Disposisi</Link></Button>}
             {aksi.has('buat_nd_penjelas') && <Button type="button" size="sm" onClick={() => onAksi('buat_nd_penjelas', item)}>Buat ND Penjelas</Button>}
             {aksi.has('berkaskan') && <Button type="button" size="sm" onClick={() => onAksi('berkaskan', item)}>Berkaskan ke Direktorat</Button>}
@@ -197,6 +199,20 @@ export function PerluDilengkapiTab() {
                     onBerhasil={() => berhasil('Surat ditautkan ke rangkaian')}
                 />
             )}
+            {/* Surat masuk tanpa rangkaian yang tidak perlu disposisi atau balasan. Galat server tampil di dalam dialog. */}
+            <AlasanDialog
+                open={dialog?.jenis === 'tandai_selesai'}
+                onOpenChange={tutupBila}
+                title="Tandai Selesai"
+                label="Catatan penyelesaian"
+                submitLabel="Tandai Selesai"
+                description={`Untuk surat ${item?.surat?.nomorSurat || 'ini'} yang tidak perlu didisposisikan atau dibalas, misalnya undangan, tembusan, atau edaran. `
+                    + 'Surat pindah ke Siap diberkaskan dan statusnya menjadi Sudah Dibalas. Tindakan ini diaudit dan dapat dibuka kembali.'}
+                onSubmit={async (catatan) => {
+                    await rangkaianService.tandaiSelesaiSuratMasuk(item.surat.id, catatan)
+                    berhasil('Surat ditandai selesai dan kini ada di Siap diberkaskan')
+                }}
+            />
             <Dialog open={dialog?.jenis === 'inisiatif'} onOpenChange={tutupBila}>
                 <DialogContent>
                     <DialogHeader>

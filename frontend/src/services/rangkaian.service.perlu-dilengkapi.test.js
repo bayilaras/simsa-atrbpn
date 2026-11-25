@@ -29,4 +29,13 @@ describe('rangkaianService — Perlu Dilengkapi (D7)', () => {
         await expect(rangkaianService.tandaiInisiatif('sk-1')).resolves.toEqual({ id: 'sk-1', asalNaskah: 'inisiatif' })
         expect(mocks.post).toHaveBeenCalledWith('/api/rangkaian/surat-keluar/sk-1/tandai-inisiatif', {})
     })
+    it('tandaiSelesaiSuratMasuk mengirim catatan ke rute surat masuk dan meneruskan galat server', async () => {
+        const hasil = { id: 'rs-1', kode: 'RS-2026-000123', status: 'selesai', suratMasukId: 'sm 1/x' }
+        mocks.post.mockResolvedValueOnce({ success: true, data: hasil })
+        await expect(rangkaianService.tandaiSelesaiSuratMasuk('sm 1/x', 'Undangan sudah dihadiri')).resolves.toEqual(hasil)
+        expect(mocks.post).toHaveBeenCalledWith('/api/rangkaian/surat-masuk/sm%201%2Fx/selesai', { catatan: 'Undangan sudah dihadiri' })
+        const galat = Object.assign(new Error('Surat ini sudah berada dalam rangkaian.'), { status: 409 })
+        mocks.post.mockRejectedValueOnce(galat)
+        await expect(rangkaianService.tandaiSelesaiSuratMasuk('sm-2', 'Tidak perlu dibalas')).rejects.toBe(galat)
+    })
 })
