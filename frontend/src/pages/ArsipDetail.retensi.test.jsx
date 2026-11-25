@@ -6,6 +6,7 @@ import ArsipDetail from './ArsipDetail'
 const mocks = vi.hoisted(() => ({ getById: vi.fn(), getRuleHistory: vi.fn() }))
 
 vi.mock('@/components/tunjuk-silang/KartuTunjukSilang', () => ({ KartuTunjukSilang: () => null }))
+vi.mock('@/components/arsip/KartuPeminjamanArsip', () => ({ KartuPeminjamanArsip: () => null }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { id: 'staf-1', role: 'staff', unitKerjaId: 'unit-1' }, canWrite: () => false }) }))
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }))
 vi.mock('@/services/arsip.service', () => ({

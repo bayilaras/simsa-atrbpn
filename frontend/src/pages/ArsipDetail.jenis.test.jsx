@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/components/tunjuk-silang/KartuTunjukSilang', () => ({ KartuTunjukSilang: () => null }))
+vi.mock('@/components/arsip/KartuPeminjamanArsip', () => ({ KartuPeminjamanArsip: () => null }))
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { id: 'admin-1', role: 'admin_unit', unitKerjaId: 'unit-1' }, canWrite: () => false }) }))
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }))
 vi.mock('@/services/storage-location.service', () => ({ default: { getTree: vi.fn().mockResolvedValue({ success: true, data: [] }) } }))
