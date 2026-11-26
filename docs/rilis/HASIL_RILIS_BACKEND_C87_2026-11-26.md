@@ -34,7 +34,7 @@ Kedua rute legal hold kini memeriksa hak kelola pemilik tanpa melihat keadaan re
 
 ## Pemeriksaan di produksi
 
-Tanpa login. Tidak ada data yang disimpan.
+Tanpa login, segera setelah promosi. Tidak ada data yang disimpan.
 
 | Bagian | Hasil |
 |---|---|
@@ -42,7 +42,16 @@ Tanpa login. Tidak ada data yang disimpan.
 | Rute yang dilindungi | Menjawab 401 tanpa sesi, lewat backend langsung dan lewat proxy `/api` frontend |
 | Monitoring operasional | Probe monitor sehat untuk semua pemeriksaan |
 
-Belum dicoba di produksi: menerapkan lalu melepas legal hold pada arsip nyata. Produksi hanya punya satu arsip, yaitu arsip QA yang dipakai skenario UAT, dan percobaan itu tercatat di Audit Log atas akun yang menjalankannya. Buktinya saat ini adalah uji rute di atas database uji, yang juga dijalankan saat build kandidat ini.
+Dengan akun Super Admin, 03:31–03:32: legal hold diterapkan lalu dilepas pada arsip QA `QA-UAT-20260914-mu02jaq3-IN` (unit Ditjen), satu-satunya arsip di produksi. Arsipnya kembali ke keadaan semula; yang tersisa hanya dua catatan Audit Log dan alasan pelepasan pada arsip itu.
+
+| Waktu | Kejadian |
+|---|---|
+| 03:31:12 | Legal hold diterapkan: `PUT /api/retention/:id/hold` dijawab 200. Permintaannya dikirim langsung dengan sesi yang sedang masuk, karena halaman Manajemen Retensi hanya menyediakan tombol "Hold" pada baris kandidat penyusutan dan arsip ini bukan kandidat |
+| 03:31 | Halaman Manajemen Retensi unit Ditjen menampilkan "Legal Hold Aktif" 1 arsip, dengan alasan dan tombol "Lepas Hold" |
+| 03:31:55 | Dilepas lewat tombol "Lepas Hold" dan dialog "Lepas Legal Hold" di aplikasi. Muncul "Legal hold dilepas"; "Legal Hold Aktif" kembali 0 arsip |
+| 03:32 | Arsip: `legalHold` bernilai `false`, status penyusutan `active`, alasan pelepasan tersimpan. Audit Log: satu `hold` (03:31:12) dan satu `release_hold` (03:31:55) untuk arsip itu. Konsol peramban tanpa galat |
+
+Satu hal terlihat saat pemeriksaan dan tidak diubah di rilis ini: lewat aplikasi, legal hold hanya bisa diterapkan pada arsip yang sudah tampil sebagai kandidat penyusutan. Arsip yang belum menjadi kandidat tidak punya tombolnya.
 
 Pemindai dokumen belum berjalan pada deployment C87. Bukti kesiapannya berasal dari run pada C86 (01:28:03) dan berlaku sampai 27 November 01:16:37.
 
