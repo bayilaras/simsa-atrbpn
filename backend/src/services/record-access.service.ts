@@ -237,6 +237,20 @@ export function evaluateOwnerAccess(
     };
 }
 
+/**
+ * Hak kelola pemilik tanpa melihat keadaan rekodnya. `mutable` juga menolak
+ * arsip yang sedang ditahan (legal hold) atau sedang dalam proses penyusutan;
+ * aksi yang justru menangani keadaan itu, yaitu menerapkan dan melepas legal
+ * hold, memakai fungsi ini dan menyerahkan pemeriksaan keadaannya ke layanan.
+ */
+export function canManageRegardlessOfState(
+    user: RecordUser | undefined,
+    access: RecordAccessResult,
+): boolean {
+    return access.exists && access.allowed && user?.role !== 'auditor' &&
+        (!requiresExplicitAccessGrant(access.classification) || access.grantAccessMode === 'manage');
+}
+
 export type ReadVia = 'owner' | 'pengawas' | 'peserta';
 export interface ReadRef { type: JenisRekamanRangkaian; id: string }
 export interface ReadAccessResult extends RecordAccessResult {
