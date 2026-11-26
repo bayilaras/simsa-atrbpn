@@ -159,11 +159,94 @@ describe('native supervisor descendant process exit races', () => {
         expect(state.replies).toMatchObject([{ ok: false, reason: 'rss_limit' }]);
     });
 
+    // /proc/<pid>/stat: pid (comm) state ppid pgrp session tty_nr tpgid flags ...
+    const stat = (flags: number, state = 'R', comm = 'freshclam') => `1001 (${comm}) ${state} 1000 1000 1000 0 -1 ${flags} 120 0 0 0 1 0 0 0 20 0 1 0 5000 0 0\n`;
+    const RUNNING = 0x400100, EXITING = 0x400104;
+
     it('never treats an inconclusive descendant reread as proof that a live process exited', async () => {
-        const state = harness(undefined, { '/proc/1001/status': ['', 'State:\tR\n'] });
+        const state = harness(undefined, { '/proc/1001/status': ['', 'State:\tR\n'], '/proc/1001/stat': stat(RUNNING) });
         await settle(); state.measurement.resolve(rootStatus); await settle();
         state.native.emit('close', null, 'SIGKILL'); await settle();
-        expect(state.replies).toMatchObject([{ ok: false, reason: 'rss_unavailable' }]);
+        expect(state.replies).toEqual([{ ok: false, reason: 'rss_unavailable', rssFailure: 'descendant_rss_missing' }]);
+        expect(state.readFile).toHaveBeenCalledWith('/proc/1001/stat', 'utf8');
+    });
+
+    it('accepts a descendant that released its memory and is still shutting down', async () => {
+        // Two reads in a row see a running state without VmRSS: the address
+        // space is gone, the task is not a zombie yet.
+        const state = harness(undefined, { '/proc/1001/status': ['State:\tR (running)\n', 'State:\tR (running)\n'], '/proc/1001/stat': stat(EXITING) });
+        await settle(); state.measurement.resolve(rootStatus); await settle();
+        state.native.emit('close', 0, null); await settle();
+        expect(state.replies).toEqual([{ ok: true,
+            result: { code: 0, stdout: '', stderr: '', peakCombinedRssBytes: (1024 + 2048) * 1024 } }]);
+        expect(state.native.kill).not.toHaveBeenCalled();
+    });
+
+    it('keeps the earlier peak while a large descendant spends several samples shutting down', async () => {
+        const procReads: Record<string, string | Error> = { '/proc/1001/status': 'State:\tR (running)\nVmRSS:\t4096 kB\n' };
+        const state = harness(undefined, procReads); await settle();
+        state.measurement.resolve(rootStatus); await settle();
+        procReads['/proc/1001/status'] = 'State:\tR (running)\n';
+        procReads['/proc/1001/stat'] = stat(EXITING);
+        for (let sample = 0; sample < 4; sample++) { vi.advanceTimersByTime(25); await settle(); }
+        expect(state.native.kill).not.toHaveBeenCalled();
+        state.native.emit('close', 0, null); await settle();
+        expect(state.replies).toMatchObject([{ ok: true,
+            result: { peakCombinedRssBytes: (1024 + 4096 + 2048) * 1024 } }]);
+    });
+
+    it('reads the shutdown flag after a command name with spaces and parentheses', async () => {
+        const state = harness(undefined, { '/proc/1001/status': ['State:\tR\n', 'State:\tR\n'], '/proc/1001/stat': stat(EXITING, 'R', 'clam (test) 4 x') });
+        await settle(); state.measurement.resolve(rootStatus); await settle();
+        state.native.emit('close', 0, null); await settle();
+        expect(state.replies).toMatchObject([{ ok: true }]);
+    });
+
+    it.each(['Z', 'X'])('accepts a descendant whose stat already reports exit state %s', async exitState => {
+        const state = harness(undefined, { '/proc/1001/status': ['State:\tR\n', 'State:\tR\n'], '/proc/1001/stat': stat(RUNNING, exitState) });
+        await settle(); state.measurement.resolve(rootStatus); await settle();
+        state.native.emit('close', 0, null); await settle();
+        expect(state.replies).toMatchObject([{ ok: true, result: { peakCombinedRssBytes: (1024 + 2048) * 1024 } }]);
+    });
+
+    it('accepts a dead descendant state like a zombie', async () => {
+        const state = harness(undefined, { '/proc/1001/status': 'State:\tX (dead)\n' });
+        await settle(); state.measurement.resolve(rootStatus); await settle();
+        state.native.emit('close', 0, null); await settle();
+        expect(state.replies).toMatchObject([{ ok: true, result: { peakCombinedRssBytes: (1024 + 2048) * 1024 } }]);
+        expect(state.readFile).not.toHaveBeenCalledWith('/proc/1001/stat', 'utf8');
+    });
+
+    it.each(['ENOENT', 'ESRCH'])('accepts a descendant whose stat disappeared with %s after two inconclusive status reads', async code => {
+        const state = harness(undefined, { '/proc/1001/status': ['State:\tR\n', 'State:\tR\n'], '/proc/1001/stat': procError(code) });
+        await settle(); state.measurement.resolve(rootStatus); await settle();
+        state.native.emit('close', 0, null); await settle();
+        expect(state.replies).toMatchObject([{ ok: true, result: { peakCombinedRssBytes: (1024 + 2048) * 1024 } }]);
+    });
+
+    it.each([
+        ['an unreadable stat (EACCES)', procError('EACCES')],
+        ['an unreadable stat (EIO)', procError('EIO')],
+        ['an empty stat', ''],
+        ['a stat for another pid', stat(EXITING).replace('1001 (', '2002 (')],
+        ['a stat without a command name', '1001 R 1000 1000 1000 0 -1 4194564\n'],
+        ['a truncated stat', '1001 (freshclam) R 1000 1000\n'],
+        ['a non-numeric flags field', stat(EXITING).replace('4194564', '0x400104')],
+        ['an oversized flags field', stat(EXITING).replace('4194564', '41945644194564')],
+    ])('keeps %s closed for a live descendant without RSS', async (_label, configured) => {
+        const state = harness(undefined, { '/proc/1001/status': ['State:\tR\n', 'State:\tR\n'], '/proc/1001/stat': configured });
+        await settle(); state.measurement.resolve(rootStatus); await settle();
+        state.native.emit('close', null, 'SIGKILL'); await settle();
+        expect(state.replies).toEqual([{ ok: false, reason: 'rss_unavailable', rssFailure: 'descendant_rss_missing' }]);
+        expect(state.native.kill).toHaveBeenCalledWith('SIGKILL');
+    });
+
+    it('never applies the shutdown allowance to the supervisor itself', async () => {
+        const state = harness(undefined, { '/proc/1000/status': 'State:\tR (running)\n', '/proc/1000/stat': stat(EXITING).replace('1001 (', '1000 (') });
+        await settle();
+        state.native.emit('close', null, 'SIGKILL'); await settle();
+        expect(state.replies).toEqual([{ ok: false, reason: 'rss_unavailable', rssFailure: 'self_rss_missing' }]);
+        expect(state.readFile).not.toHaveBeenCalledWith('/proc/1000/stat', 'utf8');
     });
 
     it.each(['EACCES', 'EPERM'])('keeps descendant reread permission failure %s closed', async code => {

@@ -55,6 +55,34 @@ async function finish(result: NativeCommandResult | null): Promise<void> {
 }
 process.once('disconnect', () => { if (!finished) stop('cancelled'); });
 
+// A zombie (Z) or dead (X) task has already released its memory.
+const exited = (status: string) => /^State:\s+[ZX]/m.test(status);
+// PF_EXITING in the kernel flags word, field 9 of /proc/<pid>/stat (proc(5)).
+const PF_EXITING = 0x4;
+/**
+ * A task drops its address space early in exit and becomes a zombie only when
+ * the rest of the teardown is done. In between, /proc/<pid>/status is readable,
+ * shows a running state and has no VmRSS line, for as long as the kernel needs
+ * to free the memory: an immediate reread lands in the same window. PF_EXITING
+ * is the kernel's own statement that the task is shutting down. Anything else
+ * stays inconclusive and fails closed.
+ */
+async function shuttingDown(pid: number): Promise<boolean> {
+    let stat: string;
+    try { stat = await readFile(`/proc/${pid}/stat`, 'utf8'); } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        return code === 'ENOENT' || code === 'ESRCH';
+    }
+    // The command name may contain spaces and parentheses; the fixed fields
+    // resume after its last closing parenthesis: state, ppid, pgrp, session,
+    // tty_nr, tpgid, flags.
+    const close = stat.lastIndexOf(')');
+    if (!stat.startsWith(`${pid} (`) || close < 0) return false;
+    const fields = stat.slice(close + 1).trim().split(/\s+/);
+    if (fields[0] === 'Z' || fields[0] === 'X') return true;
+    return /^\d{1,10}$/.test(fields[6] ?? '') && (Number(fields[6]) & PF_EXITING) !== 0;
+}
+
 async function rssTree(pid: number, visited = new Set<number>(), descendant = false): Promise<{ bytes: number; pids: number[] }> {
     if (!Number.isSafeInteger(pid) || pid < 1 || visited.has(pid) || visited.size > 32) throw memoryError('process_tree_invalid');
     visited.add(pid);
@@ -67,7 +95,7 @@ async function rssTree(pid: number, visited = new Set<number>(), descendant = fa
         throw memoryError(descendant ? 'descendant_status_unreadable' : 'self_status_unreadable', error);
     }
     let rss = status.match(/^VmRSS:\s+(\d+)/m);
-    if (!rss && descendant && !/^State:\s+Z/m.test(status)) {
+    if (!rss && descendant && !exited(status)) {
         // A process can release its mm while /proc/status is being read and
         // vanish before it is observed as a zombie. Confirm that transition
         // once; an empty/incomplete read alone never proves zero memory.
@@ -79,8 +107,9 @@ async function rssTree(pid: number, visited = new Set<number>(), descendant = fa
         }
         rss = status.match(/^VmRSS:\s+(\d+)/m);
     }
-    // A zombie has already released memory; an unreadable live process fails.
-    if (!rss && (!descendant || !/^State:\s+Z/m.test(status))) throw memoryError(descendant ? 'descendant_rss_missing' : 'self_rss_missing');
+    // An exited descendant, or one the kernel reports as shutting down, has
+    // released its memory; an unreadable live process fails.
+    if (!rss && (!descendant || !(exited(status) || await shuttingDown(pid)))) throw memoryError(descendant ? 'descendant_rss_missing' : 'self_rss_missing');
     let bytes = Number(rss?.[1] ?? 0) * 1024;
     const pids = [pid];
     const children = await readFile(`/proc/${pid}/task/${pid}/children`, 'utf8').catch((error: NodeJS.ErrnoException) => {
