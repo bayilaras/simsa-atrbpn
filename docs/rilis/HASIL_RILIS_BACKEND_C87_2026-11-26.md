@@ -2,7 +2,7 @@
 
 Lanjutan `HASIL_RILIS_BACKEND_C86_2026-11-26.md`. Semua waktu dalam UTC (WIB = UTC+7); rilis berlangsung 26 November pagi WIB.
 
-Rilis ini membawa backend dari `main` `aa9257a`, yaitu PR #228. Frontend tetap C90 dan situs panduan tidak berubah. Tidak ada migrasi (journal tetap 56, terakhir `0055_surat_diimpor_at`), perubahan env, atau kredensial. Sejak `9d9737b` tidak ada perubahan di `frontend/` maupun `docs-site/`. Setelah rilis ini produksi sama dengan `main`.
+Rilis ini membawa backend dari `main` `aa9257ac`, yaitu PR #228. Frontend tetap C90 dan situs panduan tidak berubah. Tidak ada migrasi (journal tetap 56, terakhir `0055_surat_diimpor_at`), perubahan env, atau kredensial. Sejak `9d9737b` tidak ada perubahan di `frontend/` maupun `docs-site/`. Setelah rilis ini produksi sama dengan `main`.
 
 ## Isi rilis
 
@@ -20,9 +20,9 @@ Kedua rute legal hold kini memeriksa hak kelola pemilik tanpa melihat keadaan re
 
 | Langkah | Hasil | Waktu |
 |---|---|---|
-| Merge #228 | Disetujui efanwahyu pada `2804560` (02:43:14) dengan semua pemeriksaan lulus, lalu digabung sebagai `aa9257a` | 02:43:46 |
-| CI `main` | Run `45744343052` lulus seluruhnya pada `aa9257a`, pada percobaan pertama | 02:43–02:55 |
-| Sumber rilis | `release-source.mjs prepare` pada `aa9257a`: 1.810 berkas, manifest `545b3d002e16a2da8e0356e0441be6db444cb697e8fc64ab6fce4f3558d1a58f`, 56 migrasi | ±02:44 |
+| Merge #228 | Disetujui efanwahyu pada `2804560` (02:43:14) dengan semua pemeriksaan lulus, lalu digabung sebagai `aa9257ac` | 02:43:46 |
+| CI `main` | Run `45744343052` lulus seluruhnya pada `aa9257ac`, pada percobaan pertama | 02:43–02:55 |
+| Sumber rilis | `release-source.mjs prepare` pada `aa9257ac`: 1.810 berkas, manifest `545b3d002e16a2da8e0356e0441be6db444cb697e8fc64ab6fce4f3558d1a58f`, 56 migrasi | ±02:44 |
 | Target rollback | Backend C86 `dpl_opshe34e7wcgfgRjP6cuCNvCahAR`, dibaca dari alias produksi dan dicatat di `rollback.md` sebelum build | ±02:44 |
 | Kandidat backend C87 | `dpl_3WijRbbhExvKECRneLU1pmvpU2BM` Ready. Verifikasi sumber lulus: pemeriksaan tipe dan 356 berkas uji (5.224 uji lulus, 3 dilewati), termasuk uji legal hold yang baru | 02:44–02:57 |
 | `/ready` sebelum promosi | 200 `ready` | 02:57:44 |
@@ -50,7 +50,7 @@ Pemindai dokumen belum berjalan pada deployment C87. Bukti kesiapannya berasal d
 
 | Komponen | Deployment aktif | Sumber | Rollback |
 |---|---|---|---|
-| Backend | `dpl_3WijRbbhExvKECRneLU1pmvpU2BM` (C87) | `main` `aa9257a` | C86 `dpl_opshe34e7wcgfgRjP6cuCNvCahAR` |
+| Backend | `dpl_3WijRbbhExvKECRneLU1pmvpU2BM` (C87) | `main` `aa9257ac` | C86 `dpl_opshe34e7wcgfgRjP6cuCNvCahAR` |
 | Frontend | `dpl_BRgRJDdkn6r7fgzGD96jv6mZTaNi` (C90) | `main` `9d9737b` | C89 `dpl_9H8B3eXvZTU1n54qNsicGmZWGjiD` |
 | Situs panduan | `dpl_HRb5o1C5moMbuZJo7SuFQvbbQHv9` | `main` `9d9737b` | `dpl_BhqHaVAnKAD8XAD2ZXYj6fBXrTY1` |
 
