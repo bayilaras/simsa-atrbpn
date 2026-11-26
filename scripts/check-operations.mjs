@@ -7,6 +7,10 @@ const REQUIRED_CHECKS = ['database', 'storage', 'scanner', 'scan_queue', 'fixity
 const OPTIONAL_CHECKS = ['upload_cleanup'];
 const KNOWN_CHECKS = [...REQUIRED_CHECKS, ...OPTIONAL_CHECKS];
 const PROBLEM_STATUSES = ['attention', 'failed', 'unknown'];
+// Probes after a scheduled scanner wake, 20 seconds apart: four cover the
+// minute a refresh needs, six is the limit while the state is not healthy.
+const SETTLE_PROBES = 4;
+const MAXIMUM_PROBES = 6;
 
 export function validateOperationsProbe(responseStatus, payload, now = Date.now()) {
     const required = REQUIRED_CHECKS;
@@ -97,11 +101,13 @@ export async function runMonitor(source = process.env, fetcher = fetch, sleep = 
     if ((source.OPERATIONS_MONITOR_TOKEN || '').length < 32) throw new Error('OPERATIONS_MONITOR_TOKEN belum dikonfigurasi.');
     const wake = await requestScannerWake(source, fetcher);
     console.log(`Pemindai: ${wake}.`);
-    // A scheduled wake needs about a minute to refresh definitions; probe
-    // again only then, at most six times, before reporting the result.
+    // A scheduled wake refreshes definitions in the background and needs about
+    // a minute. Until it ends, the lease from before the wake still answers
+    // "healthy", so a healthy probe right away says nothing about the refresh.
+    // Probe for a minute, and up to six times while the state is not healthy.
     for (let attempt = 1; ; attempt++) {
         const healthy = await runOperationsProbe(source, fetcher);
-        if (healthy || wake !== 'scheduled' || attempt >= 6) return healthy;
+        if (wake !== 'scheduled' || attempt >= MAXIMUM_PROBES || (healthy && attempt >= SETTLE_PROBES)) return healthy;
         await sleep(20000);
     }
 }

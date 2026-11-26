@@ -23,6 +23,10 @@ Batas 8 jam = dua jadwal Vercel Cron (tiap 4 jam, ±59 menit). Kegagalan sebelum
 
 Heartbeat pemindai menyimpan `deploymentId` (`VERCEL_DEPLOYMENT_ID`). Cek `scanner` di Operations Monitor dan panel Super Admin bernilai `attention` saat `standby`; monitor tetap membangunkan pemindai lebih dulu dan gagal bila wake tidak memulihkannya. Berkas baru tetap dikarantina sampai pemindaian membuktikannya bersih, apa pun status `/ready`.
 
+Setelah wake yang dijadwalkan (`scanner-wake` menjawab `scheduled`), monitor tidak berhenti pada probe sehat pertama. Lease dari sebelum wake masih berlaku selama penyegaran berjalan, sehingga probe yang langsung sehat belum mengatakan apa pun tentang penyegaran itu. Monitor mem-probe empat kali berjarak 20 detik, dan sampai enam kali selama keadaannya belum sehat; hasil probe terakhir menjadi hasil run.
+
+Pengawas proses native (`backend/src/workers/native-clamav-process.ts`) mengukur memori seluruh pohon proses ClamAV setiap 25 ms dan menghentikan semuanya bila pengukuran tidak tersedia (`rss_unavailable`). Proses yang sedang keluar melepas ruang alamatnya lebih dulu dan baru menjadi zombie setelah sisa pembongkarannya selesai; selama itu `/proc/<pid>/status` terbaca dengan status berjalan tetapi tanpa baris `VmRSS`. Pengawas menganggap proses turunan seperti itu sudah melepas memorinya hanya bila ada buktinya: kernel menandainya sedang keluar (`PF_EXITING`, kolom kesembilan `/proc/<pid>/stat`), statusnya zombie atau mati, atau prosesnya sudah hilang. Tanpa bukti itu pengukuran tetap gagal dengan `descendant_rss_missing`. Sampai backend C85 hanya zombie dan proses yang sudah hilang yang diterima, sehingga penyiapan definisi sesekali gagal tepat saat sebuah proses turunan keluar dan `/ready` menjawab 503 `on_demand_refresh_failed` (tercatat 26 November 2026; lihat `docs/rilis/HASIL_RILIS_FRONTEND_C90_2026-11-26.md`).
+
 Bagian TCP berikut memakai protokol resmi ClamAV `clamd` `INSTREAM`. Berkas tetap berada
 dalam karantina sampai `clamd` mengembalikan respons persis `stream: OK` dan
 SHA-256 serta ukuran hasil baca ulang cocok dengan baseline ingest. Respons
