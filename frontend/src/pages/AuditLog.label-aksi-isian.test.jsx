@@ -75,8 +75,15 @@ it('baris log tata kelola retensi dan isian perubahan memakai label, bukan kode'
                     after: { diimporAt: '2026-10-20T15:13:21.652927+00:00', nomorSurat: 'A-2', tanggal_surat_baru: '2026-01-02' },
                 },
             },
+            {
+                id: 'log-3', action: 'update', entityType: 'archive_lending', entityId: 'p-1', userName: 'Admin Unit', createdAt: '2026-11-25T13:00:00.000Z',
+                changes: {
+                    before: { dueDate: '2026-09-14', fileOriginalName: 'lama.pdf', suratMasukId: 'sm-1' },
+                    after: { dueDate: '2026-09-15', fileOriginalName: 'baru.pdf', suratMasukId: 'sm-2' },
+                },
+            },
         ],
-        pagination: { total: 2, totalPages: 1 },
+        pagination: { total: 3, totalPages: 1 },
     })
     render(<AuditLog />)
 
@@ -87,4 +94,10 @@ it('baris log tata kelola retensi dan isian perubahan memakai label, bukan kode'
     expect(screen.getByText('nomor Surat:')).toBeInTheDocument()
     expect(screen.getByText('tanggal surat baru:')).toBeInTheDocument()
     for (const mentah of ['diimporAt:', 'DiimporAt:', 'nomorSurat:', 'tanggal surat_baru:']) expect(screen.queryByText(mentah)).toBeNull()
+
+    // Nama kolom berbahasa Inggris diberi label; akhiran Id ditulis sebagai kata.
+    expect(screen.getByText('Jatuh tempo:')).toBeInTheDocument()
+    expect(screen.getByText('Nama berkas asli:')).toBeInTheDocument()
+    expect(screen.getByText('ID surat Masuk:')).toBeInTheDocument()
+    for (const mentah of ['due Date:', 'file Original Name:', 'surat Masuk Id:']) expect(screen.queryByText(mentah)).toBeNull()
 })
