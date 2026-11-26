@@ -46,7 +46,7 @@ Tabel label disusun dari nama isian di seluruh 923 catatan Audit Log produksi pa
 |---|---|
 | 00:15:53–00:16:18 | `/ready` 200 pada kelima uji asap frontend; pemindai siap dengan definisi lama |
 | 00:16:38 | Run Operations Monitor memanggil `POST /api/operations/scanner-wake`, dijawab 202 |
-| 00:16:39 | Penyegaran definisi yang dipicu panggilan itu gagal: `Native antivirus execution failed { stage: 'definitions', errorCode: 'scanner_error', reason: 'rss_unavailable', rssFailure: 'descendant_rss_missing' }`. `/ready` mulai menjawab 503 |
+| 00:16:39 | Run pemindai yang dipicu panggilan itu gagal pada tahap penyiapan definisi: `Native antivirus execution failed { stage: 'definitions', errorCode: 'scanner_error', reason: 'rss_unavailable', rssFailure: 'descendant_rss_missing' }`. `/ready` mulai menjawab 503 |
 | 00:16:42 | Run Operations Monitor selesai dengan status sukses |
 | 00:19:03 | Monitoring Operasional di aplikasi menampilkan "gagal" untuk Pemindai keamanan dokumen |
 | 00:19:36 | Super Admin menjalankan pemeriksaan pemindai dari halaman Monitoring Operasional; pemindaian internal dijawab 200 |
@@ -55,12 +55,12 @@ Tabel label disusun dari nama isian di seluruh 923 catatan Audit Log produksi pa
 Yang diketahui dari kejadian ini:
 
 - Rilis ini tidak mengubah backend. Pemicunya run Operations Monitor yang dijalankan sebagai langkah rilis, bukan kode yang dirilis.
-- Gejalanya sama dengan 1 November (`on_demand_refresh_failed`), yang saat itu penyebabnya tidak terlihat di log. Kali ini penyebabnya tercatat: pengukuran memori proses pemindai tidak tersedia (`rss_unavailable`, `descendant_rss_missing`) pada tahap penyegaran definisi.
-- Pemindai siap dengan definisi lama sampai sesaat sebelum penyegaran. Satu penyegaran yang gagal sudah cukup membuat `/ready` 503.
-- Run Operations Monitor yang memicu penyegaran itu tetap berakhir sukses, walaupun kegagalan terjadi tiga detik sebelum run itu selesai.
+- Gejalanya sama dengan 1 November (`on_demand_refresh_failed`), yang saat itu penyebabnya tidak terlihat di log. Kali ini penyebabnya tercatat: pengukuran memori proses pemindai tidak tersedia (`rss_unavailable`, `descendant_rss_missing`) pada tahap penyiapan definisi, yaitu penyegaran lewat Freshclam dan verifikasi tanda tangan.
+- Pemindai siap dengan definisi lama sampai sesaat sebelum run itu. Satu run pemindai yang gagal pada deployment yang sedang aktif sudah cukup membuat `/ready` 503; ini perilaku yang disengaja (`docs/OPERASI_ANTIVIRUS_BITSTREAM.md`).
+- Run Operations Monitor yang memicu run itu tetap berakhir sukses, walaupun kegagalan terjadi tiga detik sebelum run monitor selesai. Monitor berhenti pada probe sehat pertama, dan saat itu lease lama masih berlaku.
 - Tanpa tindakan manual, pemulihan paling cepat terjadi pada panggilan bangun-pemindai terjadwal berikutnya. Panggilan itu berjalan setiap empat jam; yang berikutnya 03:07.
 
-Perbaikannya ada di backend dan belum dikerjakan: penyegaran yang gagal karena pengukuran memori perlu diulang, dan kegagalan penyegaran tidak semestinya menggugurkan definisi lama yang masih berlaku.
+Penyebab di kode ditemukan sesudah rilis ini. Pengawas proses ClamAV mengukur memori setiap proses turunannya, dan proses yang sedang keluar terbaca tanpa angka memori selama beberapa saat sebelum menjadi zombie. Pengawas menganggap keadaan itu sebagai pengukuran yang gagal lalu menghentikan seluruh run. Perbaikannya ada di PR #226 dan belum dirilis: proses turunan yang oleh kernel ditandai sedang keluar diterima sebagai sudah melepas memori, dan Operations Monitor tidak lagi berhenti pada probe sehat pertama setelah membangunkan pemindai.
 
 ## Pemeriksaan di produksi
 
