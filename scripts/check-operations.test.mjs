@@ -74,8 +74,41 @@ test('monitor wakes the scanner first and re-probes only while a scheduled wake 
     const waits = [];
     assert.equal(await runMonitor({ OPERATIONS_MONITOR_TOKEN: 'x'.repeat(64) }, fetcher, async ms => { waits.push(ms); }), true);
     assert.deepEqual(calls[0], ['https://simsa-frontend.vercel.app/api/operations/scanner-wake', 'POST']);
-    assert.equal(probes, 3);
-    assert.deepEqual(waits, [20000, 20000]);
+    // Healthy from the third probe; the fourth closes the settling minute.
+    assert.equal(probes, 4);
+    assert.deepEqual(waits, [20000, 20000, 20000]);
+});
+
+// probeStates: one entry per probe, the last one repeats.
+async function monitorAfterScheduledWake(probeStates) {
+    const { runMonitor } = await import('./check-operations.mjs');
+    let probes = 0; const waits = [];
+    const fetcher = async url => {
+        if (url.endsWith('/scanner-wake')) return { status: 202, text: async () => JSON.stringify({ status: 'scheduled' }) };
+        const healthy = probeStates[Math.min(probes, probeStates.length - 1)]; probes += 1;
+        return healthy ? { status: 200, text: async () => JSON.stringify({ ...payload(), timestamp: new Date().toISOString() }) }
+            : { status: 503, text: async () => JSON.stringify({ ...payload(), status: 'failed' }) };
+    };
+    const result = await runMonitor({ OPERATIONS_MONITOR_TOKEN: 'x'.repeat(64) }, fetcher, async ms => { waits.push(ms); });
+    return { result, probes, waits };
+}
+
+test('a healthy probe right after a scheduled wake is not final', async () => {
+    // The lease from before the wake is still valid while the refresh runs.
+    const steady = await monitorAfterScheduledWake([true]);
+    assert.deepEqual(steady, { result: true, probes: 4, waits: [20000, 20000, 20000] });
+});
+
+test('a refresh that fails after the first healthy probe fails the monitor', async () => {
+    const failed = await monitorAfterScheduledWake([true, false]);
+    assert.deepEqual(failed, { result: false, probes: 6, waits: [20000, 20000, 20000, 20000, 20000] });
+});
+
+test('a scanner that recovers within the probe limit passes, one that fails at the end does not', async () => {
+    const recovered = await monitorAfterScheduledWake([true, false, false, false, true]);
+    assert.deepEqual(recovered, { result: true, probes: 5, waits: [20000, 20000, 20000, 20000] });
+    const late = await monitorAfterScheduledWake([true, true, true, false]);
+    assert.deepEqual(late, { result: false, probes: 6, waits: [20000, 20000, 20000, 20000, 20000] });
 });
 
 test('a fresh scanner or a failed wake request gets exactly one probe', async () => {
