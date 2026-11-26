@@ -9,6 +9,7 @@ import { sensitiveLimiter } from '../middlewares/rate-limiter.middleware';
 import { createLogger } from '../utils/logger';
 import {
     allowedSecurityClassifications,
+    canManageRegardlessOfState,
     recordAccessService,
 } from '../services/record-access.service.js';
 import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
@@ -150,8 +151,10 @@ router.put(
             const unitKerjaId = resolveScopedUnit(req, res, 'body');
             if (!unitKerjaId) return;
 
+            // Bukan `mutable`: arsip dalam proses penyusutan justru yang perlu
+            // ditahan. Layanan menolak arsip yang sudah ditahan atau dieksekusi.
             const access = await recordAccessService.check(req.user, 'arsip', String(req.params.id));
-            if (!access.exists || !access.mutable || access.unitKerjaId !== unitKerjaId) {
+            if (!canManageRegardlessOfState(req.user, access) || access.unitKerjaId !== unitKerjaId) {
                 return res.status(404).json({ error: 'Arsip tidak ditemukan' });
             }
 
@@ -182,8 +185,10 @@ router.put(
             const unitKerjaId = resolveScopedUnit(req, res, 'body');
             if (!unitKerjaId) return;
 
+            // Bukan `mutable`: arsip yang ditahan selalu tidak `mutable`, sehingga
+            // dengan syarat itu legal hold tidak pernah bisa dilepas.
             const access = await recordAccessService.check(req.user, 'arsip', String(req.params.id));
-            if (!access.exists || !access.mutable || access.unitKerjaId !== unitKerjaId) {
+            if (!canManageRegardlessOfState(req.user, access) || access.unitKerjaId !== unitKerjaId) {
                 return res.status(404).json({ error: 'Arsip tidak ditemukan' });
             }
 
