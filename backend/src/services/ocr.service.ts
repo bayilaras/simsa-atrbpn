@@ -203,6 +203,265 @@ const STOPWORDS = new Set([
     'hormat', 'menteri', 'direktur', 'kepala', 'sekretaris', 'tempat', 'yth'
 ]);
 
+/**
+ * Rebuild reading lines from PDF.js text items. Items that share a baseline
+ * are joined without inventing a space inside a word, and a new baseline
+ * starts a new line, so the field patterns below can stop at the end of a
+ * line. Items without a position keep the former space-joined behaviour.
+ */
+export function joinPdfTextItems(items: unknown): string {
+    if (!Array.isArray(items)) return '';
+    let out = '';
+    let previous: { x: number; y: number; width: number; height: number } | null = null;
+    for (const raw of items) {
+        const item = raw as { str?: unknown; transform?: unknown; width?: unknown; height?: unknown; hasEOL?: unknown };
+        if (typeof item?.str !== 'string') continue;
+        const transform = Array.isArray(item.transform) ? item.transform : null;
+        const x = Number(transform?.[4]);
+        const y = Number(transform?.[5]);
+        const positioned = transform !== null && Number.isFinite(x) && Number.isFinite(y);
+        const height = Math.abs(Number(item.height)) || Math.abs(Number(transform?.[3])) || 0;
+        const width = Math.abs(Number(item.width)) || 0;
+        if (!positioned) {
+            if (out && !/\s$/.test(out)) out += ' ';
+        } else if (previous) {
+            const lineHeight = Math.max(height, previous.height, 1);
+            const drop = Math.abs(y - previous.y);
+            if (drop > lineHeight * 0.5) {
+                if (!out.endsWith('\n')) out += '\n';
+                // A gap of about two lines separates paragraphs.
+                if (drop > lineHeight * 1.9 && !out.endsWith('\n\n')) out += '\n';
+            } else if (x - (previous.x + previous.width) > lineHeight * 0.15
+                && out && !/\s$/.test(out) && !/^\s/.test(item.str)) {
+                // Wider than kerning: the PDF left the space out of its text.
+                out += ' ';
+            }
+        }
+        out += item.str;
+        if (item.hasEOL === true && !out.endsWith('\n')) out += '\n';
+        if (positioned && (item.str.length > 0 || !previous)) previous = { x, y, width, height };
+    }
+    return out
+        .split('\n')
+        .map(line => line.replace(/[ \t\u00a0]+/g, ' ').trim())
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
+const FIELD_LABEL = '(?:Nomor|No\\.|Sifat|Lampiran|Lamp\\.|Hal|Perihal|Tanggal|Dari|Kepada|Yth\\.?|Tembusan)';
+const NEXT_FIELD_LABEL = new RegExp(`\\s${FIELD_LABEL}\\s*:`, 'i');
+const LINE_STARTS_WITH_LABEL = new RegExp(`^(?:${FIELD_LABEL}\\s*:|Yth\\b|Kepada\\b|Tembusan\\b)`, 'i');
+const BODY_OPENING = /^(?:Dengan hormat|Sehubungan|Bersama ini|Menindaklanjuti|Berdasarkan|Dalam rangka|Menunjuk|Memperhatikan|Berkenaan|Yang bertanda)/i;
+const NUMBER_STOP_WORD = /^(?:hal|perihal|lampiran|lamp\.?|sifat|tanggal|yth\.?|kepada|dari|tentang|tembusan)$/i;
+const NUMBER_LABEL_NOT_A_LETTER = /^(?:induk|telepon|telp\.?|hp|handphone|rekening|urut|agenda|registrasi|seri|pokok|identitas|polisi|faks\.?|fax)\b/i;
+const ADDRESS_CONTEXT = /\b(?:jalan|jl\.?|telp\.?|telepon|faks\.?|fax|faksimile|kode pos|kav\.?|blok)\b/i;
+const ROMAN_MONTHS = new Set(['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII']);
+const BULAN: Record<string, string> = {
+    januari: '01', februari: '02', maret: '03', april: '04', mei: '05', juni: '06',
+    juli: '07', agustus: '08', september: '09', oktober: '10', november: '11', desember: '12',
+};
+const TEXT_DATE = /(\d{1,2})\s+(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+(\d{4})/i;
+const NUMERIC_DATE = /(?<!\d)(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})(?!\d)/;
+const WEEKDAY = /^(?:senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu|ahad)$/i;
+/** A letter's own header fields sit above its body, within this many lines. */
+const HEADER_LINES = 30;
+
+function toLines(text: string): string[] {
+    return text.split(/\r?\n/).map(line => line.replace(/[ \t\u00a0]+/g, ' ').trim());
+}
+
+/** A value ends where the next field of the same header begins. */
+function cutAtNextLabel(value: string): string {
+    const next = value.search(NEXT_FIELD_LABEL);
+    return (next >= 0 ? value.slice(0, next) : value).replace(/^[\s:]+/, '').trim();
+}
+
+/** OCR reads the Roman month of a letter number as digits: X1, 1X, V1. */
+function repairRomanMonth(nomor: string): string {
+    return nomor.split('/').map(segment => {
+        if (!/^[IVX1l|]{1,4}$/.test(segment) || !/[IVX]/.test(segment) || !/[1l|]/.test(segment)) return segment;
+        const roman = segment.replace(/[1l|]/g, 'I');
+        return ROMAN_MONTHS.has(roman) ? roman : segment;
+    }).join('/');
+}
+
+/**
+ * Read a letter number from the words that follow its label. The scan is one
+ * pass over at most a line of text, so a number followed by a long sentence
+ * cannot stall the process.
+ */
+function readNumberTokens(rest: string): { value: string; strong: boolean } | null {
+    const tokens = rest.slice(0, 160).split(' ').filter(Boolean).slice(0, 24);
+    const isSeparator = (token: string | undefined) => token !== undefined && /^[\/\-.]$/.test(token);
+    const accepted: string[] = [];
+    for (let index = 0; index < tokens.length; index++) {
+        const token = tokens[index].replace(/[,;:]+$/, '');
+        if (!token || NUMBER_STOP_WORD.test(token)) break;
+        if (/^tahun$/i.test(token)) {
+            // "Nomor 12 Tahun 2026" is one number.
+            if (accepted.length === 1 && /^\d+$/.test(accepted[0]) && /^\d{4}\b/.test(tokens[index + 1] ?? '')) {
+                return { value: `${accepted[0]} Tahun ${(tokens[index + 1] as string).slice(0, 4)}`, strong: true };
+            }
+            break;
+        }
+        if (!/^[A-Za-z0-9.\-\/()|]+$/.test(token)) break;
+        const last = accepted[accepted.length - 1];
+        // After its first word a number only continues across a separator,
+        // as in "B - 99 / CTH.05 / XI / 2026".
+        if (last !== undefined && !isSeparator(token) && !/^[\/\-]/.test(token)
+            && !isSeparator(last) && !/[\/\-]$/.test(last)) break;
+        const lettersOnly = /^[A-Za-z]+$/.test(token);
+        const joinsNumber = isSeparator(last) || isSeparator(tokens[index + 1]);
+        if (lettersOnly && !(token.length <= 6 && joinsNumber)) break;
+        accepted.push(token);
+        if (tokens[index] !== token) break; // trailing punctuation ends the number
+    }
+    while (accepted.length && isSeparator(accepted[accepted.length - 1])) accepted.pop();
+    if (!accepted.length) return null;
+    const value = repairRomanMonth(accepted.join('').replace(/[.]+$/, '')).slice(0, 100);
+    if (!/[A-Za-z0-9]/.test(value)) return null;
+    return { value, strong: /\d/.test(value) && /[\/\-]/.test(value) };
+}
+
+function findNomorSurat(lines: string[], text: string): string | null {
+    let weak: string | null = null;
+    for (const line of lines) {
+        const label = /(?:^|[\s(])(?:N\s?omor|No\.?)(?:\s*:\s*|\s+)/gi;
+        for (let match = label.exec(line); match; match = label.exec(line)) {
+            const rest = line.slice(match.index + match[0].length);
+            if (!rest || NUMBER_LABEL_NOT_A_LETTER.test(rest)) continue;
+            if (ADDRESS_CONTEXT.test(line.slice(0, match.index))) continue;
+            const found = readNumberTokens(rest);
+            if (!found) continue;
+            if (found.strong) return found.value;
+            // A bare number counts only when its label opens the line. Alone
+            // on that line it is a header field and is taken as it stands.
+            if (match.index !== 0) continue;
+            if (rest.trim().split(' ').length === 1) return found.value;
+            if (!weak) weak = found.value;
+        }
+    }
+    // Without a label only a slash-separated number is taken: amounts such as
+    // "Rp.1.000.000" and phone numbers share the letters-then-digits shape.
+    for (const loose of text.matchAll(/(?<![A-Za-z0-9.\-\/])((?:\d{1,6}\/)?[A-Za-z]{1,8}[.\-\/]\d+[.\-\/][A-Za-z0-9.\-\/]{1,60})/g)) {
+        const value = loose[1].replace(/[.\-\/]+$/, '');
+        if (value.includes('/')) return repairRomanMonth(value).slice(0, 100);
+    }
+    return weak;
+}
+
+function toIsoDate(day: string, month: string, year: string): string | null {
+    const d = Number(day), m = Number(month), y = Number(year);
+    if (!(d >= 1 && d <= 31 && m >= 1 && m <= 12 && y >= 1900 && y <= 2100)) return null;
+    return `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+function dateIn(value: string, allowNumeric: boolean): string | null {
+    const textual = value.match(TEXT_DATE);
+    if (textual) return toIsoDate(textual[1], BULAN[textual[2].toLowerCase()], textual[3]);
+    if (!allowNumeric) return null;
+    const numeric = value.match(NUMERIC_DATE);
+    return numeric ? toIsoDate(numeric[1], numeric[2], numeric[3]) : null;
+}
+
+/** Prefer the date the letter states as its own over a date in the body. */
+function findTanggalSurat(lines: string[], text: string): string | null {
+    for (let index = 0; index < lines.length; index++) {
+        const line = lines[index];
+        // "Tanggal : 20 November 2026" in the header, or "Jakarta, 12 November
+        // 2026" on a line of its own; whichever the letter states first. A
+        // weekday before the comma is a schedule row, not the place of issue.
+        const labelled = index < HEADER_LINES ? line.match(/^Tanggal\s*:?\s*(.+)$/i) : null;
+        const placed = !labelled && line.length <= 60 ? line.match(/^([A-Za-z .'-]{2,40}),\s*(.+)$/) : null;
+        const stated = labelled ? labelled[1] : placed && !WEEKDAY.test(placed[1].trim()) ? placed[2] : null;
+        const found = stated ? dateIn(stated, true) : null;
+        if (found) return found;
+    }
+    return dateIn(text, false);
+}
+
+/**
+ * A long header value wraps onto short lines of its own. Those lines belong
+ * to the value until the next field, the address line or the body begins.
+ */
+function continueWrapped(lines: string[], index: number, value: string): string {
+    let joined = value;
+    for (let next = index + 1; next <= index + 2 && next < lines.length; next++) {
+        const line = lines[next];
+        if (!line || line.length > 70 || joined.length < 20 || joined.length + line.length > 250
+            || LINE_STARTS_WITH_LABEL.test(line) || BODY_OPENING.test(line) || /^di(?:\s|$)/i.test(line)) break;
+        joined = `${joined} ${line}`;
+    }
+    return joined;
+}
+
+function findPerihal(lines: string[]): string | null {
+    for (let index = 0; index < lines.length; index++) {
+        // Without its colon the label must be followed by a capitalised
+        // subject, so a sentence that opens with "Hal ini" is not taken.
+        const match = lines[index].match(/^(?:Perihal|Hal)\s*:\s*(.+)$/i)
+            ?? (lines[index].length <= 120 ? lines[index].match(/^(?:Perihal|Hal)\s+([A-Z].+)$/) : null);
+        if (!match) continue;
+        const value = cutAtNextLabel(match[1]);
+        if (!value) continue;
+        return continueWrapped(lines, index, value).slice(0, 500);
+    }
+    // Circulars and decrees carry their subject under "TENTANG".
+    for (let index = 0; index < lines.length; index++) {
+        const match = lines[index].match(/^TENTANG\b\s*(.*)$/);
+        if (!match) continue;
+        const parts = match[1] ? [match[1]] : [];
+        for (let next = index + 1; next <= index + 3 && next < lines.length; next++) {
+            const line = lines[next];
+            if (!line || line !== line.toUpperCase() || line.length > 90) break;
+            parts.push(line);
+        }
+        if (parts.length) return parts.join(' ').slice(0, 500);
+    }
+    // A header whose fields share one line. The colon is required here: the
+    // word "hal" is common in the body of a letter.
+    for (const line of lines) {
+        const match = line.match(/\s(?:Perihal|Hal)\s*:\s*(.+)$/i);
+        const value = match ? cutAtNextLabel(match[1]) : '';
+        if (value) return value.slice(0, 500);
+    }
+    return null;
+}
+
+/**
+ * The value of a labelled header line, or of the line after a bare label.
+ * `inline` finds the same field inside a line that carries several fields;
+ * it must require the colon, because these words also occur in sentences.
+ */
+function labelledValue(lines: string[], label: RegExp, inline?: RegExp): string | null {
+    for (let index = 0; index < lines.length; index++) {
+        const match = lines[index].match(label);
+        if (!match) continue;
+        const value = cutAtNextLabel(match[1] ?? '');
+        if (value) return continueWrapped(lines, index, value);
+        const next = lines[index + 1];
+        if (next && !LINE_STARTS_WITH_LABEL.test(next)) return cutAtNextLabel(next) || null;
+    }
+    if (!inline) return null;
+    for (const line of lines) {
+        const match = line.match(inline);
+        const value = match ? cutAtNextLabel(match[1] ?? '') : '';
+        if (value) return value;
+    }
+    return null;
+}
+
+/** The signer's title closes a letter on a short line that ends with a comma. */
+function signerTitle(lines: string[]): string | null {
+    for (let index = lines.length - 1; index >= Math.max(0, lines.length - 25); index--) {
+        const match = lines[index].match(/^((?:a\.n\.|u\.b\.|Plt\.?|Plh\.?|Pj\.?)\s+)?((?:Menteri|Sekretaris|Direktur|Kepala|Inspektur|Deputi|Ketua|Gubernur|Bupati|Wali ?kota|Camat|Lurah|Kasubdit|Kabid|Kabag|Kasubbag|Kasi)\b[^,\n]{0,90}),$/i);
+        // A title is a few words; a longer line is a sentence of the body.
+        if (match && match[2].split(' ').length <= 10) return `${match[1] ?? ''}${match[2]}`.trim();
+    }
+    return null;
+}
+
 export class OCRService {
     // Extract text from PDF buffer
     async extractTextFromPDF(buffer: Buffer, signal?: AbortSignal): Promise<string> {
@@ -267,10 +526,7 @@ export class OCRService {
                         () => loadingTask?.destroy(),
                         signal,
                     );
-                    const pageText = textContent.items
-                        .map((item: any) => typeof item?.str === 'string' ? item.str : '')
-                        .join(' ')
-                        .trim();
+                    const pageText = joinPdfTextItems(textContent.items);
                     if (pageText) fullText += `${pageText}\n`;
 
                     if (fullText.length >= OCR_LIMITS.maxExtractedTextChars) {
@@ -544,81 +800,23 @@ export class OCRService {
 
     // Extract metadata from text using regex patterns
     extractMetadata(text: string): ExtractedMetadata {
-        // Normalize text for better matching
-        const normalizedText = text.replace(/\s+/g, ' ').trim();
+        // Fields are read line by line: a header value ends at the end of its
+        // line or where the next field label begins.
+        const lines = toLines(text);
 
-        // Extract nomor surat (various patterns)
-        const nomorPatterns = [
-            /(?:Nomor|No\.?)[\s:]+([A-Z0-9][\w.\-\/]+(?:[\s]?[\w.\-\/]+)*)(?=\s*(?:\n|Hal|Perihal|Lampiran|Sifat|$))/i,
-            /([A-Z]{1,3}[.\-\/]\d+[.\-\/][A-Z0-9.\-\/]+)/i,
-        ];
-        let nomorSurat: string | null = null;
-        for (const pattern of nomorPatterns) {
-            const match = normalizedText.match(pattern);
-            if (match) {
-                nomorSurat = match[1].trim();
-                break;
-            }
-        }
+        const nomorSurat = findNomorSurat(lines, text);
+        const perihal = findPerihal(lines);
+        const tanggalSurat = findTanggalSurat(lines, text);
 
-        // Extract perihal/hal
-        const perihalPatterns = [
-            /(?:Perihal|Hal)[\s:]+(.+?)(?:(?=\n|Kepada|Yth)|$)/i,
-            /(?:Perihal|Hal)[\s:]+([^\n]+)/i,
-        ];
-        let perihal: string | null = null;
-        for (const pattern of perihalPatterns) {
-            const match = text.match(pattern);
-            if (match) {
-                perihal = match[1].trim().substring(0, 500); // Limit length
-                break;
-            }
-        }
+        // Pengirim: a "Dari" header, else the title of the person who signs.
+        const pengirim = (labelledValue(lines, /^(?:Dari|Pengirim)\s*:\s*(.*)$/i, /\s(?:Dari|Pengirim)\s*:\s*(.+)$/i)
+            ?? signerTitle(lines)
+            ?? text.match(/(?:a\.n\.|atas nama)[\s.]+([^\n,]+)/i)?.[1].trim()
+            ?? null)?.substring(0, 255) || null;
 
-        // Extract tanggal (Indonesian date format)
-        const bulanMap: Record<string, string> = {
-            'januari': '01', 'februari': '02', 'maret': '03', 'april': '04',
-            'mei': '05', 'juni': '06', 'juli': '07', 'agustus': '08',
-            'september': '09', 'oktober': '10', 'november': '11', 'desember': '12'
-        };
-        const tanggalPattern = /(\d{1,2})\s+(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+(\d{4})/i;
-        let tanggalSurat: string | null = null;
-        const tanggalMatch = text.match(tanggalPattern);
-        if (tanggalMatch) {
-            const day = tanggalMatch[1].padStart(2, '0');
-            const month = bulanMap[tanggalMatch[2].toLowerCase()];
-            const year = tanggalMatch[3];
-            tanggalSurat = `${year}-${month}-${day}`;
-        }
-
-        // Extract pengirim (Dari: or Pengirim:)
-        const pengirimPatterns = [
-            /(?:Dari|Pengirim)[\s:]+([^\n]+)/i,
-            /(?:a\.n\.|atas nama)[\s.]+([^\n,]+)/i,
-            /(?:Kepala|Direktur|Kasubdit|Kabid)\s+([^\n,]+)/i,
-        ];
-        let pengirim: string | null = null;
-        for (const pattern of pengirimPatterns) {
-            const match = text.match(pattern);
-            if (match) {
-                pengirim = match[1].trim().substring(0, 255);
-                break;
-            }
-        }
-
-        // Extract penerima (Kepada/Yth)
-        const penerimaPatterns = [
-            /(?:Kepada\s+)?Yth\.?[\s:]+([^\n]+)/i,
-            /Kepada[\s:]+([^\n]+)/i,
-        ];
-        let penerima: string | null = null;
-        for (const pattern of penerimaPatterns) {
-            const match = text.match(pattern);
-            if (match) {
-                penerima = match[1].trim().substring(0, 500);
-                break;
-            }
-        }
+        // Penerima (Kepada/Yth)
+        const penerima = (labelledValue(lines, /^(?:Kepada\s+)?Yth\.?\s*:?\s*(.*)$/i, /\sYth\.?\s*:\s*(.+)$/i)
+            ?? labelledValue(lines, /^Kepada\s*:?\s*(.*)$/i))?.substring(0, 500) || null;
 
         // Extract tembusan
         const tembusan: string[] = [];
@@ -643,7 +841,7 @@ export class OCRService {
         for (const pattern of lampiranPatterns) {
             const match = text.match(pattern);
             if (match) {
-                lampiran = match[1].trim().substring(0, 255);
+                lampiran = cutAtNextLabel(match[1]).substring(0, 255) || null;
                 break;
             }
         }
@@ -657,7 +855,7 @@ export class OCRService {
         for (const pattern of sifatPatterns) {
             const match = text.match(pattern);
             if (match) {
-                sifatSurat = match[1].trim().toUpperCase().substring(0, 50);
+                sifatSurat = cutAtNextLabel(match[1]).toUpperCase().substring(0, 50) || null;
                 break;
             }
         }
@@ -671,7 +869,7 @@ export class OCRService {
         for (const pattern of keamananPatterns) {
             const match = text.match(pattern);
             if (match) {
-                klasifikasiKeamanan = match[1].trim().toUpperCase().substring(0, 100);
+                klasifikasiKeamanan = cutAtNextLabel(match[1]).toUpperCase().substring(0, 100) || null;
                 break;
             }
         }
