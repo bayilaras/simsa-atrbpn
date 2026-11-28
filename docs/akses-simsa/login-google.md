@@ -23,17 +23,9 @@ Cara Login ke SIMSA menggunakan akun Google kamu.
 
 1. Di bagian bawah form login, cari tombol **"Masuk dengan Google"**.
 
-```
-┌──────────────────────────────────────────────┐
-│                                              │
-│  ────────────────── atau ──────────────────  │
-│                                              │
-│          [ 🔷 Masuk dengan Google ]          │  ← Klik tombol ini
-│  Akun Google baru perlu persetujuan          │
-│  administrator.                              │
-│                                              │
-└──────────────────────────────────────────────┘
-```
+> **Tampilan Tombol Google**
+>
+> Di bawah form login, terdapat pembatas **"atau"** dan tombol **"Masuk dengan Google"**. Di bawah tombol tertulis *Akun Google baru perlu persetujuan administrator.* Klik tombol ini untuk membuka autentikasi Google.
 
 2. Klik tombol tersebut.
 
@@ -60,7 +52,7 @@ Cara Login ke SIMSA menggunakan akun Google kamu.
 Langkah ini hanya untuk akun baru.
 
 1. SIMSA menampilkan halaman **Menunggu persetujuan administrator**. Dashboard, menu data, dan arsip belum dapat dibuka.
-2. Hubungi Super Admin dan sebutkan email Google yang kamu pakai. Super Admin memastikan langsung kepada kamu bahwa email itu milikmu, lalu menyetujui akun dengan menetapkan peran, serta unit kerja untuk **Admin Unit Kerja**.
+2. Hubungi Super Admin dan sebutkan email Google yang kamu pakai. Super Admin memastikan langsung kepada kamu bahwa email itu milikmu, lalu menyetujui akun dengan menetapkan peran, serta unit kerja untuk **Admin Unit Kerja**. Super Admin juga melihat jumlah akun yang menunggu di samping menu **Manajemen Pengguna** dan di Dashboard, tetapi SIMSA tidak mengirim email pemberitahuan.
 3. Setelah disetujui, sesi lama ditutup. Klik **Periksa ulang akses** atau **Keluar**, lalu masuk lagi dengan **Masuk dengan Google**.
 
 ---

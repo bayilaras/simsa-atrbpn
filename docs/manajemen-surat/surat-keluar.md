@@ -15,6 +15,7 @@ Panduan lengkap cara mengelola surat keluar di SIMSA.
 
 Tabel daftar surat keluar mirip dengan surat masuk, dengan perbedaan:
 - Kolom **"Perihal & Tujuan"** menampilkan penerima surat (Kepada), bukan pengirim
+- Kotak pencarian mencari pada nomor surat, perihal, dan tujuan (penerima). Cari dahulu sebelum mencatat surat baru agar tidak tercatat ganda
 - Kolom **Status** menampilkan status persetujuan: **Draft**, **Menunggu Persetujuan**, **Disetujui**, atau **Perlu Perbaikan** (surat yang ditolak penyetuju). Surat yang sudah diarsipkan bertanda **Arsip**
 - Tanda tambahan: **File**, **Balasan**, **Inisiatif** atau **Tindak Lanjut**, dan klasifikasi keamanan surat
 - Menu tiga titik (⋯) berisi **Detail & File**, **Edit Surat** dan **Hapus Surat** (hanya untuk Draft atau Perlu Perbaikan), serta **Arsipkan** (hanya setelah Disetujui)
@@ -31,7 +32,7 @@ Tabel daftar surat keluar mirip dengan surat masuk, dengan perbedaan:
 Di pojok kanan atas, pilih salah satu:
 
 - **Buat Surat Inisiatif** untuk surat tanpa surat masuk induk. Panah di sampingnya membuka pilihan jenis naskah (Nota Dinas, Surat Edaran, Surat Undangan, Keputusan, Surat Tugas, **Lainnya…**).
-- **Tindak Lanjut Surat Masuk…** (di menu panah yang sama) untuk membalas atau menindaklanjuti surat yang sudah tercatat.
+- **Tindak Lanjut Surat Masuk…** (di menu panah yang sama) untuk membalas atau menindaklanjuti surat yang sudah tercatat. Formulir baru terbuka dan langsung meminta kamu memilih surat yang ditindaklanjuti.
 
 Kolom ekspor **Asal Naskah** mencatat pilihan ini.
 
@@ -54,6 +55,8 @@ Kolom ekspor **Asal Naskah** mencatat pilihan ini.
 
 Di bagian lampiran tertulis *Catatan: Link dokumen dan berkas tidak wajib diisi.* Selama keduanya kosong, tampil petunjuk *Surat dapat disimpan tanpa lampiran; hasil pindai dapat ditambahkan lewat menu Edit Surat selama surat masih draf atau ditolak (sebelum diajukan untuk persetujuan).* Link dokumen yang bukan alamat lengkap ditolak dengan pesan *Link dokumen harus berupa alamat lengkap, misalnya https://contoh.go.id/berkas*.
 
+Bila operator mengaktifkan pengisian dari berkas, di atas form tampil kotak **Punya PDF suratnya?**. Klik **Pilih berkas PDF**, tunggu **Isian terbaca dari berkas** tampil, periksa, lalu klik **Isi formulir** untuk mengisi Naskah Dinas, Nomor Surat, Tanggal Surat, Perihal, dan Kepada yang masih kosong. Isian yang sudah diketik tidak diubah, Sifat Surat dan Klasifikasi Keamanan tidak pernah diisi dari berkas, dan PDF hasil pindai tanpa teks tidak dapat dibaca. Cara kerjanya sama dengan [surat masuk](surat-masuk.md#mengisi-form-dari-berkas-pdf-bila-tersedia).
+
 ### Langkah 3: Simpan
 
 1. Periksa kembali data.
@@ -74,7 +77,7 @@ Selama formulir belum disimpan, isiannya disimpan sementara di tab peramban ini.
 Surat keluar **baru dapat diarsipkan setelah disetujui admin lain**. Urutannya:
 
 1. Buka detail surat berstatus **Draft** atau **Ditolak / Perlu Perbaikan**.
-2. Pada kartu **Alur Persetujuan**, klik **Ajukan Persetujuan** dan pilih **Penyetuju**, yaitu administrator aktif lain yang tersedia pada unit surat.
+2. Pada kartu **Alur Persetujuan**, klik **Ajukan Persetujuan** dan pilih **Penyetuju**, yaitu administrator aktif lain pada unit surat atau Super Admin.
 3. Tambahkan catatan bila diperlukan, lalu klik **Simpan**.
 4. Penyetuju yang ditunjuk membuka surat itu dan memilih **Setujui** atau **Tolak**. **Alasan penolakan** wajib diisi saat menolak.
 5. Jika ditolak, pembuat memperbaiki surat lalu mengajukannya ulang. Jika disetujui, tombol **Arsipkan** tersedia.
@@ -131,6 +134,7 @@ Untuk panduan lengkap, lihat bagian [Membalas Surat Masuk](surat-masuk.md#membal
 2. Lihat informasi lengkap surat, berkas, panel **Alur Surat**, dan kartu **Tunjuk Silang**.
 3. Lihat status serta riwayat persetujuan pada kartu **Status** dan **Alur Persetujuan**.
 4. Gunakan aksi yang tersedia sesuai role dan status: **Edit Surat** untuk Draft atau Perlu Perbaikan, **Setujui/Tolak** untuk penyetuju yang ditunjuk, dan **Arsipkan** setelah Disetujui.
+5. Tombol **Tindak Lanjut** membuka menu yang sama seperti pada detail surat masuk; pilihan yang tampil mengikuti kewenangan kamu atas surat itu. **Saya Balas** dan **Buat Nota Dinas** membuka form **Tambah Surat Keluar** dengan **Nomor Referensi** surat ini sudah terisi. **Buat ND Penjelas** hanya tampil pada surat keluar berjenis Keputusan. **Tautkan ke Rangkaian** dijelaskan di [Rangkaian Surat](rangkaian-surat.md#menautkan-surat-ke-rangkaian).
 
 Surat berkelas Terbatas atau lebih tinggi yang belum boleh kamu buka menampilkan halaman **Perlu persetujuan akses** dengan tombol **Minta Akses**. Caranya sama seperti pada [Surat Masuk](surat-masuk.md#jika-tampil-perlu-persetujuan-akses).
 

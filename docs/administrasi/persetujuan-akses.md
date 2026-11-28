@@ -17,6 +17,8 @@ Anda juga dapat membuka **Administrasi → Persetujuan Akses Arsip** dan mengkli
 
 Permohonan tidak langsung membuka rekod. Status awalnya **Menunggu** sampai diputuskan oleh Super Admin lain. Pantau statusnya pada tab **Permohonan Saya**.
 
+Super Admin melihat jumlah permohonan yang menunggu sebagai angka di samping menu **Persetujuan Akses Arsip** dan pada kartu **Perlu ditindaklanjuti** di Dashboard. SIMSA tidak mengirim email, jadi bila permohonan mendesak, hubungi Super Admin secara langsung.
+
 Rekod milik unit lain, di atas kewenangan kelas peran Anda, atau yang memang tidak ada tetap menampilkan **Surat Tidak Ditemukan** atau **Arsip Tidak Ditemukan**, tanpa tombol **Minta Akses**.
 
 ## Memutuskan permohonan
@@ -43,7 +45,7 @@ Akses aktif dapat dicabut sewaktu-waktu dengan alasan yang dicatat.
 
 ## Perilaku keamanan
 
-- Persetujuan hanya berlaku untuk pengguna, rekod, klasifikasi, dan mode akses yang disetujui.
+- Persetujuan hanya berlaku untuk pengguna, rekod, klasifikasi, dan mode akses yang disetujui. Gunakan hanya akses yang diberikan dan jangan meneruskan berkas kepada pihak lain tanpa kewenangan.
 - Bila unit pengguna atau klasifikasi rekod berubah, akses tertutup dan perlu diajukan ulang.
 - Izin **Tayang saja** tidak dapat digunakan untuk mengunduh. Mode ini hanya menyembunyikan tombol unduh, cetak, dan buka di tab baru; isi berkas tetap tampil di layar peminta dan dapat disalin, dan setiap penayangan tercatat di Audit Log. Keterangan ini juga tampil saat memilih mode **Tayang saja** dan saat Super Admin menyetujuinya.
 - Izin **Tayang saja** dan **Tayang dan unduh** tidak dapat digunakan untuk mengubah rekod; mutasi memerlukan izin **Tayang dan kelola**.
