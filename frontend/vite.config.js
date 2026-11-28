@@ -142,7 +142,9 @@ export default defineConfig(({ command, mode }) => {
         // @fontsource-variable/inter ships one woff2 per script. The UI is
         // Indonesian, so only the latin subsets are precached; the browser
         // still fetches any other subset on demand through unicode-range.
-        globIgnores: ['**/inter-{cyrillic,cyrillic-ext,greek,greek-ext,vietnamese}-*.woff2'],
+        // PDF.js is fetched only when a letter form reads a chosen PDF (an
+        // optional module), so it is left out of every installation's precache.
+        globIgnores: ['**/inter-{cyrillic,cyrillic-ext,greek,greek-ext,vietnamese}-*.woff2', '**/vendor-pdfjs-*.js', '**/pdf.worker.*.js'],
       },
       devOptions: {
         enabled: true,
@@ -179,6 +181,12 @@ export default defineConfig(({ command, mode }) => {
     // vendor-react rather than in a chunk of a package that imports it.
     rolldownOptions: {
       output: {
+        // The PDF.js worker is emitted as an asset from a .mjs file. Give it
+        // a .js name so every static host serves it as JavaScript; responses
+        // carry X-Content-Type-Options: nosniff, so another type would block it.
+        assetFileNames: (asset) => (asset.names ?? []).some((name) => name.endsWith('.mjs'))
+          ? 'assets/[name]-[hash].js'
+          : 'assets/[name]-[hash][extname]',
         codeSplitting: {
           groups: [
             {
@@ -213,6 +221,13 @@ export default defineConfig(({ command, mode }) => {
               name: 'vendor-date',
               test: /[\\/]node_modules[\\/]date-fns[\\/]/,
               priority: 10,
+            },
+            {
+              // PDF.js — loaded on demand by src/lib/teks-pdf.js only. The
+              // fixed name keeps it recognisable for the precache exclusion.
+              name: 'vendor-pdfjs',
+              test: /[\\/]node_modules[\\/]pdfjs-dist[\\/]/,
+              priority: 5,
             },
           ],
         },

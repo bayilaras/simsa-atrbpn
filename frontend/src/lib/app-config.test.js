@@ -54,6 +54,20 @@ describe('app config', () => {
             capabilities: { ...payload.capabilities, fileUploads: true, letterFileUploads: false } })).toMatchObject({ compatible: true,
                 capabilities: { fileUploads: true, letterFileUploads: false } })
     })
+    it('offers the letter form prefill only when the backend reports exactly true', () => {
+        const build = createAppConfig({})
+        const payload = (letterPdfPrefill) => ({ mode: 'full', syntheticDataOnly: false,
+            capabilities: { metadata: true, files: true, fileUploads: true, externalIntegrations: true, letterPdfPrefill } })
+        expect(build.capabilities.letterPdfPrefill).toBe(false)
+        expect(resolveRuntimeCapabilities(build, payload(true)).capabilities.letterPdfPrefill).toBe(true)
+        // A backend released before the module reports nothing and has no route for it.
+        for (const value of [undefined, false, null, 'true', 1]) {
+            expect(resolveRuntimeCapabilities(build, payload(value))).toMatchObject({ compatible: true,
+                capabilities: { letterPdfPrefill: false } })
+        }
+        expect(resolveRuntimeCapabilities(build, null).capabilities.letterPdfPrefill).toBe(false)
+        expect(resolveRuntimeCapabilities(build, { ...payload(true), mode: 'metadata-demo' }).capabilities.letterPdfPrefill).toBe(false)
+    })
     it.each([true, false])('uses legacy upload availability %s when the backend has no letter policy', (fileUploads) => {
         const payload = { mode: 'full', syntheticDataOnly: false,
             capabilities: { metadata: true, files: true, fileUploads, externalIntegrations: false } }
