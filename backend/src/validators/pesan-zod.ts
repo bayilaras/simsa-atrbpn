@@ -80,6 +80,7 @@ export const LABEL_ISIAN: Readonly<Record<string, string>> = {
     expectedUpdatedAt: 'Versi data',
     expiresAt: 'Waktu berakhir',
     expiring: 'Filter hampir jatuh tempo',
+    extractedText: 'Teks surat',
     fileAttachmentId: 'Lampiran',
     fileName: 'Nama berkas',
     fileOriginalName: 'Nama berkas',

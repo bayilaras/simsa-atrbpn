@@ -42,6 +42,7 @@ import archiveLendingRoutes from './routes/archive-lending.routes';
 import dosirRoutes from './routes/dosir.routes';
 import { retentionRoutes } from './routes/retention.routes';
 import bulkUploadRoutes from './routes/bulk-upload.routes';
+import letterPrefillRoutes from './routes/letter-prefill.routes';
 import distributionRoutes from './routes/distribution.routes';
 import rangkaianRoutes from './routes/rangkaian.routes';
 import rangkaianDaftarRoutes from './routes/rangkaian-daftar.routes.js';
@@ -368,6 +369,7 @@ app.use('/api/archive-lending', archiveLendingRoutes);
 app.use('/api/dosir', dosirRoutes);
 app.use('/api/retention', retentionRoutes);
 app.use('/api/bulk-upload', bulkUploadRoutes);
+app.use('/api/letter-prefill', letterPrefillRoutes); // Letter forms: fields read from the text of the chosen PDF
 app.use('/api/distributions', distributionRoutes);
 app.use('/api/rangkaian', rangkaianDaftarRoutes);  // P4 Task 6: hanya GET / (auth per-route)
 app.use('/api/rangkaian', rangkaianPerluDilengkapiRoutes); // P4 Task 18 (D7), auth per-route; sebelum router berkas P5 dan router utama

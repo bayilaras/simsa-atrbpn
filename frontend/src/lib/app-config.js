@@ -23,6 +23,8 @@ const FULL_CAPABILITIES = Object.freeze({
     externalIntegrations: true,
     bulkOcr: true,
     advancedArchiveWorkflows: true,
+    // Offered only when the backend reports it; see resolveRuntimeCapabilities.
+    letterPdfPrefill: false,
 })
 
 const RESTRICTED_CAPABILITIES = Object.freeze({
@@ -33,6 +35,7 @@ const RESTRICTED_CAPABILITIES = Object.freeze({
     externalIntegrations: false,
     bulkOcr: false,
     advancedArchiveWorkflows: false,
+    letterPdfPrefill: false,
 })
 
 export function parseBooleanFlag(value, fallback = false) {
@@ -103,6 +106,9 @@ export function resolveRuntimeCapabilities(buildConfig, payload) {
             // are authoritative; malformed values never enable a module.
             bulkOcr: backendCapabilities.bulkOcr === undefined || backendCapabilities.bulkOcr === true,
             advancedArchiveWorkflows: backendCapabilities.advancedArchiveWorkflows === undefined || backendCapabilities.advancedArchiveWorkflows === true,
+            // A backend without this module does not report it and has no
+            // route for it, so only an explicit true offers the form prefill.
+            letterPdfPrefill: backendCapabilities.letterPdfPrefill === true,
         }
             : { ...RESTRICTED_CAPABILITIES, metadata: payload == null }),
         authentication: Object.freeze(compatible ? {

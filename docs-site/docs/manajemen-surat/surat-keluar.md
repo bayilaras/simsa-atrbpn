@@ -63,6 +63,8 @@ Kolom ekspor **Asal Naskah** mencatat pilihan ini.
 
 Di bagian lampiran tertulis *Catatan: Link dokumen dan berkas tidak wajib diisi.* Selama keduanya kosong, tampil petunjuk *Surat dapat disimpan tanpa lampiran; hasil pindai dapat ditambahkan lewat menu Edit Surat selama surat masih draf atau ditolak (sebelum diajukan untuk persetujuan).* Link dokumen yang bukan alamat lengkap ditolak dengan pesan *Link dokumen harus berupa alamat lengkap, misalnya https://contoh.go.id/berkas*.
 
+Bila operator mengaktifkan pengisian dari berkas, di atas form tampil kotak **Punya PDF suratnya?**. Klik **Pilih berkas PDF**, tunggu **Isian terbaca dari berkas** tampil, periksa, lalu klik **Isi formulir** untuk mengisi Naskah Dinas, Nomor Surat, Tanggal Surat, Perihal, dan Kepada yang masih kosong. Isian yang sudah diketik tidak diubah, Sifat Surat dan Klasifikasi Keamanan tidak pernah diisi dari berkas, dan PDF hasil pindai tanpa teks tidak dapat dibaca. Cara kerjanya sama dengan [surat masuk](surat-masuk.md#mengisi-form-dari-berkas-pdf-bila-tersedia).
+
 ### Langkah 3: Simpan
 
 1. Periksa kembali data.

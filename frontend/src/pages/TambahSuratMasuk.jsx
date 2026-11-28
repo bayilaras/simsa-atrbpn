@@ -15,6 +15,9 @@ import { useDrafIsian } from '@/hooks/use-draf-isian';
 import { useKonfirmasi } from '@/hooks/use-konfirmasi';
 import { DialogKonfirmasi } from '@/components/DialogKonfirmasi';
 import { KemajuanUnggah, StatusDrafIsian } from '@/components/surat/DrafIsianFormulir';
+import { IsianDariPdf } from '@/components/surat/IsianDariPdf';
+import { useIsianDariPdf } from '@/hooks/use-isian-dari-pdf';
+import { PETA_ISIAN_SURAT_MASUK } from '@/lib/isian-dari-pdf';
 import { permintaanPulihkanDraf } from '@/lib/draf-isian';
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
@@ -157,6 +160,9 @@ export default function TambahSuratMasuk() {
     // Persen unggah berkas saat menyimpan; null bila tidak ada berkas yang diunggah.
     const [kemajuanUnggah, setKemajuanUnggah] = useState(null);
     const [existingFile, setExistingFile] = useState(null);
+    // Saat mencatat surat baru, isian dibaca dari teks PDF yang dipilih (modul opsional).
+    const isiDariPdfAktif = !isEditMode && Boolean(filesEnabled) && capabilities.letterPdfPrefill === true;
+    const isianPdf = useIsianDariPdf({ aktif: isiDariPdfAktif, berkas: selectedFile });
     const [isDragging, setIsDragging] = useState(false);
     const [recordUnitKerjaId, setRecordUnitKerjaId] = useState('');
     const [numberPreview, setNumberPreview] = useState(null);
@@ -756,6 +762,18 @@ export default function TambahSuratMasuk() {
             {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-6">
                 <fieldset disabled={saveLocked} className="min-w-0 space-y-6">
+                {isiDariPdfAktif && (
+                    <IsianDariPdf
+                        status={isianPdf.status}
+                        terbaca={isianPdf.terbaca}
+                        peta={PETA_ISIAN_SURAT_MASUK}
+                        formData={formData}
+                        namaBerkas={selectedFile?.name}
+                        onPilihBerkas={() => fileInputRef.current?.click()}
+                        onIsi={handleChange}
+                        disabled={saveLocked}
+                    />
+                )}
                 {/* Section 1: Jenis & Klasifikasi Surat */}
                 <Card className="overflow-hidden border-border/50 shadow-sm transition-all hover:shadow-md">
                     <CardContent className="p-6 space-y-5">

@@ -98,14 +98,18 @@ describe('pola akses kelas keamanan', () => {
         const tercatat: Record<string, Record<string, string>> = {
             extractedText: {
                 'middlewares/sanitize.middleware.ts': 'tidak disanitasi sebagai HTML',
+                'routes/letter-prefill.routes.ts': 'teks kiriman peramban untuk isian formulir; tidak membaca atau menulis arsip',
                 'services/arsip.service.ts': 'tipe baris daftar tanpa teks OCR',
                 'services/autentikasi.service.ts': 'dibuang dari relasi arsip',
                 'services/bulk-upload.service.ts': 'ditulis saat konfirmasi unggah massal',
                 'services/fulltext-search.service.ts': 'pencarian isi dengan gerbang baca per arsip',
                 'services/global-search.service.ts': 'pencarian isi dengan gerbang baca per arsip',
                 'services/layanan-arsip.service.ts': 'dibuang dari relasi arsip',
+                'services/letter-text-fields.ts': 'hasil baca metadata untuk pekerja OCR; fungsi murni tanpa basis data',
                 'services/ocr-process.service.ts': 'skema hasil OCR',
                 'services/ocr.service.ts': 'pemrosesan OCR',
+                'validators/pesan-zod.ts': 'nama isian pada pesan validasi',
+                'validators/schemas.ts': 'validasi teks kiriman peramban untuk isian formulir',
             },
             linkDokumen: {
                 'services/export.service.ts': 'kolom ekspor surat keluar',

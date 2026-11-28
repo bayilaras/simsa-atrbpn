@@ -11,8 +11,10 @@ export function createOptionalModuleAccessMiddleware(source: NodeJS.ProcessEnv =
         const bulk = /^\/bulk-upload(?:\/|$)/.test(path);
         const advanced = /^\/(?:penyusutan|arsip-terjaga)(?:\/|$)/.test(path)
             || /^\/arsip-elektronik\/[^/]+\/preservasi(?:\/|$)/.test(path);
+        const prefill = /^\/letter-prefill(?:\/|$)/.test(path);
         const module = bulk && !capabilities.bulkOcr ? 'bulkOcr'
-            : advanced && !capabilities.advancedArchiveWorkflows ? 'advancedArchiveWorkflows' : null;
+            : advanced && !capabilities.advancedArchiveWorkflows ? 'advancedArchiveWorkflows'
+            : prefill && !capabilities.letterPdfPrefill ? 'letterPdfPrefill' : null;
         if (!module) { next(); return; }
         res.setHeader('Cache-Control', 'no-store');
         res.status(503).json({ success: false, code: 'OPTIONAL_MODULE_DISABLED', module,
