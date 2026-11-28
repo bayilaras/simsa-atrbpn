@@ -8,7 +8,7 @@ Panduan menggunakan halaman pengaturan SIMSA.
 
 Menu **Pengaturan** (⚙️) di sidebar muncul bagi semua akun yang sudah aktif. Semua peran juga dapat membukanya dari menu akun (avatar) di kanan atas header. Tab yang tersedia menyesuaikan role.
 
-1. Buka **Pengaturan** dari sidebar atau dari menu akun.
+1. Buka **Pengaturan** dari sidebar atau dari menu akun. Halaman terbuka pada tab **Profil**.
 2. Semua pengguna mendapat tab **Profil** dan **Preferensi**.
 3. Admin Unit Kerja mendapat tab **Template** untuk unitnya. Super Admin mendapat tab **Template** untuk unit yang dipilih dan tab **Unit Kerja**.
 

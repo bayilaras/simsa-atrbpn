@@ -41,6 +41,8 @@ Panduan mengelola dosir di SIMSA.
 
 ## Menambahkan Surat ke Dosir
 
+Pastikan surat atau arsip sudah memiliki klasifikasi yang tepat sebelum diberkaskan.
+
 1. Di halaman detail dosir, klik **"Tambah Surat"**.
 2. Pilih jenis surat: **Surat Masuk** atau **Surat Keluar**.
 3. Cari surat berdasarkan nomor, perihal, pengirim, atau tujuan, lalu pilih surat dari hasil pencarian. Hanya surat milik unit kerja dosir yang ditampilkan.

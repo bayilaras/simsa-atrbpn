@@ -79,6 +79,22 @@ Form terbagi menjadi beberapa bagian:
 >
 > Tombol **"Batal"** dan **"Simpan"** ada di bagian bawah. Bagian Lampiran Dokumen hanya tampil bila penyimpanan berkas sudah disiapkan operator.
 
+### Mengisi Form dari Berkas PDF (Bila Tersedia)
+
+Bila operator mengaktifkan fitur ini, di atas form tampil kotak **Punya PDF suratnya?**. Dengan fitur ini isian tidak perlu diketik ulang dari surat:
+
+1. Klik **Pilih berkas PDF**, lalu pilih PDF surat. Berkas yang sama menjadi lampiran surat.
+2. Tunggu tulisan *Membaca isian dari berkas…* selesai. Kotak itu lalu menampilkan **Isian terbaca dari berkas**: Jenis Surat, Nomor Surat, Tanggal Surat, Perihal, Dari (Pengirim), dan Kepada (Penerima) yang ditemukan.
+3. Periksa isinya, lalu klik **Isi formulir**. Hanya isian yang masih kosong yang diisi; isian yang sudah kamu ketik tidak diubah.
+4. Periksa kembali form, lengkapi isian lain, lalu simpan seperti biasa.
+
+Hal yang perlu diketahui:
+
+- **Sifat Surat tidak pernah diisi dari berkas.** Sifat menentukan siapa yang boleh membuka surat, jadi tetap kamu pilih sendiri.
+- Hasil baca adalah usulan. Nomor, tanggal, atau nama yang terbaca bisa keliru; cocokkan dengan suratnya sebelum menyimpan.
+- PDF hasil pindai (foto atau scan tanpa teks) tidak dapat dibaca. Tampil keterangan *Berkas ini tidak memuat teks yang dapat dibaca*; isi form seperti biasa, berkasnya tetap dapat dilampirkan.
+- Fitur ini hanya ada saat menambah surat, tidak saat mengedit.
+
 ### Langkah 3: Lampiran (Opsional)
 
 1. Isi **Link Dokumen**, atau klik area **Upload Berkas** lalu pilih berkas. Berkas juga dapat diseret ke area tersebut.
@@ -134,12 +150,19 @@ Halaman **Detail Surat Masuk** menampilkan informasi surat, pratinjau berkas, pa
 | **Edit** | Ubah data surat | Super Admin, Admin Unit Kerja |
 | **Tindak Lanjut** | Menu berisi **Saya Balas**, **Buat Nota Dinas**, **Buat ND Penjelas**, **Disposisi ke Direktorat**, **Terima Disposisi**, **Penyelesaian**, dan **Tautkan ke Rangkaian**. Pilihan yang tampil mengikuti kewenangan kamu atas surat itu | Sesuai kewenangan |
 | **Arsipkan** | Pindahkan ke arsip | Super Admin, Admin Unit Kerja |
+| **Cetak Disposisi** | Buka Lembar Disposisi di tab baru untuk dicetak dan dilampirkan pada surat fisik | Semua yang dapat membuka surat |
 
 Tombol yang sama juga ada di kartu **Aksi Cepat** di sisi kanan. Menghapus surat dilakukan dari daftar, bukan dari halaman detail.
 
+Pada menu **Tindak Lanjut**, **Buat Nota Dinas** bekerja seperti **Saya Balas**: form **Tambah Surat Keluar** terbuka dengan **Nomor Referensi** surat asal sudah terisi, tetapi naskahnya berjenis Nota Dinas. **Buat ND Penjelas** hanya tampil pada surat keluar berjenis Keputusan. **Tautkan ke Rangkaian** dijelaskan di [Rangkaian Surat](rangkaian-surat.md#menautkan-surat-ke-rangkaian).
+
+### Lembar Disposisi
+
+**Cetak Disposisi** membuka Lembar Disposisi di tab baru: identitas surat (No. Agenda, tanggal diterima, nomor dan tanggal surat, asal, perihal, sifat), daftar unit tujuan disposisi yang sudah dikirim lewat SIMSA beserta instruksi, batas waktu, tembusan, dan statusnya, ditambah baris kosong, kotak **Catatan / instruksi pimpinan**, dan kotak paraf untuk diisi tangan. Klik **Cetak** lalu pilih printer atau *Simpan sebagai PDF*. Surat Terbatas ke atas hanya dapat dicetak setelah akses disetujui.
+
 ### Jika Tampil "Perlu persetujuan akses"
 
-Surat berkelas Terbatas, Rahasia, atau Sangat Rahasia tetap tampil di daftar, tetapi isinya baru dapat dibuka setelah permohonan akses kamu disetujui Super Admin. Halaman detail lalu menampilkan judul **Perlu persetujuan akses** beserta nomor dan perihal surat.
+Surat berkelas Terbatas tetap tampil di daftar, tetapi isinya baru dapat dibuka setelah permohonan akses kamu disetujui Super Admin. Surat Rahasia atau Sangat Rahasia tidak tampil bagi Admin Unit Kerja, Admin Dirjen, atau Admin Sesditjen tanpa persetujuan akses rekod. Halaman detail lalu menampilkan judul **Perlu persetujuan akses** beserta nomor dan perihal surat.
 
 1. Klik **Minta Akses**. Halaman permohonan terbuka dengan surat itu sudah terpilih.
 2. Pilih mode akses, tulis tujuan kedinasan, lalu kirim.
@@ -178,6 +201,8 @@ Kamu akan diarahkan ke form **Tambah Surat Keluar** dengan data otomatis terisi:
 1. Isi kolom lainnya: **Naskah Dinas**, **Nomor Surat**, **Tanggal Surat**, dan lampiran bila ada.
 2. Klik **"Simpan"** untuk menyimpan surat keluar balasan.
 
+> **Info**
+>
 > Setelah disimpan, status surat masuk otomatis berubah menjadi **"Sudah Dibalas"**.
 
 ---

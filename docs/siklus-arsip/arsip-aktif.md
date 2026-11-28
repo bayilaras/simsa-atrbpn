@@ -1,6 +1,6 @@
 # 🗂️ Arsip Aktif
 
-Panduan mengelola arsip aktif yang berasal dari surat masuk dan surat keluar.
+Panduan mengelola arsip aktif: arsip surat masuk, arsip surat keluar, dan arsip lainnya yang bukan surat.
 
 ---
 
@@ -8,9 +8,10 @@ Panduan mengelola arsip aktif yang berasal dari surat masuk dan surat keluar.
 
 Arsip aktif adalah **arsip yang masih digunakan secara langsung** dalam pelaksanaan tugas. Arsip ini berasal dari surat masuk atau surat keluar yang sudah selesai diproses dan dipindahkan ke arsip.
 
-Halaman **Manajemen Arsip** memiliki tiga tab:
+Halaman **Manajemen Arsip** memiliki empat tab:
 - **Arsip Surat Keluar** — Arsip yang berasal dari surat keluar
 - **Arsip Surat Masuk** — Arsip yang berasal dari surat masuk
+- **Arsip Lainnya** — Dokumen yang bukan surat, misalnya SK, laporan, notula, atau berkas kegiatan
 - **Status Retensi** — Ringkasan arsip menurut tahap retensinya. Super Admin memilih satu unit kerja terlebih dahulu; selama **Semua Unit Kerja** terpilih tertulis *Pilih unit kerja untuk melihat status retensi.* Bila ringkasan gagal dimuat, tertulis *Status retensi belum dapat dimuat. Silakan coba lagi.*
 
 ---
@@ -20,7 +21,7 @@ Halaman **Manajemen Arsip** memiliki tiga tab:
 ### Langkah 1: Buka Menu Arsip Aktif
 
 1. Di sidebar, klik **Arsip Aktif** (ada ikon ▼).
-2. Pilih **Arsip Surat Masuk** atau **Arsip Surat Keluar**.
+2. Pilih **Arsip Surat Masuk**, **Arsip Surat Keluar**, atau **Arsip Lainnya**.
 
 ### Langkah 2: Lihat Tabel Arsip
 
@@ -37,9 +38,9 @@ Tabel menampilkan:
 | Nasib Akhir | Permanen atau Musnah menurut JRA. Selama pemicu retensi belum terverifikasi tertulis **Menunggu verifikasi**; selama klasifikasi dan JRA arsip belum direkonsiliasi tertulis **Menunggu rekonsiliasi** |
 | Aksi | Menu tiga titik (⋯) berisi **Detail Arsip** |
 
-Gunakan kotak **Cari arsip** (nomor berkas, nomor surat, atau perihal) dan tombol **Filter** untuk menyaring menurut tahun. Frasa tetap ditemukan walaupun teks aslinya terpotong baris baru. Tombol **Perbarui**, **Impor CSV**, dan **Export** ada di kanan atas; **Impor CSV** hanya tampil bagi admin setelah satu unit kerja dipilih.
+Gunakan kotak **Cari arsip** (nomor berkas, nomor surat, atau perihal) dan tombol **Filter** untuk menyaring menurut tahun. Frasa tetap ditemukan walaupun teks aslinya terpotong baris baru. Tombol **Perbarui**, **Tambah Arsip**, **Impor CSV**, dan **Export** ada di kanan atas; **Tambah Arsip** dan **Impor CSV** hanya untuk admin. Bagi Super Admin yang masih memilih **Semua Unit Kerja**, kedua tombol tampil tidak aktif dengan petunjuk *Pilih unit kerja terlebih dahulu*.
 
-Bila daftar dibuka dari halaman [Lokasi Simpan](../layanan-fisik/lokasi-simpan.md), daftar tersaring untuk lokasi itu beserta sub-lokasinya dan menampilkan tanda **Lokasi simpan: nama (kode)** yang dapat dihapus. Bila lokasi itu juga menyimpan arsip jenis lain, di bawahnya ada tautan untuk melihat arsip surat masuk atau arsip surat keluar di lokasi yang sama.
+Bila daftar dibuka dari halaman [Lokasi Simpan](../layanan-fisik/lokasi-simpan.md), daftar tersaring untuk lokasi itu beserta sub-lokasinya dan menampilkan tanda **Lokasi simpan: nama (kode)** yang dapat dihapus. Bila lokasi itu juga menyimpan arsip jenis lain, di bawahnya ada tautan untuk melihat arsip jenis lain (surat masuk, surat keluar, atau lainnya) di lokasi yang sama.
 
 ### Ekspor Formulir 4 dan Formulir 6
 
@@ -106,9 +107,24 @@ Arsip berkelas Terbatas atau lebih tinggi yang belum boleh kamu buka menampilkan
 
 ---
 
+## Menambah Arsip Tanpa Surat
+
+Gunakan **Tambah Arsip** untuk arsip fisik yang belum tercatat sebagai surat di SIMSA, termasuk dokumen yang bukan surat. Untuk surat yang sudah tercatat, tetap gunakan **Arsipkan** pada detail surat.
+
+1. Pilih unit kerja (Super Admin), lalu klik **Tambah Arsip**.
+2. Pilih **Jenis Arsip**: arsip surat masuk, arsip surat keluar, atau arsip lainnya.
+3. Isi **Nomor Berkas**, **Tanggal Arsip**, dan **Uraian Berkas**. Tahun arsip diambil dari tanggal. Nomor berkas yang sudah dipakai arsip lain di unit dan tahun yang sama ditolak dengan pesan *Nomor berkas … sudah dipakai arsip lain di unit ini untuk tahun …*.
+4. Isi **No. Filing Cabinet**, **No. Laci**, dan **No. Folder**; bila daftar lokasi sudah dibuat, pilih juga **Lokasi Simpan**.
+5. Lengkapi isian lain bila perlu (kurun waktu, unit pengolah, tingkat perkembangan, media, jumlah, klasifikasi keamanan, penanggung jawab, keterangan).
+6. Centang *Saya sudah memeriksa isian dan memahami bahwa arsip ini tidak dapat dihapus.*, lalu klik **Simpan Arsip**. Detail arsip baru langsung terbuka.
+
+Seperti arsip hasil impor, klasifikasi dan JRA arsip ini belum ditetapkan; cocokkan lewat **Rekonsiliasi Klasifikasi/JRA** pada detail arsip. Admin Unit Kerja tidak dapat memilih kelas Rahasia atau Sangat Rahasia. Arsip yang sudah disimpan tidak dapat dihapus; perbaiki salah isi lewat **Ubah Metadata**.
+
+---
+
 ## Mengubah Metadata Arsip
 
-Bila ada data berkas yang salah catat, admin yang berwenang atas unit arsip dapat memperbaikinya dari halaman detail:
+Bila ada data berkas yang salah catat, admin yang berwenang atas unit arsip dapat memperbaikinya dari halaman detail. Pengguna lain melaporkannya kepada admin unit; jangan membuat rekod pengganti tanpa pemeriksaan. Langkah bagi admin:
 
 1. Klik **Ubah Metadata** di bagian atas halaman atau di kartu **Aksi Cepat**.
 2. Perbaiki isian yang salah: Nomor Berkas, Unit Pengolah, Uraian Berkas, Kurun Waktu, Nomor Item, Tingkat Perkembangan, Uraian Item, Tanggal Arsip, Jumlah, Media, No. Filing Cabinet, No. Laci, No. Folder, Lokasi Simpan, Klasifikasi Keamanan, Penanggung Jawab, atau Keterangan.
@@ -172,7 +188,8 @@ Hal yang sama berlaku untuk **Impor CSV** arsip: dialognya menampilkan *Impor ar
 
 Ketentuan berkas **Impor CSV** arsip:
 
-- Kolom utama: Nomor Berkas, Tanggal, Uraian, dan Jenis Arsip (`masuk` atau `keluar`). Beri setiap kolom judul yang berbeda.
+- Kolom utama: Nomor Berkas, Tanggal, Uraian, dan Jenis Arsip (`masuk`, `keluar`, atau `lainnya`; huruf besar dan kecil tidak dibedakan, kosong dibaca `masuk`). Beri setiap kolom judul yang berbeda.
+- Kolom lokasi, boleh dikosongkan: **No. Filing Cabinet** (atau `Filing Cabinet`, `FC`), **No. Laci** (atau `Laci`), **No. Folder** (atau `Folder`), dan **Kode Lokasi Simpan** (atau `Lokasi Simpan`). Kode lokasi dicocokkan dengan kode di menu Lokasi Simpan unit itu tanpa membedakan huruf besar dan kecil; baris dengan kode yang tidak ditemukan ditolak dengan alasannya.
 - Pemisah kolom boleh koma, titik koma, atau tab, dan dibaca dari baris judul. Sebaiknya simpan sebagai "CSV UTF-8"; CSV biasa dari Excel juga dapat dibaca.
 - Maksimal 1.000 rekod dan 4 MiB per berkas; pecah berkas besar sebelum diimpor.
 - Tanggal ditulis dengan urutan hari, bulan, tahun, misalnya `03/11/2026`, `3-11-2026`, atau `3 November 2026`; penulisan `2026-11-03` juga diterima. Tanggal yang tidak dapat dibaca atau bertahun di luar 1920 sampai 2199 ditolak, tidak ditebak atau diganti dengan tanggal hari ini.

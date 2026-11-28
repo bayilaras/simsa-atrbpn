@@ -106,7 +106,10 @@ Mulai versi 1.1, dashboard menampilkan **6 widget tambahan** di bawah Aktivitas 
 | **Aktif** | 🟢 Hijau | Masa retensi aktif masih berjalan |
 | **Inaktif** | 🔵 Biru | Masa aktif selesai, masa inaktif berjalan |
 | **Kadaluarsa** | 🔴 Merah | Semua masa retensi telah berakhir |
-| **Belum Ditentukan** | ⚪ Abu-abu | Belum memiliki data retensi |
+| **Belum Ditentukan** | ⚪ Abu-abu | Belum memiliki data retensi, termasuk arsip yang pemicu retensinya belum dicatat dan diverifikasi |
+| **Penahanan hukum** | 🟠 Jingga | Arsip yang sedang ditahan (legal hold); hanya tampil bila ada |
+
+Jumlah semua kelompok sama dengan angka **Total Arsip**. Arsip yang baru diarsipkan masuk **Belum Ditentukan** sampai pemicu retensinya dicatat.
 
 Status dihitung otomatis dari **tanggal arsip** dan **jadwal retensi aktif/inaktif**.
 

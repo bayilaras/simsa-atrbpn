@@ -28,7 +28,7 @@ SIMSA tidak mengirim email untuk mengatur ulang kata sandi. Di bawah kolom **Kat
 
 ## Sesi berakhir
 
-SIMSA keluar otomatis setelah 30 menit tanpa aktivitas. Lima menit sebelumnya muncul peringatan *Sesi Anda akan berakhir dalam 5 menit karena tidak ada aktivitas.*; klik **Tetap Masuk** untuk melanjutkan. Setelah keluar karena tidak aktif, halaman masuk menampilkan *Sesi berakhir karena tidak ada aktivitas. Silakan masuk kembali.*
+SIMSA keluar otomatis setelah 30 menit tanpa aktivitas. Lima menit sebelumnya muncul peringatan *Sesi Anda akan berakhir dalam 5 menit karena tidak ada aktivitas.*; klik **Tetap Masuk** untuk melanjutkan. Setelah keluar karena tidak aktif, halaman masuk menampilkan *Sesi berakhir karena tidak ada aktivitas. Silakan masuk kembali.* beserta keterangan bahwa isian yang belum disimpan masih dapat dipulihkan. Setelah Anda masuk kembali dengan akun yang sama di tab yang sama, SIMSA membuka lagi halaman yang terakhir Anda buka.
 
 Isian formulir surat atau dialog **Arsipkan Surat** yang belum disimpan tidak hilang begitu saja: masuk kembali di tab peramban yang sama, buka lagi formulirnya, lalu pilih **Pulihkan isian**. Berkas PDF yang sudah dipilih perlu dipilih ulang. Isian tidak dapat dipulihkan bila tab sudah ditutup atau Anda menekan **Keluar**.
 
