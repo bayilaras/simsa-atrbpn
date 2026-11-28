@@ -378,7 +378,10 @@ describe('frontend response security policy', () => {
       "'self'", 'https://vercel.com/api/blob', 'https://vercel.com/api/blob/', 'https://*.blob.vercel-storage.com',
     ])
     expect(directives['frame-src']).toEqual(["'self'", 'blob:'])
-    expect(csp).not.toMatch(/google|gstatic|firebase/)
+    // Remote images are limited to Google account photos; no other directive
+    // names a Google origin.
+    expect(directives['img-src']).toEqual(["'self'", 'data:', 'blob:', 'https://*.googleusercontent.com'])
+    expect(csp.split('; ').filter(directive => !directive.startsWith('img-src ')).join('; ')).not.toMatch(/google|gstatic|firebase/)
     expect(directives['worker-src']).toEqual(["'self'", 'blob:'])
     expect(directives['object-src']).toEqual(["'none'"])
     expect(directives['frame-ancestors']).toEqual(["'none'"])

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Settings from './Settings'
 
 const mocks = vi.hoisted(() => ({
@@ -46,5 +46,42 @@ describe('Pengaturan Profil — nama wajib diisi', () => {
         simpan()
         await waitFor(() => expect(mocks.updateProfile).toHaveBeenCalledWith({ name: 'Budi Santoso', image: '' }))
         expect(screen.getByLabelText('Nama Lengkap')).toHaveValue('Budi Santoso')
+    })
+})
+
+describe('Pengaturan Profil — URL foto profil', () => {
+    const penggunaAwal = mocks.auth.user
+    afterEach(() => { mocks.auth.user = penggunaAwal })
+    const isiFoto = (value) => fireEvent.change(screen.getByLabelText('URL Foto Profil'), { target: { value } })
+
+    it.each([
+        'https://example.test/foto.jpg',
+        '/api/files/surat_masuk/1?download=1',
+    ])('alamat %s tidak dikirim dan pesan ditampilkan', (alamat) => {
+        render(<Settings />)
+        isiFoto(alamat)
+        simpan()
+        expect(mocks.updateProfile).not.toHaveBeenCalled()
+        expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+            title: 'URL foto profil tidak dapat dipakai', variant: 'destructive',
+        }))
+    })
+
+    it('mengirim foto akun Google yang sudah dipangkas', async () => {
+        render(<Settings />)
+        isiFoto('  https://lh3.googleusercontent.com/a/sintetis  ')
+        simpan()
+        await waitFor(() => expect(mocks.updateProfile).toHaveBeenCalledWith({
+            name: 'Budi', image: 'https://lh3.googleusercontent.com/a/sintetis',
+        }))
+    })
+
+    it('alamat lama di luar foto akun Google tidak ditampilkan dan tidak dikirim ulang', async () => {
+        mocks.auth.user = { ...penggunaAwal, image: 'https://example.test/lama.jpg' }
+        render(<Settings />)
+        expect(screen.getByLabelText('URL Foto Profil')).toHaveValue('')
+        isiNama('Budi Santoso')
+        simpan()
+        await waitFor(() => expect(mocks.updateProfile).toHaveBeenCalledWith({ name: 'Budi Santoso', image: '' }))
     })
 })

@@ -1,4 +1,5 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useRef, useState, useEffect } from 'react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -15,11 +16,26 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { settingsService } from '@/services/settings.service';
 import { useTheme } from '@/context/theme-context';
-import { User, Building2, FileText, Save, Loader2, Settings2, Palette } from 'lucide-react';
+import { User, Building2, FileText, Save, Loader2, Settings2, Palette, AlertCircle } from 'lucide-react';
+import { CONTOH_FOTO_PROFIL, PESAN_FOTO_PROFIL_DITOLAK, fotoProfilAman } from '@/lib/foto-profil';
 import { PageHeader } from '@/components/PageHeader';
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
 import { ChangePasswordCard } from '@/components/ChangePasswordCard';
+
+function GagalMuat({ pesan, onCobaLagi }) {
+    return (
+        <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+                <p>{pesan}</p>
+                <Button type="button" variant="outline" size="sm" className="mt-2" onClick={onCobaLagi}>
+                    Coba lagi
+                </Button>
+            </AlertDescription>
+        </Alert>
+    );
+}
 
 export default function Settings() {
     const { user, canWrite } = useAuth();
@@ -31,8 +47,15 @@ export default function Settings() {
     const templateUnitKerjaId = templateUnitScope.unitKerjaId;
 
     const [activeTab, setActiveTab] = useState('profile');
-    const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
+    // Data yang tampil di tab hanya boleh disimpan bila berasal dari server
+    // untuk kunci yang sama (tab, dan unit pada tab Template). Tanpa itu, nilai
+    // bawaan halaman atau template unit sebelumnya dapat tersimpan ke unit ini.
+    const kunciMuat = activeTab === 'templates' ? `templates:${templateUnitKerjaId || ''}` : activeTab;
+    const [muat, setMuat] = useState({ kunci: null, status: 'diam' });
+    const urutanMuat = useRef(0);
+    const statusMuat = muat.kunci === kunciMuat ? muat.status : 'memuat';
+    const loading = statusMuat === 'memuat';
 
     // Profile state
     const [profile, setProfile] = useState({
@@ -65,37 +88,49 @@ export default function Settings() {
     });
 
     const loadTabData = useCallback(async () => {
-        setLoading(true);
+        // Jawaban permintaan yang sudah disusul (tab atau unit berganti) diabaikan.
+        const urutan = ++urutanMuat.current;
+        const terkini = () => urutanMuat.current === urutan;
+        const perluMuat = (activeTab === 'unit-kerja' && isSuperAdmin)
+            || (activeTab === 'templates' && Boolean(templateUnitKerjaId))
+            || activeTab === 'preferences';
+        if (!perluMuat) {
+            setMuat({ kunci: kunciMuat, status: 'diam' });
+            return;
+        }
+        setMuat({ kunci: kunciMuat, status: 'memuat' });
         try {
             switch (activeTab) {
                 case 'unit-kerja': {
-                    if (!isSuperAdmin) break;
                     // The general unit directory is intentionally shared by
                     // distribution and notification pickers. Settings asks the
                     // API for the narrower set this admin may actually edit.
                     const units = await settingsService.getAllUnitKerja({ editable: true });
+                    if (!terkini()) return;
                     setUnitKerjaList(units);
                     break;
                 }
                 case 'templates': {
-                    if (!templateUnitKerjaId) break;
                     const tmpl = await settingsService.getSuratTemplates(templateUnitKerjaId);
+                    if (!terkini()) return;
                     setTemplates(tmpl);
                     break;
                 }
                 case 'preferences': {
                     const prefs = await settingsService.getPreferences();
+                    if (!terkini()) return;
                     setPreferences(prefs);
                     setTheme(prefs.theme);
                     break;
                 }
             }
+            setMuat({ kunci: kunciMuat, status: 'siap' });
         } catch (error) {
+            if (!terkini()) return;
             console.error('Error loading settings:', error);
-        } finally {
-            setLoading(false);
+            setMuat({ kunci: kunciMuat, status: 'gagal' });
         }
-    }, [activeTab, isSuperAdmin, setTheme, templateUnitKerjaId]);
+    }, [activeTab, isSuperAdmin, kunciMuat, setTheme, templateUnitKerjaId]);
 
     // Load data based on tab
     useEffect(() => {
@@ -108,7 +143,9 @@ export default function Settings() {
             setProfile({
                 name: user.name || '',
                 email: user.email || '',
-                image: user.image || '',
+                // Alamat lama di luar foto akun Google tidak ditampilkan dan
+                // tidak ikut dikirim ulang saat profil disimpan.
+                image: fotoProfilAman(user.image) || '',
             });
         }
     }, [user]);
@@ -123,13 +160,22 @@ export default function Settings() {
             });
             return;
         }
+        const image = profile.image.trim();
+        if (image && !fotoProfilAman(image)) {
+            toast({
+                title: 'URL foto profil tidak dapat dipakai',
+                description: PESAN_FOTO_PROFIL_DITOLAK,
+                variant: 'destructive',
+            });
+            return;
+        }
         setSaving(true);
         try {
             await settingsService.updateProfile({
                 name,
-                image: profile.image,
+                image,
             });
-            setProfile((current) => ({ ...current, name }));
+            setProfile((current) => ({ ...current, name, image }));
             toast({
                 title: 'Berhasil',
                 description: 'Profil berhasil diperbarui',
@@ -184,6 +230,7 @@ export default function Settings() {
     };
 
     const handleSaveTemplates = async () => {
+        if (templateUnitKerjaId && statusMuat !== 'siap') return;
         if (!templateUnitKerjaId) {
             toast({
                 title: 'Pilih unit kerja',
@@ -211,6 +258,7 @@ export default function Settings() {
     };
 
     const handleSavePreferences = async () => {
+        if (statusMuat !== 'siap') return;
         setSaving(true);
         try {
             const updated = await settingsService.updatePreferences(preferences);
@@ -297,10 +345,15 @@ export default function Settings() {
                                     <Label htmlFor="image">URL Foto Profil</Label>
                                     <Input
                                         id="image"
-                                        placeholder="https://example.com/photo.jpg"
+                                        placeholder={CONTOH_FOTO_PROFIL}
+                                        maxLength={2048}
+                                        aria-describedby="image-petunjuk"
                                         value={profile.image}
                                         onChange={(e) => setProfile({ ...profile, image: e.target.value })}
                                     />
+                                    <p id="image-petunjuk" className="text-xs text-muted-foreground">
+                                        Hanya alamat foto akun Google. Kosongkan untuk memakai inisial nama.
+                                    </p>
                                 </div>
                             </div>
 
@@ -361,6 +414,11 @@ export default function Settings() {
                                     <Skeleton className="h-20 rounded-xl" />
                                     <Skeleton className="h-20 rounded-xl" />
                                 </div>
+                            ) : statusMuat === 'gagal' ? (
+                                <GagalMuat
+                                    pesan="Preferensi belum dapat dimuat, jadi belum dapat diubah. Periksa koneksi Anda, lalu coba lagi."
+                                    onCobaLagi={loadTabData}
+                                />
                             ) : (
                                 <>
                                     <div className="grid gap-6 md:grid-cols-2">
@@ -415,7 +473,7 @@ export default function Settings() {
                                     </div>
 
                                     <div className="flex justify-end">
-                                        <Button onClick={handleSavePreferences} disabled={saving}>
+                                        <Button onClick={handleSavePreferences} disabled={saving || statusMuat !== 'siap'}>
                                             {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
                                             Simpan Preferensi
                                         </Button>
@@ -441,6 +499,13 @@ export default function Settings() {
                                             {[...Array(5)].map((_, i) => (
                                                 <Skeleton key={i} className="h-10 w-full rounded-md" />
                                             ))}
+                                        </div>
+                                    ) : statusMuat === 'gagal' ? (
+                                        <div className="p-2">
+                                            <GagalMuat
+                                                pesan="Daftar unit kerja belum dapat dimuat. Periksa koneksi Anda, lalu coba lagi."
+                                                onCobaLagi={loadTabData}
+                                            />
                                         </div>
                                     ) : (
                                         <div className="space-y-1 max-h-[500px] overflow-auto pr-1">
@@ -594,6 +659,11 @@ export default function Settings() {
                                         <Skeleton className="h-24 rounded-xl" />
                                         <Skeleton className="h-24 rounded-xl" />
                                     </div>
+                                ) : statusMuat === 'gagal' ? (
+                                    <GagalMuat
+                                        pesan="Template nomor surat unit ini belum dapat dimuat, jadi belum dapat diubah. Periksa koneksi Anda, lalu coba lagi."
+                                        onCobaLagi={loadTabData}
+                                    />
                                 ) : (
                                     <>
                                         <div className="grid gap-8 md:grid-cols-2">
@@ -653,7 +723,7 @@ export default function Settings() {
                                         <div className="flex justify-end pt-4">
                                             <Button
                                                 onClick={handleSaveTemplates}
-                                                disabled={saving || !templateUnitKerjaId}
+                                                disabled={saving || !templateUnitKerjaId || statusMuat !== 'siap'}
                                                 className="bg-primary hover:bg-primary text-white shadow-sm hover:shadow transition-all"
                                             >
                                                 {saving ? (

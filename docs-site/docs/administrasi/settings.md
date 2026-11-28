@@ -25,7 +25,7 @@ Tab ini tersedia untuk **semua pengguna** yang login.
 ### Mengubah Nama
 
 1. Buka tab **Profil**.
-2. Ubah nama Anda di kolom **Nama Lengkap**. Bila perlu, isi **URL Foto Profil**. Email tidak dapat diubah di sini.
+2. Ubah nama Anda di kolom **Nama Lengkap**. Bila perlu, isi **URL Foto Profil** dengan alamat foto akun Google Anda (diawali `https://lh3.googleusercontent.com/`); alamat lain tidak diterima. Kosongkan untuk memakai inisial nama. Email tidak dapat diubah di sini.
 3. Klik **"Simpan Profil"**.
 
 > 💡 Perubahan nama akan langsung berlaku di seluruh sistem.

@@ -13,6 +13,7 @@ import { betterAuthIpOptions } from '../middlewares/better-auth-ip.middleware.js
 import * as schema from '../db/schema';
 import { archiveAccessProvisioningIssue } from '../services/identity-user.service.js';
 import { recordAuthEvent, rememberSigningOutUser } from '../services/auth-audit.service.js';
+import { bersihkanFotoProfil } from '../utils/foto-profil.js';
 
 const deployedRuntime = usesSharedRateLimits();
 const googleConfig = buildGoogleOAuthConfig();
@@ -285,7 +286,16 @@ export const auth = betterAuth({
             create: {
                 // Applies only to new Better Auth rows. Administrator-provided
                 // accounts use the protected domain API; linking never runs it.
-                before: async (user) => ({ data: { ...user, role: 'user', unitKerjaId: null, isActive: true } }),
+                before: async (user) => ({
+                    data: { ...user, image: bersihkanFotoProfil(user.image), role: 'user', unitKerjaId: null, isActive: true },
+                }),
+            },
+            update: {
+                // Better Auth's own update-user endpoint accepts `image` too.
+                // Keep it to the same rule as PUT /api/settings/profile.
+                before: async (user) => ('image' in user
+                    ? { data: { ...user, image: bersihkanFotoProfil(user.image) } }
+                    : undefined),
             },
         },
         session: {
