@@ -4,7 +4,7 @@ Halaman ini adalah titik awal bagi siapa pun yang mengoperasikan SIMSA: apa yang
 
 Perbarui halaman ini setiap kali ada rilis, perubahan jadwal, atau perubahan akun. Bila isinya berbeda dengan berkas konfigurasi di repositori (`.github/workflows/`, `backend/vercel.json`, `frontend/vercel.mjs`), berkas konfigurasi yang berlaku; perbaiki halaman ini. Repositori bersifat publik: jangan menulis nama host database, ID project atau deployment, nilai rahasia, maupun nama orang di sini.
 
-**Per 26 November 2026 (WIB):** produksi menjalankan backend C87 dari `main` `aa9257ac` dan frontend C90 dari `main` `9d9737b`; situs panduan diterbitkan dari `9d9737b`. Di antara kedua commit itu tidak ada perubahan frontend maupun situs panduan. Journal database berisi 56 migrasi, terakhir `0055_surat_diimpor_at`. Laporan rilis disimpan di [`docs/rilis/`](rilis/README.md); laporan terbaru `HASIL_RILIS_BACKEND_C87_2026-11-26.md`. Selain artefak GitHub, backup harian juga disalin ke Google Drive (lihat [backup Google Drive](BACKUP_GOOGLE_DRIVE.md)).
+**Per 28 November 2026 (WIB):** produksi menjalankan backend C89 dan frontend C91, keduanya dari `main` `7eb1862c`; situs panduan diterbitkan dari commit yang sama. Modul isi formulir surat dari PDF menyala (`SIMSA_LETTER_PDF_PREFILL_ENABLED=true` di backend); modul Unggah Massal & OCR dan alur arsip lanjutan tetap mati. Journal database berisi 56 migrasi, terakhir `0055_surat_diimpor_at`. Laporan rilis disimpan di [`docs/rilis/`](rilis/README.md); laporan terbaru `HASIL_RILIS_BACKEND_C89_2026-11-28.md`. Selain artefak GitHub, backup harian juga disalin ke Google Drive (lihat [backup Google Drive](BACKUP_GOOGLE_DRIVE.md)).
 
 ## Apa yang berjalan di mana
 
