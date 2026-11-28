@@ -28,6 +28,11 @@ export default function LembarDisposisi() {
     const { id } = useParams()
     const { user } = useAuth()
     const [muatan, setMuatan] = useState({ status: 'memuat' })
+    const [percobaan, setPercobaan] = useState(0)
+    const cobaLagi = () => {
+        setMuatan({ status: 'memuat' })
+        setPercobaan(nilai => nilai + 1)
+    }
 
     useEffect(() => {
         let aktif = true
@@ -41,23 +46,47 @@ export default function LembarDisposisi() {
                 setMuatan({ status: perlu ? 'perlu_akses' : 'gagal' })
                 return
             }
-            // Riwayat kosong dijawab 404; daftar unit hanya untuk nama.
-            const [riwayat, unit] = await Promise.all([
-                distributionService.getHistoryBySurat(id).catch(() => []),
-                api.get('/api/unit-kerja').then(response => response?.data || []).catch(() => []),
-            ])
+            // Riwayat kosong dijawab 404. Galat lain berarti lembar belum
+            // lengkap: jangan sampai tercetak tanpa baris disposisi atau nama
+            // unit yang sebenarnya ada.
+            let riwayat, unit
+            try {
+                [riwayat, unit] = await Promise.all([
+                    distributionService.getHistoryBySurat(id).catch((error) => {
+                        if (error?.status === 404) return []
+                        throw error
+                    }),
+                    api.get('/api/unit-kerja').then(response => response?.data || []),
+                ])
+            } catch {
+                if (aktif) setMuatan({ status: 'belum_lengkap' })
+                return
+            }
             if (!aktif) return
             const namaUnit = new Map((Array.isArray(unit) ? unit : []).map(u => [u.id, u.name]))
             setMuatan({ status: 'siap', surat, namaUnit, disposisi: barisDisposisi(Array.isArray(riwayat) ? riwayat : [], namaUnit) })
         }
         void muat()
         return () => { aktif = false }
-    }, [id])
+    }, [id, percobaan])
 
     if (muatan.status === 'memuat') {
         return (
             <div role="status" className="flex min-h-[50vh] items-center justify-center gap-2 text-sm text-gray-600">
                 <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> Memuat lembar disposisi…
+            </div>
+        )
+    }
+    if (muatan.status === 'belum_lengkap') {
+        return (
+            <div className="mx-auto max-w-lg space-y-3 p-8 text-sm">
+                <p role="alert">
+                    Riwayat disposisi surat ini belum dapat dimuat, jadi lembar belum dapat dicetak. Periksa koneksi Anda, lalu coba lagi.
+                </p>
+                <div className="flex flex-wrap items-center gap-4">
+                    <Button type="button" onClick={cobaLagi}>Coba lagi</Button>
+                    <Link className="underline" to={`/surat/masuk/${id}`}>Kembali ke detail surat</Link>
+                </div>
             </div>
         )
     }

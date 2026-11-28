@@ -62,6 +62,25 @@ describe('LembarDisposisi', () => {
         expect(screen.getByRole('heading', { name: 'Catatan / instruksi pimpinan' })).toBeInTheDocument()
     })
 
+    it.each([
+        ['riwayat disposisi', () => mocks.getHistoryBySurat.mockRejectedValueOnce(Object.assign(new Error('Layanan sibuk'), { status: 503 }))],
+        ['riwayat disposisi (jaringan putus)', () => mocks.getHistoryBySurat.mockRejectedValueOnce(new TypeError('Failed to fetch'))],
+        ['daftar unit kerja', () => mocks.get.mockRejectedValueOnce(Object.assign(new Error('Terlalu banyak permintaan'), { status: 429 }))],
+    ])('tidak dapat dicetak selama %s gagal dimuat, lalu tampil utuh setelah Coba lagi', async (_label, gagalkan) => {
+        gagalkan()
+        tampilkan()
+        expect(await screen.findByRole('alert')).toHaveTextContent('Riwayat disposisi surat ini belum dapat dimuat')
+        expect(screen.queryByRole('heading', { name: 'LEMBAR DISPOSISI' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: /Cetak/ })).not.toBeInTheDocument()
+        expect(screen.getByRole('link', { name: 'Kembali ke detail surat' })).toHaveAttribute('href', '/surat/masuk/sm-1')
+
+        fireEvent.click(screen.getByRole('button', { name: 'Coba lagi' }))
+        expect(await screen.findByRole('heading', { name: 'LEMBAR DISPOSISI' })).toBeInTheDocument()
+        expect(screen.getByRole('row', { name: /Direktorat BPPT/ })).toBeInTheDocument()
+        expect(screen.getByText('Sekretariat Ditjen')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /Cetak/ })).toBeInTheDocument()
+    })
+
     it('meminta persetujuan akses untuk surat terkendali', async () => {
         mocks.getById.mockRejectedValue(Object.assign(new Error('Perlu persetujuan'), {
             status: 403, code: 'ACCESS_APPROVAL_REQUIRED', data: { code: 'ACCESS_APPROVAL_REQUIRED', entityType: 'surat_masuk', entityId: 'sm-1' },
