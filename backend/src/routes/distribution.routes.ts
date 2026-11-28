@@ -286,7 +286,8 @@ router.post('/', canWriteMiddleware(), validateBody(createDistributionSchema), a
         }
 
         // Prevent sending on behalf of another unit: the caller must be allowed to act
-        // for sourceUnitId (super_admin/auditor may act for any unit).
+        // for sourceUnitId. Only super_admin may act for any unit; read-only roles
+        // such as auditor never reach this point (canWriteMiddleware above).
         const callerRole = (req.user?.role || 'user') as Role;
         if (!canAccessUnit(callerRole, req.user?.unitKerjaId || null, sourceUnitId)) {
             return res.status(403).json({ error: 'Anda tidak berwenang mendistribusikan surat atas nama unit tersebut' });
