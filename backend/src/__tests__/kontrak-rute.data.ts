@@ -225,6 +225,9 @@ export const KONTRAK_RUTE: Record<string, Record<string, EntriKontrak | Akses>> 
         'POST /': check('layananArsipService.create'),
         'POST /:id/status': check('layananArsipService.updateStatus'),
     },
+    'letter-prefill.routes.ts': {
+        'POST /': 'bukan-rekaman',
+    },
     'mapping.routes.ts': {
         'GET /klasifikasi-jra': 'bukan-rekaman',
         'GET /suggest-jra/:klasifikasiKode': 'bukan-rekaman',

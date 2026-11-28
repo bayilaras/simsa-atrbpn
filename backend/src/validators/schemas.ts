@@ -12,6 +12,7 @@ import { PESAN_DITERIMA_SEBELUM_TANGGAL_SURAT, PESAN_DITERIMA_SETELAH_HARI_INI }
 import { parseJsonObjectString } from '../utils/json-objek-teks.js';
 import { KATEGORI_PERLU_DILENGKAPI } from '../services/perlu-dilengkapi.constants.js';
 import { ACUAN_TANGGAL_SURAT_MASUK, URUTAN_DAFTAR_SURAT, URUTAN_DAFTAR_SURAT_MASUK } from '../services/urutan-daftar-surat.constants.js';
+import { LETTER_FORM_TEXT_MAX_CHARS } from '../services/letter-text-fields.js';
 
 // Common schemas
 export const uuidSchema = z.string().uuid();
@@ -659,6 +660,21 @@ export const confirmBulkUploadSchema = z.object({
 }).strict();
 
 export type ConfirmBulkUpload = z.infer<typeof confirmBulkUploadSchema>;
+
+// ==================== Letter form prefill ====================
+
+/**
+ * Text of a letter PDF, extracted in the browser, to be read into the fields
+ * of a letter form. The input sanitizer leaves `extractedText` as it is, so
+ * the line breaks the reader depends on arrive intact.
+ */
+export const letterPrefillSchema = z.object({
+    extractedText: z.string('Teks surat wajib diisi')
+        .min(1, 'Teks surat wajib diisi')
+        .max(LETTER_FORM_TEXT_MAX_CHARS, `Teks surat maksimal ${LETTER_FORM_TEXT_MAX_CHARS} karakter`),
+}).strict();
+
+export type LetterPrefillInput = z.infer<typeof letterPrefillSchema>;
 
 // ==================== Dosir schemas ====================
 

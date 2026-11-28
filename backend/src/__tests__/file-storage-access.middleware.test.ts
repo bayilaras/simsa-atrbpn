@@ -156,4 +156,35 @@ describe('optional modules independently of manual PDF capabilities', () => {
         expect((await request(app).post('/api/penyusutan').send({})).status).toBe(200);
         expect((await request(optionalFixture({}).app).post('/api/bulk-upload').send({})).status).toBe(200);
     });
+
+    it('keeps the letter form prefill off until its flag is exactly true', () => {
+        for (const flag of [undefined, 'false', '', 'flase', '1', 'yes']) {
+            expect(getPublicCapabilities({ SIMSA_LETTER_PDF_PREFILL_ENABLED: flag }).capabilities.letterPdfPrefill).toBe(false);
+        }
+        for (const flag of ['true', ' TRUE ']) {
+            expect(getPublicCapabilities({ SIMSA_LETTER_PDF_PREFILL_ENABLED: flag }).capabilities.letterPdfPrefill).toBe(true);
+        }
+    });
+
+    it.each(['/letter-prefill', '/LETTER-PREFILL/', '/letter-prefill/anything'])('rejects disabled post %s before parsers or domain handlers', async path => {
+        for (const source of [{}, disabledModules, { SIMSA_LETTER_PDF_PREFILL_ENABLED: 'false' }]) {
+            const { app, parser, domain } = optionalFixture(source);
+            const response = await request(app).post(`/api${path}`).set('Content-Type', 'application/json').send('{invalid');
+            expect(response.status).toBe(503);
+            expect(response.body).toMatchObject({ success: false, code: 'OPTIONAL_MODULE_DISABLED', module: 'letterPdfPrefill' });
+            expect(response.headers['cache-control']).toBe('no-store');
+            expect(parser).not.toHaveBeenCalled();
+            expect(domain).not.toHaveBeenCalled();
+        }
+    });
+
+    it('opens the letter form prefill on its own flag, with storage on or off', async () => {
+        const source = { ...disabledModules, SIMSA_LETTER_PDF_PREFILL_ENABLED: 'true' };
+        for (const storageDisabled of [false, true]) {
+            const { app, domain } = optionalFixture(source, storageDisabled);
+            expect((await request(app).post('/api/letter-prefill').send({ extractedText: 'Nomor: 1/CTH/XI/2026' })).status).toBe(200);
+            expect(domain).toHaveBeenCalledOnce();
+            expect((await request(app).post('/api/bulk-upload').send({})).status).toBe(503);
+        }
+    });
 });

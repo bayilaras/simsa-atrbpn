@@ -9,6 +9,10 @@ export function getOptionalModuleCapabilities(source: NodeJS.ProcessEnv = proces
     return {
         bulkOcr: enabled(source.SIMSA_BULK_OCR_ENABLED),
         advancedArchiveWorkflows: enabled(source.SIMSA_ADVANCED_ARCHIVE_WORKFLOWS_ENABLED),
+        // Letter forms fill their fields from the text of the chosen PDF. A
+        // module added after the first installations is switched on
+        // explicitly: without the flag it stays off.
+        letterPdfPrefill: source.SIMSA_LETTER_PDF_PREFILL_ENABLED?.trim().toLowerCase() === 'true',
     };
 }
 

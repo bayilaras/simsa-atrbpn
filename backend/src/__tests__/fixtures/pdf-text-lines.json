@@ -1,0 +1,91 @@
+{
+  "catatan": "Dipakai dua uji: backend (joinPdfTextItems) dan frontend (susunBarisPdf). Keduanya harus menghasilkan teks yang sama dari item teks PDF.js yang sama.",
+  "kasus": [
+    {
+      "nama": "baris baru pada garis dasar baru, baris kosong setelah jarak lebar",
+      "items": [
+        { "str": "Nomor", "transform": [12, 0, 0, 12, 50, 700], "width": 34, "height": 12 },
+        { "str": ": B/1/XI/2026", "transform": [12, 0, 0, 12, 100, 700], "width": 70, "height": 12, "hasEOL": true },
+        { "str": "Hal", "transform": [12, 0, 0, 12, 50, 686], "width": 18, "height": 12 },
+        { "str": ": Contoh", "transform": [12, 0, 0, 12, 100, 686], "width": 44, "height": 12 },
+        { "str": "Isi surat.", "transform": [12, 0, 0, 12, 50, 640], "width": 50, "height": 12 }
+      ],
+      "teks": "Nomor : B/1/XI/2026\nHal : Contoh\n\nIsi surat."
+    },
+    {
+      "nama": "kata yang dipecah PDF tidak diberi spasi",
+      "items": [
+        { "str": "meng", "transform": [12, 0, 0, 12, 50, 700], "width": 26, "height": 12 },
+        { "str": "ajukan", "transform": [12, 0, 0, 12, 76, 700], "width": 36, "height": 12 },
+        { "str": " ", "transform": [12, 0, 0, 12, 112, 700], "width": 3, "height": 12 },
+        { "str": "permohonan", "transform": [12, 0, 0, 12, 115, 700], "width": 62, "height": 12 }
+      ],
+      "teks": "mengajukan permohonan"
+    },
+    {
+      "nama": "jarak lebih lebar dari kerning menjadi satu spasi",
+      "items": [
+        { "str": "Kepala", "transform": [12, 0, 0, 12, 50, 700], "width": 36, "height": 12 },
+        { "str": "Bagi", "transform": [12, 0, 0, 12, 90, 700], "width": 22, "height": 12 },
+        { "str": "an", "transform": [12, 0, 0, 12, 112.5, 700], "width": 12, "height": 12 }
+      ],
+      "teks": "Kepala Bagian"
+    },
+    {
+      "nama": "spasi tak putus dan spasi ganda dirapikan",
+      "items": [
+        { "str": "Nomor  :", "transform": [12, 0, 0, 12, 50, 700], "width": 40, "height": 12 },
+        { "str": " B/7/XI/2026  ", "transform": [12, 0, 0, 12, 92, 700], "width": 70, "height": 12 }
+      ],
+      "teks": "Nomor : B/7/XI/2026"
+    },
+    {
+      "nama": "tanda akhir baris tidak digandakan oleh garis dasar berikutnya",
+      "items": [
+        { "str": "Yth. Direktur Contoh", "transform": [12, 0, 0, 12, 50, 700], "width": 110, "height": 12, "hasEOL": true },
+        { "str": "di Kota Fiktif", "transform": [12, 0, 0, 12, 50, 686], "width": 70, "height": 12 }
+      ],
+      "teks": "Yth. Direktur Contoh\ndi Kota Fiktif"
+    },
+    {
+      "nama": "item kosong tidak menggeser posisi terakhir",
+      "items": [
+        { "str": "Hal", "transform": [12, 0, 0, 12, 50, 700], "width": 18, "height": 12 },
+        { "str": "", "transform": [12, 0, 0, 12, 300, 500], "width": 0, "height": 0 },
+        { "str": ": Contoh", "transform": [12, 0, 0, 12, 100, 700], "width": 44, "height": 12 }
+      ],
+      "teks": "Hal : Contoh"
+    },
+    {
+      "nama": "tinggi diambil dari matriks bila tidak ada",
+      "items": [
+        { "str": "Baris satu", "transform": [10, 0, 0, 10, 50, 700], "width": 48 },
+        { "str": "Baris dua", "transform": [10, 0, 0, 10, 50, 688], "width": 46 }
+      ],
+      "teks": "Baris satu\nBaris dua"
+    },
+    {
+      "nama": "item tanpa posisi digabung dengan spasi, yang bukan teks dilewati",
+      "items": [
+        { "str": "Pengelolaan" },
+        { "str": "arsip" },
+        { "nothing": true },
+        { "str": 12 },
+        { "str": "dinamis" }
+      ],
+      "teks": "Pengelolaan arsip dinamis"
+    },
+    {
+      "nama": "lebih dari satu baris kosong berturut-turut diringkas",
+      "items": [
+        { "str": "Paragraf satu.\n\n\n\nParagraf dua." }
+      ],
+      "teks": "Paragraf satu.\n\nParagraf dua."
+    },
+    {
+      "nama": "bukan daftar item",
+      "items": null,
+      "teks": ""
+    }
+  ]
+}
