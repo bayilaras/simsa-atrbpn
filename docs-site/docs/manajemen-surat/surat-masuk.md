@@ -91,6 +91,22 @@ Form ini berisi lima bagian bernomor:
 Tombol **"Batal"** dan **"Simpan"** ada di bagian bawah. Bagian Lampiran Dokumen hanya tampil bila penyimpanan berkas sudah disiapkan operator.
 :::
 
+### Mengisi Form dari Berkas PDF (Bila Tersedia)
+
+Bila operator mengaktifkan fitur ini, di atas form tampil kotak **Punya PDF suratnya?**. Dengan fitur ini isian tidak perlu diketik ulang dari surat:
+
+1. Klik **Pilih berkas PDF**, lalu pilih PDF surat. Berkas yang sama menjadi lampiran surat.
+2. Tunggu tulisan *Membaca isian dari berkas…* selesai. Kotak itu lalu menampilkan **Isian terbaca dari berkas**: Jenis Surat, Nomor Surat, Tanggal Surat, Perihal, Dari (Pengirim), dan Kepada (Penerima) yang ditemukan.
+3. Periksa isinya, lalu klik **Isi formulir**. Hanya isian yang masih kosong yang diisi; isian yang sudah kamu ketik tidak diubah.
+4. Periksa kembali form, lengkapi isian lain, lalu simpan seperti biasa.
+
+Hal yang perlu diketahui:
+
+- **Sifat Surat tidak pernah diisi dari berkas.** Sifat menentukan siapa yang boleh membuka surat, jadi tetap kamu pilih sendiri.
+- Hasil baca adalah usulan. Nomor, tanggal, atau nama yang terbaca bisa keliru; cocokkan dengan suratnya sebelum menyimpan.
+- PDF hasil pindai (foto atau scan tanpa teks) tidak dapat dibaca. Tampil keterangan *Berkas ini tidak memuat teks yang dapat dibaca*; isi form seperti biasa, berkasnya tetap dapat dilampirkan.
+- Fitur ini hanya ada saat menambah surat, tidak saat mengedit.
+
 ### Langkah 3: Lampiran (Opsional)
 
 1. Isi **Link Dokumen**, atau klik area **Upload Berkas** lalu pilih berkas. Berkas juga dapat diseret ke area tersebut.
