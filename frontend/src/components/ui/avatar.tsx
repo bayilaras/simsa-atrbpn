@@ -4,6 +4,7 @@ import * as React from "react"
 import { Avatar as AvatarPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { fotoProfilAman } from "@/lib/foto-profil"
 
 function Avatar({
   className,
@@ -25,15 +26,20 @@ function Avatar({
   )
 }
 
+// Every avatar in the app is a profile photo. Addresses outside the allowed
+// photo hosts are not requested at all; the fallback (initials) shows instead.
 function AvatarImage({
   className,
+  src,
   ...props
 }: React.ComponentProps<typeof AvatarPrimitive.Image>) {
   return (
     <AvatarPrimitive.Image
       data-slot="avatar-image"
       className={cn("aspect-square size-full", className)}
+      referrerPolicy="no-referrer"
       {...props}
+      src={fotoProfilAman(src)}
     />
   )
 }

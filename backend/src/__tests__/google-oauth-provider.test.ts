@@ -92,6 +92,22 @@ describe('Better Auth password-only provider registration', () => {
         }
     });
 
+    it('keeps only Google account photos when a user row is created or updated', async () => {
+        const foto = 'https://lh3.googleusercontent.com/a/synthetic';
+        for (const auth of [passwordOnly, withGoogle]) {
+            const hooks = auth.options.databaseHooks?.user;
+            const dibuat = await hooks?.create?.before?.({ name: 'Baru', image: 'https://example.test/foto.jpg' } as never, null);
+            expect(dibuat).toMatchObject({ data: { image: null, role: 'user', unitKerjaId: null, isActive: true } });
+            expect(await hooks?.create?.before?.({ name: 'Baru', image: foto } as never, null)).toMatchObject({ data: { image: foto } });
+            for (const image of ['https://example.test/foto.jpg', '/api/files/surat_masuk/1', 'http://lh3.googleusercontent.com/a/x']) {
+                expect(await hooks?.update?.before?.({ image }, null)).toEqual({ data: { image: null } });
+            }
+            expect(await hooks?.update?.before?.({ image: foto }, null)).toEqual({ data: { image: foto } });
+            // Pembaruan tanpa foto (mis. hanya nama) tidak disentuh.
+            expect(await hooks?.update?.before?.({ name: 'Nama baru' }, null)).toBeUndefined();
+        }
+    });
+
     it('never accepts role, unit, or reactivation from session user input', () => {
         for (const auth of [passwordOnly, withGoogle]) {
             for (const input of [{ role: 'super_admin' }, { unitKerjaId: 'other-unit' }, { isActive: true }]) {

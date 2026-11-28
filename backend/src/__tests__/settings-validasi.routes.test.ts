@@ -74,17 +74,38 @@ describe('PUT /api/settings/profile — nama profil', () => {
         expect(update).not.toHaveBeenCalled();
     });
 
-    it('menyimpan nama yang sudah dipangkas beserta foto apa adanya', async () => {
+    it('menyimpan nama yang sudah dipangkas beserta foto akun Google', async () => {
         const update = vi.spyOn(settingsService, 'updateProfile').mockResolvedValue({ id: mocks.user.id } as any);
         await request(app).put('/api/settings/profile')
-            .send({ name: '  Budi Santoso  ', image: 'https://example.test/foto.jpg' }).expect(200);
-        expect(update.mock.calls[0][1]).toEqual({ name: 'Budi Santoso', image: 'https://example.test/foto.jpg' });
+            .send({ name: '  Budi Santoso  ', image: ' https://lh3.googleusercontent.com/a/foto ' }).expect(200);
+        expect(update.mock.calls[0][1]).toEqual({ name: 'Budi Santoso', image: 'https://lh3.googleusercontent.com/a/foto' });
     });
 
     it('foto saja tetap boleh diperbarui tanpa nama', async () => {
         const update = vi.spyOn(settingsService, 'updateProfile').mockResolvedValue({ id: mocks.user.id } as any);
-        await request(app).put('/api/settings/profile').send({ image: 'https://example.test/baru.jpg' }).expect(200);
-        expect(update.mock.calls[0][1]).toEqual({ name: undefined, image: 'https://example.test/baru.jpg' });
+        await request(app).put('/api/settings/profile').send({ image: 'https://lh4.googleusercontent.com/a/baru' }).expect(200);
+        expect(update.mock.calls[0][1]).toEqual({ name: undefined, image: 'https://lh4.googleusercontent.com/a/baru' });
+    });
+
+    it('foto boleh dikosongkan saat nama disimpan', async () => {
+        const update = vi.spyOn(settingsService, 'updateProfile').mockResolvedValue({ id: mocks.user.id } as any);
+        await request(app).put('/api/settings/profile').send({ name: 'Budi', image: '' }).expect(200);
+        expect(update.mock.calls[0][1]).toEqual({ name: 'Budi', image: '' });
+    });
+
+    it.each([
+        ['host lain', 'https://example.test/foto.jpg'],
+        ['http', 'http://lh3.googleusercontent.com/a/foto'],
+        ['alamat dalam aplikasi', '/api/files/surat_masuk/550e8400-e29b-41d4-a716-446655440031?download=1'],
+        ['host mirip', 'https://lh3.googleusercontent.com.example.test/a/foto'],
+        ['berkredensial', 'https://pengguna@lh3.googleusercontent.com/a/foto'],
+        ['skema lain', 'javascript:alert(1)'],
+        ['terlalu panjang', `https://lh3.googleusercontent.com/a/${'f'.repeat(2048)}`],
+    ])('menolak foto dari %s (400) tanpa memanggil layanan', async (_label, image) => {
+        const update = vi.spyOn(settingsService, 'updateProfile');
+        const res = await request(app).put('/api/settings/profile').send({ name: 'Budi', image }).expect(400);
+        expect(res.body.error).toMatch(/^URL foto profil hanya dapat memakai foto akun Google/);
+        expect(update).not.toHaveBeenCalled();
     });
 });
 

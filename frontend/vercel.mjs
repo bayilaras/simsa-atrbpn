@@ -41,7 +41,8 @@ function frontendSecurityHeaders(unavailable = false) {
     // Radix positioning, chart sizing, and the maintenance shell use inline styles.
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
-    "img-src 'self' data: blob: https:",
+    // The only remote images are Google account photos (src/lib/foto-profil.js).
+    "img-src 'self' data: blob: https://*.googleusercontent.com",
     unavailable ? "connect-src 'self'"
       // Blob's client SDK uses both the exact endpoint and paths beneath it.
       // CSP without the trailing slash matches only the exact path.

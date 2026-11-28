@@ -16,6 +16,7 @@ import { useAuth } from '@/context/AuthContext';
 import { settingsService } from '@/services/settings.service';
 import { useTheme } from '@/context/theme-context';
 import { User, Building2, FileText, Save, Loader2, Settings2, Palette } from 'lucide-react';
+import { CONTOH_FOTO_PROFIL, PESAN_FOTO_PROFIL_DITOLAK, fotoProfilAman } from '@/lib/foto-profil';
 import { PageHeader } from '@/components/PageHeader';
 import { useRequiredUnitKerjaScope } from '@/hooks/use-required-unit-kerja-scope';
 import { RequiredUnitKerjaScope } from '@/components/RequiredUnitKerjaScope';
@@ -108,7 +109,9 @@ export default function Settings() {
             setProfile({
                 name: user.name || '',
                 email: user.email || '',
-                image: user.image || '',
+                // Alamat lama di luar foto akun Google tidak ditampilkan dan
+                // tidak ikut dikirim ulang saat profil disimpan.
+                image: fotoProfilAman(user.image) || '',
             });
         }
     }, [user]);
@@ -123,13 +126,22 @@ export default function Settings() {
             });
             return;
         }
+        const image = profile.image.trim();
+        if (image && !fotoProfilAman(image)) {
+            toast({
+                title: 'URL foto profil tidak dapat dipakai',
+                description: PESAN_FOTO_PROFIL_DITOLAK,
+                variant: 'destructive',
+            });
+            return;
+        }
         setSaving(true);
         try {
             await settingsService.updateProfile({
                 name,
-                image: profile.image,
+                image,
             });
-            setProfile((current) => ({ ...current, name }));
+            setProfile((current) => ({ ...current, name, image }));
             toast({
                 title: 'Berhasil',
                 description: 'Profil berhasil diperbarui',
@@ -297,10 +309,15 @@ export default function Settings() {
                                     <Label htmlFor="image">URL Foto Profil</Label>
                                     <Input
                                         id="image"
-                                        placeholder="https://example.com/photo.jpg"
+                                        placeholder={CONTOH_FOTO_PROFIL}
+                                        maxLength={2048}
+                                        aria-describedby="image-petunjuk"
                                         value={profile.image}
                                         onChange={(e) => setProfile({ ...profile, image: e.target.value })}
                                     />
+                                    <p id="image-petunjuk" className="text-xs text-muted-foreground">
+                                        Hanya alamat foto akun Google. Kosongkan untuk memakai inisial nama.
+                                    </p>
                                 </div>
                             </div>
 

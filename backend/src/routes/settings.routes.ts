@@ -8,6 +8,7 @@ import { resolveEffectiveUnitKerjaId } from '../utils/resolve-unit-kerja.js';
 import { AppError } from '../utils/errors.js';
 import { stripDriveConfig } from '../utils/unit-kerja-publik.js';
 import { badanGalatValidasi } from '../utils/galat-validasi.js';
+import { PESAN_FOTO_PROFIL_DITOLAK, urlFotoProfilDiizinkan } from '../utils/foto-profil.js';
 
 const log = createLogger('SettingsRoutes');
 
@@ -20,7 +21,12 @@ const profileUpdateSchema = z.object({
         .min(1, 'Nama wajib diisi.')
         .max(255, 'Nama maksimal 255 karakter.')
         .optional(),
-    image: z.string({ error: 'URL foto profil harus berupa teks.' }).nullable().optional(),
+    // Kosong atau null menghapus foto; selain itu hanya foto akun Google.
+    image: z.string({ error: 'URL foto profil harus berupa teks.' })
+        .trim()
+        .refine((value) => value === '' || urlFotoProfilDiizinkan(value), PESAN_FOTO_PROFIL_DITOLAK)
+        .nullable()
+        .optional(),
 }, { error: 'Data profil tidak valid.' });
 const unitKerjaNameSchema = z.string({ error: 'Nama unit kerja harus berupa teks.' })
     .trim()
